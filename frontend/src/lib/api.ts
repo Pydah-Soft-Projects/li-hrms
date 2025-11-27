@@ -187,6 +187,44 @@ export const api = {
     });
   },
 
+  // Get current user profile
+  getCurrentUser: async () => {
+    return apiRequest<{
+      user: {
+        _id: string;
+        name: string;
+        email: string;
+        role: string;
+        roles: string[];
+        department?: { _id: string; name: string };
+        employeeId?: string;
+        employeeRef?: string;
+        phone?: string;
+        isActive: boolean;
+        createdAt: string;
+        lastLogin?: string;
+      };
+      workspaces: any[];
+      activeWorkspace: any;
+    }>('/auth/me', { method: 'GET' });
+  },
+
+  // Change password
+  changePassword: async (currentPassword: string, newPassword: string) => {
+    return apiRequest<{ message: string }>('/auth/change-password', {
+      method: 'PUT',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+  },
+
+  // Update user profile
+  updateProfile: async (data: { name?: string; phone?: string }) => {
+    return apiRequest<any>('/users/profile', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
   // Shifts
   getShifts: async (isActive?: boolean) => {
     const query = isActive !== undefined ? `?isActive=${String(isActive)}` : '';
@@ -243,13 +281,83 @@ export const api = {
   },
 
   // Users
-  getUsers: async (role?: string, department?: string, isActive?: boolean) => {
+  getUsers: async (filters?: { role?: string; department?: string; isActive?: boolean; search?: string; page?: number; limit?: number }) => {
     const params = new URLSearchParams();
-    if (role) params.append('role', role);
-    if (department) params.append('department', department);
-    if (isActive !== undefined) params.append('isActive', String(isActive));
+    if (filters?.role) params.append('role', filters.role);
+    if (filters?.department) params.append('department', filters.department);
+    if (filters?.isActive !== undefined) params.append('isActive', String(filters.isActive));
+    if (filters?.search) params.append('search', filters.search);
+    if (filters?.page) params.append('page', String(filters.page));
+    if (filters?.limit) params.append('limit', String(filters.limit));
     const query = params.toString() ? `?${params.toString()}` : '';
-    return apiRequest<any[]>(`/users${query}`, { method: 'GET' });
+    return apiRequest<any>(`/users${query}`, { method: 'GET' });
+  },
+
+  getUser: async (id: string) => {
+    return apiRequest<any>(`/users/${id}`, { method: 'GET' });
+  },
+
+  getUserStats: async () => {
+    return apiRequest<any>('/users/stats', { method: 'GET' });
+  },
+
+  getEmployeesWithoutAccount: async () => {
+    return apiRequest<any>('/users/employees-without-account', { method: 'GET' });
+  },
+
+  createUser: async (data: {
+    email: string;
+    password?: string;
+    name: string;
+    role: string;
+    roles?: string[];
+    department?: string;
+    departments?: string[];
+    employeeId?: string;
+    autoGeneratePassword?: boolean;
+    assignWorkspace?: boolean;
+  }) => {
+    return apiRequest<any>('/users/register', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  createUserFromEmployee: async (data: {
+    employeeId: string;
+    email?: string;
+    password?: string;
+    role: string;
+    roles?: string[];
+    departments?: string[];
+    autoGeneratePassword?: boolean;
+  }) => {
+    return apiRequest<any>('/users/from-employee', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  updateUser: async (id: string, data: any) => {
+    return apiRequest<any>(`/users/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  resetUserPassword: async (id: string, data: { newPassword?: string; autoGenerate?: boolean }) => {
+    return apiRequest<any>(`/users/${id}/reset-password`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  toggleUserStatus: async (id: string) => {
+    return apiRequest<any>(`/users/${id}/toggle-status`, { method: 'PUT' });
+  },
+
+  deleteUser: async (id: string) => {
+    return apiRequest<any>(`/users/${id}`, { method: 'DELETE' });
   },
 
   // Departments

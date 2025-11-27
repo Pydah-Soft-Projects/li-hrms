@@ -129,8 +129,7 @@ const departmentSchema = new mongoose.Schema(
 );
 
 // Indexes
-departmentSchema.index({ name: 1 });
-departmentSchema.index({ code: 1 });
+// Note: name and code already have unique:true which creates indexes
 departmentSchema.index({ hod: 1 });
 departmentSchema.index({ hr: 1 });
 departmentSchema.index({ isActive: 1 });

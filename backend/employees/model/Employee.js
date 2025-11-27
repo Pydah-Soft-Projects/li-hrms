@@ -141,7 +141,7 @@ const employeeSchema = new mongoose.Schema(
 );
 
 // Indexes
-employeeSchema.index({ emp_no: 1 }, { unique: true });
+// Note: emp_no already has unique:true which creates an index
 employeeSchema.index({ employee_name: 1 });
 employeeSchema.index({ department_id: 1 });
 employeeSchema.index({ designation_id: 1 });

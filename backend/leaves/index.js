@@ -34,41 +34,7 @@ router.get('/workflow/:type', settingsController.getWorkflow);
 router.put('/workflow/:type', authorize('super_admin'), settingsController.updateWorkflow);
 
 // ==========================================
-// LEAVE ROUTES
-// ==========================================
-
-// Get my leaves
-router.get('/my', leaveController.getMyLeaves);
-
-// Get pending approvals
-router.get('/pending-approvals', authorize('hod', 'hr', 'sub_admin', 'super_admin'), leaveController.getPendingApprovals);
-
-// Get leave statistics
-router.get('/stats', leaveController.getLeaveStats);
-
-// Get all leaves (with filters)
-router.get('/', authorize('hod', 'hr', 'sub_admin', 'super_admin'), leaveController.getLeaves);
-
-// Get single leave
-router.get('/:id', leaveController.getLeave);
-
-// Apply for leave
-router.post('/', leaveController.applyLeave);
-
-// Update leave
-router.put('/:id', leaveController.updateLeave);
-
-// Cancel leave
-router.put('/:id/cancel', leaveController.cancelLeave);
-
-// Process leave action (approve/reject/forward)
-router.put('/:id/action', authorize('hod', 'hr', 'sub_admin', 'super_admin'), leaveController.processLeaveAction);
-
-// Delete leave
-router.delete('/:id', authorize('sub_admin', 'super_admin'), leaveController.deleteLeave);
-
-// ==========================================
-// OD (ON DUTY) ROUTES
+// OD (ON DUTY) ROUTES - MUST COME BEFORE /:id routes!
 // ==========================================
 
 // Get my ODs
@@ -100,6 +66,40 @@ router.put('/od/:id/outcome', odController.updateODOutcome);
 
 // Delete OD
 router.delete('/od/:id', authorize('sub_admin', 'super_admin'), odController.deleteOD);
+
+// ==========================================
+// LEAVE ROUTES
+// ==========================================
+
+// Get my leaves
+router.get('/my', leaveController.getMyLeaves);
+
+// Get pending approvals
+router.get('/pending-approvals', authorize('hod', 'hr', 'sub_admin', 'super_admin'), leaveController.getPendingApprovals);
+
+// Get leave statistics
+router.get('/stats', leaveController.getLeaveStats);
+
+// Get all leaves (with filters)
+router.get('/', authorize('hod', 'hr', 'sub_admin', 'super_admin'), leaveController.getLeaves);
+
+// Apply for leave
+router.post('/', leaveController.applyLeave);
+
+// Get single leave - MUST be after all specific routes like /my, /pending-approvals, /stats, /od/*
+router.get('/:id', leaveController.getLeave);
+
+// Update leave
+router.put('/:id', leaveController.updateLeave);
+
+// Cancel leave
+router.put('/:id/cancel', leaveController.cancelLeave);
+
+// Process leave action (approve/reject/forward)
+router.put('/:id/action', authorize('hod', 'hr', 'sub_admin', 'super_admin'), leaveController.processLeaveAction);
+
+// Delete leave
+router.delete('/:id', authorize('sub_admin', 'super_admin'), leaveController.deleteLeave);
 
 module.exports = router;
 

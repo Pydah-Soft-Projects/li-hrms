@@ -1,3 +1,5 @@
+import { clearWorkspaceData } from '@/contexts/WorkspaceContext';
+
 export interface User {
   id: string;
   email: string;
@@ -39,6 +41,8 @@ export const auth = {
     if (typeof window !== 'undefined') {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
+      // Clear workspace data on logout
+      clearWorkspaceData();
     }
   },
 
@@ -46,21 +50,18 @@ export const auth = {
     return auth.getToken() !== null;
   },
 
+  // Super Admin goes to admin panel, everyone else goes to workspace-based dashboard
   getRoleBasedPath: (role: string): string => {
-    switch (role) {
-      case 'super_admin':
-        return '/superadmin/dashboard';
-      case 'sub_admin':
-        return '/subadmin/dashboard';
-      case 'hr':
-        return '/hr/dashboard';
-      case 'hod':
-        return '/hod/dashboard';
-      case 'employee':
-        return '/employee/dashboard';
-      default:
-        return '/dashboard';
+    if (role === 'super_admin') {
+      return '/superadmin/dashboard';
     }
+    // All other users go to workspace-based dashboard
+    return '/dashboard';
+  },
+
+  // Check if user is super admin
+  isSuperAdmin: (): boolean => {
+    const user = auth.getUser();
+    return user?.role === 'super_admin';
   },
 };
-

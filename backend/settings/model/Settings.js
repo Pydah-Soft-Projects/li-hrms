@@ -28,7 +28,7 @@ const settingsSchema = new mongoose.Schema(
 );
 
 // Index for faster lookups
-settingsSchema.index({ key: 1 });
+// Note: key already has unique:true which creates an index
 settingsSchema.index({ category: 1 });
 
 module.exports = mongoose.model('Settings', settingsSchema);

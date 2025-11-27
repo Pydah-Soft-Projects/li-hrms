@@ -23,7 +23,7 @@ const shiftDurationSchema = new mongoose.Schema(
 );
 
 // Index for faster lookups
-shiftDurationSchema.index({ duration: 1 });
+// Note: duration already has unique:true which creates an index
 shiftDurationSchema.index({ isActive: 1 });
 
 module.exports = mongoose.model('ShiftDuration', shiftDurationSchema);

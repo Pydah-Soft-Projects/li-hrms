@@ -79,11 +79,8 @@ const WorkspaceSchema = new mongoose.Schema(
           visibleColumns: [String],
           // Allowed actions
           allowedActions: [String],
-          // Workflow actions per status
-          workflowActions: {
-            type: Map,
-            of: [String],
-          },
+          // Workflow actions per status (e.g., { pending: ['approve', 'reject'] })
+          workflowActions: mongoose.Schema.Types.Mixed,
           // Custom filters
           customFilters: mongoose.Schema.Types.Mixed,
           // Any other module-specific settings
@@ -160,7 +157,7 @@ const WorkspaceSchema = new mongoose.Schema(
 );
 
 // Indexes
-WorkspaceSchema.index({ code: 1 });
+// Note: code already has unique:true which creates an index
 WorkspaceSchema.index({ type: 1 });
 WorkspaceSchema.index({ isActive: 1 });
 

@@ -6,12 +6,65 @@ const { protect, authorize } = require('../authentication/middleware/authMiddlew
 // All routes are protected
 router.use(protect);
 
-// User routes
+// ==========================================
+// STATS & UTILITY ROUTES (before :id routes)
+// ==========================================
+
+// Get user statistics
+router.get('/stats', authorize('super_admin', 'sub_admin'), userController.getUserStats);
+
+// Get employees without user accounts
+router.get(
+  '/employees-without-account',
+  authorize('super_admin', 'sub_admin', 'hr'),
+  userController.getEmployeesWithoutAccount
+);
+
+// Update own profile (any authenticated user)
+router.put('/profile', userController.updateProfile);
+
+// ==========================================
+// USER CREATION ROUTES
+// ==========================================
+
+// Create new user (manual)
 router.post('/register', authorize('super_admin', 'sub_admin', 'hr'), userController.registerUser);
+
+// Create user from existing employee
+router.post(
+  '/from-employee',
+  authorize('super_admin', 'sub_admin', 'hr'),
+  userController.createUserFromEmployee
+);
+
+// ==========================================
+// USER LIST & SINGLE USER ROUTES
+// ==========================================
+
+// Get all users
 router.get('/', authorize('super_admin', 'sub_admin', 'hr'), userController.getAllUsers);
+
+// Get single user
 router.get('/:id', userController.getUser);
+
+// ==========================================
+// USER UPDATE ROUTES
+// ==========================================
+
+// Update user
 router.put('/:id', authorize('super_admin', 'sub_admin', 'hr'), userController.updateUser);
+
+// Reset user password
+router.put('/:id/reset-password', authorize('super_admin', 'sub_admin'), userController.resetPassword);
+
+// Toggle user active status
+router.put('/:id/toggle-status', authorize('super_admin', 'sub_admin'), userController.toggleUserStatus);
+
+// ==========================================
+// USER DELETE ROUTE
+// ==========================================
+
+// Delete user
 router.delete('/:id', authorize('super_admin', 'sub_admin'), userController.deleteUser);
 
 module.exports = router;
-
