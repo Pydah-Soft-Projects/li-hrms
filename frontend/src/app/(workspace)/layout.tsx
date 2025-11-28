@@ -171,12 +171,42 @@ function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {
   const workspaceColor = workspaceColors[activeWorkspace?.type || 'custom'];
 
   // Get navigation items from available modules
-  const navItems = availableModules.map((module) => ({
-    href: moduleRoutes[module.moduleCode] || `/${module.moduleCode.toLowerCase()}`,
-    label: module.moduleId?.name || module.moduleCode,
-    icon: moduleIcons[module.moduleCode] || DashboardIcon,
-    moduleCode: module.moduleCode,
-  }));
+  // Combine LEAVE and OD into a single "Leave & OD" item
+  const hasLeave = availableModules.some(m => m.moduleCode === 'LEAVE');
+  const hasOD = availableModules.some(m => m.moduleCode === 'OD');
+  const hasLeaveOrOD = hasLeave || hasOD;
+
+  const navItems: Array<{
+    href: string;
+    label: string;
+    icon: React.ComponentType<IconProps>;
+    moduleCode: string;
+  }> = [];
+
+  // Process modules, but combine LEAVE and OD
+  availableModules.forEach((module) => {
+    // Skip OD if LEAVE is also present (we'll add combined item)
+    if (module.moduleCode === 'OD' && hasLeave) {
+      return;
+    }
+    
+    // If this is LEAVE and OD also exists, create combined item
+    if (module.moduleCode === 'LEAVE' && hasOD) {
+      navItems.push({
+        href: '/leaves',
+        label: 'Leave & OD',
+        icon: LeavesIcon,
+        moduleCode: 'LEAVE_OD',
+      });
+    } else {
+      navItems.push({
+        href: moduleRoutes[module.moduleCode] || `/${module.moduleCode.toLowerCase()}`,
+        label: module.moduleId?.name || module.moduleCode,
+        icon: moduleIcons[module.moduleCode] || DashboardIcon,
+        moduleCode: module.moduleCode,
+      });
+    }
+  });
 
   // Always add Profile at the end
   if (!navItems.find((item) => item.moduleCode === 'PROFILE')) {
@@ -266,7 +296,10 @@ function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {
             <ul className="space-y-1 px-2">
               {navItems.map((item) => {
                 const Icon = item.icon;
-                const isActive = pathname === item.href;
+                // For combined Leave & OD, check both /leaves and /od paths
+                const isActive = item.moduleCode === 'LEAVE_OD' 
+                  ? (pathname === '/leaves' || pathname === '/od')
+                  : pathname === item.href;
 
                 return (
                   <li key={item.href}>
