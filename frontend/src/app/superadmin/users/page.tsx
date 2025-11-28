@@ -322,8 +322,8 @@ export default function UsersPage() {
 
       if (res.success) {
         setSuccess('Password reset successfully');
-        if (res.newPassword) {
-          setGeneratedPassword(res.newPassword);
+        if (res.data?.newPassword) {
+          setGeneratedPassword(res.data.newPassword);
         }
         setShowPasswordDialog(false);
         setSelectedUser(null);

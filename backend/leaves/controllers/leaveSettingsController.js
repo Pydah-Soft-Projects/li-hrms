@@ -105,10 +105,18 @@ exports.getSettings = async (req, res) => {
           sendEmailNotifications: true,
           notifyOnStatusChange: true,
           notifyApproverOnNew: true,
+          workspacePermissions: {},
         },
         isDefault: true, // Flag to indicate these are default settings
       };
     }
+
+    // Ensure workspacePermissions is included in response
+    if (settings.settings && !settings.settings.workspacePermissions) {
+      settings.settings.workspacePermissions = {};
+    }
+
+    console.log('[GetSettings] Returning settings with workspacePermissions:', JSON.stringify(settings.settings?.workspacePermissions, null, 2));
 
     res.status(200).json({
       success: true,
@@ -131,6 +139,11 @@ exports.saveSettings = async (req, res) => {
     const { type } = req.params;
     const { types, statuses, workflow, settings } = req.body;
 
+    console.log('=== Save Settings Request ===');
+    console.log('Type:', type);
+    console.log('Body:', JSON.stringify(req.body, null, 2));
+    console.log('Settings received:', JSON.stringify(settings, null, 2));
+
     if (!['leave', 'od'].includes(type)) {
       return res.status(400).json({
         success: false,
@@ -141,12 +154,43 @@ exports.saveSettings = async (req, res) => {
     // Find existing or create new
     let leaveSettings = await LeaveSettings.findOne({ type });
 
+    console.log('Existing settings found:', !!leaveSettings);
+    if (leaveSettings) {
+      console.log('Existing settings.settings:', JSON.stringify(leaveSettings.settings, null, 2));
+    }
+
     if (leaveSettings) {
       // Update existing
       if (types) leaveSettings.types = types;
       if (statuses) leaveSettings.statuses = statuses;
       if (workflow) leaveSettings.workflow = workflow;
-      if (settings) leaveSettings.settings = { ...leaveSettings.settings, ...settings };
+      if (settings) {
+        // Deep merge settings to preserve existing properties
+        const existingSettings = leaveSettings.settings || {};
+        const newSettings = { ...existingSettings };
+        
+        // Merge all settings properties, including workspacePermissions
+        Object.keys(settings).forEach(key => {
+          if (key === 'workspacePermissions' && settings[key]) {
+            // Deep merge workspacePermissions object
+            newSettings.workspacePermissions = {
+              ...(existingSettings.workspacePermissions || {}),
+              ...settings.workspacePermissions,
+            };
+          } else {
+            newSettings[key] = settings[key];
+          }
+        });
+        
+        leaveSettings.settings = newSettings;
+        // Mark settings as modified to ensure Mongoose saves nested objects
+        leaveSettings.markModified('settings');
+        if (settings.workspacePermissions) {
+          leaveSettings.markModified('settings.workspacePermissions');
+        }
+        console.log('Merged settings.settings:', JSON.stringify(leaveSettings.settings, null, 2));
+        console.log('WorkspacePermissions after merge:', JSON.stringify(leaveSettings.settings.workspacePermissions, null, 2));
+      }
       leaveSettings.updatedBy = req.user._id;
     } else {
       // Create new
@@ -162,6 +206,8 @@ exports.saveSettings = async (req, res) => {
     }
 
     await leaveSettings.save();
+    console.log('Settings saved successfully');
+    console.log('Final settings.settings:', JSON.stringify(leaveSettings.settings, null, 2));
 
     res.status(200).json({
       success: true,

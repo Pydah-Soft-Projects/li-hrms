@@ -273,22 +273,102 @@ exports.applyLeave = async (req, res) => {
     // Use empNo as primary identifier (from frontend)
     if (empNo) {
       // Check if user has permission to apply for others
-      if (!['hr', 'sub_admin', 'super_admin'].includes(req.user.role)) {
+      // Allow super_admin, hr, sub_admin (backward compatibility)
+      const hasRolePermission = ['hr', 'sub_admin', 'super_admin'].includes(req.user.role);
+      
+      console.log(`[Apply Leave] User ${req.user._id} (${req.user.role}) applying for employee ${empNo}`);
+      console.log(`[Apply Leave] Has role permission: ${hasRolePermission}`);
+      
+      // Check workspace permissions if user has active workspace
+      let hasWorkspacePermission = false;
+      if (req.user.activeWorkspaceId) {
+        try {
+          const leaveSettings = await LeaveSettings.findOne({ type: 'leave', isActive: true });
+          if (leaveSettings?.settings?.workspacePermissions) {
+            const workspaceIdStr = String(req.user.activeWorkspaceId);
+            const permissions = leaveSettings.settings.workspacePermissions[workspaceIdStr];
+            
+            console.log(`[Apply Leave] Checking workspace ${workspaceIdStr} permissions:`, permissions);
+            
+            if (permissions) {
+              // Handle both old format (boolean) and new format (object)
+              if (typeof permissions === 'boolean') {
+                hasWorkspacePermission = permissions; // Old format: boolean means canApplyForOthers
+              } else {
+                hasWorkspacePermission = permissions.canApplyForOthers || false; // New format
+              }
+            }
+          } else {
+            console.log(`[Apply Leave] No workspace permissions found in settings`);
+          }
+        } catch (error) {
+          console.error('[Apply Leave] Error checking workspace permissions:', error);
+        }
+      } else {
+        console.log(`[Apply Leave] User has no active workspace`);
+      }
+      
+      console.log(`[Apply Leave] Has workspace permission: ${hasWorkspacePermission}`);
+      
+      // User must have either role permission OR workspace permission
+      if (!hasRolePermission && !hasWorkspacePermission) {
+        console.log(`[Apply Leave] ❌ Authorization denied - no role or workspace permission`);
         return res.status(403).json({
           success: false,
           error: 'Not authorized to apply leave for others',
         });
       }
+      
+      console.log(`[Apply Leave] ✅ Authorization granted`);
+      
       // Find employee by emp_no (checks MongoDB first, then MSSQL based on settings)
       employee = await findEmployeeByEmpNo(empNo);
     } else if (employeeId) {
       // Legacy: Check if user has permission to apply for others
-      if (!['hr', 'sub_admin', 'super_admin'].includes(req.user.role)) {
+      // Allow super_admin, hr, sub_admin (backward compatibility)
+      const hasRolePermission = ['hr', 'sub_admin', 'super_admin'].includes(req.user.role);
+      
+      console.log(`[Apply Leave] User ${req.user._id} (${req.user.role}) applying for employee ${employeeId} (legacy)`);
+      console.log(`[Apply Leave] Has role permission: ${hasRolePermission}`);
+      
+      // Check workspace permissions if user has active workspace
+      let hasWorkspacePermission = false;
+      if (req.user.activeWorkspaceId) {
+        try {
+          const leaveSettings = await LeaveSettings.findOne({ type: 'leave', isActive: true });
+          if (leaveSettings?.settings?.workspacePermissions) {
+            const workspaceIdStr = String(req.user.activeWorkspaceId);
+            const permissions = leaveSettings.settings.workspacePermissions[workspaceIdStr];
+            
+            console.log(`[Apply Leave] Checking workspace ${workspaceIdStr} permissions:`, permissions);
+            
+            if (permissions) {
+              // Handle both old format (boolean) and new format (object)
+              if (typeof permissions === 'boolean') {
+                hasWorkspacePermission = permissions; // Old format: boolean means canApplyForOthers
+              } else {
+                hasWorkspacePermission = permissions.canApplyForOthers || false; // New format
+              }
+            }
+          }
+        } catch (error) {
+          console.error('[Apply Leave] Error checking workspace permissions:', error);
+        }
+      }
+      
+      console.log(`[Apply Leave] Has workspace permission: ${hasWorkspacePermission}`);
+      
+      // User must have either role permission OR workspace permission
+      if (!hasRolePermission && !hasWorkspacePermission) {
+        console.log(`[Apply Leave] ❌ Authorization denied - no role or workspace permission`);
         return res.status(403).json({
           success: false,
           error: 'Not authorized to apply leave for others',
         });
       }
+      
+      console.log(`[Apply Leave] ✅ Authorization granted`);
+      
       // Find employee by ID or emp_no
       employee = await findEmployeeByIdOrEmpNo(employeeId);
     } else {

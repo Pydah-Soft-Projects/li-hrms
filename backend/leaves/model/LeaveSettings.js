@@ -281,6 +281,12 @@ const LeaveSettingsSchema = new mongoose.Schema(
         type: Boolean,
         default: true,
       },
+      // Workspace-level permissions for leave/OD applications
+      // Format: { workspaceId: { canApplyForSelf: boolean, canApplyForOthers: boolean } }
+      workspacePermissions: {
+        type: mongoose.Schema.Types.Mixed,
+        default: {},
+      },
     },
 
     // Is this settings configuration active

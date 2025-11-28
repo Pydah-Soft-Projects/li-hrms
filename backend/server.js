@@ -72,6 +72,9 @@ app.use('/api/workspaces', workspaceRoutes);
 const leaveRoutes = require('./leaves/index.js');
 app.use('/api/leaves', leaveRoutes);
 
+const loanRoutes = require('./loans/index.js');
+app.use('/api/loans', loanRoutes);
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({

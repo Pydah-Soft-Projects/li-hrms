@@ -84,42 +84,61 @@ const getEmployeeInitials = (emp: Employee) => {
 
 interface LeaveApplication {
   _id: string;
-  employeeId: { _id: string; first_name: string; last_name: string; emp_no: string };
+  employeeId?: { 
+    _id: string; 
+    employee_name?: string; 
+    first_name?: string; 
+    last_name?: string; 
+    emp_no: string;
+  };
+  emp_no?: string;
   leaveType: string;
   fromDate: string;
   toDate: string;
   numberOfDays: number;
+  isHalfDay?: boolean;
+  halfDayType?: string;
   purpose: string;
-  contactNumber: string;
+  contactNumber?: string;
   status: string;
   department?: { name: string };
   designation?: { name: string };
   appliedAt: string;
   appliedBy?: { _id: string; name: string; email: string };
-  workflow: {
-    nextApprover: string;
-    history: any[];
+  workflow?: {
+    nextApprover?: string;
+    history?: any[];
   };
 }
 
 interface ODApplication {
   _id: string;
-  employeeId: { first_name: string; last_name: string; emp_no: string };
+  employeeId?: { 
+    _id?: string;
+    employee_name?: string; 
+    first_name?: string; 
+    last_name?: string; 
+    emp_no: string;
+  };
+  emp_no?: string;
   odType: string;
   fromDate: string;
   toDate: string;
   numberOfDays: number;
+  isHalfDay?: boolean;
+  halfDayType?: string;
   purpose: string;
-  placeVisited: string;
-  contactNumber: string;
+  placeVisited?: string;
+  contactNumber?: string;
   status: string;
   department?: { name: string };
   designation?: { name: string };
   appliedAt: string;
+  appliedBy?: { _id: string; name: string; email: string };
   assignedBy?: { name: string };
-  workflow: {
-    nextApprover: string;
-    history: any[];
+  workflow?: {
+    nextApprover?: string;
+    history?: any[];
   };
 }
 
@@ -165,6 +184,8 @@ export default function LeavesPage() {
   const [applyType, setApplyType] = useState<'leave' | 'od'>('leave');
   const [showDetailDialog, setShowDetailDialog] = useState(false);
   const [selectedItem, setSelectedItem] = useState<LeaveApplication | ODApplication | null>(null);
+  const [detailType, setDetailType] = useState<'leave' | 'od'>('leave');
+  const [actionComment, setActionComment] = useState('');
 
   // Leave types and OD types
   const [leaveTypes, setLeaveTypes] = useState<any[]>([]);
@@ -436,6 +457,48 @@ export default function LeavesPage() {
     setShowApplyDialog(true);
   };
 
+  const openDetailDialog = (item: LeaveApplication | ODApplication, type: 'leave' | 'od') => {
+    setSelectedItem(item);
+    setDetailType(type);
+    setActionComment('');
+    setShowDetailDialog(true);
+  };
+
+  const handleDetailAction = async (action: 'approve' | 'reject' | 'forward' | 'cancel') => {
+    if (!selectedItem) return;
+    
+    try {
+      setError('');
+      let response;
+      
+      if (action === 'cancel') {
+        if (detailType === 'leave') {
+          response = await api.cancelLeave(selectedItem._id);
+        } else {
+          // OD cancel if available
+          response = { success: true };
+        }
+      } else {
+        if (detailType === 'leave') {
+          response = await api.processLeaveAction(selectedItem._id, action, actionComment);
+        } else {
+          response = await api.processODAction(selectedItem._id, action, actionComment);
+        }
+      }
+
+      if (response.success) {
+        setSuccess(`${detailType === 'leave' ? 'Leave' : 'OD'} ${action}${action === 'cancel' ? 'led' : 'ed'} successfully`);
+        setShowDetailDialog(false);
+        setSelectedItem(null);
+        loadData();
+      } else {
+        setError(response.error || `Failed to ${action}`);
+      }
+    } catch (err: any) {
+      setError(err.message || `Failed to ${action}`);
+    }
+  };
+
   const totalPending = pendingLeaves.length + pendingODs.length;
 
   if (loading) {
@@ -594,15 +657,19 @@ export default function LeavesPage() {
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
                 {leaves.map((leave) => (
-                  <tr key={leave._id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer">
+                  <tr 
+                    key={leave._id} 
+                    className="hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer transition-colors"
+                    onClick={() => openDetailDialog(leave, 'leave')}
+                  >
                     <td className="px-4 py-3">
                       <div className="font-medium text-slate-900 dark:text-white">
-                        {leave.employeeId?.first_name} {leave.employeeId?.last_name}
+                        {leave.employeeId?.employee_name || `${leave.employeeId?.first_name || ''} ${leave.employeeId?.last_name || ''}`.trim() || leave.emp_no}
                       </div>
-                      <div className="text-xs text-slate-500">{leave.employeeId?.emp_no}</div>
+                      <div className="text-xs text-slate-500">{leave.employeeId?.emp_no || leave.emp_no}</div>
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300 capitalize">
-                      {leave.leaveType.replace('_', ' ')}
+                      {leave.leaveType?.replace('_', ' ') || '-'}
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
                       {formatDate(leave.fromDate)} - {formatDate(leave.toDate)}
@@ -612,7 +679,7 @@ export default function LeavesPage() {
                     </td>
                     <td className="px-4 py-3">
                       <span className={`px-2.5 py-1 text-xs font-medium rounded-lg capitalize ${getStatusColor(leave.status)}`}>
-                        {leave.status.replace('_', ' ')}
+                        {leave.status?.replace('_', ' ') || '-'}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
@@ -651,29 +718,33 @@ export default function LeavesPage() {
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
                 {ods.map((od) => (
-                  <tr key={od._id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer">
+                  <tr 
+                    key={od._id} 
+                    className="hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer transition-colors"
+                    onClick={() => openDetailDialog(od, 'od')}
+                  >
                     <td className="px-4 py-3">
                       <div className="font-medium text-slate-900 dark:text-white">
-                        {od.employeeId?.first_name} {od.employeeId?.last_name}
+                        {od.employeeId?.employee_name || `${od.employeeId?.first_name || ''} ${od.employeeId?.last_name || ''}`.trim() || od.emp_no}
                       </div>
-                      <div className="text-xs text-slate-500">{od.employeeId?.emp_no}</div>
+                      <div className="text-xs text-slate-500">{od.employeeId?.emp_no || od.emp_no}</div>
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300 capitalize">
-                      {od.odType.replace('_', ' ')}
+                      {od.odType?.replace('_', ' ') || '-'}
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300 max-w-[200px] truncate">
-                      {od.placeVisited}
+                      {od.placeVisited || '-'}
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
                       {formatDate(od.fromDate)} - {formatDate(od.toDate)}
                     </td>
                     <td className="px-4 py-3">
                       <span className={`px-2.5 py-1 text-xs font-medium rounded-lg capitalize ${getStatusColor(od.status)}`}>
-                        {od.status.replace('_', ' ')}
+                        {od.status?.replace('_', ' ') || '-'}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
-                      {od.assignedBy?.name || 'Self'}
+                      {od.assignedBy?.name || od.appliedBy?.name || 'Self'}
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-500">
                       {formatDate(od.appliedAt)}
@@ -857,7 +928,19 @@ export default function LeavesPage() {
                             {getEmployeeName(selectedEmployee)}
                           </div>
                           <div className="text-xs text-slate-500 dark:text-slate-400">
-                            {selectedEmployee.emp_no} • {selectedEmployee.department?.name || 'No Dept'}
+                            {selectedEmployee.emp_no}
+                          </div>
+                          <div className="flex flex-wrap gap-1.5 mt-1">
+                            {selectedEmployee.department?.name && (
+                              <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-800 dark:text-blue-300 rounded">
+                                {selectedEmployee.department.name}
+                              </span>
+                            )}
+                            {selectedEmployee.designation?.name && (
+                              <span className="px-1.5 py-0.5 text-[10px] font-medium bg-green-100 text-green-700 dark:bg-green-800 dark:text-green-300 rounded">
+                                {selectedEmployee.designation.name}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1087,6 +1170,244 @@ export default function LeavesPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Detail Dialog */}
+      {showDetailDialog && selectedItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="mx-4 w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-800">
+            {/* Header */}
+            <div className={`px-6 py-4 border-b border-slate-200 dark:border-slate-700 ${
+              detailType === 'leave' 
+                ? 'bg-gradient-to-r from-blue-500 to-indigo-500' 
+                : 'bg-gradient-to-r from-purple-500 to-pink-500'
+            }`}>
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                  {detailType === 'leave' ? (
+                    <>
+                      <CalendarIcon />
+                      Leave Details
+                    </>
+                  ) : (
+                    <>
+                      <BriefcaseIcon />
+                      OD Details
+                    </>
+                  )}
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowDetailDialog(false);
+                    setSelectedItem(null);
+                  }}
+                  className="p-2 text-white/80 hover:text-white hover:bg-white/20 rounded-lg transition-colors"
+                >
+                  <XIcon />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Status Badge & Dates */}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className={`px-4 py-2 text-sm font-semibold rounded-xl capitalize ${getStatusColor(selectedItem.status)}`}>
+                  {selectedItem.status?.replace('_', ' ') || 'Unknown'}
+                </span>
+                <div className="flex gap-4 text-sm text-slate-500">
+                  <span>Created: {formatDate((selectedItem as any).createdAt || selectedItem.appliedAt)}</span>
+                  <span>Applied: {formatDate(selectedItem.appliedAt)}</span>
+                </div>
+              </div>
+
+              {/* Employee Info */}
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50">
+                <h3 className="text-sm font-semibold text-slate-500 dark:text-slate-400 mb-3 uppercase tracking-wide">Employee Details</h3>
+                <div className="flex items-start gap-4">
+                  <div className={`w-14 h-14 rounded-full flex items-center justify-center text-white font-bold text-lg flex-shrink-0 ${
+                    detailType === 'leave' ? 'bg-blue-500' : 'bg-purple-500'
+                  }`}>
+                    {(selectedItem.employeeId?.employee_name?.[0] || selectedItem.emp_no?.[0] || 'E').toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-lg text-slate-900 dark:text-white">
+                      {selectedItem.employeeId?.employee_name || `${selectedItem.employeeId?.first_name || ''} ${selectedItem.employeeId?.last_name || ''}`.trim() || selectedItem.emp_no}
+                    </p>
+                    <p className="text-sm text-slate-500">{selectedItem.employeeId?.emp_no || selectedItem.emp_no}</p>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {selectedItem.department?.name && (
+                        <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300 rounded-lg inline-flex items-center gap-1">
+                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                          </svg>
+                          {selectedItem.department.name}
+                        </span>
+                      )}
+                      {selectedItem.designation?.name && (
+                        <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300 rounded-lg inline-flex items-center gap-1">
+                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                          </svg>
+                          {selectedItem.designation.name}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Details Grid */}
+              <div className="grid grid-cols-2 gap-4">
+                {/* Type */}
+                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <p className="text-xs text-slate-500 uppercase font-semibold mb-1">
+                    {detailType === 'leave' ? 'Leave Type' : 'OD Type'}
+                  </p>
+                  <p className="text-sm font-medium text-slate-900 dark:text-white capitalize">
+                    {(detailType === 'leave' 
+                      ? (selectedItem as LeaveApplication).leaveType 
+                      : (selectedItem as ODApplication).odType
+                    )?.replace('_', ' ') || '-'}
+                  </p>
+                </div>
+
+                {/* Duration */}
+                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <p className="text-xs text-slate-500 uppercase font-semibold mb-1">Duration</p>
+                  <p className="text-sm font-medium text-slate-900 dark:text-white">
+                    {selectedItem.numberOfDays} day{selectedItem.numberOfDays !== 1 ? 's' : ''}
+                    {selectedItem.isHalfDay && ` (${selectedItem.halfDayType?.replace('_', ' ')})`}
+                  </p>
+                </div>
+
+                {/* From Date */}
+                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <p className="text-xs text-slate-500 uppercase font-semibold mb-1">From</p>
+                  <p className="text-sm font-medium text-slate-900 dark:text-white">
+                    {formatDate(selectedItem.fromDate)}
+                  </p>
+                </div>
+
+                {/* To Date */}
+                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <p className="text-xs text-slate-500 uppercase font-semibold mb-1">To</p>
+                  <p className="text-sm font-medium text-slate-900 dark:text-white">
+                    {formatDate(selectedItem.toDate)}
+                  </p>
+                </div>
+              </div>
+
+              {/* Purpose */}
+              <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                <p className="text-xs text-slate-500 uppercase font-semibold mb-2">Purpose / Reason</p>
+                <p className="text-sm text-slate-700 dark:text-slate-300">
+                  {selectedItem.purpose || 'Not specified'}
+                </p>
+              </div>
+
+              {/* OD Specific Fields */}
+              {detailType === 'od' && (selectedItem as ODApplication).placeVisited && (
+                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <p className="text-xs text-slate-500 uppercase font-semibold mb-2">Place Visited</p>
+                  <p className="text-sm text-slate-700 dark:text-slate-300">
+                    {(selectedItem as ODApplication).placeVisited}
+                  </p>
+                </div>
+              )}
+
+              {/* Contact Number */}
+              {selectedItem.contactNumber && (
+                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <p className="text-xs text-slate-500 uppercase font-semibold mb-2">Contact Number</p>
+                  <p className="text-sm text-slate-700 dark:text-slate-300">
+                    {selectedItem.contactNumber}
+                  </p>
+                </div>
+              )}
+
+              {/* Workflow History */}
+              {selectedItem.workflow?.history && selectedItem.workflow.history.length > 0 && (
+                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <p className="text-xs text-slate-500 uppercase font-semibold mb-3">Approval History</p>
+                  <div className="space-y-3">
+                    {selectedItem.workflow.history.map((entry: any, idx: number) => (
+                      <div key={idx} className="flex items-start gap-3 text-sm">
+                        <div className={`w-2 h-2 mt-1.5 rounded-full ${
+                          entry.action === 'approved' ? 'bg-green-500' :
+                          entry.action === 'rejected' ? 'bg-red-500' :
+                          entry.action === 'forwarded' ? 'bg-blue-500' : 'bg-slate-400'
+                        }`} />
+                        <div>
+                          <span className="font-medium text-slate-900 dark:text-white capitalize">
+                            {entry.action}
+                          </span>
+                          <span className="text-slate-500"> by {entry.actionByName || 'Unknown'}</span>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            {new Date(entry.timestamp).toLocaleString()}
+                          </p>
+                          {entry.comments && (
+                            <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 italic">
+                              "{entry.comments}"
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Action Section */}
+              {!['approved', 'rejected', 'cancelled'].includes(selectedItem.status) && (
+                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-4">
+                  <p className="text-xs text-slate-500 uppercase font-semibold">Take Action</p>
+                  
+                  {/* Comment */}
+                  <textarea
+                    value={actionComment}
+                    onChange={(e) => setActionComment(e.target.value)}
+                    placeholder="Add a comment (optional)..."
+                    rows={2}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  />
+                  
+                  {/* Action Buttons */}
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => handleDetailAction('approve')}
+                      className="px-4 py-2 text-sm font-semibold text-white bg-green-500 rounded-xl hover:bg-green-600 transition-colors flex items-center gap-2"
+                    >
+                      <CheckIcon /> Approve
+                    </button>
+                    <button
+                      onClick={() => handleDetailAction('reject')}
+                      className="px-4 py-2 text-sm font-semibold text-white bg-red-500 rounded-xl hover:bg-red-600 transition-colors flex items-center gap-2"
+                    >
+                      <XIcon /> Reject
+                    </button>
+                    <button
+                      onClick={() => handleDetailAction('forward')}
+                      className="px-4 py-2 text-sm font-semibold text-white bg-blue-500 rounded-xl hover:bg-blue-600 transition-colors"
+                    >
+                      Forward to HR
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Close Button */}
+              <button
+                onClick={() => {
+                  setShowDetailDialog(false);
+                  setSelectedItem(null);
+                }}
+                className="w-full px-4 py-3 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

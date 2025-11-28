@@ -117,6 +117,7 @@ const navItems: NavItem[] = [
   { href: '/superadmin/dashboard', label: 'Dashboard', icon: DashboardIcon },
   { href: '/superadmin/employees', label: 'Employees', icon: EmployeesIcon },
   { href: '/superadmin/leaves', label: 'Leave & OD', icon: CalendarIcon },
+  { href: '/superadmin/loans', label: 'Loan & Salary Advance', icon: CalendarIcon },
   { href: '/superadmin/shifts', label: 'Shifts', icon: ClockIcon },
   { href: '/superadmin/departments', label: 'Departments', icon: BuildingIcon },
   { href: '/superadmin/workspaces', label: 'Workspaces', icon: WorkspacesIcon },

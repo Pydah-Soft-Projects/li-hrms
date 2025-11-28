@@ -96,18 +96,22 @@ export async function apiRequest<T>(
   }
 
   try {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    const url = `${API_BASE_URL}${endpoint}`;
+    console.log(`[API Request] ${options.method || 'GET'} ${url}`, options.body ? JSON.parse(options.body as string) : '');
+    
+    const response = await fetch(url, {
       ...options,
       headers,
     });
 
     const data = await response.json();
+    console.log(`[API Response] ${response.status} ${url}`, data);
 
     if (!response.ok) {
       return {
         success: false,
         message: data.message || 'An error occurred',
-        error: data.error,
+        error: data.error || data.message || `HTTP ${response.status}`,
       };
     }
 
@@ -116,9 +120,11 @@ export async function apiRequest<T>(
       ...data,
     };
   } catch (error) {
+    console.error(`[API Error] ${options.method || 'GET'} ${API_BASE_URL}${endpoint}`, error);
     return {
       success: false,
       message: error instanceof Error ? error.message : 'Network error occurred',
+      error: error instanceof Error ? error.message : 'Network error occurred',
     };
   }
 }
@@ -804,6 +810,135 @@ export const api = {
   // Get leave/OD types
   getLeaveTypes: async (type: 'leave' | 'od') => {
     return apiRequest<any>(`/leaves/types/${type}`, { method: 'GET' });
+  },
+
+  // ==========================================
+  // LOAN & SALARY ADVANCE APIs
+  // ==========================================
+
+  // Get loan/salary advance settings
+  getLoanSettings: async (type: 'loan' | 'salary_advance') => {
+    return apiRequest<any>(`/loans/settings/${type}`, { method: 'GET' });
+  },
+
+  // Save loan/salary advance settings
+  saveLoanSettings: async (type: 'loan' | 'salary_advance', data: any) => {
+    return apiRequest<any>(`/loans/settings/${type}`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Update loan/salary advance settings
+  updateLoanSettings: async (type: 'loan' | 'salary_advance', data: any) => {
+    return apiRequest<any>(`/loans/settings/${type}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Get users for workflow configuration
+  getUsersForLoanWorkflow: async (type: 'loan' | 'salary_advance', role?: string) => {
+    const query = role ? `?role=${role}` : '';
+    return apiRequest<any>(`/loans/settings/${type}/users${query}`, { method: 'GET' });
+  },
+
+  // Get workflow configuration
+  getLoanWorkflow: async (type: 'loan' | 'salary_advance') => {
+    return apiRequest<any>(`/loans/settings/${type}/workflow`, { method: 'GET' });
+  },
+
+  // Update workflow configuration
+  updateLoanWorkflow: async (type: 'loan' | 'salary_advance', data: any) => {
+    return apiRequest<any>(`/loans/settings/${type}/workflow`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Get all loans
+  getLoans: async (filters?: { status?: string; employeeId?: string; department?: string; requestType?: string; page?: number; limit?: number }) => {
+    const params = new URLSearchParams();
+    if (filters?.status) params.append('status', filters.status);
+    if (filters?.employeeId) params.append('employeeId', filters.employeeId);
+    if (filters?.department) params.append('department', filters.department);
+    if (filters?.requestType) params.append('requestType', filters.requestType);
+    if (filters?.page) params.append('page', String(filters.page));
+    if (filters?.limit) params.append('limit', String(filters.limit));
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return apiRequest<any>(`/loans${query}`, { method: 'GET' });
+  },
+
+  // Get my loans
+  getMyLoans: async (filters?: { status?: string; requestType?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.status) params.append('status', filters.status);
+    if (filters?.requestType) params.append('requestType', filters.requestType);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return apiRequest<any>(`/loans/my${query}`, { method: 'GET' });
+  },
+
+  // Get single loan
+  getLoan: async (id: string) => {
+    return apiRequest<any>(`/loans/${id}`, { method: 'GET' });
+  },
+
+  // Apply for loan/advance
+  applyLoan: async (data: any) => {
+    return apiRequest<any>('/loans', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Get pending approvals
+  getPendingLoanApprovals: async () => {
+    return apiRequest<any>('/loans/pending-approvals', { method: 'GET' });
+  },
+
+  // Process loan action (approve/reject/forward)
+  processLoanAction: async (id: string, action: string, comments?: string) => {
+    return apiRequest<any>(`/loans/${id}/action`, {
+      method: 'PUT',
+      body: JSON.stringify({ action, comments }),
+    });
+  },
+
+  // Cancel loan
+  cancelLoan: async (id: string, reason?: string) => {
+    return apiRequest<any>(`/loans/${id}/cancel`, {
+      method: 'PUT',
+      body: JSON.stringify({ reason }),
+    });
+  },
+
+  // Disburse loan
+  disburseLoan: async (id: string, data: { disbursementMethod?: string; transactionReference?: string; remarks?: string }) => {
+    return apiRequest<any>(`/loans/${id}/disburse`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Record EMI payment
+  payEMI: async (id: string, data: { amount: number; paymentDate?: string; remarks?: string; payrollCycle?: string }) => {
+    return apiRequest<any>(`/loans/${id}/pay-emi`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Record advance deduction
+  payAdvance: async (id: string, data: { amount: number; paymentDate?: string; remarks?: string; payrollCycle?: string }) => {
+    return apiRequest<any>(`/loans/${id}/pay-advance`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Get transaction history
+  getLoanTransactions: async (id: string) => {
+    return apiRequest<any>(`/loans/${id}/transactions`, { method: 'GET' });
   },
 
   // Add leave/OD type

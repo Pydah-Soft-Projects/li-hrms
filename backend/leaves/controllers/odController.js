@@ -271,22 +271,102 @@ exports.applyOD = async (req, res) => {
     // Use empNo as primary identifier (from frontend)
     if (empNo) {
       // Check if user has permission to apply for others
-      if (!['hod', 'hr', 'sub_admin', 'super_admin'].includes(req.user.role)) {
+      // Allow hod, hr, sub_admin, super_admin (backward compatibility)
+      const hasRolePermission = ['hod', 'hr', 'sub_admin', 'super_admin'].includes(req.user.role);
+      
+      console.log(`[Apply OD] User ${req.user._id} (${req.user.role}) applying for employee ${empNo}`);
+      console.log(`[Apply OD] Has role permission: ${hasRolePermission}`);
+      
+      // Check workspace permissions if user has active workspace
+      let hasWorkspacePermission = false;
+      if (req.user.activeWorkspaceId) {
+        try {
+          const odSettings = await LeaveSettings.findOne({ type: 'od', isActive: true });
+          if (odSettings?.settings?.workspacePermissions) {
+            const workspaceIdStr = String(req.user.activeWorkspaceId);
+            const permissions = odSettings.settings.workspacePermissions[workspaceIdStr];
+            
+            console.log(`[Apply OD] Checking workspace ${workspaceIdStr} permissions:`, permissions);
+            
+            if (permissions) {
+              // Handle both old format (boolean) and new format (object)
+              if (typeof permissions === 'boolean') {
+                hasWorkspacePermission = permissions; // Old format: boolean means canApplyForOthers
+              } else {
+                hasWorkspacePermission = permissions.canApplyForOthers || false; // New format
+              }
+            }
+          } else {
+            console.log(`[Apply OD] No workspace permissions found in settings`);
+          }
+        } catch (error) {
+          console.error('[Apply OD] Error checking workspace permissions:', error);
+        }
+      } else {
+        console.log(`[Apply OD] User has no active workspace`);
+      }
+      
+      console.log(`[Apply OD] Has workspace permission: ${hasWorkspacePermission}`);
+      
+      // User must have either role permission OR workspace permission
+      if (!hasRolePermission && !hasWorkspacePermission) {
+        console.log(`[Apply OD] ❌ Authorization denied - no role or workspace permission`);
         return res.status(403).json({
           success: false,
           error: 'Not authorized to apply OD for others',
         });
       }
+      
+      console.log(`[Apply OD] ✅ Authorization granted`);
+      
       // Find employee by emp_no (checks MongoDB first, then MSSQL based on settings)
       employee = await findEmployeeByEmpNo(empNo);
     } else if (employeeId) {
       // Legacy: Check if user has permission to apply for others
-      if (!['hod', 'hr', 'sub_admin', 'super_admin'].includes(req.user.role)) {
+      // Allow hod, hr, sub_admin, super_admin (backward compatibility)
+      const hasRolePermission = ['hod', 'hr', 'sub_admin', 'super_admin'].includes(req.user.role);
+      
+      console.log(`[Apply OD] User ${req.user._id} (${req.user.role}) applying for employee ${employeeId} (legacy)`);
+      console.log(`[Apply OD] Has role permission: ${hasRolePermission}`);
+      
+      // Check workspace permissions if user has active workspace
+      let hasWorkspacePermission = false;
+      if (req.user.activeWorkspaceId) {
+        try {
+          const odSettings = await LeaveSettings.findOne({ type: 'od', isActive: true });
+          if (odSettings?.settings?.workspacePermissions) {
+            const workspaceIdStr = String(req.user.activeWorkspaceId);
+            const permissions = odSettings.settings.workspacePermissions[workspaceIdStr];
+            
+            console.log(`[Apply OD] Checking workspace ${workspaceIdStr} permissions:`, permissions);
+            
+            if (permissions) {
+              // Handle both old format (boolean) and new format (object)
+              if (typeof permissions === 'boolean') {
+                hasWorkspacePermission = permissions; // Old format: boolean means canApplyForOthers
+              } else {
+                hasWorkspacePermission = permissions.canApplyForOthers || false; // New format
+              }
+            }
+          }
+        } catch (error) {
+          console.error('[Apply OD] Error checking workspace permissions:', error);
+        }
+      }
+      
+      console.log(`[Apply OD] Has workspace permission: ${hasWorkspacePermission}`);
+      
+      // User must have either role permission OR workspace permission
+      if (!hasRolePermission && !hasWorkspacePermission) {
+        console.log(`[Apply OD] ❌ Authorization denied - no role or workspace permission`);
         return res.status(403).json({
           success: false,
           error: 'Not authorized to apply OD for others',
         });
       }
+      
+      console.log(`[Apply OD] ✅ Authorization granted`);
+      
       // Find employee by ID or emp_no
       employee = await findEmployeeByIdOrEmpNo(employeeId);
     } else {

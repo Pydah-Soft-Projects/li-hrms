@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 
-type TabType = 'shift' | 'employee' | 'leaves' | 'attendance' | 'payroll' | 'general';
+type TabType = 'shift' | 'employee' | 'leaves' | 'loan' | 'salary_advance' | 'attendance' | 'payroll' | 'general';
 
 interface ShiftDuration {
   _id: string;
@@ -63,6 +63,19 @@ interface LeaveSettingsData {
     maxBackdatedDays: number;
     allowFutureDated: boolean;
     maxAdvanceDays: number;
+    workspacePermissions?: Record<string, {
+      leave?: {
+        canApplyForSelf: boolean;
+        canApplyForOthers: boolean;
+      };
+      od?: {
+        canApplyForSelf: boolean;
+        canApplyForOthers: boolean;
+      };
+      // Legacy support: if leave/od not specified, use these
+      canApplyForSelf?: boolean;
+      canApplyForOthers?: boolean;
+    }>; // workspaceId -> { leave: {...}, od: {...} }
   };
 }
 
@@ -109,7 +122,24 @@ export default function SettingsPage() {
   const [leaveSettings, setLeaveSettings] = useState<LeaveSettingsData | null>(null);
   const [odSettings, setODSettings] = useState<LeaveSettingsData | null>(null);
   const [leaveSettingsLoading, setLeaveSettingsLoading] = useState(false);
-  const [leaveSubTab, setLeaveSubTab] = useState<'types' | 'statuses' | 'odTypes' | 'odStatuses' | 'workflow' | 'odWorkflow' | 'general'>('types');
+  const [leaveSubTab, setLeaveSubTab] = useState<'types' | 'statuses' | 'odTypes' | 'odStatuses' | 'workflow' | 'odWorkflow' | 'workspacePermissions' | 'general'>('types');
+  
+  // Workspace permissions state
+  const [workspaces, setWorkspaces] = useState<any[]>([]);
+  const [workspacesLoading, setWorkspacesLoading] = useState(false);
+  const [workspacePermissions, setWorkspacePermissions] = useState<Record<string, {
+    leave?: {
+      canApplyForSelf: boolean;
+      canApplyForOthers: boolean;
+    };
+    od?: {
+      canApplyForSelf: boolean;
+      canApplyForOthers: boolean;
+    };
+    // Legacy support
+    canApplyForSelf?: boolean;
+    canApplyForOthers?: boolean;
+  }>>({});
   
   // New leave type form
   const [newLeaveType, setNewLeaveType] = useState({ code: '', name: '', description: '', maxDaysPerYear: 12 });
@@ -120,6 +150,29 @@ export default function SettingsPage() {
   const [editingType, setEditingType] = useState<LeaveType | null>(null);
   const [editingStatus, setEditingStatus] = useState<LeaveStatus | null>(null);
 
+  // Loan settings state
+  const [loanSettings, setLoanSettings] = useState<any>(null);
+  const [loanSettingsLoading, setLoanSettingsLoading] = useState(false);
+  const [loanSubTab, setLoanSubTab] = useState<'general' | 'workflow' | 'workspacePermissions'>('general');
+  const [loanWorkspacePermissions, setLoanWorkspacePermissions] = useState<Record<string, {
+    canApplyForSelf: boolean;
+    canApplyForOthers: boolean;
+  }>>({});
+  const [workflowUsers, setWorkflowUsers] = useState<any[]>([]);
+  const [workflowUsersByRole, setWorkflowUsersByRole] = useState<Record<string, any[]>>({});
+  
+  // Loan general settings form state
+  const [loanGeneralSettings, setLoanGeneralSettings] = useState({
+    minAmount: 1000,
+    maxAmount: null as number | null,
+    minDuration: 1,
+    maxDuration: 60,
+    interestRate: 0,
+    isInterestApplicable: false,
+    maxActivePerEmployee: 1,
+    minServicePeriod: 0,
+  });
+
   useEffect(() => {
     if (activeTab === 'shift') {
       loadShiftDurations();
@@ -127,8 +180,17 @@ export default function SettingsPage() {
       loadEmployeeSettings();
     } else if (activeTab === 'leaves') {
       loadLeaveSettings();
+    } else if (activeTab === 'loan' || activeTab === 'salary_advance') {
+      loadLoanSettings(activeTab);
     }
   }, [activeTab]);
+  
+  // Load workspaces when workspace permissions tab is selected
+  useEffect(() => {
+    if (activeTab === 'leaves' && leaveSubTab === 'workspacePermissions') {
+      loadWorkspaces();
+    }
+  }, [leaveSubTab]);
 
   const loadShiftDurations = async () => {
     try {
@@ -174,6 +236,7 @@ export default function SettingsPage() {
       
       // Load leave settings
       const leaveRes = await api.getLeaveSettings('leave');
+      console.log('[Frontend] Loaded leave settings:', leaveRes);
       if (leaveRes.success && leaveRes.data) {
         setLeaveSettings(leaveRes.data);
       } else {
@@ -182,16 +245,177 @@ export default function SettingsPage() {
 
       // Load OD settings
       const odRes = await api.getLeaveSettings('od');
+      console.log('[Frontend] Loaded OD settings:', odRes);
       if (odRes.success && odRes.data) {
         setODSettings(odRes.data);
       } else {
         setODSettings(null);
+      }
+      
+      // Merge workspace permissions from both Leave and OD settings
+      const leavePerms = leaveRes.success && leaveRes.data?.settings?.workspacePermissions ? leaveRes.data.settings.workspacePermissions : {};
+      const odPerms = odRes.success && odRes.data?.settings?.workspacePermissions ? odRes.data.settings.workspacePermissions : {};
+      
+      console.log('[Frontend] Leave workspace permissions:', leavePerms);
+      console.log('[Frontend] OD workspace permissions:', odPerms);
+      
+      // Get all unique workspace IDs from both
+      const allWorkspaceIds = new Set([
+        ...Object.keys(leavePerms),
+        ...Object.keys(odPerms),
+      ]);
+      
+      const mergedPerms: Record<string, {
+        leave?: { canApplyForSelf: boolean; canApplyForOthers: boolean };
+        od?: { canApplyForSelf: boolean; canApplyForOthers: boolean };
+        canApplyForSelf?: boolean;
+        canApplyForOthers?: boolean;
+      }> = {};
+      
+      allWorkspaceIds.forEach(workspaceId => {
+        const leavePerm = leavePerms[workspaceId];
+        const odPerm = odPerms[workspaceId];
+        
+        mergedPerms[workspaceId] = {};
+        
+        // Process Leave permissions
+        if (leavePerm) {
+          if (typeof leavePerm === 'boolean') {
+            // Old format: apply to both leave and od
+            mergedPerms[workspaceId].leave = {
+              canApplyForSelf: false,
+              canApplyForOthers: leavePerm,
+            };
+            mergedPerms[workspaceId].od = {
+              canApplyForSelf: false,
+              canApplyForOthers: leavePerm,
+            };
+          } else if (leavePerm.leave) {
+            // New format with separate leave/od
+            mergedPerms[workspaceId].leave = leavePerm.leave;
+          } else {
+            // Legacy object format
+            mergedPerms[workspaceId].leave = {
+              canApplyForSelf: leavePerm.canApplyForSelf || false,
+              canApplyForOthers: leavePerm.canApplyForOthers || false,
+            };
+          }
+        }
+        
+        // Process OD permissions
+        if (odPerm) {
+          if (typeof odPerm === 'boolean') {
+            // Old format: apply to od
+            mergedPerms[workspaceId].od = {
+              canApplyForSelf: false,
+              canApplyForOthers: odPerm,
+            };
+          } else if (odPerm.od) {
+            // New format with separate leave/od
+            mergedPerms[workspaceId].od = odPerm.od;
+          } else {
+            // Legacy object format
+            mergedPerms[workspaceId].od = {
+              canApplyForSelf: odPerm.canApplyForSelf || false,
+              canApplyForOthers: odPerm.canApplyForOthers || false,
+            };
+          }
+        } else if (leavePerm && typeof leavePerm !== 'boolean' && !leavePerm.leave) {
+          // If no OD permissions but leave has legacy format, use leave as fallback
+          mergedPerms[workspaceId].od = {
+            canApplyForSelf: leavePerm.canApplyForSelf || false,
+            canApplyForOthers: leavePerm.canApplyForOthers || false,
+          };
+        }
+      });
+      
+      console.log('[Frontend] Merged workspace permissions:', mergedPerms);
+      setWorkspacePermissions(mergedPerms);
+      
+      // Load workspaces if on workspace permissions tab
+      if (leaveSubTab === 'workspacePermissions') {
+        await loadWorkspaces();
       }
     } catch (err) {
       console.error('Error loading leave settings:', err);
       setMessage({ type: 'error', text: 'Failed to load leave settings. Please initialize settings first.' });
     } finally {
       setLeaveSettingsLoading(false);
+    }
+  };
+
+  const loadWorkspaces = async () => {
+    try {
+      setWorkspacesLoading(true);
+      const response = await api.getWorkspaces();
+      if (response.success && response.data) {
+        setWorkspaces(response.data);
+        
+        // Workspace permissions are already loaded in loadLeaveSettings
+        // No need to reload here
+      }
+    } catch (err) {
+      console.error('Error loading workspaces:', err);
+      setMessage({ type: 'error', text: 'Failed to load workspaces' });
+    } finally {
+      setWorkspacesLoading(false);
+    }
+  };
+
+  const loadLoanSettings = async (type: 'loan' | 'salary_advance') => {
+    try {
+      setLoanSettingsLoading(true);
+      const response = await api.getLoanSettings(type);
+      if (response.success && response.data) {
+        setLoanSettings(response.data);
+        
+        // Initialize form state with loaded settings
+        const settings = response.data?.settings || {};
+        setLoanGeneralSettings({
+          minAmount: settings.minAmount || 1000,
+          maxAmount: settings.maxAmount || null,
+          minDuration: settings.minDuration || 1,
+          maxDuration: settings.maxDuration || 60,
+          interestRate: settings.interestRate || 0,
+          isInterestApplicable: settings.isInterestApplicable || false,
+          maxActivePerEmployee: settings.maxActivePerEmployee || 1,
+          minServicePeriod: settings.minServicePeriod || 0,
+        });
+        
+        // Load workspace permissions
+        const perms = settings.workspacePermissions || {};
+        setLoanWorkspacePermissions(perms);
+        
+        // Load workspaces if on workspace permissions tab
+        if (loanSubTab === 'workspacePermissions') {
+          await loadWorkspaces();
+        }
+        
+        // Load users for workflow if on workflow tab
+        if (loanSubTab === 'workflow') {
+          await loadWorkflowUsers();
+        }
+      } else {
+        setLoanSettings(null);
+      }
+    } catch (err) {
+      console.error('Error loading loan settings:', err);
+      setMessage({ type: 'error', text: 'Failed to load loan settings' });
+    } finally {
+      setLoanSettingsLoading(false);
+    }
+  };
+
+  const loadWorkflowUsers = async () => {
+    try {
+      const currentType = activeTab === 'loan' ? 'loan' : 'salary_advance';
+      const response = await api.getUsersForLoanWorkflow(currentType);
+      if (response.success && response.data) {
+        setWorkflowUsers(response.data.users || []);
+        setWorkflowUsersByRole(response.data.usersByRole || {});
+      }
+    } catch (err) {
+      console.error('Error loading workflow users:', err);
     }
   };
 
@@ -207,6 +431,132 @@ export default function SettingsPage() {
       }
     } catch (err) {
       setMessage({ type: 'error', text: 'Failed to initialize settings' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleWorkspacePermissionToggle = (workspaceId: string, module: 'leave' | 'od', permissionType: 'self' | 'others', enabled: boolean) => {
+    setWorkspacePermissions(prev => {
+      const current = prev[workspaceId] || {};
+      return {
+        ...prev,
+        [workspaceId]: {
+          ...current,
+          [module]: {
+            ...(current[module] || { canApplyForSelf: false, canApplyForOthers: false }),
+            [permissionType === 'self' ? 'canApplyForSelf' : 'canApplyForOthers']: enabled,
+          },
+        },
+      };
+    });
+  };
+
+  const handleSaveWorkspacePermissions = async () => {
+    try {
+      setSaving(true);
+      if (!leaveSettings) {
+        setMessage({ type: 'error', text: 'Please initialize leave settings first' });
+        return;
+      }
+
+      // Validate workspacePermissions is not empty
+      if (!workspacePermissions || Object.keys(workspacePermissions).length === 0) {
+        setMessage({ type: 'error', text: 'No workspace permissions to save' });
+        setSaving(false);
+        return;
+      }
+
+      // Save to both Leave and OD settings
+      // Prepare permissions for Leave settings
+      const leavePermissionsToSave: Record<string, any> = {};
+      // Prepare permissions for OD settings
+      const odPermissionsToSave: Record<string, any> = {};
+      
+      Object.keys(workspacePermissions).forEach(workspaceId => {
+        const perm = workspacePermissions[workspaceId];
+        // Save leave permissions
+        if (perm.leave) {
+          leavePermissionsToSave[workspaceId] = {
+            leave: perm.leave,
+          };
+        } else if (perm.canApplyForSelf !== undefined || perm.canApplyForOthers !== undefined) {
+          // Legacy format - apply to both
+          leavePermissionsToSave[workspaceId] = {
+            leave: {
+              canApplyForSelf: perm.canApplyForSelf || false,
+              canApplyForOthers: perm.canApplyForOthers || false,
+            },
+          };
+        }
+        
+        // Save od permissions
+        if (perm.od) {
+          odPermissionsToSave[workspaceId] = {
+            od: perm.od,
+          };
+        } else if (perm.canApplyForSelf !== undefined || perm.canApplyForOthers !== undefined) {
+          // Legacy format - apply to both
+          odPermissionsToSave[workspaceId] = {
+            od: {
+              canApplyForSelf: perm.canApplyForSelf || false,
+              canApplyForOthers: perm.canApplyForOthers || false,
+            },
+          };
+        }
+      });
+
+      // Save to Leave settings
+      const leaveSettingsToSave = {
+        ...(leaveSettings.settings || {}),
+        workspacePermissions: leavePermissionsToSave,
+      };
+
+      const leavePayload = {
+        types: leaveSettings.types || [],
+        statuses: leaveSettings.statuses || [],
+        workflow: leaveSettings.workflow || { isEnabled: false, steps: [] },
+        settings: leaveSettingsToSave,
+      };
+
+      // Save to OD settings (need to load odSettings first)
+      let odSettingsToSave = {};
+      if (odSettings) {
+        odSettingsToSave = {
+          ...(odSettings.settings || {}),
+          workspacePermissions: odPermissionsToSave,
+        };
+      }
+
+      console.log('[Frontend] Saving workspace permissions:', {
+        workspacePermissions,
+        leavePermissionsToSave,
+        odPermissionsToSave,
+      });
+
+      // Save both Leave and OD settings
+      const [leaveResponse, odResponse] = await Promise.all([
+        api.updateLeaveSettings('leave', leavePayload),
+        odSettings ? api.updateLeaveSettings('od', {
+          ...odSettings,
+          settings: odSettingsToSave,
+        }) : Promise.resolve({ success: true }),
+      ]);
+
+      console.log('[Frontend] Save responses - Leave:', leaveResponse, 'OD:', odResponse);
+      
+      if (leaveResponse.success && odResponse.success) {
+        // Reload settings to get the updated data from backend (ensures sync)
+        await loadLeaveSettings();
+        setMessage({ type: 'success', text: 'Workspace permissions saved successfully' });
+      } else {
+        const errorMsg = (leaveResponse as any).error || (odResponse as any).error || (leaveResponse as any).message || (odResponse as any).message || 'Failed to save permissions';
+        console.error('[Frontend] Save failed:', errorMsg);
+        setMessage({ type: 'error', text: errorMsg });
+      }
+    } catch (err) {
+      console.error('[Frontend] Error saving workspace permissions:', err);
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to save workspace permissions' });
     } finally {
       setSaving(false);
     }
@@ -559,6 +909,8 @@ export default function SettingsPage() {
     { id: 'shift', label: 'Shift' },
     { id: 'employee', label: 'Employee' },
     { id: 'leaves', label: 'Leaves' },
+    { id: 'loan', label: 'Loan' },
+    { id: 'salary_advance', label: 'Salary Advance' },
     { id: 'attendance', label: 'Attendance' },
     { id: 'payroll', label: 'Payroll' },
     { id: 'general', label: 'General' },
@@ -571,6 +923,7 @@ export default function SettingsPage() {
     { id: 'odStatuses', label: 'OD Statuses' },
     { id: 'workflow', label: 'Leave Workflow' },
     { id: 'odWorkflow', label: 'OD Workflow' },
+    { id: 'workspacePermissions', label: 'Workspace Permissions' },
     { id: 'general', label: 'General' },
   ];
 
@@ -1443,6 +1796,206 @@ export default function SettingsPage() {
                   </div>
                 )}
 
+                {/* Workspace Permissions */}
+                {leaveSubTab === 'workspacePermissions' && (
+                  <div className="space-y-6">
+                    <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-indigo-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-indigo-900/10">
+                      <h3 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">Workspace Permissions</h3>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        Configure leave/OD application permissions for each workspace. 
+                        <strong>Apply for Self:</strong> Users can apply leave/OD for themselves. 
+                        <strong>Apply for Others:</strong> Users can apply leave/OD for employees in their department(s). 
+                        Employee workspace users can only apply for themselves (self-only).
+                      </p>
+                    </div>
+
+                    {workspacesLoading ? (
+                      <div className="flex items-center justify-center py-12">
+                        <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    ) : workspaces.length === 0 ? (
+                      <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center dark:border-slate-700 dark:bg-slate-800">
+                        <p className="text-slate-500 dark:text-slate-400">No workspaces found. Create workspaces first.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {workspaces.map((workspace) => {
+                          const isEmployeeWorkspace = workspace.type === 'employee';
+                          const permissions = workspacePermissions[workspace._id] || {};
+                          
+                          // Get Leave permissions
+                          const leavePerms = permissions.leave || { canApplyForSelf: false, canApplyForOthers: false };
+                          // Fallback to legacy format if leave not specified
+                          const leaveCanApplyForSelf = leavePerms.canApplyForSelf || permissions.canApplyForSelf || false;
+                          const leaveCanApplyForOthers = leavePerms.canApplyForOthers || permissions.canApplyForOthers || false;
+                          
+                          // Get OD permissions
+                          const odPerms = permissions.od || { canApplyForSelf: false, canApplyForOthers: false };
+                          // Fallback to legacy format if od not specified
+                          const odCanApplyForSelf = odPerms.canApplyForSelf || permissions.canApplyForSelf || false;
+                          const odCanApplyForOthers = odPerms.canApplyForOthers || permissions.canApplyForOthers || false;
+                          
+                          return (
+                            <div
+                              key={workspace._id}
+                              className={`rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800 ${
+                                isEmployeeWorkspace ? 'opacity-60' : ''
+                              }`}
+                            >
+                              <div className="mb-4">
+                                <div className="flex items-center gap-3 mb-2">
+                                  <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                                    {workspace.name}
+                                  </h4>
+                                  <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+                                    {workspace.type}
+                                  </span>
+                                  {isEmployeeWorkspace && (
+                                    <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
+                                      Self-only
+                                    </span>
+                                  )}
+                                </div>
+                                {workspace.description && (
+                                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                                    {workspace.description}
+                                  </p>
+                                )}
+                              </div>
+
+                              {/* Leave Permissions Section */}
+                              <div className="mb-4">
+                                <h5 className="text-xs font-semibold text-blue-600 dark:text-blue-400 mb-3 uppercase tracking-wide flex items-center gap-2">
+                                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                  </svg>
+                                  Leave Permissions
+                                </h5>
+                                <div className="space-y-3">
+                                  {/* Leave - Can Apply For Self */}
+                                  <div className="flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50/50 p-3 dark:border-blue-800 dark:bg-blue-900/20">
+                                    <div className="flex-1">
+                                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                                        Apply for Self
+                                      </p>
+                                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                                        Allow users to apply leave for themselves
+                                      </p>
+                                    </div>
+                                    <label className="relative ml-4 inline-flex cursor-pointer items-center">
+                                      <input
+                                        type="checkbox"
+                                        checked={leaveCanApplyForSelf && !isEmployeeWorkspace}
+                                        disabled={isEmployeeWorkspace}
+                                        onChange={(e) => handleWorkspacePermissionToggle(workspace._id, 'leave', 'self', e.target.checked)}
+                                        className="peer sr-only"
+                                      />
+                                      <div className={`peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-blue-500 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-blue-800 ${
+                                        isEmployeeWorkspace ? 'opacity-50 cursor-not-allowed' : ''
+                                      }`}></div>
+                                    </label>
+                                  </div>
+
+                                  {/* Leave - Can Apply For Others */}
+                                  <div className="flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50/50 p-3 dark:border-blue-800 dark:bg-blue-900/20">
+                                    <div className="flex-1">
+                                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                                        Apply for Others
+                                      </p>
+                                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                                        Allow users to apply leave for employees in their department(s)
+                                      </p>
+                                    </div>
+                                    <label className="relative ml-4 inline-flex cursor-pointer items-center">
+                                      <input
+                                        type="checkbox"
+                                        checked={leaveCanApplyForOthers && !isEmployeeWorkspace}
+                                        disabled={isEmployeeWorkspace}
+                                        onChange={(e) => handleWorkspacePermissionToggle(workspace._id, 'leave', 'others', e.target.checked)}
+                                        className="peer sr-only"
+                                      />
+                                      <div className={`peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-blue-500 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-blue-800 ${
+                                        isEmployeeWorkspace ? 'opacity-50 cursor-not-allowed' : ''
+                                      }`}></div>
+                                    </label>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* OD Permissions Section */}
+                              <div>
+                                <h5 className="text-xs font-semibold text-purple-600 dark:text-purple-400 mb-3 uppercase tracking-wide flex items-center gap-2">
+                                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                  </svg>
+                                  On Duty (OD) Permissions
+                                </h5>
+                                <div className="space-y-3">
+                                  {/* OD - Can Apply For Self */}
+                                  <div className="flex items-center justify-between rounded-lg border border-purple-200 bg-purple-50/50 p-3 dark:border-purple-800 dark:bg-purple-900/20">
+                                    <div className="flex-1">
+                                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                                        Apply for Self
+                                      </p>
+                                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                                        Allow users to apply OD for themselves
+                                      </p>
+                                    </div>
+                                    <label className="relative ml-4 inline-flex cursor-pointer items-center">
+                                      <input
+                                        type="checkbox"
+                                        checked={odCanApplyForSelf && !isEmployeeWorkspace}
+                                        disabled={isEmployeeWorkspace}
+                                        onChange={(e) => handleWorkspacePermissionToggle(workspace._id, 'od', 'self', e.target.checked)}
+                                        className="peer sr-only"
+                                      />
+                                      <div className={`peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-purple-500 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-purple-800 ${
+                                        isEmployeeWorkspace ? 'opacity-50 cursor-not-allowed' : ''
+                                      }`}></div>
+                                    </label>
+                                  </div>
+
+                                  {/* OD - Can Apply For Others */}
+                                  <div className="flex items-center justify-between rounded-lg border border-purple-200 bg-purple-50/50 p-3 dark:border-purple-800 dark:bg-purple-900/20">
+                                    <div className="flex-1">
+                                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                                        Apply for Others
+                                      </p>
+                                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                                        Allow users to apply OD for employees in their department(s)
+                                      </p>
+                                    </div>
+                                    <label className="relative ml-4 inline-flex cursor-pointer items-center">
+                                      <input
+                                        type="checkbox"
+                                        checked={odCanApplyForOthers && !isEmployeeWorkspace}
+                                        disabled={isEmployeeWorkspace}
+                                        onChange={(e) => handleWorkspacePermissionToggle(workspace._id, 'od', 'others', e.target.checked)}
+                                        className="peer sr-only"
+                                      />
+                                      <div className={`peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-purple-500 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-purple-800 ${
+                                        isEmployeeWorkspace ? 'opacity-50 cursor-not-allowed' : ''
+                                      }`}></div>
+                                    </label>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    <button
+                      onClick={handleSaveWorkspacePermissions}
+                      disabled={saving || workspacesLoading}
+                      className="w-full rounded-2xl bg-gradient-to-r from-indigo-500 to-purple-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition-all hover:from-indigo-600 hover:to-purple-600 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {saving ? 'Saving...' : 'Save Workspace Permissions'}
+                    </button>
+                  </div>
+                )}
+
                 {/* General Leave Settings */}
                 {leaveSubTab === 'general' && (
                   <div className="space-y-6">
@@ -1529,6 +2082,321 @@ export default function SettingsPage() {
                     >
                       {saving ? 'Saving...' : 'Save General Settings'}
                     </button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {(activeTab === 'loan' || activeTab === 'salary_advance') && (
+          <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg dark:border-slate-800 dark:bg-slate-950/95 sm:p-8">
+            <h2 className="mb-2 text-xl font-semibold text-slate-900 dark:text-slate-100">
+              {activeTab === 'loan' ? 'Loan' : 'Salary Advance'} Settings
+            </h2>
+            <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">
+              Configure {activeTab === 'loan' ? 'loan' : 'salary advance'} settings, workflow, and workspace permissions.
+            </p>
+
+            {loanSettingsLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="text-slate-500">Loading settings...</div>
+              </div>
+            ) : (
+              <>
+                {/* Sub-tabs */}
+                <div className="mb-6 rounded-xl border border-slate-200 bg-slate-50/50 p-1 dark:border-slate-700 dark:bg-slate-800/50">
+                  <div className="flex space-x-1">
+                    {[
+                      { id: 'general', label: 'General Settings' },
+                      { id: 'workflow', label: 'Workflow' },
+                      { id: 'workspacePermissions', label: 'Workspace Permissions' },
+                    ].map((tab) => (
+                      <button
+                        key={tab.id}
+                        onClick={() => {
+                          setLoanSubTab(tab.id as any);
+                          if (tab.id === 'workspacePermissions') {
+                            loadWorkspaces();
+                          } else if (tab.id === 'workflow') {
+                            loadWorkflowUsers();
+                          }
+                        }}
+                        className={`flex-1 whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition-all ${
+                          loanSubTab === tab.id
+                            ? 'bg-white text-blue-600 shadow-sm dark:bg-slate-700 dark:text-blue-400'
+                            : 'text-slate-600 hover:bg-white/50 dark:text-slate-400 dark:hover:bg-slate-700/50'
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* General Settings Sub-tab */}
+                {loanSubTab === 'general' && loanSettings && (
+                  <div className="space-y-6">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-6 dark:border-slate-700 dark:bg-slate-800/50">
+                      <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Amount & Duration Limits</h3>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div>
+                          <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                            Minimum Amount
+                          </label>
+                          <input
+                            type="number"
+                            value={loanGeneralSettings.minAmount}
+                            onChange={(e) => setLoanGeneralSettings({ ...loanGeneralSettings, minAmount: Number(e.target.value) })}
+                            className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                            Maximum Amount (leave empty for unlimited)
+                          </label>
+                          <input
+                            type="number"
+                            value={loanGeneralSettings.maxAmount || ''}
+                            onChange={(e) => setLoanGeneralSettings({ ...loanGeneralSettings, maxAmount: e.target.value ? Number(e.target.value) : null })}
+                            placeholder="Unlimited"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                            Minimum Duration (months/cycles)
+                          </label>
+                          <input
+                            type="number"
+                            value={loanGeneralSettings.minDuration}
+                            onChange={(e) => setLoanGeneralSettings({ ...loanGeneralSettings, minDuration: Number(e.target.value) })}
+                            className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                            Maximum Duration (months/cycles)
+                          </label>
+                          <input
+                            type="number"
+                            value={loanGeneralSettings.maxDuration}
+                            onChange={(e) => setLoanGeneralSettings({ ...loanGeneralSettings, maxDuration: Number(e.target.value) })}
+                            className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {activeTab === 'loan' && (
+                      <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-6 dark:border-slate-700 dark:bg-slate-800/50">
+                        <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Interest Configuration</h3>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <div>
+                            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                              Interest Rate (%)
+                            </label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={loanGeneralSettings.interestRate}
+                              onChange={(e) => setLoanGeneralSettings({ ...loanGeneralSettings, interestRate: Number(e.target.value) })}
+                              className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                            />
+                          </div>
+                          <div className="flex items-center pt-6">
+                            <label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+                              <input
+                                type="checkbox"
+                                checked={loanGeneralSettings.isInterestApplicable}
+                                onChange={(e) => setLoanGeneralSettings({ ...loanGeneralSettings, isInterestApplicable: e.target.checked })}
+                                className="rounded border-slate-300"
+                              />
+                              Interest Applicable
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-6 dark:border-slate-700 dark:bg-slate-800/50">
+                      <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Employee Limits</h3>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div>
+                          <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                            Maximum Active {activeTab === 'loan' ? 'Loans' : 'Advances'} per Employee
+                          </label>
+                          <input
+                            type="number"
+                            value={loanGeneralSettings.maxActivePerEmployee}
+                            onChange={(e) => setLoanGeneralSettings({ ...loanGeneralSettings, maxActivePerEmployee: Number(e.target.value) })}
+                            className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                            Minimum Service Period (months)
+                          </label>
+                          <input
+                            type="number"
+                            value={loanGeneralSettings.minServicePeriod}
+                            onChange={(e) => setLoanGeneralSettings({ ...loanGeneralSettings, minServicePeriod: Number(e.target.value) })}
+                            className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={async () => {
+                        setSaving(true);
+                        try {
+                          const currentType = activeTab === 'loan' ? 'loan' : 'salary_advance';
+                          const response = await api.saveLoanSettings(currentType, {
+                            ...loanSettings,
+                            settings: {
+                              ...loanSettings.settings,
+                              minAmount: loanGeneralSettings.minAmount,
+                              maxAmount: loanGeneralSettings.maxAmount,
+                              minDuration: loanGeneralSettings.minDuration,
+                              maxDuration: loanGeneralSettings.maxDuration,
+                              interestRate: activeTab === 'loan' ? loanGeneralSettings.interestRate : (loanSettings.settings?.interestRate || 0),
+                              isInterestApplicable: activeTab === 'loan' ? loanGeneralSettings.isInterestApplicable : (loanSettings.settings?.isInterestApplicable || false),
+                              maxActivePerEmployee: loanGeneralSettings.maxActivePerEmployee,
+                              minServicePeriod: loanGeneralSettings.minServicePeriod,
+                              workspacePermissions: loanSettings.settings?.workspacePermissions || {},
+                            },
+                          });
+                          if (response.success) {
+                            setMessage({ type: 'success', text: 'Settings saved successfully' });
+                            loadLoanSettings(currentType);
+                          } else {
+                            setMessage({ type: 'error', text: response.error || 'Failed to save settings' });
+                          }
+                        } catch (err) {
+                          setMessage({ type: 'error', text: 'Failed to save settings' });
+                        } finally {
+                          setSaving(false);
+                        }
+                      }}
+                      disabled={saving}
+                      className="w-full rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-6 py-3 text-sm font-semibold text-white shadow-lg transition-all hover:from-blue-600 hover:to-indigo-600 disabled:opacity-50"
+                    >
+                      {saving ? 'Saving...' : 'Save Settings'}
+                    </button>
+                  </div>
+                )}
+
+                {/* Workflow Sub-tab */}
+                {loanSubTab === 'workflow' && (
+                  <div className="space-y-6">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-6 dark:border-slate-700 dark:bg-slate-800/50">
+                      <div className="mb-4 flex items-center justify-between">
+                        <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Workflow Configuration</h3>
+                        <label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+                          <input
+                            type="checkbox"
+                            defaultChecked={loanSettings?.workflow?.useDynamicWorkflow || false}
+                            className="rounded border-slate-300"
+                          />
+                          Enable Dynamic Workflow
+                        </label>
+                      </div>
+                      <p className="mb-4 text-sm text-slate-600 dark:text-slate-400">
+                        Configure the approval workflow steps. Enable dynamic workflow to assign specific users to each step.
+                      </p>
+                      {/* Workflow steps UI will go here */}
+                      <div className="text-sm text-slate-500">Workflow configuration UI coming soon...</div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Workspace Permissions Sub-tab */}
+                {loanSubTab === 'workspacePermissions' && (
+                  <div className="space-y-6">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-6 dark:border-slate-700 dark:bg-slate-800/50">
+                      <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Workspace Permissions</h3>
+                      <p className="mb-4 text-sm text-slate-600 dark:text-slate-400">
+                        Configure which workspaces can apply for {activeTab === 'loan' ? 'loans' : 'salary advances'} (for self or others).
+                      </p>
+                      {workspacesLoading ? (
+                        <div className="py-4 text-center text-sm text-slate-500">Loading workspaces...</div>
+                      ) : (
+                        <div className="space-y-4">
+                          {workspaces.map((workspace) => (
+                            <div
+                              key={workspace._id}
+                              className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800"
+                            >
+                              <div className="mb-3 font-medium text-slate-900 dark:text-slate-100">{workspace.name}</div>
+                              <div className="flex gap-4">
+                                <label className="flex items-center gap-2 text-sm">
+                                  <input
+                                    type="checkbox"
+                                    checked={loanWorkspacePermissions[workspace._id]?.canApplyForSelf || false}
+                                    onChange={(e) => {
+                                      setLoanWorkspacePermissions((prev) => ({
+                                        ...prev,
+                                        [workspace._id]: {
+                                          ...prev[workspace._id],
+                                          canApplyForSelf: e.target.checked,
+                                        },
+                                      }));
+                                    }}
+                                    className="rounded border-slate-300"
+                                  />
+                                  Apply for Self
+                                </label>
+                                <label className="flex items-center gap-2 text-sm">
+                                  <input
+                                    type="checkbox"
+                                    checked={loanWorkspacePermissions[workspace._id]?.canApplyForOthers || false}
+                                    onChange={(e) => {
+                                      setLoanWorkspacePermissions((prev) => ({
+                                        ...prev,
+                                        [workspace._id]: {
+                                          ...prev[workspace._id],
+                                          canApplyForOthers: e.target.checked,
+                                        },
+                                      }));
+                                    }}
+                                    className="rounded border-slate-300"
+                                  />
+                                  Apply for Others
+                                </label>
+                              </div>
+                            </div>
+                          ))}
+                          <button
+                            onClick={async () => {
+                              setSaving(true);
+                              try {
+                                const currentType = activeTab === 'loan' ? 'loan' : 'salary_advance';
+                                const response = await api.saveLoanSettings(currentType, {
+                                  ...loanSettings,
+                                  settings: {
+                                    ...loanSettings.settings,
+                                    workspacePermissions: loanWorkspacePermissions,
+                                  },
+                                });
+                                if (response.success) {
+                                  setMessage({ type: 'success', text: 'Workspace permissions saved successfully' });
+                                  loadLoanSettings(currentType);
+                                }
+                              } catch (err) {
+                                setMessage({ type: 'error', text: 'Failed to save workspace permissions' });
+                              } finally {
+                                setSaving(false);
+                              }
+                            }}
+                            disabled={saving}
+                            className="w-full rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-6 py-3 text-sm font-semibold text-white shadow-lg transition-all hover:from-blue-600 hover:to-indigo-600 disabled:opacity-50"
+                          >
+                            {saving ? 'Saving...' : 'Save Workspace Permissions'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </>
