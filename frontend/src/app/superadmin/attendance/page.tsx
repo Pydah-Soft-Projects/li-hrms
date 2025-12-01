@@ -16,9 +16,36 @@ interface AttendanceRecord {
   earlyOutMinutes?: number | null;
   expectedHours?: number | null;
   hasLeave?: boolean;
-  leaveInfo?: { leaveId: string; leaveType: string; isHalfDay: boolean; halfDayType?: string } | null;
+  leaveInfo?: {
+    leaveId: string;
+    leaveType: string;
+    isHalfDay: boolean;
+    halfDayType?: string;
+    purpose?: string;
+    fromDate?: string;
+    toDate?: string;
+    numberOfDays?: number;
+    dayInLeave?: number;
+    appliedAt?: string;
+    approvedBy?: { name: string; email?: string } | null;
+    approvedAt?: string;
+  } | null;
   hasOD?: boolean;
-  odInfo?: { odId: string; odType: string; isHalfDay: boolean; halfDayType?: string } | null;
+  odInfo?: {
+    odId: string;
+    odType: string;
+    isHalfDay: boolean;
+    halfDayType?: string;
+    purpose?: string;
+    placeVisited?: string;
+    fromDate?: string;
+    toDate?: string;
+    numberOfDays?: number;
+    dayInOD?: number;
+    appliedAt?: string;
+    approvedBy?: { name: string; email?: string } | null;
+    approvedAt?: string;
+  } | null;
   isConflict?: boolean;
 }
 
@@ -35,6 +62,21 @@ interface MonthlyAttendanceData {
   dailyAttendance: Record<string, AttendanceRecord | null>;
   presentDays?: number;
   payableShifts?: number;
+  summary?: {
+    _id: string;
+    employeeId: string;
+    emp_no: string;
+    month: string;
+    year: number;
+    totalLeaves: number;
+    totalODs: number;
+    totalPresentDays: number;
+    totalDaysInMonth: number;
+    totalPayableShifts: number;
+    lastCalculatedAt: string;
+    createdAt: string;
+    updatedAt: string;
+  };
 }
 
 interface AttendanceRecord {
@@ -50,10 +92,49 @@ interface AttendanceRecord {
   earlyOutMinutes?: number | null;
   expectedHours?: number | null;
   hasLeave?: boolean;
-  leaveInfo?: { leaveId: string; leaveType: string; isHalfDay: boolean; halfDayType?: string } | null;
+  leaveInfo?: {
+    leaveId: string;
+    leaveType: string;
+    isHalfDay: boolean;
+    halfDayType?: string;
+    purpose?: string;
+    fromDate?: string;
+    toDate?: string;
+    numberOfDays?: number;
+    dayInLeave?: number;
+    appliedAt?: string;
+    approvedBy?: { name: string; email?: string } | null;
+    approvedAt?: string;
+  } | null;
   hasOD?: boolean;
-  odInfo?: { odId: string; odType: string; isHalfDay: boolean; halfDayType?: string } | null;
+  odInfo?: {
+    odId: string;
+    odType: string;
+    isHalfDay: boolean;
+    halfDayType?: string;
+    purpose?: string;
+    placeVisited?: string;
+    fromDate?: string;
+    toDate?: string;
+    numberOfDays?: number;
+    dayInOD?: number;
+    appliedAt?: string;
+    approvedBy?: { name: string; email?: string } | null;
+    approvedAt?: string;
+  } | null;
   isConflict?: boolean;
+}
+
+interface Department {
+  _id: string;
+  name: string;
+  code?: string;
+}
+
+interface Designation {
+  _id: string;
+  name: string;
+  department: string;
 }
 
 export default function AttendancePage() {
@@ -63,7 +144,7 @@ export default function AttendancePage() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [attendanceDetail, setAttendanceDetail] = useState<any>(null);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
-  const [attendanceData, setAttendanceData] = useState<Record<string, AttendanceRecord>>({});
+  const [attendanceData, setAttendanceData] = useState<Record<string, Record<string, AttendanceRecord | null>>>({});
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingAttendance, setLoadingAttendance] = useState(false);
@@ -77,17 +158,78 @@ export default function AttendancePage() {
   const [selectedEmployeeForSummary, setSelectedEmployeeForSummary] = useState<Employee | null>(null);
   const [monthlySummary, setMonthlySummary] = useState<any>(null);
   const [loadingSummary, setLoadingSummary] = useState(false);
+  
+  // Filter states
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [designations, setDesignations] = useState<Designation[]>([]);
+  const [selectedDepartment, setSelectedDepartment] = useState<string>('');
+  const [selectedDesignation, setSelectedDesignation] = useState<string>('');
+  const [filteredMonthlyData, setFilteredMonthlyData] = useState<MonthlyAttendanceData[]>([]);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth() + 1;
 
   useEffect(() => {
+    loadDepartments();
+  }, []);
+
+  useEffect(() => {
+    if (selectedDepartment) {
+      loadDesignations(selectedDepartment);
+    } else {
+      setDesignations([]);
+      setSelectedDesignation('');
+    }
+  }, [selectedDepartment]);
+
+  useEffect(() => {
     if (viewMode === 'list') {
       loadMonthlyAttendance();
-    } else if (viewMode === 'calendar' && selectedEmployee) {
-      loadAttendance();
+    } else if (viewMode === 'calendar') {
+      loadAllEmployeesAttendance();
     }
-  }, [viewMode, year, month, selectedEmployee]);
+  }, [viewMode, year, month, selectedDepartment, selectedDesignation]);
+
+  useEffect(() => {
+    // Apply filters to monthly data
+    let filtered = [...monthlyData];
+    
+    if (selectedDepartment) {
+      filtered = filtered.filter(item => 
+        item.employee.department?._id === selectedDepartment
+      );
+    }
+    
+    if (selectedDesignation) {
+      filtered = filtered.filter(item => 
+        item.employee.designation?._id === selectedDesignation
+      );
+    }
+    
+    setFilteredMonthlyData(filtered);
+  }, [monthlyData, selectedDepartment, selectedDesignation]);
+
+  const loadDepartments = async () => {
+    try {
+      const response = await api.getDepartments(true);
+      if (response.success && response.data) {
+        setDepartments(response.data);
+      }
+    } catch (err) {
+      console.error('Error loading departments:', err);
+    }
+  };
+
+  const loadDesignations = async (departmentId: string) => {
+    try {
+      const response = await api.getDesignations(departmentId);
+      if (response.success && response.data) {
+        setDesignations(response.data);
+      }
+    } catch (err) {
+      console.error('Error loading designations:', err);
+    }
+  };
 
   const loadMonthlyAttendance = async () => {
     try {
@@ -104,6 +246,35 @@ export default function AttendancePage() {
       setError(err.message || 'Failed to load monthly attendance');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadAllEmployeesAttendance = async () => {
+    try {
+      setLoadingAttendance(true);
+      setError('');
+      const response = await api.getMonthlyAttendance(year, month);
+      if (response.success) {
+        // Convert monthly data to calendar format for all employees
+        const calendarData: Record<string, Record<string, AttendanceRecord | null>> = {};
+        (response.data || []).forEach((item: MonthlyAttendanceData) => {
+          // Apply filters
+          if (selectedDepartment && item.employee.department?._id !== selectedDepartment) return;
+          if (selectedDesignation && item.employee.designation?._id !== selectedDesignation) return;
+          
+          // Store dailyAttendance for this employee
+          calendarData[item.employee._id] = item.dailyAttendance;
+        });
+        setAttendanceData(calendarData);
+        setMonthlyData(response.data || []);
+      } else {
+        setError(response.message || 'Failed to load attendance');
+      }
+    } catch (err: any) {
+      console.error('Error loading attendance:', err);
+      setError(err.message || 'Failed to load attendance');
+    } finally {
+      setLoadingAttendance(false);
     }
   };
 
@@ -128,10 +299,24 @@ export default function AttendancePage() {
     setSelectedDate(date);
     setSelectedEmployee(employee);
     try {
-      const response = await api.getAttendanceDetail(employee.emp_no, date);
-      if (response.success) {
-        setAttendanceDetail(response.data);
+      // Get the daily attendance record from monthly data if available
+      const employeeData = monthlyData.find(item => item.employee._id === employee._id);
+      const dayRecord = employeeData?.dailyAttendance[date];
+      
+      // If we have the record with leave/OD info, use it directly
+      if (dayRecord) {
+        console.log('Day record from monthly data:', dayRecord);
+        console.log('Leave info:', dayRecord.leaveInfo);
+        setAttendanceDetail(dayRecord);
         setShowDetailDialog(true);
+      } else {
+        // Otherwise fetch from API
+        const response = await api.getAttendanceDetail(employee.emp_no, date);
+        if (response.success) {
+          console.log('Day record from API:', response.data);
+          setAttendanceDetail(response.data);
+          setShowDetailDialog(true);
+        }
       }
     } catch (err) {
       console.error('Error loading attendance detail:', err);
@@ -193,6 +378,15 @@ export default function AttendancePage() {
     setShowSummaryModal(true);
     setLoadingSummary(true);
     try {
+      // First try to get summary from the monthly data if available
+      const employeeData = monthlyData.find(item => item.employee._id === employee._id);
+      if (employeeData && employeeData.summary) {
+        setMonthlySummary(employeeData.summary);
+        setLoadingSummary(false);
+        return;
+      }
+      
+      // If not in monthly data, fetch from API
       const monthStr = `${year}-${String(month).padStart(2, '0')}`;
       const response = await api.getMonthlySummary(employee._id, monthStr);
       if (response.success) {
@@ -326,13 +520,46 @@ export default function AttendancePage() {
 
       <div className="relative z-10 mx-auto max-w-[1920px] px-4 py-8 sm:px-6 lg:px-8">
         {/* Header */}
-        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Attendance Management</h1>
             <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">View and manage employee attendance records</p>
           </div>
-
+          
           <div className="flex flex-wrap items-center gap-3">
+            {/* Department Filter */}
+            <select
+              value={selectedDepartment}
+              onChange={(e) => {
+                setSelectedDepartment(e.target.value);
+                setSelectedDesignation('');
+              }}
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+            >
+              <option value="">All Departments</option>
+              {departments.map((dept) => (
+                <option key={dept._id} value={dept._id}>
+                  {dept.name}
+                </option>
+              ))}
+            </select>
+
+            {/* Designation Filter */}
+            {selectedDepartment && (
+              <select
+                value={selectedDesignation}
+                onChange={(e) => setSelectedDesignation(e.target.value)}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+              >
+                <option value="">All Designations</option>
+                {designations.map((desig) => (
+                  <option key={desig._id} value={desig._id}>
+                    {desig.name}
+                  </option>
+                ))}
+              </select>
+            )}
+
             {/* View Toggle */}
             <div className="flex rounded-xl border border-slate-200 bg-white p-1 dark:border-slate-700 dark:bg-slate-900">
               <button
@@ -460,137 +687,188 @@ export default function AttendancePage() {
           </div>
         )}
 
+
         {/* List View */}
         {viewMode === 'list' && (
           <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
-            {loading ? (
-              <div className="flex items-center justify-center p-12">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
-                      <th className="sticky left-0 z-10 w-[180px] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                        Employee
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
+                    <th className="sticky left-0 z-10 w-[180px] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                      Employee
+                    </th>
+                    {daysArray.map((day) => (
+                      <th
+                        key={day}
+                        className="w-[calc((100%-180px-80px)/31)] border-r border-slate-200 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300"
+                      >
+                        {day}
                       </th>
-                      {daysArray.map((day) => (
-                        <th
-                          key={day}
-                          className="w-[calc((100%-180px-80px)/31)] border-r border-slate-200 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300"
-                        >
-                          {day}
-                        </th>
-                      ))}
-                      <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-blue-50 dark:bg-blue-900/20">
-                        Days Present
-                      </th>
-                      <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-green-50 dark:bg-green-900/20">
-                        Payable Shifts
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                    {monthlyData.map((item) => {
-                      // Use presentDays from API if available, otherwise calculate
-                      const daysPresent = item.presentDays !== undefined 
-                        ? item.presentDays 
-                        : Object.values(item.dailyAttendance).filter(
-                            (record) => record && (record.status === 'PRESENT' || record.status === 'PARTIAL')
-                          ).length;
-                      const payableShifts = item.payableShifts !== undefined ? item.payableShifts : 0;
-                      
-                      return (
-                        <tr key={item.employee._id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                          <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 text-[11px] font-medium text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white">
-                            <div>
-                              <div 
-                                className="font-semibold truncate cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                                onClick={() => handleEmployeeClick(item.employee)}
-                                title="Click to view monthly summary"
-                              >
-                                {item.employee.employee_name}
-                              </div>
-                              <div className="text-[9px] text-slate-500 dark:text-slate-400 truncate">
-                                {item.employee.emp_no}
-                                {item.employee.department && ` • ${(item.employee.department as any)?.name || ''}`}
-                              </div>
-                            </div>
+                    ))}
+                    <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-blue-50 dark:bg-blue-900/20">
+                      Days Present
+                    </th>
+                    <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-green-50 dark:bg-green-900/20">
+                      Payable Shifts
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                  {loading ? (
+                    <>
+                      {/* Skeleton Loading - only tbody cells */}
+                      {[1, 2, 3, 4, 5].map((i) => (
+                        <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                          <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+                            <div className="h-4 w-32 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                            <div className="mt-1 h-3 w-24 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
                           </td>
-                          {daysArray.map((day) => {
-                            const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                            const record = item.dailyAttendance[dateStr];
-                            const shiftName = record?.shiftId && typeof record.shiftId === 'object' ? record.shiftId.name : '-';
-                            return (
-                              <td
-                                key={day}
-                                onClick={() => record && handleDateClick(item.employee, dateStr)}
-                                className={`border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700 ${
-                                  record ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : ''
-                                } ${getStatusColor(record)} ${getCellBackgroundColor(record)}`}
-                              >
-                                {record ? (
-                                  <div className="space-y-0.5">
-                                    <div className="font-semibold text-[9px]">{record.status === 'PRESENT' ? 'P' : record.status === 'PARTIAL' ? 'PT' : 'A'}</div>
-                                    {shiftName !== '-' && (
-                                      <div className="text-[8px] opacity-75 truncate" title={shiftName}>{shiftName.substring(0, 3)}</div>
-                                    )}
-                                    {record.totalHours !== null && (
-                                      <div className="text-[8px] font-semibold">{formatHours(record.totalHours)}</div>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <span className="text-slate-400 text-[9px]">-</span>
-                                )}
-                              </td>
-                            );
-                          })}
-                          <td className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center text-[11px] font-bold text-blue-700 dark:border-slate-700 dark:bg-blue-900/20 dark:text-blue-300">
-                            {daysPresent}
+                          {daysArray.map((day) => (
+                            <td
+                              key={day}
+                              className="border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700"
+                            >
+                              <div className="h-8 w-full animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                            </td>
+                          ))}
+                          <td className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-blue-900/20">
+                            <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
                           </td>
-                          <td className="border-r-0 border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:border-slate-700 dark:bg-green-900/20 dark:text-green-300">
-                            {payableShifts.toFixed(2)}
+                          <td className="border-r-0 border-slate-200 bg-green-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-green-900/20">
+                            <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
                           </td>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                      ))}
+                    </>
+                  ) : (
+                    <>
+                      {filteredMonthlyData.length === 0 ? (
+                        <tr>
+                          <td colSpan={daysArray.length + 3} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                            No employees found matching the selected filters.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredMonthlyData.map((item) => {
+                        // Use presentDays from API if available, otherwise calculate
+                        const daysPresent = item.presentDays !== undefined 
+                          ? item.presentDays 
+                          : Object.values(item.dailyAttendance).filter(
+                              (record) => record && (record.status === 'PRESENT' || record.status === 'PARTIAL')
+                            ).length;
+                        const payableShifts = item.payableShifts !== undefined ? item.payableShifts : 0;
+                        
+                        return (
+                          <tr key={item.employee._id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                            <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 text-[11px] font-medium text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white">
+                              <div>
+                                <div 
+                                  className="font-semibold truncate cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                                  onClick={() => handleEmployeeClick(item.employee)}
+                                  title="Click to view monthly summary"
+                                >
+                                  {item.employee.employee_name}
+                                </div>
+                                <div className="text-[9px] text-slate-500 dark:text-slate-400 truncate">
+                                  {item.employee.emp_no}
+                                  {item.employee.department && ` • ${(item.employee.department as any)?.name || ''}`}
+                                </div>
+                              </div>
+                            </td>
+                            {daysArray.map((day) => {
+                              const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                              const record = item.dailyAttendance[dateStr] || null;
+                              const shiftName = record?.shiftId && typeof record.shiftId === 'object' ? record.shiftId.name : '-';
+                              
+                              // Determine display status - check for leave/OD even if no attendance record
+                              let displayStatus = 'A';
+                              if (record) {
+                                if (record.status === 'PRESENT') displayStatus = 'P';
+                                else if (record.status === 'PARTIAL') displayStatus = 'PT';
+                                else if (record.status === 'LEAVE' || record.hasLeave) displayStatus = 'L';
+                                else if (record.status === 'OD' || record.hasOD) displayStatus = 'OD';
+                                else displayStatus = 'A';
+                              }
+                              
+                              // Check if there's any data to display (attendance, leave, or OD)
+                              const hasData = record && (record.status || record.hasLeave || record.hasOD);
+                              
+                              return (
+                                <td
+                                  key={day}
+                                  onClick={() => hasData && handleDateClick(item.employee, dateStr)}
+                                  className={`border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700 ${
+                                    hasData ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : ''
+                                  } ${getStatusColor(record)} ${getCellBackgroundColor(record)}`}
+                                >
+                                  {hasData ? (
+                                    <div className="space-y-0.5">
+                                      <div className="font-semibold text-[9px]">{displayStatus}</div>
+                                      {shiftName !== '-' && record?.shiftId && (
+                                        <div className="text-[8px] opacity-75 truncate" title={shiftName}>{shiftName.substring(0, 3)}</div>
+                                      )}
+                                      {record && record.totalHours !== null && (
+                                        <div className="text-[8px] font-semibold">{formatHours(record.totalHours)}</div>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-400 text-[9px]">-</span>
+                                  )}
+                                </td>
+                              );
+                            })}
+                            <td className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center text-[11px] font-bold text-blue-700 dark:border-slate-700 dark:bg-blue-900/20 dark:text-blue-300">
+                              {daysPresent}
+                            </td>
+                            <td className="border-r-0 border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:border-slate-700 dark:bg-green-900/20 dark:text-green-300">
+                              {payableShifts.toFixed(2)}
+                            </td>
+                          </tr>
+                        );
+                      })
+                      )}
+                    </>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
         {/* Calendar View */}
         {viewMode === 'calendar' && (
-          <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm p-6 shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
-            {!selectedEmployee ? (
-              <div className="text-center py-12 text-slate-500 dark:text-slate-400">
-                Please select an employee to view calendar
+          <div className="space-y-6">
+            {loadingAttendance ? (
+              <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm p-6 shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
+                <div className="space-y-4">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="space-y-2">
+                      <div className="h-6 w-48 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                      <div className="grid grid-cols-7 gap-1">
+                        {Array.from({ length: 35 }).map((_, j) => (
+                          <div key={j} className="h-12 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             ) : (
-              <>
-                <div className="mb-6 flex items-center justify-between">
-                  <div>
-                    <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                      {selectedEmployee.employee_name}
-                    </h2>
-                    <p className="text-sm text-slate-600 dark:text-slate-400">
-                      {selectedEmployee.emp_no}
-                      {selectedEmployee.department && ` • ${(selectedEmployee.department as any)?.name || ''}`}
+              filteredMonthlyData.map((item) => (
+                <div key={item.employee._id} className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm p-3 shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
+                  <div className="mb-3">
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                      {item.employee.employee_name}
+                    </h3>
+                    <p className="text-xs text-slate-600 dark:text-slate-400">
+                      {item.employee.emp_no}
+                      {item.employee.department && ` • ${(item.employee.department as any)?.name || ''}`}
                     </p>
                   </div>
-                </div>
-
-                {loadingAttendance ? (
-                  <div className="flex items-center justify-center p-12">
-                    <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-7 gap-2">
+                  <div className="grid grid-cols-7 gap-1">
                     {dayNames.map((day) => (
-                      <div key={day} className="p-2 text-center text-xs font-semibold text-slate-600 dark:text-slate-400">
+                      <div key={day} className="p-1 text-center text-[9px] font-semibold text-slate-600 dark:text-slate-400">
                         {day}
                       </div>
                     ))}
@@ -598,42 +876,37 @@ export default function AttendancePage() {
                       if (!dayInfo) {
                         return <div key={`empty-${Math.random()}`} className="aspect-square"></div>;
                       }
-                      const record = attendanceData[dayInfo.date];
+                      const record = item.dailyAttendance[dayInfo.date] || null;
                       return (
                         <div
                           key={dayInfo.date}
-                          onClick={() => handleDateClick(selectedEmployee, dayInfo.date)}
-                          className={`aspect-square cursor-pointer rounded-lg border-2 p-2 transition-all hover:scale-105 ${
+                          onClick={() => record && handleDateClick(item.employee, dayInfo.date)}
+                          className={`aspect-square cursor-pointer rounded border p-0.5 transition-all hover:scale-105 ${
                             record ? 'cursor-pointer' : ''
                           } ${getStatusColor(record)} ${getCellBackgroundColor(record)}`}
                         >
                           <div className="flex h-full flex-col items-center justify-center text-center">
-                            <div className="text-sm font-bold">{dayInfo.day}</div>
+                            <div className="text-[10px] font-bold">{dayInfo.day}</div>
                             {record && (
                               <>
                                 {record.hasLeave && (
-                                  <div className="mt-0.5 text-[9px] font-semibold text-orange-700 dark:text-orange-300">
+                                  <div className="mt-0.5 text-[7px] font-semibold text-orange-700 dark:text-orange-300">
                                     L
                                   </div>
                                 )}
                                 {record.hasOD && (
-                                  <div className="mt-0.5 text-[9px] font-semibold text-blue-700 dark:text-blue-300">
+                                  <div className="mt-0.5 text-[7px] font-semibold text-blue-700 dark:text-blue-300">
                                     OD
                                   </div>
                                 )}
                                 {record.shiftId && typeof record.shiftId === 'object' && (
-                                  <div className="mt-1 text-[10px] font-medium opacity-75">
-                                    {record.shiftId.name}
+                                  <div className="mt-0.5 text-[7px] font-medium opacity-75 truncate w-full" title={record.shiftId.name}>
+                                    {record.shiftId.name.substring(0, 3)}
                                   </div>
                                 )}
                                 {record.totalHours !== null && (
-                                  <div className="mt-1 text-[10px] font-semibold">
+                                  <div className="mt-0.5 text-[7px] font-semibold">
                                     {formatHours(record.totalHours)}
-                                  </div>
-                                )}
-                                {record.isLateIn && record.lateInMinutes && (
-                                  <div className="mt-1 text-[9px] text-orange-600 dark:text-orange-400">
-                                    +{record.lateInMinutes}m
                                   </div>
                                 )}
                               </>
@@ -643,14 +916,17 @@ export default function AttendancePage() {
                       );
                     })}
                   </div>
-                )}
-              </>
+                </div>
+              ))
+            )}
+            {!loadingAttendance && filteredMonthlyData.length === 0 && (
+              <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm p-12 text-center shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
+                <p className="text-slate-500 dark:text-slate-400">No employees found matching the selected filters.</p>
+              </div>
             )}
           </div>
         )}
       </div>
-
-      {/* Upload Dialog */}
       {showUploadDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
@@ -784,13 +1060,223 @@ export default function AttendancePage() {
                   </div>
                 )}
               </div>
+
+              {/* Leave Information */}
+              {attendanceDetail.hasLeave && attendanceDetail.leaveInfo && (
+                <div className="mt-4 rounded-lg border border-orange-200 bg-orange-50 p-4 dark:border-orange-800 dark:bg-orange-900/20">
+                  <h4 className="mb-3 text-base font-semibold text-orange-900 dark:text-orange-200">Leave Information</h4>
+                  
+                  {/* Purpose/Reason */}
+                  {attendanceDetail.leaveInfo.purpose ? (
+                    <div className="mb-3">
+                      <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Purpose/Reason</label>
+                      <div className="mt-1 text-sm text-orange-900 dark:text-orange-100">
+                        {attendanceDetail.leaveInfo.purpose}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="grid grid-cols-2 gap-3 text-sm mb-3">
+                    <div>
+                      <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Leave Type</label>
+                      <div className="mt-1 font-semibold text-orange-900 dark:text-orange-100">
+                        {attendanceDetail.leaveInfo.leaveType || 'N/A'}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Half Day</label>
+                      <div className="mt-1 font-semibold text-orange-900 dark:text-orange-100">
+                        {attendanceDetail.leaveInfo.isHalfDay ? 'Yes' : 'No'}
+                        {attendanceDetail.leaveInfo.isHalfDay && attendanceDetail.leaveInfo.halfDayType && (
+                          <span className="ml-1 text-xs">({attendanceDetail.leaveInfo.halfDayType === 'first_half' ? 'First Half' : 'Second Half'})</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Date Range */}
+                  {attendanceDetail.leaveInfo.fromDate && attendanceDetail.leaveInfo.toDate && (
+                    <div className="mb-3">
+                      <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Date Range</label>
+                      <div className="mt-1 text-sm font-semibold text-orange-900 dark:text-orange-100">
+                        {new Date(attendanceDetail.leaveInfo.fromDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} - {new Date(attendanceDetail.leaveInfo.toDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Number of Days and Day in Leave */}
+                  <div className="grid grid-cols-2 gap-3 text-sm mb-3">
+                    <div>
+                      <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Total Days</label>
+                      <div className="mt-1 font-semibold text-orange-900 dark:text-orange-100">
+                        {attendanceDetail.leaveInfo.numberOfDays !== undefined && attendanceDetail.leaveInfo.numberOfDays !== null 
+                          ? `${attendanceDetail.leaveInfo.numberOfDays} ${attendanceDetail.leaveInfo.numberOfDays === 1 ? 'day' : 'days'}` 
+                          : 'N/A'}
+                      </div>
+                    </div>
+                    {attendanceDetail.leaveInfo.dayInLeave !== undefined && attendanceDetail.leaveInfo.dayInLeave !== null && (
+                      <div>
+                        <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Day in Leave</label>
+                        <div className="mt-1 font-semibold text-orange-900 dark:text-orange-100">
+                          {attendanceDetail.leaveInfo.dayInLeave === 1 ? '1st day' : attendanceDetail.leaveInfo.dayInLeave === 2 ? '2nd day' : attendanceDetail.leaveInfo.dayInLeave === 3 ? '3rd day' : `${attendanceDetail.leaveInfo.dayInLeave}th day`}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Applied Date */}
+                  {attendanceDetail.leaveInfo.appliedAt && (
+                    <div className="mb-3">
+                      <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Applied On</label>
+                      <div className="mt-1 text-sm text-orange-900 dark:text-orange-100">
+                        {new Date(attendanceDetail.leaveInfo.appliedAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Approved By and When */}
+                  {attendanceDetail.leaveInfo.approvedBy && (
+                    <div className="mb-3 grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Approved By</label>
+                        <div className="mt-1 text-sm font-semibold text-orange-900 dark:text-orange-100">
+                          {attendanceDetail.leaveInfo.approvedBy.name || attendanceDetail.leaveInfo.approvedBy.email || 'N/A'}
+                        </div>
+                      </div>
+                      {attendanceDetail.leaveInfo.approvedAt && (
+                        <div>
+                          <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Approved On</label>
+                          <div className="mt-1 text-sm text-orange-900 dark:text-orange-100">
+                            {new Date(attendanceDetail.leaveInfo.approvedAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {attendanceDetail.isConflict && (
+                    <div className="mt-2 rounded border border-red-300 bg-red-50 p-2 text-xs font-semibold text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
+                      ⚠️ Conflict: Leave approved but attendance logged for this date
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* OD Information */}
+              {attendanceDetail.hasOD && attendanceDetail.odInfo && (
+                <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
+                  <h4 className="mb-3 text-base font-semibold text-blue-900 dark:text-blue-200">On Duty (OD) Information</h4>
+                  
+                  {/* Purpose/Reason */}
+                  {attendanceDetail.odInfo.purpose && (
+                    <div className="mb-3">
+                      <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Purpose/Reason</label>
+                      <div className="mt-1 text-sm text-blue-900 dark:text-blue-100">
+                        {attendanceDetail.odInfo.purpose}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Place Visited */}
+                  {attendanceDetail.odInfo.placeVisited && (
+                    <div className="mb-3">
+                      <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Place Visited</label>
+                      <div className="mt-1 text-sm text-blue-900 dark:text-blue-100">
+                        {attendanceDetail.odInfo.placeVisited}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-3 text-sm mb-3">
+                    <div>
+                      <label className="text-xs font-medium text-blue-700 dark:text-blue-300">OD Type</label>
+                      <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
+                        {attendanceDetail.odInfo.odType || 'N/A'}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Half Day</label>
+                      <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
+                        {attendanceDetail.odInfo.isHalfDay ? 'Yes' : 'No'}
+                        {attendanceDetail.odInfo.isHalfDay && attendanceDetail.odInfo.halfDayType && (
+                          <span className="ml-1 text-xs">({attendanceDetail.odInfo.halfDayType === 'first_half' ? 'First Half' : 'Second Half'})</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Date Range */}
+                  {attendanceDetail.odInfo.fromDate && attendanceDetail.odInfo.toDate && (
+                    <div className="mb-3">
+                      <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Date Range</label>
+                      <div className="mt-1 text-sm font-semibold text-blue-900 dark:text-blue-100">
+                        {new Date(attendanceDetail.odInfo.fromDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} - {new Date(attendanceDetail.odInfo.toDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Number of Days and Day in OD */}
+                  <div className="grid grid-cols-2 gap-3 text-sm mb-3">
+                    <div>
+                      <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Total Days</label>
+                      <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
+                        {attendanceDetail.odInfo.numberOfDays || 'N/A'} {attendanceDetail.odInfo.numberOfDays === 1 ? 'day' : 'days'}
+                      </div>
+                    </div>
+                    {attendanceDetail.odInfo.dayInOD && (
+                      <div>
+                        <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Day in OD</label>
+                        <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
+                          {attendanceDetail.odInfo.dayInOD === 1 ? '1st day' : attendanceDetail.odInfo.dayInOD === 2 ? '2nd day' : attendanceDetail.odInfo.dayInOD === 3 ? '3rd day' : `${attendanceDetail.odInfo.dayInOD}th day`}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Applied Date */}
+                  {attendanceDetail.odInfo.appliedAt && (
+                    <div className="mb-3">
+                      <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Applied On</label>
+                      <div className="mt-1 text-sm text-blue-900 dark:text-blue-100">
+                        {new Date(attendanceDetail.odInfo.appliedAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Approved By and When */}
+                  {attendanceDetail.odInfo.approvedBy && (
+                    <div className="mb-3 grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Approved By</label>
+                        <div className="mt-1 text-sm font-semibold text-blue-900 dark:text-blue-100">
+                          {attendanceDetail.odInfo.approvedBy.name || attendanceDetail.odInfo.approvedBy.email || 'N/A'}
+                        </div>
+                      </div>
+                      {attendanceDetail.odInfo.approvedAt && (
+                        <div>
+                          <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Approved On</label>
+                          <div className="mt-1 text-sm text-blue-900 dark:text-blue-100">
+                            {new Date(attendanceDetail.odInfo.approvedAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {attendanceDetail.isConflict && (
+                    <div className="mt-2 rounded border border-red-300 bg-red-50 p-2 text-xs font-semibold text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
+                      ⚠️ Conflict: OD approved but attendance logged for this date
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
       )}
 
       {/* Monthly Summary Modal */}
-      {showSummaryModal && selectedEmployeeForSummary && (
+      {showSummaryModal && selectedEmployeeForSummary !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900 print:shadow-none">
             <div className="mb-4 flex items-center justify-between print:hidden">
@@ -821,19 +1307,19 @@ export default function AttendancePage() {
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
                       <span className="font-medium text-slate-600 dark:text-slate-400">Name:</span>
-                      <span className="ml-2 text-slate-900 dark:text-white">{selectedEmployeeForSummary.employee_name}</span>
+                      <span className="ml-2 text-slate-900 dark:text-white">{selectedEmployeeForSummary?.employee_name || '-'}</span>
                     </div>
                     <div>
                       <span className="font-medium text-slate-600 dark:text-slate-400">Employee Number:</span>
-                      <span className="ml-2 text-slate-900 dark:text-white">{selectedEmployeeForSummary.emp_no}</span>
+                      <span className="ml-2 text-slate-900 dark:text-white">{selectedEmployeeForSummary?.emp_no || '-'}</span>
                     </div>
-                    {selectedEmployeeForSummary.department && (
+                    {selectedEmployeeForSummary && selectedEmployeeForSummary.department && (
                       <div>
                         <span className="font-medium text-slate-600 dark:text-slate-400">Department:</span>
                         <span className="ml-2 text-slate-900 dark:text-white">{(selectedEmployeeForSummary.department as any)?.name || '-'}</span>
                       </div>
                     )}
-                    {selectedEmployeeForSummary.designation && (
+                    {selectedEmployeeForSummary && selectedEmployeeForSummary.designation && (
                       <div>
                         <span className="font-medium text-slate-600 dark:text-slate-400">Designation:</span>
                         <span className="ml-2 text-slate-900 dark:text-white">{(selectedEmployeeForSummary.designation as any)?.name || '-'}</span>

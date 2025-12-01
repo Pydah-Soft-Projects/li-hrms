@@ -62,20 +62,28 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber) {
       isActive: true,
     });
 
-    // Calculate total leave days in this month
+    // Calculate total leave days in this month - count each day individually
     let totalLeaveDays = 0;
     for (const leave of approvedLeaves) {
       const leaveStart = new Date(leave.fromDate);
       const leaveEnd = new Date(leave.toDate);
+      // Reset time to avoid timezone issues
+      leaveStart.setHours(0, 0, 0, 0);
+      leaveEnd.setHours(23, 59, 59, 999);
       
-      // Calculate overlap with the month
-      const overlapStart = leaveStart < startDate ? startDate : leaveStart;
-      const overlapEnd = leaveEnd > endDate ? endDate : leaveEnd;
-      
-      if (overlapStart <= overlapEnd) {
-        const diffTime = Math.abs(overlapEnd - overlapStart);
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-        totalLeaveDays += leave.isHalfDay ? 0.5 : diffDays;
+      // Count each day in the leave range that falls within the month
+      let currentDate = new Date(leaveStart);
+      while (currentDate <= leaveEnd) {
+        const currentYear = currentDate.getFullYear();
+        const currentMonth = currentDate.getMonth() + 1;
+        
+        // Check if this date is within the target month
+        if (currentYear === year && currentMonth === monthNumber) {
+          totalLeaveDays += leave.isHalfDay ? 0.5 : 1;
+        }
+        
+        // Move to next day
+        currentDate.setDate(currentDate.getDate() + 1);
       }
     }
     summary.totalLeaves = Math.round(totalLeaveDays * 10) / 10; // Round to 1 decimal
@@ -99,14 +107,23 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber) {
       const odStart = new Date(od.fromDate);
       const odEnd = new Date(od.toDate);
       
-      // Calculate overlap with the month
-      const overlapStart = odStart < startDate ? startDate : odStart;
-      const overlapEnd = odEnd > endDate ? endDate : odEnd;
+      // Reset time to avoid timezone issues
+      odStart.setHours(0, 0, 0, 0);
+      odEnd.setHours(23, 59, 59, 999);
       
-      if (overlapStart <= overlapEnd) {
-        const diffTime = Math.abs(overlapEnd - overlapStart);
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-        totalODDays += od.isHalfDay ? 0.5 : diffDays;
+      // Count each day in the OD range that falls within the month
+      let currentDate = new Date(odStart);
+      while (currentDate <= odEnd) {
+        const currentYear = currentDate.getFullYear();
+        const currentMonth = currentDate.getMonth() + 1;
+        
+        // Check if this date is within the target month
+        if (currentYear === year && currentMonth === monthNumber) {
+          totalODDays += od.isHalfDay ? 0.5 : 1;
+        }
+        
+        // Move to next day
+        currentDate.setDate(currentDate.getDate() + 1);
       }
     }
     summary.totalODs = Math.round(totalODDays * 10) / 10; // Round to 1 decimal
