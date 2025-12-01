@@ -183,16 +183,24 @@ export default function EmployeesPage() {
 
   useEffect(() => {
     if (applicationFormData.department_id) {
-      const filtered = designations.filter(d => d.department === applicationFormData.department_id);
+      const deptId = typeof applicationFormData.department_id === 'string' 
+        ? applicationFormData.department_id 
+        : applicationFormData.department_id._id;
+      const filtered = designations.filter(d => d.department === deptId);
       setFilteredApplicationDesignations(filtered);
       // Reset designation if it doesn't belong to selected department
-      if (applicationFormData.designation_id && !filtered.find(d => d._id === applicationFormData.designation_id)) {
-        setApplicationFormData(prev => ({ ...prev, designation_id: '' }));
+      if (applicationFormData.designation_id) {
+        const desigId = typeof applicationFormData.designation_id === 'string' 
+          ? applicationFormData.designation_id 
+          : applicationFormData.designation_id._id;
+        if (!filtered.find(d => d._id === desigId)) {
+          setApplicationFormData(prev => ({ ...prev, designation_id: '' }));
+        }
       }
     } else {
       setFilteredApplicationDesignations([]);
     }
-  }, [applicationFormData.department_id, designations]);
+  }, [applicationFormData.department_id, applicationFormData.designation_id, designations]);
 
   const loadEmployees = async () => {
     try {
@@ -901,7 +909,7 @@ export default function EmployeesPage() {
                     <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Department</label>
                     <select
                       name="department_id"
-                      value={applicationFormData.department_id || ''}
+                      value={typeof applicationFormData.department_id === 'string' ? applicationFormData.department_id : (applicationFormData.department_id?._id || '')}
                       onChange={handleApplicationInputChange}
                       className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     >
@@ -915,7 +923,7 @@ export default function EmployeesPage() {
                     <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Designation</label>
                     <select
                       name="designation_id"
-                      value={applicationFormData.designation_id || ''}
+                      value={typeof applicationFormData.designation_id === 'string' ? applicationFormData.designation_id : (applicationFormData.designation_id?._id || '')}
                       onChange={handleApplicationInputChange}
                       disabled={!applicationFormData.department_id}
                       className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"

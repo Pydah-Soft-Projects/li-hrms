@@ -192,8 +192,8 @@ export default function OTAndPermissionsPage() {
         
         // Check for ConfusedShift
         const confusedRes = await api.checkConfusedShift(employeeNumber, date);
-        if (confusedRes.success && confusedRes.hasConfusedShift) {
-          setConfusedShift(confusedRes.data);
+        if (confusedRes.success && (confusedRes as any).hasConfusedShift) {
+          setConfusedShift((confusedRes as any).data);
           setOTFormData(prev => ({ ...prev, employeeId, employeeNumber, date }));
         } else {
           // Get shift from attendance
@@ -278,8 +278,8 @@ export default function OTAndPermissionsPage() {
         loadData();
       } else {
         setValidationError(res.message || 'Error creating OT request');
-        if (res.validationErrors && res.validationErrors.length > 0) {
-          setValidationError(res.validationErrors.join('. '));
+        if ((res as any).validationErrors && (res as any).validationErrors.length > 0) {
+          setValidationError((res as any).validationErrors.join('. '));
         }
       }
     } catch (error: any) {
@@ -308,8 +308,8 @@ export default function OTAndPermissionsPage() {
         loadData();
       } else {
         setPermissionValidationError(res.message || 'Error creating permission request');
-        if (res.validationErrors && res.validationErrors.length > 0) {
-          setPermissionValidationError(res.validationErrors.join('. '));
+        if ((res as any).validationErrors && (res as any).validationErrors.length > 0) {
+          setPermissionValidationError((res as any).validationErrors.join('. '));
         }
       }
     } catch (error: any) {

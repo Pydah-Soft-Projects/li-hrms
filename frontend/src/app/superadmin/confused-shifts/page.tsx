@@ -27,6 +27,7 @@ interface ConfusedShift {
   status: 'pending' | 'resolved' | 'dismissed';
   assignedShiftId?: { _id: string; name: string; startTime: string; endTime: string; duration: number };
   reviewedBy?: { _id: string; name: string; email: string };
+  reviewedAt?: string;
   reviewComments?: string;
   employee?: {
     emp_no: string;
@@ -416,7 +417,12 @@ export default function ConfusedShiftsPage() {
                         {record.allAvailableShifts && record.allAvailableShifts.length > 0 ? (
                           record.allAvailableShifts.map((shift, idx) => {
                             const isPossible = record.possibleShifts.some(
-                              ps => (ps.shiftId as any)?._id?.toString() === shift._id?.toString() || ps.shiftId === shift._id
+                              ps => {
+                                const psShiftId = typeof ps.shiftId === 'string' 
+                                  ? ps.shiftId 
+                                  : (ps.shiftId as any)?._id;
+                                return psShiftId?.toString() === shift._id?.toString();
+                              }
                             );
                             return (
                               <div
@@ -444,7 +450,12 @@ export default function ConfusedShiftsPage() {
                                 </div>
                                 {isPossible && (
                                   <p className="mt-1 text-xs text-blue-600 dark:text-blue-400">
-                                    {record.possibleShifts.find(ps => (ps.shiftId as any)?._id?.toString() === shift._id?.toString() || ps.shiftId === shift._id)?.matchReason}
+                                    {record.possibleShifts.find(ps => {
+                                      const psShiftId = typeof ps.shiftId === 'string' 
+                                        ? ps.shiftId 
+                                        : (ps.shiftId as any)?._id;
+                                      return psShiftId?.toString() === shift._id?.toString();
+                                    })?.matchReason}
                                   </p>
                                 )}
                               </div>

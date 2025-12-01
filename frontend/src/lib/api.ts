@@ -523,7 +523,7 @@ export const api = {
     return apiRequest<any>(`/employee-applications/${id}`, { method: 'GET' });
   },
 
-  approveEmployeeApplication: async (id: string, data: { approvedSalary?: number; comments?: string }) => {
+  approveEmployeeApplication: async (id: string, data: { approvedSalary?: number; doj?: string; comments?: string }) => {
     return apiRequest<any>(`/employee-applications/${id}/approve`, {
       method: 'PUT',
       body: JSON.stringify(data),
