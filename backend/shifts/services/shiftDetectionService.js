@@ -53,13 +53,14 @@ const calculateTimeDifference = (punchTime, shiftStartTime, date) => {
     const prevDayDiffMs = Math.abs(punchDate.getTime() - previousDayShiftStart.getTime());
     const prevDayDiffMinutes = prevDayDiffMs / (1000 * 60);
     
-    // Use the smaller difference
-    differenceMinutes = Math.min(differenceMinutes, prevDayDiffMinutes);
+    // For overnight shifts with early morning punch, use previous day's difference
+    // This correctly handles very late arrivals (e.g., 02:50 for 20:00 shift = 6h 50m late)
+    differenceMinutes = prevDayDiffMinutes;
   }
   
-  // If difference is more than 12 hours, consider it might be wrapping around
-  // (e.g., shift at 20:00, punch at 08:00 next day = 12 hours, not 12 hours the other way)
-  if (differenceMinutes > 12 * 60) {
+  // If difference is more than 12 hours for non-overnight shifts, consider it might be wrapping around
+  // But for overnight shifts, we already handled it above
+  if (differenceMinutes > 12 * 60 && !(shiftStartHour >= 20 && punchDate.getHours() < 12)) {
     differenceMinutes = 24 * 60 - differenceMinutes;
   }
   
@@ -243,18 +244,35 @@ const isAmbiguousArrival = (inTime, candidateShifts, ambiguityThresholdMinutes =
     return false; // Single or no candidates - not ambiguous
   }
 
+  // IMPORTANT: If top candidate is preferred (start before log, ≤35 min), it's NOT ambiguous
+  // Even if distances are close, preferred shift should win
+  if (candidateShifts[0].isPreferred) {
+    return false; // Top candidate is preferred - not ambiguous
+  }
+
   // Check if top two candidates are too close in distance
   const topDistance = candidateShifts[0].differenceMinutes;
   const secondDistance = candidateShifts[1].differenceMinutes;
   
   // If the difference between distances is less than threshold, it's ambiguous
+  // BUT only if neither is clearly preferred
   if (Math.abs(secondDistance - topDistance) < ambiguityThresholdMinutes) {
+    // If top candidate has start before log and second doesn't, top wins (not ambiguous)
+    if (candidateShifts[0].isStartBeforeLog && !candidateShifts[1].isStartBeforeLog) {
+      return false; // Top candidate clearly preferred
+    }
     return true;
   }
 
   // Also check if arrival time is roughly equidistant between two shifts
   // Example: 8:40 arrival with 8:00 and 9:00 shifts (40 min late vs 20 min early)
+  // BUT: If one shift has start before log and is within 35 min, it's NOT ambiguous
   if (candidateShifts.length >= 2) {
+    // If top candidate is preferred, not ambiguous
+    if (candidateShifts[0].isPreferred) {
+      return false;
+    }
+
     const shift1Start = timeToMinutes(candidateShifts[0].startTime);
     const shift2Start = timeToMinutes(candidateShifts[1].startTime);
     const inMinutes = inTime.getHours() * 60 + inTime.getMinutes();
@@ -276,8 +294,12 @@ const isAmbiguousArrival = (inTime, candidateShifts, ambiguityThresholdMinutes =
           24 * 60 - Math.abs(inMinutes - maxStart)
         );
         
-        // If distances are similar, it's ambiguous
+        // If distances are similar AND neither is clearly preferred, it's ambiguous
         if (Math.abs(distToMin - distToMax) < ambiguityThresholdMinutes) {
+          // Check if one is clearly preferred
+          if (candidateShifts[0].isStartBeforeLog && !candidateShifts[1].isStartBeforeLog) {
+            return false; // Top candidate clearly preferred
+          }
           return true;
         }
       }
@@ -287,8 +309,12 @@ const isAmbiguousArrival = (inTime, candidateShifts, ambiguityThresholdMinutes =
         const distToMin = inMinutes - minStart;
         const distToMax = maxStart - inMinutes;
         
-        // If distances are similar, it's ambiguous
+        // If distances are similar AND neither is clearly preferred, it's ambiguous
         if (Math.abs(distToMin - distToMax) < ambiguityThresholdMinutes) {
+          // Check if one is clearly preferred
+          if (candidateShifts[0].isStartBeforeLog && !candidateShifts[1].isStartBeforeLog) {
+            return false; // Top candidate clearly preferred
+          }
           return true;
         }
       }
@@ -439,21 +465,109 @@ const findMatchingShiftsByOutTime = (outTime, shifts, toleranceMinutes = 30) => 
 
 /**
  * Calculate late-in minutes
+ * Handles overnight shifts correctly by considering date context
  * @param {Date} inTime - Actual in-time
  * @param {String} shiftStartTime - Shift start time (HH:mm)
  * @param {Number} gracePeriodMinutes - Grace period in minutes
+ * @param {String} date - Date string (YYYY-MM-DD) - the attendance date (shift date)
  * @returns {Number} - Minutes late (0 if on time or within grace)
  */
-const calculateLateIn = (inTime, shiftStartTime, gracePeriodMinutes = 15) => {
-  const inMinutes = inTime.getHours() * 60 + inTime.getMinutes();
-  const shiftStartMinutes = timeToMinutes(shiftStartTime);
-  const graceEndMinutes = shiftStartMinutes + gracePeriodMinutes;
+/**
+ * Calculate late-in minutes (handles overnight shifts correctly)
+ * @param {Date} inTime - Actual in-time
+ * @param {String} shiftStartTime - Shift start time (HH:mm)
+ * @param {Number} gracePeriodMinutes - Grace period in minutes
+ * @param {String} date - Date string (YYYY-MM-DD) - the attendance date (shift start date)
+ * @returns {Number} - Minutes late (0 if on time or within grace period)
+ */
+const calculateLateIn = (inTime, shiftStartTime, gracePeriodMinutes = 15, date = null) => {
+  if (!inTime) return 0;
   
-  if (inMinutes <= graceEndMinutes) {
+  const inTimeDate = new Date(inTime);
+  const [shiftStartHour, shiftStartMin] = shiftStartTime.split(':').map(Number);
+  const shiftStartMinutes = shiftStartHour * 60 + shiftStartMin;
+  
+  // Create shift start date based on the attendance date
+  let shiftStartDate;
+  if (date) {
+    // Use the provided date (attendance date = shift start date)
+    shiftStartDate = new Date(date + 'T00:00:00');
+    shiftStartDate.setHours(shiftStartHour, shiftStartMin, 0, 0);
+  } else {
+    // Fallback: use in-time's date
+    shiftStartDate = new Date(inTimeDate);
+    shiftStartDate.setHours(shiftStartHour, shiftStartMin, 0, 0);
+  }
+  
+  // Check if this is an overnight shift (starts at 20:00 or later)
+  const isOvernightShift = shiftStartMinutes >= 20 * 60;
+  const inTimeOnly = inTimeDate.getHours() * 60 + inTimeDate.getMinutes();
+  const isEarlyMorningInTime = inTimeOnly < 12 * 60; // Before noon
+  
+  // Calculate difference from shift start date
+  let diffMs = inTimeDate.getTime() - shiftStartDate.getTime();
+  let diffMinutes = diffMs / (1000 * 60);
+  
+  // Handle overnight shifts - in-time might be on next day
+  if (isOvernightShift && date) {
+    // For overnight shifts, if in-time is early morning (next day scenario)
+    // and difference is negative or very large, adjust calculation
+    if (isEarlyMorningInTime && diffMinutes < 0) {
+      // In-time is before shift start on same day - this is unusual for overnight shifts
+      // Check if in-time is actually for previous day's shift
+      const previousDayShiftStart = new Date(shiftStartDate);
+      previousDayShiftStart.setDate(previousDayShiftStart.getDate() - 1);
+      const prevDayDiffMs = inTimeDate.getTime() - previousDayShiftStart.getTime();
+      const prevDayDiffMinutes = prevDayDiffMs / (1000 * 60);
+      
+      // Use previous day's calculation if it makes more sense (positive and reasonable)
+      if (prevDayDiffMinutes >= 0 && prevDayDiffMinutes < 12 * 60) {
+        diffMinutes = prevDayDiffMinutes;
+      } else {
+        // In-time is before shift start - no late-in
+        diffMinutes = 0;
+      }
+    } else if (isEarlyMorningInTime && diffMinutes > 12 * 60) {
+      // Very large difference - might be calculation error, but use as is
+      // This handles cases where in-time is way after shift start
+    }
+    
+    // Apply grace period
+    if (diffMinutes <= gracePeriodMinutes) {
     return 0; // On time or within grace period
   }
   
-  return inMinutes - graceEndMinutes;
+    const lateIn = Math.round((diffMinutes - gracePeriodMinutes) * 100) / 100;
+    console.log(`[LateIn] Overnight: Start=${shiftStartTime}, InTime=${inTimeDate.toISOString()}, Date=${date}, Diff=${diffMinutes.toFixed(2)}min, LateIn=${lateIn}min`);
+    return lateIn;
+  }
+  
+  // Regular same-day shift (or no date provided)
+  // If difference is negative, in-time is before shift start - no late-in
+  if (diffMinutes < 0) {
+    // For overnight shifts without date, check previous day
+    if (isOvernightShift) {
+      const previousDayShiftStart = new Date(shiftStartDate);
+      previousDayShiftStart.setDate(previousDayShiftStart.getDate() - 1);
+      const prevDayDiffMs = inTimeDate.getTime() - previousDayShiftStart.getTime();
+      const prevDayDiffMinutes = prevDayDiffMs / (1000 * 60);
+      
+      if (prevDayDiffMinutes >= 0 && prevDayDiffMinutes < Math.abs(diffMinutes)) {
+        diffMinutes = prevDayDiffMinutes;
+      } else {
+        diffMinutes = 0; // No late-in
+      }
+    } else {
+      diffMinutes = 0; // No late-in
+    }
+  }
+  
+  // Apply grace period
+  if (diffMinutes <= gracePeriodMinutes) {
+    return 0; // On time or within grace period
+  }
+  
+  return Math.round((diffMinutes - gracePeriodMinutes) * 100) / 100; // Round to 2 decimals
 };
 
 /**
@@ -461,52 +575,120 @@ const calculateLateIn = (inTime, shiftStartTime, gracePeriodMinutes = 15) => {
  * @param {Date} outTime - Actual out-time
  * @param {String} shiftEndTime - Shift end time (HH:mm)
  * @param {String} shiftStartTime - Shift start time (HH:mm) - needed to detect overnight
- * @param {String} date - Date string (YYYY-MM-DD) - the attendance date
+ * @param {String} date - Date string (YYYY-MM-DD) - the attendance date (shift start date)
  * @returns {Number} - Minutes early (0 if on time or late), null if outTime not provided
  */
 const calculateEarlyOut = (outTime, shiftEndTime, shiftStartTime = null, date = null) => {
   if (!outTime) return null;
   
-  const outMinutes = outTime.getHours() * 60 + outTime.getMinutes();
-  const shiftEndMinutes = timeToMinutes(shiftEndTime);
+  const outTimeDate = new Date(outTime);
+  const [shiftEndHour, shiftEndMin] = shiftEndTime.split(':').map(Number);
+  const shiftEndMinutes = shiftEndHour * 60 + shiftEndMin;
   const shiftStartMinutes = shiftStartTime ? timeToMinutes(shiftStartTime) : null;
   
   // Check if this is an overnight shift (end time < start time)
   const isOvernight = shiftStartMinutes !== null && shiftEndMinutes < shiftStartMinutes;
   
-  if (isOvernight && date) {
-    // For overnight shifts, we need to consider the date
-    // If shift ends next day (e.g., 20:00-04:00), out-time on next day before 12:00 is normal
-    const [shiftEndHour] = shiftEndTime.split(':').map(Number);
-    const outDate = new Date(outTime);
-    const shiftDate = new Date(date);
+  // Create shift end date based on the attendance date
+  let shiftEndDate;
+  if (date) {
+    // Use the provided date (attendance date = shift start date)
+    const shiftDate = new Date(date + 'T00:00:00');
+    shiftEndDate = new Date(shiftDate);
     
-    // Create shift end time on the correct date
-    const shiftEndDate = new Date(shiftDate);
-    shiftEndDate.setHours(shiftEndHour, shiftEndMinutes % 60, 0, 0);
-    
-    // If shift end is next day, add one day
-    if (shiftEndMinutes < shiftStartMinutes) {
+    if (isOvernight) {
+      // For overnight shifts, end time is on the next day relative to shift start
+      // Example: Shift starts Dec 6 20:00, ends Dec 7 04:00
       shiftEndDate.setDate(shiftEndDate.getDate() + 1);
     }
+    shiftEndDate.setHours(shiftEndHour, shiftEndMin, 0, 0);
+  } else {
+    // Fallback: use out-time's date
+    shiftEndDate = new Date(outTimeDate);
+    shiftEndDate.setHours(shiftEndHour, shiftEndMin, 0, 0);
     
-    // Calculate difference in milliseconds
-    const diffMs = shiftEndDate.getTime() - outTime.getTime();
-    const diffMinutes = diffMs / (1000 * 60);
-    
-    if (diffMinutes <= 0) {
-      return 0; // On time or late out
+    // For overnight shifts without date, determine if shift end is on same day or next day
+    if (isOvernight) {
+      const outTimeOnly = outTimeDate.getHours() * 60 + outTimeDate.getMinutes();
+      // If out-time is early morning and shift end is also early morning,
+      // they might be on the same calendar day
+      if (outTimeOnly < 12 * 60 && shiftEndMinutes < 12 * 60) {
+        // Both are early morning - if out-time is before shift end, it's early out
+        // shiftEndDate is already on same day as out-time
+        if (outTimeOnly >= shiftEndMinutes) {
+          // Out-time is after shift end on same day - shift end must be next day
+          shiftEndDate.setDate(shiftEndDate.getDate() + 1);
+        }
+      } else {
+        // Shift end is early morning, out-time might be on previous day
+        // For overnight shifts, shift end is typically next day
+        shiftEndDate.setDate(shiftEndDate.getDate() + 1);
+      }
     }
-    
-    return diffMinutes; // Early out
   }
   
-  // Regular same-day shift
-  if (outMinutes >= shiftEndMinutes) {
+  // Calculate difference in milliseconds
+  const diffMs = shiftEndDate.getTime() - outTimeDate.getTime();
+  const diffMinutes = diffMs / (1000 * 60);
+  
+  if (diffMinutes <= 0) {
     return 0; // On time or late out
   }
   
-  return shiftEndMinutes - outMinutes;
+  const earlyOut = Math.round(diffMinutes * 100) / 100;
+  if (isOvernight && date) {
+    console.log(`[EarlyOut] Overnight: Start=${shiftStartTime}, End=${shiftEndTime}, OutTime=${outTimeDate.toISOString()}, ShiftEndDate=${shiftEndDate.toISOString()}, Date=${date}, Diff=${diffMinutes.toFixed(2)}min, EarlyOut=${earlyOut}min`);
+  }
+  return earlyOut;
+};
+
+/**
+ * Check for out-time on next day for night shifts
+ * @param {String} employeeNumber - Employee number
+ * @param {String} date - Current date (YYYY-MM-DD)
+ * @param {Object} shift - Shift object
+ * @returns {Date|null} - Out-time if found on next day
+ */
+const checkNextDayOutTime = async (employeeNumber, date, shift) => {
+  try {
+    // Check if shift is overnight (starts at night, ends next morning)
+    const [shiftStartHour] = shift.startTime.split(':').map(Number);
+    const [shiftEndHour] = shift.endTime.split(':').map(Number);
+    const isOvernight = shiftStartHour >= 20 || (shiftStartHour >= 0 && shiftEndHour < shiftStartHour);
+
+    if (!isOvernight) {
+      return null; // Not an overnight shift
+    }
+
+    // Calculate next day
+    const nextDate = new Date(date);
+    nextDate.setDate(nextDate.getDate() + 1);
+    const nextDateStr = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}-${String(nextDate.getDate()).padStart(2, '0')}`;
+
+    // Check next day's attendance record for early out-time
+    const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
+    const nextDayRecord = await AttendanceDaily.findOne({
+      employeeNumber: employeeNumber.toUpperCase(),
+      date: nextDateStr,
+    });
+
+    if (nextDayRecord && nextDayRecord.outTime) {
+      const outTime = new Date(nextDayRecord.outTime);
+      const outTimeHour = outTime.getHours();
+      
+      // If out-time is early morning (before 12 PM), it likely belongs to the night shift
+      if (outTimeHour < 12) {
+        // Check if this out-time hasn't been assigned to a shift yet or belongs to this night shift
+        // We'll return it so it can be used for the night shift calculation
+        return outTime;
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.error('Error checking next day out-time:', error);
+    return null;
+  }
 };
 
 /**
@@ -531,6 +713,22 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
     // Get shifts for employee
     const { shifts, source, preScheduledId } = await getShiftsForEmployee(employeeNumber, date);
 
+    // If no out-time provided, check for overnight shift and look for out-time on next day
+    if (!outTime && shifts.length > 0) {
+      // Check if any shift is a night shift and look for out-time on next day
+      for (const shift of shifts) {
+        const [shiftStartHour] = shift.startTime.split(':').map(Number);
+        if (shiftStartHour >= 20) {
+          // This is likely a night shift, check next day for out-time
+          const nextDayOutTime = await checkNextDayOutTime(employeeNumber, date, shift);
+          if (nextDayOutTime) {
+            outTime = nextDayOutTime;
+            break; // Use the first found out-time
+          }
+        }
+      }
+    }
+
     if (shifts.length === 0) {
       return {
         success: false,
@@ -542,7 +740,7 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
     // Case 1: Pre-scheduled shift - use it directly (highest priority)
     if (source === 'pre_scheduled' && shifts.length === 1) {
       const shift = shifts[0];
-      const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod || 15);
+      const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod || 15, date);
       const earlyOutMinutes = outTime ? calculateEarlyOut(outTime, shift.endTime, shift.startTime, date) : null;
 
       return {
@@ -576,21 +774,33 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
       }
 
       if (nearestShift) {
-        const lateInMinutes = calculateLateIn(inTime, nearestShift.startTime, nearestShift.gracePeriod || 15);
-        const earlyOutMinutes = outTime ? calculateEarlyOut(outTime, nearestShift.endTime, nearestShift.startTime, date) : null;
+        // If no out-time and this is a night shift, check next day
+        let actualOutTime = outTime;
+        if (!actualOutTime) {
+          const [shiftStartHour] = nearestShift.startTime.split(':').map(Number);
+          if (shiftStartHour >= 20) {
+            const nextDayOutTime = await checkNextDayOutTime(employeeNumber, date, nearestShift);
+            if (nextDayOutTime) {
+              actualOutTime = nextDayOutTime;
+            }
+          }
+      }
 
-        return {
-          success: true,
+        const lateInMinutes = calculateLateIn(inTime, nearestShift.startTime, nearestShift.gracePeriod || 15, date);
+        const earlyOutMinutes = actualOutTime ? calculateEarlyOut(actualOutTime, nearestShift.endTime, nearestShift.startTime, date) : null;
+
+      return {
+        success: true,
           assignedShift: nearestShift._id,
           shiftName: nearestShift.name,
           source: `${source}_nearest_fallback`,
-          lateInMinutes: lateInMinutes > 0 ? lateInMinutes : null,
-          earlyOutMinutes: earlyOutMinutes && earlyOutMinutes > 0 ? earlyOutMinutes : null,
-          isLateIn: lateInMinutes > 0,
-          isEarlyOut: earlyOutMinutes && earlyOutMinutes > 0,
+        lateInMinutes: lateInMinutes > 0 ? lateInMinutes : null,
+        earlyOutMinutes: earlyOutMinutes && earlyOutMinutes > 0 ? earlyOutMinutes : null,
+        isLateIn: lateInMinutes > 0,
+        isEarlyOut: earlyOutMinutes && earlyOutMinutes > 0,
           expectedHours: nearestShift.duration,
           matchMethod: 'nearest_fallback',
-        };
+      };
       }
     }
 
@@ -606,20 +816,32 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
         };
       }
 
-      const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod || 15);
+      // If no out-time and this is a night shift, check next day again
+      if (!outTime) {
+        const [shiftStartHour] = shift.startTime.split(':').map(Number);
+        if (shiftStartHour >= 20) {
+          const nextDayOutTime = await checkNextDayOutTime(employeeNumber, date, shift);
+          if (nextDayOutTime) {
+            outTime = nextDayOutTime;
+          }
+        }
+      }
+
+      const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod || 15, date);
       const earlyOutMinutes = outTime ? calculateEarlyOut(outTime, shift.endTime, shift.startTime, date) : null;
 
-      return {
-        success: true,
-        assignedShift: shift._id,
-        shiftName: shift.name,
+            return {
+              success: true,
+              assignedShift: shift._id,
+              shiftName: shift.name,
         source: source,
-        lateInMinutes: lateInMinutes > 0 ? lateInMinutes : null,
-        earlyOutMinutes: earlyOutMinutes && earlyOutMinutes > 0 ? earlyOutMinutes : null,
-        isLateIn: lateInMinutes > 0,
-        isEarlyOut: earlyOutMinutes && earlyOutMinutes > 0,
-        expectedHours: shift.duration,
+              lateInMinutes: lateInMinutes > 0 ? lateInMinutes : null,
+              earlyOutMinutes: earlyOutMinutes && earlyOutMinutes > 0 ? earlyOutMinutes : null,
+              isLateIn: lateInMinutes > 0,
+              isEarlyOut: earlyOutMinutes && earlyOutMinutes > 0,
+              expectedHours: shift.duration,
         matchMethod: 'proximity_single',
+        outTimeFoundOnNextDay: outTime && outTime !== inTime, // Flag if we found out-time on next day
       };
     }
 
@@ -627,32 +849,32 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
     if (candidateShifts.length > 1) {
       // Check if all candidates have the same start time
       const allSameStartTime = candidateShifts.every(c => c.startTime === candidateShifts[0].startTime);
-      
+          
       if (allSameStartTime) {
         // Multiple shifts with same start time
         if (!outTime) {
           // No out-time available - create ConfusedShift
-          const confusedShiftData = {
-            employeeNumber: employeeNumber.toUpperCase(),
-            date: date,
-            inTime: inTime,
-            outTime: outTime,
+            const confusedShiftData = {
+              employeeNumber: employeeNumber.toUpperCase(),
+              date: date,
+              inTime: inTime,
+              outTime: outTime,
             possibleShifts: candidateShifts.map(c => ({
               shiftId: c.shiftId,
               shiftName: c.shiftName,
               startTime: c.startTime,
               endTime: c.endTime,
               matchReason: c.matchReason,
-            })),
-            status: 'pending',
-            requiresManualSelection: true,
-          };
+              })),
+              status: 'pending',
+              requiresManualSelection: true,
+            };
 
-          await ConfusedShift.findOneAndUpdate(
-            { employeeNumber: employeeNumber.toUpperCase(), date: date },
-            confusedShiftData,
-            { upsert: true, new: true }
-          );
+            await ConfusedShift.findOneAndUpdate(
+              { employeeNumber: employeeNumber.toUpperCase(), date: date },
+              confusedShiftData,
+              { upsert: true, new: true }
+            );
 
           return {
             success: false,
@@ -668,30 +890,30 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
           if (bestMatch) {
             const shift = shifts.find(s => s._id.toString() === bestMatch.shiftId.toString());
             if (shift) {
-              const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod || 15);
+              const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod || 15, date);
               const earlyOutMinutes = calculateEarlyOut(outTime, shift.endTime, shift.startTime, date);
 
-              return {
-                success: true,
-                assignedShift: shift._id,
-                shiftName: shift.name,
+            return {
+              success: true,
+              assignedShift: shift._id,
+              shiftName: shift.name,
                 source: `${source}_outtime_disambiguated`,
-                lateInMinutes: lateInMinutes > 0 ? lateInMinutes : null,
-                earlyOutMinutes: earlyOutMinutes && earlyOutMinutes > 0 ? earlyOutMinutes : null,
-                isLateIn: lateInMinutes > 0,
-                isEarlyOut: earlyOutMinutes && earlyOutMinutes > 0,
-                expectedHours: shift.duration,
+              lateInMinutes: lateInMinutes > 0 ? lateInMinutes : null,
+              earlyOutMinutes: earlyOutMinutes && earlyOutMinutes > 0 ? earlyOutMinutes : null,
+              isLateIn: lateInMinutes > 0,
+              isEarlyOut: earlyOutMinutes && earlyOutMinutes > 0,
+              expectedHours: shift.duration,
                 matchMethod: 'outtime_disambiguated',
-              };
-            }
-          }
-          
+            };
+        }
+      }
+      
           // Still ambiguous even with out-time - create ConfusedShift
-          const confusedShiftData = {
-            employeeNumber: employeeNumber.toUpperCase(),
-            date: date,
-            inTime: inTime,
-            outTime: outTime,
+      const confusedShiftData = {
+        employeeNumber: employeeNumber.toUpperCase(),
+        date: date,
+        inTime: inTime,
+        outTime: outTime,
             possibleShifts: candidateShifts.map(c => ({
               shiftId: c.shiftId,
               shiftName: c.shiftName,
@@ -699,24 +921,24 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
               endTime: c.endTime,
               matchReason: c.matchReason,
             })),
-            status: 'pending',
+        status: 'pending',
             requiresManualSelection: true,
-          };
+      };
 
-          await ConfusedShift.findOneAndUpdate(
-            { employeeNumber: employeeNumber.toUpperCase(), date: date },
-            confusedShiftData,
-            { upsert: true, new: true }
-          );
+      await ConfusedShift.findOneAndUpdate(
+        { employeeNumber: employeeNumber.toUpperCase(), date: date },
+        confusedShiftData,
+        { upsert: true, new: true }
+      );
 
-          return {
-            success: false,
-            confused: true,
+      return {
+        success: false,
+        confused: true,
             message: 'Multiple shifts with same start time - out-time did not help distinguish',
             possibleShifts: candidateShifts,
-            requiresManualSelection: true,
-          };
-        }
+        requiresManualSelection: true,
+      };
+    }
       } else {
         // Different start times - check if arrival is ambiguous
         const isAmbiguous = isAmbiguousArrival(inTime, candidateShifts);
@@ -729,7 +951,7 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
             if (bestMatch) {
               const shift = shifts.find(s => s._id.toString() === bestMatch.shiftId.toString());
               if (shift) {
-                const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod || 15);
+                const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod || 15, date);
                 const earlyOutMinutes = calculateEarlyOut(outTime, shift.endTime, shift.startTime, date);
 
                 return {
@@ -749,11 +971,11 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
           }
           
           // Still ambiguous - create ConfusedShift
-          const confusedShiftData = {
-            employeeNumber: employeeNumber.toUpperCase(),
-            date: date,
-            inTime: inTime,
-            outTime: outTime,
+      const confusedShiftData = {
+        employeeNumber: employeeNumber.toUpperCase(),
+        date: date,
+        inTime: inTime,
+        outTime: outTime,
             possibleShifts: candidateShifts.map(c => ({
               shiftId: c.shiftId,
               shiftName: c.shiftName,
@@ -761,32 +983,32 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
               endTime: c.endTime,
               matchReason: c.matchReason,
             })),
-            status: 'pending',
-            requiresManualSelection: true,
-          };
+        status: 'pending',
+        requiresManualSelection: true,
+      };
 
-          await ConfusedShift.findOneAndUpdate(
-            { employeeNumber: employeeNumber.toUpperCase(), date: date },
-            confusedShiftData,
-            { upsert: true, new: true }
-          );
+      await ConfusedShift.findOneAndUpdate(
+        { employeeNumber: employeeNumber.toUpperCase(), date: date },
+        confusedShiftData,
+        { upsert: true, new: true }
+      );
 
-          return {
-            success: false,
-            confused: true,
+      return {
+        success: false,
+        confused: true,
             message: outTime 
               ? 'Ambiguous arrival time - out-time did not help distinguish'
               : 'Ambiguous arrival time - out-time needed to distinguish',
             possibleShifts: candidateShifts,
-            requiresManualSelection: true,
-          };
+        requiresManualSelection: true,
+      };
         } else {
           // Not ambiguous - match to closest shift
           const bestMatch = candidateShifts[0];
           const shift = shifts.find(s => s._id.toString() === bestMatch.shiftId.toString());
           
           if (shift) {
-            const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod || 15);
+            const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod || 15, date);
             const earlyOutMinutes = outTime ? calculateEarlyOut(outTime, shift.endTime, shift.startTime, date) : null;
 
             return {
@@ -870,7 +1092,7 @@ const resolveConfusedShift = async (confusedShiftId, shiftId, userId, comments =
     });
 
     if (attendanceRecord) {
-      const lateInMinutes = calculateLateIn(confusedShift.inTime, shift.startTime, shift.gracePeriod || 15);
+      const lateInMinutes = calculateLateIn(confusedShift.inTime, shift.startTime, shift.gracePeriod || 15, confusedShift.date);
       const earlyOutMinutes = confusedShift.outTime 
         ? calculateEarlyOut(confusedShift.outTime, shift.endTime, shift.startTime, confusedShift.date) 
         : null;
@@ -1039,7 +1261,7 @@ const autoAssignNearestShift = async (employeeNumber, date, inTime, outTime = nu
     }
 
     // Calculate late-in and early-out
-    const lateInMinutes = calculateLateIn(inTime, nearestShift.startTime, nearestShift.gracePeriod || 15);
+    const lateInMinutes = calculateLateIn(inTime, nearestShift.startTime, nearestShift.gracePeriod || 15, date);
     const earlyOutMinutes = outTime ? calculateEarlyOut(outTime, nearestShift.endTime, nearestShift.startTime, date) : null;
 
     return {
