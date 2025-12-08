@@ -6,6 +6,11 @@ const User = require('../../users/model/User');
 const Settings = require('../../settings/model/Settings');
 const { isHRMSConnected, getEmployeeByIdMSSQL } = require('../../employees/config/mssqlHelper');
 const { getResolvedLeaveSettings } = require('../../departments/controllers/departmentSettingsController');
+const { 
+  revokeFullDayLeave, 
+  updateLeaveForAttendance, 
+  getLeaveConflicts 
+} = require('../services/leaveConflictService');
 
 /**
  * Get employee settings from database
@@ -1304,6 +1309,152 @@ exports.getApprovedRecordsForDate = async (req, res) => {
     res.status(500).json({
       success: false,
       error: error.message || 'Failed to fetch approved records',
+    });
+  }
+};
+
+/**
+ * @desc    Get leave conflicts for an attendance date
+ * @route   GET /api/leaves/conflicts
+ * @access  Private
+ */
+exports.getLeaveConflicts = async (req, res) => {
+  try {
+    const { employeeNumber, date } = req.query;
+
+    if (!employeeNumber || !date) {
+      return res.status(400).json({
+        success: false,
+        message: 'Employee number and date are required',
+      });
+    }
+
+    const result = await getLeaveConflicts(employeeNumber, date);
+
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        message: result.message,
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: result.conflicts,
+    });
+
+  } catch (error) {
+    console.error('Error getting leave conflicts:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to get leave conflicts',
+    });
+  }
+};
+
+/**
+ * @desc    Revoke full-day leave when attendance is logged
+ * @route   POST /api/leaves/:id/revoke-for-attendance
+ * @access  Private (Super Admin, Sub Admin, HR, HOD)
+ */
+exports.revokeLeaveForAttendance = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const userId = req.user?.userId || req.user?._id;
+    const userName = req.user?.name || 'System';
+    const userRole = req.user?.role || 'system';
+
+    const result = await revokeFullDayLeave(id, userId, userName, userRole);
+
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        message: result.message,
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: result.message,
+      data: result.leave,
+    });
+
+  } catch (error) {
+    console.error('Error revoking leave for attendance:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to revoke leave',
+    });
+  }
+};
+
+/**
+ * @desc    Update leave based on attendance (for multi-day leaves)
+ * @route   POST /api/leaves/:id/update-for-attendance
+ * @access  Private (Super Admin, Sub Admin, HR, HOD)
+ */
+exports.updateLeaveForAttendance = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { employeeNumber, date } = req.body;
+
+    if (!employeeNumber || !date) {
+      return res.status(400).json({
+        success: false,
+        message: 'Employee number and date are required',
+      });
+    }
+
+    // Get attendance record
+    const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
+    const attendance = await AttendanceDaily.findOne({
+      employeeNumber: employeeNumber.toUpperCase(),
+      date: date,
+    }).populate('shiftId');
+
+    if (!attendance) {
+      return res.status(404).json({
+        success: false,
+        message: 'Attendance record not found',
+      });
+    }
+
+    const userId = req.user?.userId || req.user?._id;
+    const userName = req.user?.name || 'System';
+    const userRole = req.user?.role || 'system';
+
+    const result = await updateLeaveForAttendance(
+      id,
+      date,
+      attendance,
+      userId,
+      userName,
+      userRole
+    );
+
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        message: result.message,
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: result.message,
+      data: {
+        updatedLeaves: result.updatedLeaves || [],
+        createdLeaves: result.createdLeaves || [],
+        deletedLeaveId: result.deletedLeaveId || null,
+      },
+    });
+
+  } catch (error) {
+    console.error('Error updating leave for attendance:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to update leave',
     });
   }
 };
