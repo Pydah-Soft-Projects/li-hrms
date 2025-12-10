@@ -209,19 +209,7 @@ export default function EmployeesPage() {
       setLoading(true);
       const response = await api.getEmployees();
       if (response.success) {
-        // Ensure paidLeaves is always included and is a number
-        const employeesData = (response.data || []).map((emp: any) => {
-          const paidLeaves = emp.paidLeaves !== undefined && emp.paidLeaves !== null ? Number(emp.paidLeaves) : 0;
-          // Debug: Log first employee to check paidLeaves
-          if (employeesData.length === 0) {
-            console.log('Loading employee with paidLeaves:', { emp_no: emp.emp_no, paidLeaves, original: emp.paidLeaves });
-          }
-          return {
-            ...emp,
-            paidLeaves,
-          };
-        });
-        setEmployees(employeesData);
+        setEmployees(response.data || []);
         setDataSource(response.dataSource || 'mongodb');
       }
     } catch (err) {
@@ -269,9 +257,7 @@ export default function EmployeesPage() {
     const { name, value, type } = e.target;
     setFormData(prev => ({
       ...prev,
-      [name]: type === 'number' 
-        ? (value === '' ? (name === 'paidLeaves' ? 0 : undefined) : Number(value))
-        : value,
+      [name]: type === 'number' ? (value ? Number(value) : undefined) : value,
     }));
   };
 
@@ -302,17 +288,11 @@ export default function EmployeesPage() {
     }
 
     try {
-      // Ensure paidLeaves is always sent (even if 0)
-      const submitData = {
-        ...formData,
-        paidLeaves: formData.paidLeaves !== null && formData.paidLeaves !== undefined ? formData.paidLeaves : 0,
-      };
-      
       let response;
       if (editingEmployee) {
-        response = await api.updateEmployee(editingEmployee.emp_no, submitData);
+        response = await api.updateEmployee(editingEmployee.emp_no, formData);
       } else {
-        response = await api.createEmployee(submitData);
+        response = await api.createEmployee(formData);
       }
 
       if (response.success) {
@@ -332,47 +312,13 @@ export default function EmployeesPage() {
 
   const handleEdit = (employee: Employee) => {
     setEditingEmployee(employee);
-    
-    // Debug: Log the employee object to see what we're getting
-    console.log('=== EDITING EMPLOYEE ===');
-    console.log('Full employee object:', employee);
-    console.log('employee.paidLeaves:', employee.paidLeaves);
-    console.log('(employee as any).paidLeaves:', (employee as any).paidLeaves);
-    console.log('All employee keys:', Object.keys(employee));
-    
-    // Extract paidLeaves - check multiple possible locations
-    let paidLeavesValue = 0;
-    if (employee.paidLeaves !== undefined && employee.paidLeaves !== null) {
-      paidLeavesValue = Number(employee.paidLeaves);
-    } else if ((employee as any).paidLeaves !== undefined && (employee as any).paidLeaves !== null) {
-      paidLeavesValue = Number((employee as any).paidLeaves);
-    } else {
-      // Check if it's in the raw data
-      const rawEmployee = employee as any;
-      if (rawEmployee.paidLeaves !== undefined && rawEmployee.paidLeaves !== null) {
-        paidLeavesValue = Number(rawEmployee.paidLeaves);
-      }
-    }
-    
-    console.log('Extracted paidLeavesValue:', paidLeavesValue);
-    
-    // Create form data object - set paidLeaves explicitly to ensure it's not overwritten
-    const newFormData: Partial<Employee> = {
+    setFormData({
       ...employee,
       department_id: employee.department?._id || employee.department_id || '',
       designation_id: employee.designation?._id || employee.designation_id || '',
       doj: employee.doj ? new Date(employee.doj).toISOString().split('T')[0] : '',
       dob: employee.dob ? new Date(employee.dob).toISOString().split('T')[0] : '',
-    };
-    
-    // Explicitly set paidLeaves AFTER spreading to ensure it's not overwritten
-    newFormData.paidLeaves = paidLeavesValue;
-    
-    console.log('New formData:', newFormData);
-    console.log('New formData.paidLeaves:', newFormData.paidLeaves);
-    console.log('Type of paidLeaves:', typeof newFormData.paidLeaves);
-    
-    setFormData(newFormData);
+    });
     setShowDialog(true);
   };
 
@@ -1592,19 +1538,6 @@ export default function EmployeesPage() {
                   <div>
                     <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Gross Salary</label>
                     <input type="number" name="gross_salary" value={formData.gross_salary || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Paid Leaves (per month)</label>
-                    <input 
-                      type="number" 
-                      name="paidLeaves" 
-                      min="0" 
-                      value={formData.paidLeaves !== undefined && formData.paidLeaves !== null ? Number(formData.paidLeaves) : 0} 
-                      onChange={handleInputChange} 
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" 
-                      placeholder="0 (uses department default if 0)" 
-                    />
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Leave as 0 to use department default</p>
                   </div>
                   <div>
                     <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">PF Number</label>

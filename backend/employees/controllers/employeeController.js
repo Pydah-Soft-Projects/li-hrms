@@ -114,6 +114,8 @@ exports.getAllEmployees = async (req, res) => {
           ...obj,
           department: obj.department_id,
           designation: obj.designation_id,
+          // Explicitly ensure paidLeaves is included (default to 0 if not set)
+          paidLeaves: obj.paidLeaves !== undefined && obj.paidLeaves !== null ? Number(obj.paidLeaves) : 0,
         };
       });
     }
@@ -345,9 +347,19 @@ exports.updateEmployee = async (req, res) => {
 
     // Update in MongoDB
     try {
+      // Ensure paidLeaves is explicitly set (even if 0)
+      const updateData = {
+        ...employeeData,
+        updated_at: new Date(),
+      };
+      // Explicitly handle paidLeaves to ensure it's saved even if 0
+      if (employeeData.paidLeaves !== undefined && employeeData.paidLeaves !== null) {
+        updateData.paidLeaves = Number(employeeData.paidLeaves);
+      }
+      
       await Employee.findOneAndUpdate(
         { emp_no: empNo },
-        { ...employeeData, updated_at: new Date() },
+        updateData,
         { new: true }
       );
       results.mongodb = true;
@@ -370,9 +382,17 @@ exports.updateEmployee = async (req, res) => {
     }
 
     // Fetch updated employee
-    const updatedEmployee = await Employee.findOne({ emp_no: empNo })
+    const updatedEmployeeDoc = await Employee.findOne({ emp_no: empNo })
       .populate('department_id', 'name code')
       .populate('designation_id', 'name code');
+    
+    // Convert to plain object and ensure paidLeaves is included
+    const updatedEmployee = toPlainObject(updatedEmployeeDoc);
+    if (updatedEmployee) {
+      updatedEmployee.paidLeaves = updatedEmployee.paidLeaves !== undefined && updatedEmployee.paidLeaves !== null 
+        ? Number(updatedEmployee.paidLeaves) 
+        : 0;
+    }
 
     res.status(200).json({
       success: true,

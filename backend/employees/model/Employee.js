@@ -127,6 +127,11 @@ const employeeSchema = new mongoose.Schema(
       uppercase: true,
       default: null,
     },
+    paidLeaves: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     is_active: {
       type: Boolean,
       default: true,

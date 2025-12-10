@@ -255,8 +255,8 @@ exports.addModuleToWorkspace = async (req, res) => {
       });
     }
 
-    // Check if module already exists in workspace
-    const existingModule = workspace.modules.find((m) => m.moduleCode === module.code);
+    // Check if module already exists in workspace (case-insensitive comparison)
+    const existingModule = workspace.modules.find((m) => m.moduleCode.toUpperCase() === module.code.toUpperCase());
     if (existingModule) {
       return res.status(400).json({
         success: false,
@@ -352,7 +352,9 @@ exports.removeModuleFromWorkspace = async (req, res) => {
       });
     }
 
-    const moduleIndex = workspace.modules.findIndex((m) => m.moduleCode === moduleCode.toUpperCase());
+    // Case-insensitive comparison
+    const normalizedModuleCode = moduleCode.toUpperCase();
+    const moduleIndex = workspace.modules.findIndex((m) => m.moduleCode.toUpperCase() === normalizedModuleCode);
     if (moduleIndex === -1) {
       return res.status(404).json({
         success: false,

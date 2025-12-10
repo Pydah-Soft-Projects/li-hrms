@@ -115,7 +115,10 @@ export default function WorkspacesPage() {
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showModulesDialog, setShowModulesDialog] = useState(false);
   const [showUsersDialog, setShowUsersDialog] = useState(false);
+  const [showCreateModuleDialog, setShowCreateModuleDialog] = useState(false);
+  const [showEditModuleDialog, setShowEditModuleDialog] = useState(false);
   const [selectedWorkspace, setSelectedWorkspace] = useState<Workspace | null>(null);
+  const [selectedModule, setSelectedModule] = useState<Module | null>(null);
   const [workspaceUsers, setWorkspaceUsers] = useState<any[]>([]);
   
   // Form state
@@ -124,6 +127,18 @@ export default function WorkspacesPage() {
     code: '',
     type: 'employee',
     description: '',
+  });
+
+  // Module form state
+  const [moduleFormData, setModuleFormData] = useState({
+    name: '',
+    code: '',
+    description: '',
+    icon: 'default',
+    route: '',
+    category: 'core',
+    sortOrder: 0,
+    isActive: true,
   });
 
   useEffect(() => {
@@ -224,6 +239,8 @@ export default function WorkspacesPage() {
 
   const openModulesDialog = (workspace: Workspace) => {
     setSelectedWorkspace(workspace);
+    setError('');
+    setSuccess('');
     setShowModulesDialog(true);
   };
 
@@ -243,17 +260,25 @@ export default function WorkspacesPage() {
 
   const handleToggleModule = async (workspace: Workspace, moduleCode: string, isEnabled: boolean) => {
     try {
-      const existingModule = workspace.modules.find(m => m.moduleCode === moduleCode);
+      setError('');
+      setSuccess('');
+      
+      // Normalize module code to uppercase for comparison
+      const normalizedModuleCode = moduleCode.toUpperCase();
+      const existingModule = workspace.modules.find(m => m.moduleCode.toUpperCase() === normalizedModuleCode);
       
       if (existingModule) {
         // Update existing module
-        const response = await api.updateWorkspaceModule(workspace._id, moduleCode, { isEnabled });
+        const response = await api.updateWorkspaceModule(workspace._id, normalizedModuleCode, { isEnabled });
         if (response.success) {
+          setSuccess(`Module ${isEnabled ? 'enabled' : 'disabled'} successfully`);
           loadData();
+        } else {
+          setError(response.error || 'Failed to update module');
         }
       } else if (isEnabled) {
         // Add new module
-        const mod = modules.find(m => m.code === moduleCode);
+        const mod = modules.find(m => m.code.toUpperCase() === normalizedModuleCode);
         if (mod) {
           const response = await api.addModuleToWorkspace(workspace._id, {
             moduleId: mod._id,
@@ -261,13 +286,106 @@ export default function WorkspacesPage() {
             dataScope: 'own',
           });
           if (response.success) {
+            setSuccess('Module added successfully');
             loadData();
+          } else {
+            setError(response.error || 'Failed to add module');
           }
+        } else {
+          setError('Module not found');
         }
+      } else {
+        // Disabling a module that doesn't exist - nothing to do
+        setError('Module not found in workspace');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to update module:', err);
+      setError(err.message || 'Failed to update module');
     }
+  };
+
+  const handleCreateModule = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    
+    try {
+      const response = await api.createModule(moduleFormData);
+      if (response.success) {
+        setSuccess('Module created successfully');
+        setShowCreateModuleDialog(false);
+        setModuleFormData({
+          name: '',
+          code: '',
+          description: '',
+          icon: 'default',
+          route: '',
+          category: 'core',
+          sortOrder: 0,
+          isActive: true,
+        });
+        loadData();
+      } else {
+        setError(response.error || 'Failed to create module');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to create module');
+    }
+  };
+
+  const handleUpdateModule = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedModule) return;
+    setError('');
+    
+    try {
+      const response = await api.updateModule(selectedModule._id, moduleFormData);
+        if (response.success) {
+        setSuccess('Module updated successfully');
+        setShowEditModuleDialog(false);
+        setSelectedModule(null);
+          loadData();
+      } else {
+        setError(response.error || 'Failed to update module');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to update module');
+    }
+  };
+
+  const handleDeleteModule = async (module: Module) => {
+    if (module.isSystem) {
+      setError('Cannot delete system module');
+      return;
+    }
+    
+    if (!confirm(`Are you sure you want to delete "${module.name}"?`)) return;
+    
+    try {
+      const response = await api.deleteModule(module._id);
+        if (response.success) {
+        setSuccess('Module deleted successfully');
+          loadData();
+      } else {
+        setError(response.error || 'Failed to delete module');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete module');
+    }
+  };
+
+  const openEditModuleDialog = (module: Module) => {
+    setSelectedModule(module);
+    setModuleFormData({
+      name: module.name,
+      code: module.code,
+      description: module.description || '',
+      icon: module.icon || 'default',
+      route: module.route,
+      category: module.category || 'core',
+      sortOrder: module.sortOrder || 0,
+      isActive: module.isActive,
+    });
+    setShowEditModuleDialog(true);
   };
 
   const clearMessages = () => {
@@ -309,6 +427,25 @@ export default function WorkspacesPage() {
             >
               <RefreshIcon />
               Refresh
+            </button>
+            <button
+              onClick={() => {
+                setModuleFormData({
+                  name: '',
+                  code: '',
+                  description: '',
+                  icon: 'default',
+                  route: '',
+                  category: 'core',
+                  sortOrder: modules.length + 1,
+                  isActive: true,
+                });
+                setShowCreateModuleDialog(true);
+              }}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400"
+            >
+              <PlusIcon />
+              Create Module
             </button>
             <button
               onClick={() => setShowCreateDialog(true)}
@@ -523,40 +660,48 @@ export default function WorkspacesPage() {
       {/* Modules Dialog */}
       {showModulesDialog && selectedWorkspace && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowModulesDialog(false)} />
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => { setShowModulesDialog(false); setError(''); setSuccess(''); }} />
           <div className="relative z-50 w-full max-w-2xl max-h-[80vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
             <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">
               Modules: {selectedWorkspace.name}
-            </h2>
+                </h2>
             <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
               Configure which modules are available in this workspace
             </p>
             
+            {(error || success) && (
+              <div className={`mb-4 p-3 rounded-lg ${
+                error ? 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+              }`}>
+                {error || success}
+              </div>
+            )}
+            
             <div className="space-y-3">
-              {modules.map((mod) => {
-                const wsModule = selectedWorkspace.modules?.find(m => m.moduleCode === mod.code);
-                const isEnabled = wsModule?.isEnabled ?? false;
-                
-                return (
-                  <div
-                    key={mod._id}
+                {modules.map((mod) => {
+                  const wsModule = selectedWorkspace.modules?.find(m => m.moduleCode.toUpperCase() === mod.code.toUpperCase());
+                  const isEnabled = wsModule?.isEnabled ?? false;
+
+                  return (
+                    <div
+                      key={mod._id}
                     className={`flex items-center justify-between p-4 rounded-xl border transition-all ${
-                      isEnabled
+                        isEnabled
                         ? 'border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-900/20'
-                        : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800'
-                    }`}
-                  >
+                          : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800'
+                      }`}
+                    >
                     <div className="flex items-center gap-3">
                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
                         isEnabled ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-400'
-                      }`}>
-                        <ModulesIcon />
-                      </div>
+                          }`}>
+                            <ModulesIcon />
+                          </div>
                       <div>
                         <div className="font-medium text-slate-900 dark:text-white">{mod.name}</div>
                         <div className="text-xs text-slate-500 dark:text-slate-400">{mod.code} • {mod.category}</div>
-                      </div>
-                    </div>
+                            </div>
+                            </div>
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input
                         type="checkbox"
@@ -566,19 +711,353 @@ export default function WorkspacesPage() {
                       />
                       <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-blue-600"></div>
                     </label>
-                  </div>
+                          </div>
                 );
               })}
-            </div>
+                        </div>
             
             <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800">
               <button
-                onClick={() => setShowModulesDialog(false)}
+                onClick={() => { setShowModulesDialog(false); setError(''); setSuccess(''); }}
                 className="w-full px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
               >
                 Close
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modules List Section */}
+      <div className="mt-12">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">System Modules</h2>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Manage all available modules in the system
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {modules.map((module) => (
+            <div
+              key={module._id}
+              className="rounded-xl border border-slate-200 bg-white p-4 transition-all hover:shadow-md dark:border-slate-700 dark:bg-slate-800"
+            >
+              <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                    module.isActive ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-400'
+                  }`}>
+                    <ModulesIcon />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-slate-900 dark:text-white">{module.name}</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{module.code}</p>
+                  </div>
+                </div>
+                {module.isSystem && (
+                  <span className="px-2 py-0.5 text-xs font-medium bg-slate-100 text-slate-600 rounded dark:bg-slate-700 dark:text-slate-400">
+                    System
+                  </span>
+                )}
+              </div>
+              
+              {module.description && (
+                <p className="text-sm text-slate-600 dark:text-slate-300 mb-3 line-clamp-2">
+                  {module.description}
+                </p>
+              )}
+
+              <div className="flex items-center gap-2 mb-3">
+                <span className="px-2 py-1 text-xs font-medium bg-indigo-50 text-indigo-700 rounded-lg dark:bg-indigo-900/30 dark:text-indigo-400 capitalize">
+                  {module.category}
+                </span>
+                <span className={`px-2 py-1 text-xs font-medium rounded-lg ${
+                  module.isActive
+                    ? 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                    : 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                }`}>
+                  {module.isActive ? 'Active' : 'Inactive'}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2 pt-3 border-t border-slate-100 dark:border-slate-700">
+                            <button
+                  onClick={() => openEditModuleDialog(module)}
+                  className="flex-1 px-3 py-1.5 text-sm font-medium text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400"
+                >
+                  Edit
+                </button>
+                {!module.isSystem && (
+                  <button
+                    onClick={() => handleDeleteModule(module)}
+                    className="px-3 py-1.5 text-sm font-medium text-red-700 bg-red-50 rounded-lg hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400"
+                  >
+                    <TrashIcon />
+                            </button>
+                          )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {modules.length === 0 && (
+          <div className="text-center py-12">
+            <p className="text-slate-500 dark:text-slate-400">No modules found. Create your first module to get started.</p>
+          </div>
+        )}
+      </div>
+
+      {/* Create Module Dialog */}
+      {showCreateModuleDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowCreateModuleDialog(false)} />
+          <div className="relative z-50 w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-6">Create Module</h2>
+            
+            <form onSubmit={handleCreateModule} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Name *</label>
+                            <input
+                  type="text"
+                  value={moduleFormData.name}
+                  onChange={(e) => setModuleFormData({ ...moduleFormData, name: e.target.value })}
+                  required
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  placeholder="e.g., Attendance Management"
+                />
+                        </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Code *</label>
+                <input
+                  type="text"
+                  value={moduleFormData.code}
+                  onChange={(e) => setModuleFormData({ ...moduleFormData, code: e.target.value.toUpperCase() })}
+                  required
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm uppercase dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  placeholder="e.g., ATTENDANCE"
+                />
+                      </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Description</label>
+                <textarea
+                  value={moduleFormData.description}
+                  onChange={(e) => setModuleFormData({ ...moduleFormData, description: e.target.value })}
+                  rows={3}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  placeholder="Module description..."
+                />
+                            </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Route *</label>
+                  <input
+                    type="text"
+                    value={moduleFormData.route}
+                    onChange={(e) => setModuleFormData({ ...moduleFormData, route: e.target.value })}
+                    required
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    placeholder="e.g., /attendance"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Icon</label>
+                  <input
+                    type="text"
+                    value={moduleFormData.icon}
+                    onChange={(e) => setModuleFormData({ ...moduleFormData, icon: e.target.value })}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    placeholder="e.g., clock"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Category *</label>
+                  <select
+                    value={moduleFormData.category}
+                    onChange={(e) => setModuleFormData({ ...moduleFormData, category: e.target.value })}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  >
+                    <option value="core">Core</option>
+                    <option value="hr">HR</option>
+                    <option value="admin">Admin</option>
+                    <option value="reports">Reports</option>
+                    <option value="settings">Settings</option>
+                  </select>
+                                      </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Sort Order</label>
+                  <input
+                    type="number"
+                    value={moduleFormData.sortOrder}
+                    onChange={(e) => setModuleFormData({ ...moduleFormData, sortOrder: parseInt(e.target.value) || 0 })}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  />
+                                    </div>
+                                  </div>
+
+              <div className="flex items-center gap-2">
+                                    <input
+                                      type="checkbox"
+                  id="moduleActive"
+                  checked={moduleFormData.isActive}
+                  onChange={(e) => setModuleFormData({ ...moduleFormData, isActive: e.target.checked })}
+                  className="w-4 h-4 rounded border-slate-300"
+                />
+                <label htmlFor="moduleActive" className="text-sm text-slate-700 dark:text-slate-300">
+                  Module is active
+                                  </label>
+                                </div>
+              
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModuleDialog(false)}
+                  className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-emerald-500 to-green-500 rounded-xl hover:from-emerald-600 hover:to-green-600"
+                >
+                  Create Module
+                </button>
+              </div>
+            </form>
+                          </div>
+                        </div>
+                      )}
+
+      {/* Edit Module Dialog */}
+      {showEditModuleDialog && selectedModule && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => { setShowEditModuleDialog(false); setSelectedModule(null); }} />
+          <div className="relative z-50 w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-6">Edit Module</h2>
+            
+            <form onSubmit={handleUpdateModule} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Name *</label>
+                <input
+                  type="text"
+                  value={moduleFormData.name}
+                  onChange={(e) => setModuleFormData({ ...moduleFormData, name: e.target.value })}
+                  required
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+                    </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Code *</label>
+                <input
+                  type="text"
+                  value={moduleFormData.code}
+                  onChange={(e) => setModuleFormData({ ...moduleFormData, code: e.target.value.toUpperCase() })}
+                  required
+                  disabled={selectedModule.isSystem}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm uppercase dark:border-slate-700 dark:bg-slate-800 dark:text-white disabled:opacity-50"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Description</label>
+                <textarea
+                  value={moduleFormData.description}
+                  onChange={(e) => setModuleFormData({ ...moduleFormData, description: e.target.value })}
+                  rows={3}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+            </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Route *</label>
+                  <input
+                    type="text"
+                    value={moduleFormData.route}
+                    onChange={(e) => setModuleFormData({ ...moduleFormData, route: e.target.value })}
+                    required
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Icon</label>
+                  <input
+                    type="text"
+                    value={moduleFormData.icon}
+                    onChange={(e) => setModuleFormData({ ...moduleFormData, icon: e.target.value })}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Category *</label>
+                  <select
+                    value={moduleFormData.category}
+                    onChange={(e) => setModuleFormData({ ...moduleFormData, category: e.target.value })}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  >
+                    <option value="core">Core</option>
+                    <option value="hr">HR</option>
+                    <option value="admin">Admin</option>
+                    <option value="reports">Reports</option>
+                    <option value="settings">Settings</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Sort Order</label>
+                  <input
+                    type="number"
+                    value={moduleFormData.sortOrder}
+                    onChange={(e) => setModuleFormData({ ...moduleFormData, sortOrder: parseInt(e.target.value) || 0 })}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="editModuleActive"
+                  checked={moduleFormData.isActive}
+                  onChange={(e) => setModuleFormData({ ...moduleFormData, isActive: e.target.checked })}
+                  className="w-4 h-4 rounded border-slate-300"
+                />
+                <label htmlFor="editModuleActive" className="text-sm text-slate-700 dark:text-slate-300">
+                  Module is active
+                </label>
+              </div>
+              
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => { setShowEditModuleDialog(false); setSelectedModule(null); }}
+                  className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-blue-500 to-indigo-500 rounded-xl hover:from-blue-600 hover:to-indigo-600"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

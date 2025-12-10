@@ -49,18 +49,49 @@ async function calculatePayroll(employeeId, month, userId) {
     }
 
     const department = await Department.findById(departmentId);
-    const paidLeaves = department?.paidLeaves || 0;
+    
+    // Get paid leaves: Check employee first, then department
+    // If employee has paidLeaves set (not null/undefined and > 0), use it
+    // Otherwise, use department paidLeaves
+    let paidLeaves = 0;
+    if (employee.paidLeaves !== null && employee.paidLeaves !== undefined && employee.paidLeaves > 0) {
+      paidLeaves = employee.paidLeaves;
+      console.log(`Using employee paid leaves: ${paidLeaves}`);
+    } else {
+      paidLeaves = department?.paidLeaves || 0;
+      console.log(`Using department paid leaves: ${paidLeaves}`);
+    }
+
+    // Calculate remaining paid leaves and adjust payable shifts
+    // Remaining paid leaves = paid leaves - leaves taken
+    // If employee has remaining paid leaves, add them to payable shifts
+    const totalLeaves = attendanceSummary.totalLeaves || 0;
+    const remainingPaidLeaves = Math.max(0, paidLeaves - totalLeaves);
+    const adjustedPayableShifts = (attendanceSummary.totalPayableShifts || 0) + remainingPaidLeaves;
+    
+    console.log('\n--- Paid Leaves Calculation ---');
+    console.log(`Total Paid Leaves Available: ${paidLeaves}`);
+    console.log(`Total Leaves Taken: ${totalLeaves}`);
+    console.log(`Remaining Paid Leaves: ${remainingPaidLeaves}`);
+    console.log(`Original Payable Shifts: ${attendanceSummary.totalPayableShifts}`);
+    console.log(`Adjusted Payable Shifts: ${adjustedPayableShifts}`);
+
+    // Create a modified attendance summary with adjusted payable shifts
+    const modifiedAttendanceSummary = {
+      ...attendanceSummary.toObject(),
+      totalPayableShifts: adjustedPayableShifts,
+    };
 
     // Step 2: Calculate Basic Pay & Incentive
     console.log('\n========== PAYROLL CALCULATION START ==========');
     console.log(`Employee: ${employee.emp_no} (${employee.employee_name})`);
     console.log(`Month: ${month}`);
     console.log(`Department: ${departmentId}`);
-    console.log(`Total Payable Shifts: ${attendanceSummary.totalPayableShifts}`);
-    console.log(`Total Days in Month: ${attendanceSummary.totalDaysInMonth}`);
+    console.log(`Total Payable Shifts: ${modifiedAttendanceSummary.totalPayableShifts}`);
+    console.log(`Total Days in Month: ${modifiedAttendanceSummary.totalDaysInMonth}`);
     
     console.log('\n--- Step 2: Basic Pay Calculation ---');
-    const basicPayResult = basicPayService.calculateBasicPay(employee, attendanceSummary);
+    const basicPayResult = basicPayService.calculateBasicPay(employee, modifiedAttendanceSummary);
     console.log('Basic Pay Result:', JSON.stringify(basicPayResult, null, 2));
     
     // Ensure all basicPayResult values are numbers
@@ -180,11 +211,11 @@ async function calculatePayroll(employeeId, month, userId) {
     console.log('\n--- 7c. Leave Deduction ---');
     console.log(`Total Leaves: ${attendanceSummary.totalLeaves || 0}`);
     console.log(`Paid Leaves: ${paidLeaves}`);
-    console.log(`Total Days in Month: ${attendanceSummary.totalDaysInMonth}`);
+    console.log(`Total Days in Month: ${modifiedAttendanceSummary.totalDaysInMonth}`);
     const leaveDeductionResult = deductionService.calculateLeaveDeduction(
       attendanceSummary.totalLeaves || 0,
       paidLeaves,
-      attendanceSummary.totalDaysInMonth,
+      modifiedAttendanceSummary.totalDaysInMonth,
       basicPayResult.basicPay
     );
     console.log('Leave Deduction Result:', JSON.stringify(leaveDeductionResult, null, 2));
@@ -373,7 +404,7 @@ async function calculatePayroll(employeeId, month, userId) {
     // Direct property assignment doesn't work for nested schemas with required fields
     
     // Set top-level required fields using set()
-    payrollRecord.set('totalPayableShifts', Number(attendanceSummary.totalPayableShifts) || 0);
+    payrollRecord.set('totalPayableShifts', Number(adjustedPayableShifts) || 0);
     payrollRecord.set('netSalary', Number(finalNetSalary) || 0);
     payrollRecord.set('payableAmountBeforeAdvance', Number(finalPayableAmountBeforeAdvance) || 0);
     payrollRecord.set('status', 'calculated');

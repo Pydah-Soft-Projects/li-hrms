@@ -1345,7 +1345,7 @@ export default function LeavesPage() {
                     disabled={
                       approvedRecordsInfo
                         ? ((approvedRecordsInfo.hasLeave && !approvedRecordsInfo.leaveInfo?.isHalfDay) ||
-                           (approvedRecordsInfo.hasOD && !approvedRecordsInfo.odInfo?.isHalfDay))
+                       (approvedRecordsInfo.hasOD && !approvedRecordsInfo.odInfo?.isHalfDay))
                         : undefined
                     }
                     className="w-4 h-4 rounded border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1360,7 +1360,7 @@ export default function LeavesPage() {
                       approvedRecordsInfo
                         ? ((approvedRecordsInfo.hasLeave && approvedRecordsInfo.leaveInfo?.isHalfDay &&
                             approvedRecordsInfo.leaveInfo.halfDayType === formData.halfDayType) ||
-                           (approvedRecordsInfo.hasOD && approvedRecordsInfo.odInfo?.isHalfDay &&
+                       (approvedRecordsInfo.hasOD && approvedRecordsInfo.odInfo?.isHalfDay && 
                             approvedRecordsInfo.odInfo.halfDayType === formData.halfDayType))
                         : undefined
                     }
