@@ -160,37 +160,49 @@ const closeHRMSPool = async () => {
 
 /**
  * Create employee in MSSQL
+ * Note: Only permanent fields are synced to MSSQL, dynamicFields are MongoDB-only
  */
 const createEmployeeMSSQL = async (employeeData) => {
   const pool = getHRMSPool();
   const request = pool.request();
 
-  // Add parameters
-  request.input('emp_no', sql.VarChar(50), employeeData.emp_no);
-  request.input('employee_name', sql.NVarChar(100), employeeData.employee_name);
-  request.input('department_id', sql.VarChar(24), employeeData.department_id || null);
-  request.input('designation_id', sql.VarChar(24), employeeData.designation_id || null);
-  request.input('doj', sql.Date, employeeData.doj || null);
-  request.input('dob', sql.Date, employeeData.dob || null);
-  request.input('gross_salary', sql.Decimal(12, 2), employeeData.gross_salary || null);
-  request.input('gender', sql.VarChar(10), employeeData.gender || null);
-  request.input('marital_status', sql.VarChar(20), employeeData.marital_status || null);
-  request.input('blood_group', sql.VarChar(5), employeeData.blood_group || null);
-  request.input('qualifications', sql.NVarChar(255), employeeData.qualifications || null);
-  request.input('experience', sql.Int, employeeData.experience || null);
-  request.input('address', sql.NVarChar(500), employeeData.address || null);
-  request.input('location', sql.NVarChar(100), employeeData.location || null);
-  request.input('aadhar_number', sql.VarChar(12), employeeData.aadhar_number || null);
-  request.input('phone_number', sql.VarChar(15), employeeData.phone_number || null);
-  request.input('alt_phone_number', sql.VarChar(15), employeeData.alt_phone_number || null);
-  request.input('email', sql.NVarChar(100), employeeData.email || null);
-  request.input('pf_number', sql.VarChar(30), employeeData.pf_number || null);
-  request.input('esi_number', sql.VarChar(30), employeeData.esi_number || null);
-  request.input('bank_account_no', sql.VarChar(30), employeeData.bank_account_no || null);
-  request.input('bank_name', sql.NVarChar(100), employeeData.bank_name || null);
-  request.input('bank_place', sql.NVarChar(100), employeeData.bank_place || null);
-  request.input('ifsc_code', sql.VarChar(15), employeeData.ifsc_code || null);
-  request.input('is_active', sql.Bit, employeeData.is_active !== false ? 1 : 0);
+  // Extract only permanent fields (exclude dynamicFields)
+  // dynamicFields are MongoDB-only and not synced to MSSQL
+  const {
+    dynamicFields,
+    _id,
+    __v,
+    created_at,
+    updated_at,
+    ...permanentFields
+  } = employeeData;
+
+  // Add parameters (only permanent fields)
+  request.input('emp_no', sql.VarChar(50), permanentFields.emp_no);
+  request.input('employee_name', sql.NVarChar(100), permanentFields.employee_name);
+  request.input('department_id', sql.VarChar(24), permanentFields.department_id || null);
+  request.input('designation_id', sql.VarChar(24), permanentFields.designation_id || null);
+  request.input('doj', sql.Date, permanentFields.doj || null);
+  request.input('dob', sql.Date, permanentFields.dob || null);
+  request.input('gross_salary', sql.Decimal(12, 2), permanentFields.gross_salary || null);
+  request.input('gender', sql.VarChar(10), permanentFields.gender || null);
+  request.input('marital_status', sql.VarChar(20), permanentFields.marital_status || null);
+  request.input('blood_group', sql.VarChar(5), permanentFields.blood_group || null);
+  request.input('qualifications', sql.NVarChar(255), permanentFields.qualifications || null);
+  request.input('experience', sql.Int, permanentFields.experience || null);
+  request.input('address', sql.NVarChar(500), permanentFields.address || null);
+  request.input('location', sql.NVarChar(100), permanentFields.location || null);
+  request.input('aadhar_number', sql.VarChar(12), permanentFields.aadhar_number || null);
+  request.input('phone_number', sql.VarChar(15), permanentFields.phone_number || null);
+  request.input('alt_phone_number', sql.VarChar(15), permanentFields.alt_phone_number || null);
+  request.input('email', sql.NVarChar(100), permanentFields.email || null);
+  request.input('pf_number', sql.VarChar(30), permanentFields.pf_number || null);
+  request.input('esi_number', sql.VarChar(30), permanentFields.esi_number || null);
+  request.input('bank_account_no', sql.VarChar(30), permanentFields.bank_account_no || null);
+  request.input('bank_name', sql.NVarChar(100), permanentFields.bank_name || null);
+  request.input('bank_place', sql.NVarChar(100), permanentFields.bank_place || null);
+  request.input('ifsc_code', sql.VarChar(15), permanentFields.ifsc_code || null);
+  request.input('is_active', sql.Bit, permanentFields.is_active !== false ? 1 : 0);
 
   const result = await request.query(`
     INSERT INTO employees (
@@ -256,35 +268,50 @@ const getEmployeeByIdMSSQL = async (empNo) => {
 /**
  * Update employee in MSSQL
  */
+/**
+ * Update employee in MSSQL
+ * Note: Only permanent fields are synced to MSSQL, dynamicFields are MongoDB-only
+ */
 const updateEmployeeMSSQL = async (empNo, employeeData) => {
   const pool = getHRMSPool();
   const request = pool.request();
 
+  // Extract only permanent fields (exclude dynamicFields)
+  // dynamicFields are MongoDB-only and not synced to MSSQL
+  const {
+    dynamicFields,
+    _id,
+    __v,
+    created_at,
+    updated_at,
+    ...permanentFields
+  } = employeeData;
+
   request.input('emp_no', sql.VarChar(50), empNo);
-  request.input('employee_name', sql.NVarChar(100), employeeData.employee_name);
-  request.input('department_id', sql.VarChar(24), employeeData.department_id || null);
-  request.input('designation_id', sql.VarChar(24), employeeData.designation_id || null);
-  request.input('doj', sql.Date, employeeData.doj || null);
-  request.input('dob', sql.Date, employeeData.dob || null);
-  request.input('gross_salary', sql.Decimal(12, 2), employeeData.gross_salary || null);
-  request.input('gender', sql.VarChar(10), employeeData.gender || null);
-  request.input('marital_status', sql.VarChar(20), employeeData.marital_status || null);
-  request.input('blood_group', sql.VarChar(5), employeeData.blood_group || null);
-  request.input('qualifications', sql.NVarChar(255), employeeData.qualifications || null);
-  request.input('experience', sql.Int, employeeData.experience || null);
-  request.input('address', sql.NVarChar(500), employeeData.address || null);
-  request.input('location', sql.NVarChar(100), employeeData.location || null);
-  request.input('aadhar_number', sql.VarChar(12), employeeData.aadhar_number || null);
-  request.input('phone_number', sql.VarChar(15), employeeData.phone_number || null);
-  request.input('alt_phone_number', sql.VarChar(15), employeeData.alt_phone_number || null);
-  request.input('email', sql.NVarChar(100), employeeData.email || null);
-  request.input('pf_number', sql.VarChar(30), employeeData.pf_number || null);
-  request.input('esi_number', sql.VarChar(30), employeeData.esi_number || null);
-  request.input('bank_account_no', sql.VarChar(30), employeeData.bank_account_no || null);
-  request.input('bank_name', sql.NVarChar(100), employeeData.bank_name || null);
-  request.input('bank_place', sql.NVarChar(100), employeeData.bank_place || null);
-  request.input('ifsc_code', sql.VarChar(15), employeeData.ifsc_code || null);
-  request.input('is_active', sql.Bit, employeeData.is_active !== false ? 1 : 0);
+  request.input('employee_name', sql.NVarChar(100), permanentFields.employee_name);
+  request.input('department_id', sql.VarChar(24), permanentFields.department_id || null);
+  request.input('designation_id', sql.VarChar(24), permanentFields.designation_id || null);
+  request.input('doj', sql.Date, permanentFields.doj || null);
+  request.input('dob', sql.Date, permanentFields.dob || null);
+  request.input('gross_salary', sql.Decimal(12, 2), permanentFields.gross_salary || null);
+  request.input('gender', sql.VarChar(10), permanentFields.gender || null);
+  request.input('marital_status', sql.VarChar(20), permanentFields.marital_status || null);
+  request.input('blood_group', sql.VarChar(5), permanentFields.blood_group || null);
+  request.input('qualifications', sql.NVarChar(255), permanentFields.qualifications || null);
+  request.input('experience', sql.Int, permanentFields.experience || null);
+  request.input('address', sql.NVarChar(500), permanentFields.address || null);
+  request.input('location', sql.NVarChar(100), permanentFields.location || null);
+  request.input('aadhar_number', sql.VarChar(12), permanentFields.aadhar_number || null);
+  request.input('phone_number', sql.VarChar(15), permanentFields.phone_number || null);
+  request.input('alt_phone_number', sql.VarChar(15), permanentFields.alt_phone_number || null);
+  request.input('email', sql.NVarChar(100), permanentFields.email || null);
+  request.input('pf_number', sql.VarChar(30), permanentFields.pf_number || null);
+  request.input('esi_number', sql.VarChar(30), permanentFields.esi_number || null);
+  request.input('bank_account_no', sql.VarChar(30), permanentFields.bank_account_no || null);
+  request.input('bank_name', sql.NVarChar(100), permanentFields.bank_name || null);
+  request.input('bank_place', sql.NVarChar(100), permanentFields.bank_place || null);
+  request.input('ifsc_code', sql.VarChar(15), permanentFields.ifsc_code || null);
+  request.input('is_active', sql.Bit, permanentFields.is_active !== false ? 1 : 0);
 
   const result = await request.query(`
     UPDATE employees SET

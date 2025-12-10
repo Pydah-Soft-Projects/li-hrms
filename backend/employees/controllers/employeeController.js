@@ -7,6 +7,16 @@ const Employee = require('../model/Employee');
 const Department = require('../../departments/model/Department');
 const Designation = require('../../departments/model/Designation');
 const Settings = require('../../settings/model/Settings');
+const EmployeeApplicationFormSettings = require('../../employee-applications/model/EmployeeApplicationFormSettings');
+const User = require('../../users/model/User');
+const {
+  validateFormData,
+} = require('../../employee-applications/services/formValidationService');
+const {
+  extractPermanentFields,
+  extractDynamicFields,
+} = require('../../employee-applications/services/fieldMappingService');
+const mongoose = require('mongoose');
 const {
   isHRMSConnected,
   createEmployeeMSSQL,
@@ -71,6 +81,186 @@ const toPlainObject = (doc) => {
   return doc.toObject ? doc.toObject() : doc;
 };
 
+/**
+ * Populate user ObjectIds in dynamicFields (e.g., reporting_to)
+ * 
+ * @param {Object} dynamicFields - Dynamic fields object
+ * @returns {Object} Dynamic fields with populated users
+ */
+const populateUsersInDynamicFields = async (dynamicFields) => {
+  if (!dynamicFields || typeof dynamicFields !== 'object') {
+    return dynamicFields || {};
+  }
+
+  const populated = { ...dynamicFields };
+
+  // Check if reporting_to or reporting_to_ exists and is an array of ObjectIds
+  // Handle both field names (reporting_to and reporting_to_)
+  const reportingToField = populated.reporting_to || populated.reporting_to_;
+  
+  if (reportingToField && Array.isArray(reportingToField) && reportingToField.length > 0) {
+    try {
+      const fieldName = populated.reporting_to ? 'reporting_to' : 'reporting_to_';
+      console.log(`Found ${fieldName} field:`, JSON.stringify(reportingToField));
+      // Check if already populated (has user objects with name property)
+      const isAlreadyPopulated = reportingToField[0] && typeof reportingToField[0] === 'object' && reportingToField[0].name;
+      console.log('Is already populated:', isAlreadyPopulated);
+      
+      if (!isAlreadyPopulated) {
+        // Filter valid ObjectIds and convert to strings
+        const userIds = [];
+        for (const id of reportingToField) {
+          if (typeof id === 'string') {
+            if (mongoose.Types.ObjectId.isValid(id)) {
+              userIds.push(id);
+            }
+          } else if (id && typeof id === 'object') {
+            if (id._id && mongoose.Types.ObjectId.isValid(id._id)) {
+              userIds.push(id._id.toString());
+            } else if (mongoose.Types.ObjectId.isValid(id)) {
+              userIds.push(id.toString());
+            }
+          } else if (id && id.toString && typeof id.toString === 'function') {
+            const idStr = id.toString();
+            if (mongoose.Types.ObjectId.isValid(idStr)) {
+              userIds.push(idStr);
+            }
+          }
+        }
+
+        if (userIds.length > 0) {
+          // Convert string ObjectIds to mongoose ObjectIds for query
+          const objectIds = userIds.map(id => {
+            try {
+              return new mongoose.Types.ObjectId(id);
+            } catch (e) {
+              return null;
+            }
+          }).filter(Boolean);
+
+          if (objectIds.length > 0) {
+            // Fetch users
+            const users = await User.find({ _id: { $in: objectIds } })
+              .select('_id name email role')
+              .lean();
+
+            // Create a map for quick lookup (using both string and ObjectId keys)
+            const userMap = new Map();
+            users.forEach(u => {
+              const idStr = u._id.toString();
+              userMap.set(idStr, u);
+              // Also add with ObjectId key for matching
+              userMap.set(u._id, u);
+            });
+
+            // Replace ObjectIds with populated user objects, preserving order
+            populated[fieldName] = reportingToField.map(id => {
+              let idStr;
+              if (typeof id === 'string') {
+                idStr = id;
+              } else if (id && typeof id === 'object') {
+                if (id._id) {
+                  idStr = id._id.toString();
+                } else if (id.toString && typeof id.toString === 'function') {
+                  idStr = id.toString();
+                } else {
+                  idStr = String(id);
+                }
+              } else {
+                idStr = String(id);
+              }
+              
+              // Try to find user by string ID
+              const user = userMap.get(idStr);
+              if (user) {
+                return user;
+              }
+              
+              // Try to find by ObjectId if id is an object
+              if (typeof id === 'object' && id._id) {
+                const userById = userMap.get(id._id);
+                if (userById) return userById;
+              }
+              
+              // If not found, return original ID
+              return id;
+            });
+            
+            console.log(`Populated ${users.length} of ${userIds.length} users for ${fieldName} field`);
+            console.log(`Populated ${fieldName}:`, JSON.stringify(populated[fieldName]));
+          } else {
+            console.log('No valid ObjectIds could be created from userIds array. userIds:', userIds);
+          }
+        } else {
+          console.log(`No valid ObjectIds found in ${fieldName} array. Original array:`, JSON.stringify(reportingToField));
+        }
+      }
+    } catch (error) {
+      console.error('Error populating users in reporting_to:', error);
+      console.error('Error details:', error.message, error.stack);
+      // Keep original IDs if population fails
+    }
+  }
+
+  return populated;
+};
+
+/**
+ * Transform employee data for API response
+ * Merges permanent fields and dynamicFields for unified access
+ * 
+ * @param {Object} employee - Employee document or plain object
+ * @param {Boolean} populateUsers - Whether to populate user ObjectIds in dynamicFields
+ * @returns {Object} Transformed employee data
+ */
+const transformEmployeeForResponse = async (employee, populateUsers = true) => {
+  if (!employee) return null;
+  
+  const plainObj = toPlainObject(employee);
+  const { dynamicFields, ...permanentFields } = plainObj;
+  
+  // Populate users in dynamicFields if needed
+  let populatedDynamicFields = dynamicFields || {};
+  if (populateUsers && dynamicFields) {
+    populatedDynamicFields = await populateUsersInDynamicFields(dynamicFields);
+  }
+  
+  // Merge dynamicFields into root level for easy access
+  // Also keep dynamicFields separate for reference
+  const merged = {
+    ...permanentFields,
+    ...populatedDynamicFields,
+    dynamicFields: populatedDynamicFields,
+  };
+  
+  // Normalize reporting_to_ to reporting_to (handle field name inconsistency)
+  if (merged.reporting_to_ && !merged.reporting_to) {
+    merged.reporting_to = merged.reporting_to_;
+    delete merged.reporting_to_;
+  }
+  if (merged.dynamicFields?.reporting_to_ && !merged.dynamicFields?.reporting_to) {
+    merged.dynamicFields.reporting_to = merged.dynamicFields.reporting_to_;
+    delete merged.dynamicFields.reporting_to_;
+  }
+  
+  // Also populate reporting_to if it exists at root level (from previous merge)
+  const rootReportingTo = merged.reporting_to;
+  if (populateUsers && rootReportingTo && Array.isArray(rootReportingTo) && rootReportingTo.length > 0) {
+    const isAlreadyPopulated = rootReportingTo[0] && typeof rootReportingTo[0] === 'object' && rootReportingTo[0].name;
+    if (!isAlreadyPopulated) {
+      // Populate reporting_to at root level
+      const populatedRoot = await populateUsersInDynamicFields({ reporting_to: rootReportingTo });
+      merged.reporting_to = populatedRoot.reporting_to;
+      // Also update in dynamicFields
+      if (merged.dynamicFields) {
+        merged.dynamicFields.reporting_to = populatedRoot.reporting_to;
+      }
+    }
+  }
+  
+  return merged;
+};
+
 // ============== Controller Methods ==============
 
 /**
@@ -108,16 +298,17 @@ exports.getAllEmployees = async (req, res) => {
         .populate('designation_id', 'name code')
         .sort({ employee_name: 1 });
 
-      employees = mongoEmployees.map(emp => {
-        const obj = toPlainObject(emp);
+      // Transform employees with user population
+      employees = await Promise.all(mongoEmployees.map(async (emp) => {
+        const transformed = await transformEmployeeForResponse(emp, true);
         return {
-          ...obj,
-          department: obj.department_id,
-          designation: obj.designation_id,
+          ...transformed,
+          department: transformed.department_id,
+          designation: transformed.designation_id,
           // Explicitly ensure paidLeaves is included (default to 0 if not set)
-          paidLeaves: obj.paidLeaves !== undefined && obj.paidLeaves !== null ? Number(obj.paidLeaves) : 0,
+          paidLeaves: transformed.paidLeaves !== undefined && transformed.paidLeaves !== null ? Number(transformed.paidLeaves) : 0,
         };
-      });
+      }));
     }
 
     res.status(200).json({
@@ -160,11 +351,11 @@ exports.getEmployee = async (req, res) => {
         .populate('designation_id', 'name code');
 
       if (mongoEmployee) {
-        const obj = toPlainObject(mongoEmployee);
+        const transformed = await transformEmployeeForResponse(mongoEmployee, true);
         employee = {
-          ...obj,
-          department: obj.department_id,
-          designation: obj.designation_id,
+          ...transformed,
+          department: transformed.department_id,
+          designation: transformed.designation_id,
         };
       }
     }
@@ -248,10 +439,15 @@ exports.createEmployee = async (req, res) => {
 
     const results = { mongodb: false, mssql: false };
 
+    // Separate permanent fields and dynamicFields
+    const permanentFields = extractPermanentFields(employeeData);
+    const dynamicFields = employeeData.dynamicFields || extractDynamicFields(employeeData, permanentFields);
+
     // Create in MongoDB
     try {
       const mongoEmployee = await Employee.create({
-        ...employeeData,
+        ...permanentFields,
+        dynamicFields: Object.keys(dynamicFields).length > 0 ? dynamicFields : {},
         emp_no: employeeData.emp_no.toUpperCase(),
       });
       results.mongodb = true;
@@ -259,14 +455,14 @@ exports.createEmployee = async (req, res) => {
       console.error('MongoDB create error:', mongoError);
     }
 
-    // Create in MSSQL
+    // Create in MSSQL (only permanent fields, exclude dynamicFields)
     if (isHRMSConnected()) {
       try {
         await createEmployeeMSSQL({
-          ...employeeData,
+          ...permanentFields,
           emp_no: employeeData.emp_no.toUpperCase(),
-          department_id: employeeData.department_id?.toString() || null,
-          designation_id: employeeData.designation_id?.toString() || null,
+          department_id: permanentFields.department_id?.toString() || null,
+          designation_id: permanentFields.designation_id?.toString() || null,
         });
         results.mssql = true;
       } catch (mssqlError) {
@@ -343,13 +539,39 @@ exports.updateEmployee = async (req, res) => {
       }
     }
 
+    // Validate dynamicFields if form settings exist
+    if (employeeData.dynamicFields && Object.keys(employeeData.dynamicFields).length > 0) {
+      const settings = await EmployeeApplicationFormSettings.getActiveSettings();
+      if (settings) {
+        // Merge existing employee data with update data for validation
+        const mergedData = {
+          ...existingEmployee.toObject(),
+          ...employeeData,
+        };
+        
+        const validation = await validateFormData(mergedData, settings);
+        if (!validation.isValid) {
+          return res.status(400).json({
+            success: false,
+            message: 'Validation failed',
+            errors: validation.errors,
+          });
+        }
+      }
+    }
+
+    // Separate permanent fields and dynamicFields
+    const permanentFields = extractPermanentFields(employeeData);
+    const dynamicFields = employeeData.dynamicFields || extractDynamicFields(employeeData, permanentFields);
+
     const results = { mongodb: false, mssql: false };
 
     // Update in MongoDB
     try {
       // Ensure paidLeaves is explicitly set (even if 0)
       const updateData = {
-        ...employeeData,
+        ...permanentFields,
+        dynamicFields: Object.keys(dynamicFields).length > 0 ? dynamicFields : existingEmployee.dynamicFields || {},
         updated_at: new Date(),
       };
       // Explicitly handle paidLeaves to ensure it's saved even if 0
@@ -367,13 +589,13 @@ exports.updateEmployee = async (req, res) => {
       console.error('MongoDB update error:', mongoError);
     }
 
-    // Update in MSSQL
+    // Update in MSSQL (only permanent fields, exclude dynamicFields)
     if (isHRMSConnected()) {
       try {
         await updateEmployeeMSSQL(empNo, {
-          ...employeeData,
-          department_id: employeeData.department_id?.toString() || null,
-          designation_id: employeeData.designation_id?.toString() || null,
+          ...permanentFields,
+          department_id: permanentFields.department_id?.toString() || null,
+          designation_id: permanentFields.designation_id?.toString() || null,
         });
         results.mssql = true;
       } catch (mssqlError) {
@@ -386,8 +608,8 @@ exports.updateEmployee = async (req, res) => {
       .populate('department_id', 'name code')
       .populate('designation_id', 'name code');
     
-    // Convert to plain object and ensure paidLeaves is included
-    const updatedEmployee = toPlainObject(updatedEmployeeDoc);
+    // Transform employee with user population
+    const updatedEmployee = await transformEmployeeForResponse(updatedEmployeeDoc, true);
     if (updatedEmployee) {
       updatedEmployee.paidLeaves = updatedEmployee.paidLeaves !== undefined && updatedEmployee.paidLeaves !== null 
         ? Number(updatedEmployee.paidLeaves) 

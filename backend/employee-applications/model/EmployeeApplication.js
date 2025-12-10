@@ -147,6 +147,11 @@ const employeeApplicationSchema = new mongoose.Schema(
       uppercase: true,
       default: null,
     },
+    // Dynamic fields for configurable form fields
+    dynamicFields: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
     is_active: {
       type: Boolean,
       default: true,

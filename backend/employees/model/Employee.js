@@ -132,6 +132,11 @@ const employeeSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    // Dynamic fields for configurable form fields
+    dynamicFields: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
     is_active: {
       type: Boolean,
       default: true,
@@ -169,6 +174,54 @@ employeeSchema.virtual('designation', {
   foreignField: '_id',
   justOne: true,
 });
+
+// Virtual getter for unified qualifications (backward compatibility)
+// Returns dynamicFields.qualifications if exists, otherwise falls back to old qualifications string
+employeeSchema.virtual('getQualifications').get(function () {
+  if (this.dynamicFields?.qualifications && Array.isArray(this.dynamicFields.qualifications) && this.dynamicFields.qualifications.length > 0) {
+    return this.dynamicFields.qualifications;
+  }
+  // Fallback to old string format
+  if (this.qualifications) {
+    // Convert old string format to array format
+    return [{ degree: this.qualifications }];
+  }
+  return [];
+});
+
+// Virtual getter for all data (permanent + dynamicFields merged)
+// This provides a unified view of employee data
+employeeSchema.virtual('allData').get(function () {
+  const permanentFields = this.toObject({ virtuals: false });
+  const { dynamicFields, _id, __v, ...permanentData } = permanentFields;
+  
+  // Merge dynamicFields into root level for easy access
+  return {
+    ...permanentData,
+    ...(dynamicFields || {}),
+    // Keep dynamicFields separate for reference
+    dynamicFields: dynamicFields || {},
+  };
+});
+
+// Method to get unified data (includes dynamicFields merged)
+employeeSchema.methods.getUnifiedData = function () {
+  const permanentFields = this.toObject({ virtuals: false });
+  const { dynamicFields, _id, __v, ...permanentData } = permanentFields;
+  
+  return {
+    ...permanentData,
+    ...(dynamicFields || {}),
+    dynamicFields: dynamicFields || {},
+  };
+};
+
+// Method to get only permanent fields (for MSSQL sync)
+employeeSchema.methods.getPermanentFields = function () {
+  const allFields = this.toObject({ virtuals: false });
+  const { dynamicFields, _id, __v, ...permanentFields } = allFields;
+  return permanentFields;
+};
 
 // Ensure virtuals are included in JSON output
 employeeSchema.set('toJSON', { virtuals: true });

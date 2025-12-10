@@ -614,6 +614,56 @@ export const api = {
     });
   },
 
+  // Employee Application Form Settings
+  getFormSettings: async () => {
+    return apiRequest<any>('/employee-applications/form-settings', { method: 'GET' });
+  },
+  initializeFormSettings: async () => {
+    return apiRequest<any>('/employee-applications/form-settings/initialize', {
+      method: 'POST',
+    });
+  },
+  updateFormSettings: async (data: any) => {
+    return apiRequest<any>('/employee-applications/form-settings', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+  addFormGroup: async (data: any) => {
+    return apiRequest<any>('/employee-applications/form-settings/groups', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+  updateFormGroup: async (groupId: string, data: any) => {
+    return apiRequest<any>(`/employee-applications/form-settings/groups/${groupId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+  deleteFormGroup: async (groupId: string) => {
+    return apiRequest<any>(`/employee-applications/form-settings/groups/${groupId}`, {
+      method: 'DELETE',
+    });
+  },
+  addFormField: async (groupId: string, data: any) => {
+    return apiRequest<any>(`/employee-applications/form-settings/groups/${groupId}/fields`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+  updateFormField: async (groupId: string, fieldId: string, data: any) => {
+    return apiRequest<any>(`/employee-applications/form-settings/groups/${groupId}/fields/${fieldId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+  deleteFormField: async (groupId: string, fieldId: string) => {
+    return apiRequest<any>(`/employee-applications/form-settings/groups/${groupId}/fields/${fieldId}`, {
+      method: 'DELETE',
+    });
+  },
+
   deleteEmployee: async (empNo: string) => {
     return apiRequest<any>(`/employees/${empNo}`, { method: 'DELETE' });
   },

@@ -1,9 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { api } from '@/lib/api';
 import { auth } from '@/lib/auth';
 import BulkUpload from '@/components/BulkUpload';
+import DynamicEmployeeForm from '@/components/DynamicEmployeeForm';
 import {
   EMPLOYEE_TEMPLATE_HEADERS,
   EMPLOYEE_TEMPLATE_SAMPLE,
@@ -40,6 +42,7 @@ interface Employee {
   bank_place?: string;
   ifsc_code?: string;
   is_active?: boolean;
+  dynamicFields?: any;
 }
 
 interface Department {
@@ -141,8 +144,11 @@ export default function EmployeesPage() {
   const [showApprovalDialog, setShowApprovalDialog] = useState(false);
   const [selectedApplication, setSelectedApplication] = useState<EmployeeApplication | null>(null);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
+  const [showViewDialog, setShowViewDialog] = useState(false);
   const [formData, setFormData] = useState<Partial<Employee>>(initialFormState);
   const [applicationFormData, setApplicationFormData] = useState<Partial<EmployeeApplication & { proposedSalary: number }>>({ ...initialFormState, proposedSalary: 0 });
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [approvalData, setApprovalData] = useState({ approvedSalary: 0, doj: '', comments: '' });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -210,11 +216,30 @@ export default function EmployeesPage() {
       const response = await api.getEmployees();
       if (response.success) {
         // Ensure paidLeaves is always included and is a number
-        const employeesData = (response.data || []).map((emp: any) => {
+        const employeesData = (response.data || []).map((emp: any, index: number) => {
           const paidLeaves = emp.paidLeaves !== undefined && emp.paidLeaves !== null ? Number(emp.paidLeaves) : 0;
-          // Debug: Log first employee to check paidLeaves
-          if (employeesData.length === 0) {
-            console.log('Loading employee with paidLeaves:', { emp_no: emp.emp_no, paidLeaves, original: emp.paidLeaves });
+          // Debug: Log first employee to check paidLeaves and reporting_to
+          if (index === 0) {
+            console.log('Loading employee:', { 
+              emp_no: emp.emp_no, 
+              paidLeaves, 
+              original: emp.paidLeaves,
+              reporting_to: emp.reporting_to,
+              dynamicFields: emp.dynamicFields,
+              reporting_to_in_dynamicFields: emp.dynamicFields?.reporting_to
+            });
+          }
+          // Debug: Log any employee with reporting_to or reporting_to_
+          if (emp.reporting_to || emp.reporting_to_ || emp.dynamicFields?.reporting_to || emp.dynamicFields?.reporting_to_) {
+            console.log('Employee with reporting_to:', {
+              emp_no: emp.emp_no,
+              reporting_to_root: emp.reporting_to,
+              reporting_to__root: emp.reporting_to_,
+              reporting_to_dynamic: emp.dynamicFields?.reporting_to,
+              reporting_to__dynamic: emp.dynamicFields?.reporting_to_,
+              isArray: Array.isArray(emp.reporting_to || emp.reporting_to_ || emp.dynamicFields?.reporting_to || emp.dynamicFields?.reporting_to_),
+              firstItem: (emp.reporting_to || emp.reporting_to_ || emp.dynamicFields?.reporting_to || emp.dynamicFields?.reporting_to_)?.[0]
+            });
           }
           return {
             ...emp,
@@ -376,21 +401,33 @@ export default function EmployeesPage() {
     setShowDialog(true);
   };
 
-  const handleDelete = async (empNo: string) => {
-    if (!confirm('Are you sure you want to delete this employee?')) return;
+  const handleDeactivate = async (empNo: string, currentStatus: boolean) => {
+    const action = currentStatus ? 'deactivate' : 'activate';
+    if (!confirm(`Are you sure you want to ${action} this employee?`)) return;
 
     try {
-      const response = await api.deleteEmployee(empNo);
+      const response = await api.updateEmployee(empNo, { is_active: !currentStatus });
       if (response.success) {
-        setSuccess('Employee deleted successfully!');
+        setSuccess(`Employee ${action}d successfully!`);
         loadEmployees();
       } else {
-        setError(response.message || 'Failed to delete employee');
+        setError(response.message || `Failed to ${action} employee`);
       }
     } catch (err) {
       setError('An error occurred');
       console.error(err);
     }
+  };
+
+  const handleViewEmployee = (employee: Employee) => {
+    // Debug: Log the employee data to see what we're receiving
+    console.log('Viewing employee data:', employee);
+    console.log('reporting_to at root:', employee.reporting_to);
+    console.log('reporting_to_ at root:', employee.reporting_to_);
+    console.log('reporting_to in dynamicFields:', employee.dynamicFields?.reporting_to);
+    console.log('reporting_to_ in dynamicFields:', employee.dynamicFields?.reporting_to_);
+    setViewingEmployee(employee);
+    setShowViewDialog(true);
   };
 
   const openCreateDialog = () => {
@@ -420,11 +457,7 @@ export default function EmployeesPage() {
     e.preventDefault();
     setError('');
     setSuccess('');
-
-    if (!applicationFormData.emp_no || !applicationFormData.employee_name || !applicationFormData.proposedSalary) {
-      setError('Employee No, Name, and Proposed Salary are required');
-      return;
-    }
+    setFormErrors({});
 
     try {
       // Clean up enum fields - convert empty strings to null/undefined
@@ -451,9 +484,16 @@ export default function EmployeesPage() {
         setSuccess('Employee application created successfully!');
         setShowApplicationDialog(false);
         setApplicationFormData({ ...initialFormState, proposedSalary: 0 });
+        setFormErrors({});
         loadApplications();
       } else {
+        // Handle validation errors
+        if (response.errors) {
+          setFormErrors(response.errors);
+          setError('Please fix the errors below');
+      } else {
         setError(response.message || 'Failed to create application');
+        }
       }
     } catch (err) {
       setError('An error occurred');
@@ -562,6 +602,16 @@ export default function EmployeesPage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
+            <Link
+              href="/superadmin/employees/form-settings"
+              className="flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-all hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-blue-500 dark:hover:bg-blue-900/30 dark:hover:text-blue-400"
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              Form Settings
+            </Link>
             <button
               onClick={() => setShowBulkUpload(true)}
               className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
@@ -828,7 +878,11 @@ export default function EmployeesPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                   {filteredEmployees.map((employee) => (
-                    <tr key={employee.emp_no} className="transition-colors hover:bg-emerald-50/30 dark:hover:bg-emerald-900/10">
+                    <tr 
+                      key={employee.emp_no} 
+                      className="transition-colors hover:bg-emerald-50/30 dark:hover:bg-emerald-900/10 cursor-pointer"
+                      onClick={() => handleViewEmployee(employee)}
+                    >
                       <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-emerald-600 dark:text-emerald-400">
                         {employee.emp_no}
                       </td>
@@ -858,7 +912,10 @@ export default function EmployeesPage() {
                       </td>
                       <td className="whitespace-nowrap px-6 py-4 text-right">
                         <button
-                          onClick={() => handleEdit(employee)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEdit(employee);
+                          }}
                           className="mr-2 rounded-lg p-2 text-slate-400 transition-all hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/30 dark:hover:text-blue-400"
                           title="Edit"
                         >
@@ -867,13 +924,26 @@ export default function EmployeesPage() {
                           </svg>
                         </button>
                         <button
-                          onClick={() => handleDelete(employee.emp_no)}
-                          className="rounded-lg p-2 text-slate-400 transition-all hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
-                          title="Delete"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeactivate(employee.emp_no, employee.is_active !== false);
+                          }}
+                          className={`rounded-lg p-2 transition-all ${
+                            employee.is_active !== false
+                              ? 'text-slate-400 hover:bg-orange-50 hover:text-orange-600 dark:hover:bg-orange-900/30 dark:hover:text-orange-400'
+                              : 'text-slate-400 hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/30 dark:hover:text-green-400'
+                          }`}
+                          title={employee.is_active !== false ? 'Deactivate' : 'Activate'}
                         >
-                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
+                          {employee.is_active !== false ? (
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                            </svg>
+                          ) : (
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                          )}
                         </button>
                       </td>
                     </tr>
@@ -923,313 +993,13 @@ export default function EmployeesPage() {
             )}
 
             <form onSubmit={handleCreateApplication} className="space-y-6">
-              {/* Basic Info - Same as employee form but with Proposed Salary */}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Basic Information</h3>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Employee No *
-                    </label>
-                    <input
-                      type="text"
-                      name="emp_no"
-                      value={applicationFormData.emp_no || ''}
-                      onChange={(e) => {
-                        const value = e.target.value.toUpperCase();
-                        setApplicationFormData(prev => ({
-                          ...prev,
-                          emp_no: value,
-                        }));
-                      }}
-                      required
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm uppercase transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                      placeholder="E.g., EMP001"
-                    />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Employee Name *
-                    </label>
-                    <input
-                      type="text"
-                      name="employee_name"
-                      value={applicationFormData.employee_name || ''}
-                      onChange={handleApplicationInputChange}
-                      required
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                      placeholder="Full Name"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Department</label>
-                    <select
-                      name="department_id"
-                      value={typeof applicationFormData.department_id === 'string' ? applicationFormData.department_id : (applicationFormData.department_id?._id || '')}
-                      onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    >
-                      <option value="">Select Department</option>
-                      {departments.map((dept) => (
-                        <option key={dept._id} value={dept._id}>{dept.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Designation</label>
-                    <select
-                      name="designation_id"
-                      value={typeof applicationFormData.designation_id === 'string' ? applicationFormData.designation_id : (applicationFormData.designation_id?._id || '')}
-                      onChange={handleApplicationInputChange}
-                      disabled={!applicationFormData.department_id}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    >
-                      <option value="">Select Designation</option>
-                      {filteredApplicationDesignations.map((desig) => (
-                        <option key={desig._id} value={desig._id}>{desig.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Proposed Salary *
-                    </label>
-                    <input
-                      type="number"
-                      name="proposedSalary"
-                      value={applicationFormData.proposedSalary || ''}
-                      onChange={handleApplicationInputChange}
-                      required
-                      min="0"
-                      step="0.01"
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                      placeholder="0.00"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Personal Information */}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Personal Information</h3>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Date of Birth</label>
-                    <input
-                      type="date"
-                      name="dob"
-                      value={applicationFormData.dob || ''}
-                      onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Gender</label>
-                    <select
-                      name="gender"
-                      value={applicationFormData.gender || ''}
-                      onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    >
-                      <option value="">Select</option>
-                      <option value="Male">Male</option>
-                      <option value="Female">Female</option>
-                      <option value="Other">Other</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Marital Status</label>
-                    <select
-                      name="marital_status"
-                      value={applicationFormData.marital_status || ''}
-                      onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    >
-                      <option value="">Select</option>
-                      <option value="Single">Single</option>
-                      <option value="Married">Married</option>
-                      <option value="Divorced">Divorced</option>
-                      <option value="Widowed">Widowed</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Blood Group</label>
-                    <select
-                      name="blood_group"
-                      value={applicationFormData.blood_group || ''}
-                      onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    >
-                      <option value="">Select</option>
-                      {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(bg => (
-                        <option key={bg} value={bg}>{bg}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Qualifications</label>
-                    <input
-                      type="text"
-                      name="qualifications"
-                      value={applicationFormData.qualifications || ''}
-                      onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                      placeholder="E.g., B.Tech, MBA"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Experience (Years)</label>
-                    <input
-                      type="number"
-                      name="experience"
-                      value={applicationFormData.experience || ''}
-                      onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Address</label>
-                    <input
-                      type="text"
-                      name="address"
-                      value={applicationFormData.address || ''}
-                      onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Location</label>
-                    <input
-                      type="text"
-                      name="location"
-                      value={applicationFormData.location || ''}
-                      onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Aadhar Number</label>
-                    <input
-                      type="text"
-                      name="aadhar_number"
-                      value={applicationFormData.aadhar_number || ''}
-                      onChange={handleApplicationInputChange}
-                      maxLength={12}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Contact & Employment */}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Contact & Employment</h3>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Phone Number</label>
-                    <input
-                      type="text"
-                      name="phone_number"
-                      value={applicationFormData.phone_number || ''}
-                      onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Alt. Phone</label>
-                    <input
-                      type="text"
-                      name="alt_phone_number"
-                      value={applicationFormData.alt_phone_number || ''}
-                      onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Email</label>
-                    <input
-                      type="email"
-                      name="email"
-                      value={applicationFormData.email || ''}
-                      onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">PF Number</label>
-                    <input
-                      type="text"
-                      name="pf_number"
-                      value={applicationFormData.pf_number || ''}
-                      onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">ESI Number</label>
-                    <input
-                      type="text"
-                      name="esi_number"
-                      value={applicationFormData.esi_number || ''}
-                      onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Bank Details */}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Bank Details</h3>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Bank A/C No</label>
-                    <input
-                      type="text"
-                      name="bank_account_no"
-                      value={applicationFormData.bank_account_no || ''}
-                      onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Bank Name</label>
-                    <input
-                      type="text"
-                      name="bank_name"
-                      value={applicationFormData.bank_name || ''}
-                      onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Bank Place</label>
-                    <input
-                      type="text"
-                      name="bank_place"
-                      value={applicationFormData.bank_place || ''}
-                      onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">IFSC Code</label>
-                    <input
-                      type="text"
-                      name="ifsc_code"
-                      value={applicationFormData.ifsc_code || ''}
-                      onChange={(e) => {
-                        const value = e.target.value.toUpperCase();
-                        setApplicationFormData(prev => ({
-                          ...prev,
-                          ifsc_code: value,
-                        }));
-                      }}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm uppercase transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-                </div>
-              </div>
+              <DynamicEmployeeForm
+                formData={applicationFormData}
+                onChange={setApplicationFormData}
+                errors={formErrors}
+                departments={departments}
+                designations={filteredApplicationDesignations}
+              />
 
               {/* Actions */}
               <div className="flex gap-3 pt-2">
@@ -1760,6 +1530,316 @@ export default function EmployeesPage() {
           }}
           onClose={() => setShowBulkUpload(false)}
         />
+      )}
+
+      {/* Employee View Dialog */}
+      {showViewDialog && viewingEmployee && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowViewDialog(false)} />
+          <div className="relative z-50 max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950/95">
+            <div className="mb-6 flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+                  {viewingEmployee.employee_name}
+                </h2>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  Employee No: {viewingEmployee.emp_no}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setShowViewDialog(false);
+                    handleEdit(viewingEmployee);
+                  }}
+                  className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-400"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => setShowViewDialog(false)}
+                  className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              {/* Status Badge */}
+              <div className="flex items-center gap-2">
+                <span className={`inline-flex rounded-full px-3 py-1 text-sm font-medium ${
+                  viewingEmployee.is_active !== false
+                    ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                    : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                }`}>
+                  {viewingEmployee.is_active !== false ? 'Active' : 'Inactive'}
+                </span>
+              </div>
+
+              {/* Basic Information */}
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Basic Information</h3>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Employee Number</label>
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.emp_no || '-'}</p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Name</label>
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.employee_name || '-'}</p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Department</label>
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.department?.name || '-'}</p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Designation</label>
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.designation?.name || '-'}</p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Date of Joining</label>
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.doj ? new Date(viewingEmployee.doj).toLocaleDateString() : '-'}</p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Date of Birth</label>
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.dob ? new Date(viewingEmployee.dob).toLocaleDateString() : '-'}</p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Gross Salary</label>
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.gross_salary ? `₹${viewingEmployee.gross_salary.toLocaleString()}` : '-'}</p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Paid Leaves</label>
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.paidLeaves ?? '-'}</p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Gender</label>
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.gender || '-'}</p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Marital Status</label>
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.marital_status || '-'}</p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Blood Group</label>
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.blood_group || '-'}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Contact Information */}
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Contact Information</h3>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Phone Number</label>
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.phone_number || '-'}</p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Alternate Phone</label>
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.alt_phone_number || '-'}</p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Email</label>
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.email || '-'}</p>
+                  </div>
+                  <div className="sm:col-span-2 lg:col-span-3">
+                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Address</label>
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.address || '-'}</p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Location</label>
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.location || '-'}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Professional Information */}
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Professional Information</h3>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <div className="sm:col-span-2 lg:col-span-3">
+                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Qualifications</label>
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.qualifications || '-'}</p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Experience (Years)</label>
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.experience ?? '-'}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Financial Information */}
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Financial Information</h3>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">PF Number</label>
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.pf_number || '-'}</p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">ESI Number</label>
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.esi_number || '-'}</p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Aadhar Number</label>
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.aadhar_number || '-'}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Bank Details */}
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Bank Details</h3>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Account Number</label>
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_account_no || '-'}</p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Bank Name</label>
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_name || '-'}</p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Bank Place</label>
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_place || '-'}</p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">IFSC Code</label>
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.ifsc_code || '-'}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Reporting Authority Section - Check both root and dynamicFields, handle both reporting_to and reporting_to_ */}
+              {(viewingEmployee.reporting_to || viewingEmployee.reporting_to_ || viewingEmployee.dynamicFields?.reporting_to || viewingEmployee.dynamicFields?.reporting_to_) && (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                  <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Reporting Authority</h3>
+                  {(() => {
+                    const reportingTo = viewingEmployee.reporting_to || viewingEmployee.reporting_to_ || viewingEmployee.dynamicFields?.reporting_to || viewingEmployee.dynamicFields?.reporting_to_;
+                    console.log('Displaying reporting_to:', reportingTo);
+                    
+                    if (!reportingTo || !Array.isArray(reportingTo) || reportingTo.length === 0) {
+                      return <p className="text-sm text-slate-500 dark:text-slate-400">No reporting managers assigned</p>;
+                    }
+                    
+                    const isPopulated = reportingTo[0] && typeof reportingTo[0] === 'object' && reportingTo[0].name;
+                    console.log('Is populated:', isPopulated, 'First item:', reportingTo[0]);
+                    
+                    return (
+                      <div className="space-y-2">
+                        {isPopulated ? (
+                          reportingTo.map((user: any, idx: number) => (
+                            <div key={idx} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
+                              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                </svg>
+                              </div>
+                              <div className="flex-1">
+                                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{user.name || 'Unknown'}</p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400">{user.email || ''}</p>
+                              </div>
+                              {user.role && (
+                                <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                                  {user.role}
+                                </span>
+                              )}
+                            </div>
+                          ))
+                        ) : (
+                          // Fallback if not populated (show IDs)
+                          reportingTo.map((id: any, idx: number) => (
+                            <div key={idx} className="text-sm text-slate-600 dark:text-slate-400">
+                              {typeof id === 'object' ? id._id || JSON.stringify(id) : id}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* Dynamic Fields */}
+              {viewingEmployee.dynamicFields && Object.keys(viewingEmployee.dynamicFields).length > 0 && (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                  <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Additional Information</h3>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {Object.entries(viewingEmployee.dynamicFields)
+                      .filter(([key]) => key !== 'reporting_to' && key !== 'reporting_to_') // Exclude reporting_to fields as they're shown above
+                      .map(([key, value]) => {
+                      if (value === null || value === undefined || value === '') return null;
+                      const displayKey = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                      
+                      // Special handling for reporting_to field (array of user objects)
+                      if (key === 'reporting_to' && Array.isArray(value) && value.length > 0) {
+                        const isPopulated = value[0] && typeof value[0] === 'object' && value[0].name;
+                        return (
+                          <div key={key} className="sm:col-span-2 lg:col-span-3">
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{displayKey}</label>
+                            <div className="mt-2 space-y-2">
+                              {isPopulated ? (
+                                value.map((user: any, idx: number) => (
+                                  <div key={idx} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-800">
+                                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                      </svg>
+                                    </div>
+                                    <div className="flex-1">
+                                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{user.name || 'Unknown'}</p>
+                                      <p className="text-xs text-slate-500 dark:text-slate-400">{user.email || ''}</p>
+                                    </div>
+                                    {user.role && (
+                                      <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                                        {user.role}
+                                      </span>
+                                    )}
+                                  </div>
+                                ))
+                              ) : (
+                                // Fallback if not populated (show IDs)
+                                value.map((id: any, idx: number) => (
+                                  <div key={idx} className="text-sm text-slate-600 dark:text-slate-400">
+                                    {typeof id === 'object' ? id._id || id.toString() : id}
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          </div>
+                        );
+                      }
+                      
+                      // Regular handling for other fields
+                      let displayValue: string = '';
+                      
+                      if (Array.isArray(value)) {
+                        displayValue = value.length > 0 ? JSON.stringify(value) : '-';
+                      } else if (typeof value === 'object') {
+                        displayValue = JSON.stringify(value, null, 2);
+                      } else {
+                        displayValue = String(value);
+                      }
+                      
+                      return (
+                        <div key={key} className={Array.isArray(value) || typeof value === 'object' ? 'sm:col-span-2 lg:col-span-3' : ''}>
+                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{displayKey}</label>
+                          <p className={`mt-1 text-sm font-medium text-slate-900 dark:text-slate-100 ${Array.isArray(value) || typeof value === 'object' ? 'whitespace-pre-wrap' : ''}`}>
+                            {displayValue}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

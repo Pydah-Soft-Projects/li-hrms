@@ -7,6 +7,14 @@ const EmployeeApplication = require('../model/EmployeeApplication');
 const Employee = require('../../employees/model/Employee');
 const Department = require('../../departments/model/Department');
 const Designation = require('../../departments/model/Designation');
+const EmployeeApplicationFormSettings = require('../model/EmployeeApplicationFormSettings');
+const {
+  validateFormData,
+  transformFormData,
+} = require('../services/formValidationService');
+const {
+  transformApplicationToEmployee,
+} = require('../services/fieldMappingService');
 const {
   isHRMSConnected,
   createEmployeeMSSQL,
@@ -22,7 +30,21 @@ exports.createApplication = async (req, res) => {
   try {
     const applicationData = req.body;
 
-    // Validate required fields
+    // Get form settings for validation
+    const settings = await EmployeeApplicationFormSettings.getActiveSettings();
+
+    // Validate form data using form settings
+    if (settings) {
+      const validation = await validateFormData(applicationData, settings);
+      if (!validation.isValid) {
+        return res.status(400).json({
+          success: false,
+          message: 'Validation failed',
+          errors: validation.errors,
+        });
+      }
+    } else {
+      // Fallback to basic validation if settings not found
     if (!applicationData.emp_no) {
       return res.status(400).json({
         success: false,
@@ -42,6 +64,7 @@ exports.createApplication = async (req, res) => {
         success: false,
         message: 'Proposed salary is required',
       });
+      }
     }
 
     // Check if employee already exists
@@ -87,9 +110,13 @@ exports.createApplication = async (req, res) => {
       }
     }
 
-    // Create application
+    // Transform form data: separate permanent fields from dynamic fields
+    const { permanentFields, dynamicFields } = transformFormData(applicationData, settings);
+
+    // Create application with separated fields
     const application = await EmployeeApplication.create({
-      ...applicationData,
+      ...permanentFields,
+      dynamicFields: dynamicFields,
       emp_no: applicationData.emp_no.toUpperCase(),
       createdBy: req.user._id,
       status: 'pending',
@@ -254,33 +281,20 @@ exports.approveApplication = async (req, res) => {
 
     await application.save();
 
-    // Create employee in both databases
+    // Transform application to employee data using field mapping service
+    // This automatically extracts all permanent fields and dynamicFields
+    const { permanentFields, dynamicFields } = transformApplicationToEmployee(
+      application.toObject(),
+      {
+        gross_salary: finalSalary, // Override with approved salary
+        doj: finalDOJ, // Override with approved DOJ
+      }
+    );
+
+    // Combine permanent fields and dynamicFields
     const employeeData = {
-      emp_no: application.emp_no,
-      employee_name: application.employee_name,
-      department_id: application.department_id,
-      designation_id: application.designation_id,
-      doj: finalDOJ,
-      dob: application.dob,
-      gross_salary: finalSalary,
-      gender: application.gender,
-      marital_status: application.marital_status,
-      blood_group: application.blood_group,
-      qualifications: application.qualifications,
-      experience: application.experience,
-      address: application.address,
-      location: application.location,
-      aadhar_number: application.aadhar_number,
-      phone_number: application.phone_number,
-      alt_phone_number: application.alt_phone_number,
-      email: application.email,
-      pf_number: application.pf_number,
-      esi_number: application.esi_number,
-      bank_account_no: application.bank_account_no,
-      bank_name: application.bank_name,
-      bank_place: application.bank_place,
-      ifsc_code: application.ifsc_code,
-      is_active: application.is_active !== false,
+      ...permanentFields,
+      dynamicFields: dynamicFields || {},
     };
 
     const results = { mongodb: false, mssql: false };

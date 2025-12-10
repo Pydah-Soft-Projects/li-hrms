@@ -1,0 +1,822 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { api } from '@/lib/api';
+
+interface Field {
+  id: string;
+  label: string;
+  type: string;
+  dataType: string;
+  isRequired: boolean;
+  isSystem: boolean;
+  placeholder?: string;
+  defaultValue?: any;
+  validation?: {
+    pattern?: string;
+    minLength?: number;
+    maxLength?: number;
+    min?: number;
+    max?: number;
+    custom?: string;
+  };
+  options?: Array<{ label: string; value: string }>;
+  itemType?: string;
+  itemSchema?: {
+    fields: Field[];
+  };
+  minItems?: number;
+  maxItems?: number;
+  dateFormat?: string;
+  order: number;
+  isEnabled: boolean;
+}
+
+interface Group {
+  id: string;
+  label: string;
+  description?: string;
+  isSystem: boolean;
+  isArray: boolean;
+  fields: Field[];
+  order: number;
+  isEnabled: boolean;
+}
+
+interface FormSettings {
+  groups: Group[];
+}
+
+interface DynamicEmployeeFormProps {
+  formData: any;
+  onChange: (data: any) => void;
+  errors?: Record<string, string>;
+  departments?: Array<{ _id: string; name: string }>;
+  designations?: Array<{ _id: string; name: string; department: string }>;
+}
+
+export default function DynamicEmployeeForm({
+  formData,
+  onChange,
+  errors = {},
+  departments = [],
+  designations = [],
+}: DynamicEmployeeFormProps) {
+  const [settings, setSettings] = useState<FormSettings | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [users, setUsers] = useState<Array<{ _id: string; name: string; email: string }>>([]);
+
+  useEffect(() => {
+    loadSettings();
+    loadUsers();
+  }, []);
+
+  const loadUsers = async () => {
+    try {
+      const response = await api.getUsers({ isActive: true });
+      if (response.success && response.data) {
+        setUsers(response.data);
+      }
+    } catch (error) {
+      console.error('Error loading users:', error);
+    }
+  };
+
+  const loadSettings = async () => {
+    try {
+      const response = await api.getFormSettings();
+      if (response.success) {
+        setSettings(response.data);
+      } else {
+        // Try to initialize if settings don't exist
+        const initResponse = await api.initializeFormSettings();
+        if (initResponse.success) {
+          setSettings(initResponse.data);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading form settings:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFieldChange = (fieldId: string, value: any) => {
+    onChange({
+      ...formData,
+      [fieldId]: value,
+    });
+  };
+
+  const handleArrayItemChange = (fieldId: string, index: number, value: any) => {
+    const currentArray = formData[fieldId] || [];
+    const newArray = [...currentArray];
+    newArray[index] = value;
+    handleFieldChange(fieldId, newArray);
+  };
+
+  const handleArrayItemAdd = (fieldId: string, itemSchema?: { fields: Field[] }) => {
+    const currentArray = formData[fieldId] || [];
+    const newItem = itemSchema
+      ? itemSchema.fields.reduce((acc, field) => {
+          acc[field.id] = field.defaultValue || (field.type === 'number' ? 0 : '');
+          return acc;
+        }, {} as any)
+      : '';
+    handleFieldChange(fieldId, [...currentArray, newItem]);
+  };
+
+  const handleArrayItemRemove = (fieldId: string, index: number) => {
+    const currentArray = formData[fieldId] || [];
+    const newArray = currentArray.filter((_: any, i: number) => i !== index);
+    handleFieldChange(fieldId, newArray);
+  };
+
+  const renderField = (field: Field, groupId: string, arrayIndex?: number) => {
+    const fieldId = arrayIndex !== undefined ? `${field.id}[${arrayIndex}]` : field.id;
+    const value = arrayIndex !== undefined
+      ? formData[field.id]?.[arrayIndex]
+      : formData[field.id];
+    const error = errors[field.id] || errors[fieldId];
+    const fieldKey = `${groupId}-${field.id}${arrayIndex !== undefined ? `-${arrayIndex}` : ''}`;
+
+    // Special handling for department_id and designation_id
+    if (field.id === 'department_id') {
+      return (
+        <div key={fieldKey}>
+          <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+            {field.label} {field.isRequired && '*'}
+          </label>
+          <select
+            value={value || ''}
+            onChange={(e) => handleFieldChange(field.id, e.target.value)}
+            required={field.isRequired}
+            className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+              error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
+            }`}
+          >
+            <option value="">Select Department</option>
+            {departments.map((dept) => (
+              <option key={dept._id} value={dept._id}>
+                {dept.name}
+              </option>
+            ))}
+          </select>
+          {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
+        </div>
+      );
+    }
+
+    if (field.id === 'designation_id') {
+      const filteredDesignations = designations.filter(
+        (desig) => !formData.department_id || desig.department === formData.department_id
+      );
+      return (
+        <div key={fieldKey}>
+          <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+            {field.label} {field.isRequired && '*'}
+          </label>
+          <select
+            value={value || ''}
+            onChange={(e) => handleFieldChange(field.id, e.target.value)}
+            required={field.isRequired}
+            disabled={!formData.department_id}
+            className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+              error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
+            }`}
+          >
+            <option value="">Select Designation</option>
+            {filteredDesignations.map((desig) => (
+              <option key={desig._id} value={desig._id}>
+                {desig.name}
+              </option>
+            ))}
+          </select>
+          {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
+        </div>
+      );
+    }
+
+    switch (field.type) {
+      case 'text':
+      case 'tel':
+      case 'email':
+        return (
+          <div key={fieldKey}>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+              {field.label} {field.isRequired && '*'}
+            </label>
+            <input
+              type={field.type}
+              value={value || ''}
+              onChange={(e) => {
+                const newValue = field.id === 'emp_no' ? e.target.value.toUpperCase() : e.target.value;
+                handleFieldChange(field.id, newValue);
+              }}
+              placeholder={field.placeholder}
+              required={field.isRequired}
+              maxLength={field.validation?.maxLength}
+              className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
+              } ${field.id === 'emp_no' || field.id === 'ifsc_code' ? 'uppercase' : ''}`}
+            />
+            {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
+          </div>
+        );
+
+      case 'textarea':
+        return (
+          <div key={fieldKey} className={field.id === 'address' ? 'sm:col-span-2' : ''}>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+              {field.label} {field.isRequired && '*'}
+            </label>
+            <textarea
+              value={value || ''}
+              onChange={(e) => handleFieldChange(field.id, e.target.value)}
+              placeholder={field.placeholder}
+              required={field.isRequired}
+              rows={3}
+              maxLength={field.validation?.maxLength}
+              className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
+              }`}
+            />
+            {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
+          </div>
+        );
+
+      case 'number':
+        return (
+          <div key={fieldKey}>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+              {field.label} {field.isRequired && '*'}
+            </label>
+            <input
+              type="number"
+              value={value || ''}
+              onChange={(e) => handleFieldChange(field.id, parseFloat(e.target.value) || 0)}
+              placeholder={field.placeholder}
+              required={field.isRequired}
+              min={field.validation?.min}
+              max={field.validation?.max}
+              step={field.id === 'proposedSalary' ? '0.01' : '1'}
+              className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
+              }`}
+            />
+            {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
+          </div>
+        );
+
+      case 'date':
+        return (
+          <div key={fieldKey}>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+              {field.label} {field.isRequired && '*'}
+            </label>
+            <input
+              type="date"
+              value={value ? new Date(value).toISOString().split('T')[0] : ''}
+              onChange={(e) => handleFieldChange(field.id, e.target.value)}
+              required={field.isRequired}
+              className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
+              }`}
+            />
+            {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
+          </div>
+        );
+
+      case 'select':
+        return (
+          <div key={fieldKey}>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+              {field.label} {field.isRequired && '*'}
+            </label>
+            <select
+              value={value || ''}
+              onChange={(e) => handleFieldChange(field.id, e.target.value || null)}
+              required={field.isRequired}
+              className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
+              }`}
+            >
+              <option value="">Select</option>
+              {field.options?.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
+          </div>
+        );
+
+      case 'array':
+        const arrayValue = formData[field.id] || [];
+        return (
+          <div key={fieldKey} className="space-y-4">
+            <div className="flex items-center justify-between">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                {field.label} {field.isRequired && '*'}
+              </label>
+              <button
+                type="button"
+                onClick={() => handleArrayItemAdd(field.id, field.itemSchema)}
+                className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-emerald-600"
+              >
+                + Add
+              </button>
+            </div>
+
+            {arrayValue.map((item: any, index: number) => (
+              <div
+                key={index}
+                className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900"
+              >
+                <div className="mb-3 flex items-center justify-between">
+                  <span className="text-sm font-medium text-slate-600 dark:text-slate-400">
+                    {field.label} #{index + 1}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleArrayItemRemove(field.id, index)}
+                    className="rounded-lg p-1 text-red-500 transition hover:bg-red-50 dark:hover:bg-red-900/30"
+                  >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+
+                {field.itemType === 'object' && field.itemSchema ? (
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    {field.itemSchema.fields.map((nestedField) => {
+                      const nestedValue = item[nestedField.id];
+                      const nestedError = errors[`${field.id}[${index}].${nestedField.id}`];
+                      return (
+                        <div key={`${fieldKey}-nested-${nestedField.id}`}>
+                          <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                            {nestedField.label} {nestedField.isRequired && '*'}
+                          </label>
+                          {nestedField.type === 'text' || nestedField.type === 'textarea' ? (
+                            nestedField.type === 'textarea' ? (
+                              <textarea
+                                value={nestedValue || ''}
+                                onChange={(e) => {
+                                  const newItem = { ...item, [nestedField.id]: e.target.value };
+                                  handleArrayItemChange(field.id, index, newItem);
+                                }}
+                                placeholder={nestedField.placeholder}
+                                required={nestedField.isRequired}
+                                rows={3}
+                                className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                                  nestedError ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
+                                }`}
+                              />
+                            ) : (
+                              <input
+                                type={nestedField.type}
+                                value={nestedValue || ''}
+                                onChange={(e) => {
+                                  const newItem = { ...item, [nestedField.id]: e.target.value };
+                                  handleArrayItemChange(field.id, index, newItem);
+                                }}
+                                placeholder={nestedField.placeholder}
+                                required={nestedField.isRequired}
+                                className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                                  nestedError ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
+                                }`}
+                              />
+                            )
+                          ) : nestedField.type === 'number' ? (
+                            <input
+                              type="number"
+                              value={nestedValue || ''}
+                              onChange={(e) => {
+                                const newItem = { ...item, [nestedField.id]: parseFloat(e.target.value) || 0 };
+                                handleArrayItemChange(field.id, index, newItem);
+                              }}
+                              placeholder={nestedField.placeholder}
+                              required={nestedField.isRequired}
+                              min={nestedField.validation?.min}
+                              max={nestedField.validation?.max}
+                              className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                                nestedError ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
+                              }`}
+                            />
+                          ) : nestedField.type === 'select' ? (
+                            <select
+                              value={nestedValue || ''}
+                              onChange={(e) => {
+                                const newItem = { ...item, [nestedField.id]: e.target.value || null };
+                                handleArrayItemChange(field.id, index, newItem);
+                              }}
+                              required={nestedField.isRequired}
+                              className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                                nestedError ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
+                              }`}
+                            >
+                              <option value="">Select</option>
+                              {nestedField.options?.map((opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                </option>
+                              ))}
+                            </select>
+                          ) : null}
+                          {nestedError && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{nestedError}</p>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <input
+                    type={field.itemType === 'number' ? 'number' : 'text'}
+                    value={item || ''}
+                    onChange={(e) => {
+                      const newValue = field.itemType === 'number' ? parseFloat(e.target.value) || 0 : e.target.value;
+                      handleArrayItemChange(field.id, index, newValue);
+                    }}
+                    placeholder={field.placeholder}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  />
+                )}
+              </div>
+            ))}
+
+            {arrayValue.length === 0 && (
+              <p className="text-sm text-slate-500 dark:text-slate-400">No items added yet</p>
+            )}
+            {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
+          </div>
+        );
+
+      case 'email':
+        return (
+          <div key={fieldKey}>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+              {field.label} {field.isRequired && '*'}
+            </label>
+            <input
+              type="email"
+              value={value || ''}
+              onChange={(e) => handleFieldChange(field.id, e.target.value)}
+              placeholder={field.placeholder || 'example@email.com'}
+              required={field.isRequired}
+              className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
+              }`}
+            />
+            {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
+          </div>
+        );
+
+      case 'tel':
+        return (
+          <div key={fieldKey}>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+              {field.label} {field.isRequired && '*'}
+            </label>
+            <input
+              type="tel"
+              value={value || ''}
+              onChange={(e) => handleFieldChange(field.id, e.target.value)}
+              placeholder={field.placeholder || '+91 1234567890'}
+              required={field.isRequired}
+              className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
+              }`}
+            />
+            {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
+          </div>
+        );
+
+      case 'file':
+        return (
+          <div key={fieldKey}>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+              {field.label} {field.isRequired && '*'}
+            </label>
+            <input
+              type="file"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  // Store file name for now, you can enhance this to upload and store file URL
+                  handleFieldChange(field.id, file.name);
+                }
+              }}
+              required={field.isRequired}
+              className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
+              }`}
+            />
+            {value && <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Selected: {value}</p>}
+            {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
+          </div>
+        );
+
+      case 'multiselect':
+        const multiValue = Array.isArray(value) ? value : value ? [value] : [];
+        return (
+          <div key={fieldKey}>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+              {field.label} {field.isRequired && '*'}
+            </label>
+            <div className="space-y-2">
+              {field.options?.map((opt) => {
+                const isChecked = multiValue.includes(opt.value);
+                return (
+                  <label key={opt.value} className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={(e) => {
+                        let newValue: any[] = [...multiValue];
+                        if (e.target.checked) {
+                          if (!newValue.includes(opt.value)) {
+                            newValue.push(opt.value);
+                          }
+                        } else {
+                          newValue = newValue.filter((v) => v !== opt.value);
+                        }
+                        handleFieldChange(field.id, newValue);
+                      }}
+                      className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <span className="text-sm text-slate-700 dark:text-slate-300">{opt.label}</span>
+                  </label>
+                );
+              })}
+            </div>
+            {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
+          </div>
+        );
+
+      case 'object':
+        const objectValue = value || {};
+        if (!field.itemSchema?.fields) {
+          return (
+            <div key={fieldKey} className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900/50">
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Object field "{field.label}" requires itemSchema configuration
+              </p>
+            </div>
+          );
+        }
+        return (
+          <div key={fieldKey} className="space-y-4">
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+              {field.label} {field.isRequired && '*'}
+            </label>
+            <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                {field.itemSchema.fields.map((nestedField) => {
+                  const nestedValue = objectValue[nestedField.id];
+                  const nestedError = errors[`${field.id}.${nestedField.id}`];
+                  return (
+                    <div key={nestedField.id}>
+                      <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                        {nestedField.label} {nestedField.isRequired && '*'}
+                      </label>
+                      {nestedField.type === 'text' || nestedField.type === 'email' || nestedField.type === 'tel' ? (
+                        <input
+                          type={nestedField.type}
+                          value={nestedValue || ''}
+                          onChange={(e) => {
+                            handleFieldChange(field.id, {
+                              ...objectValue,
+                              [nestedField.id]: e.target.value,
+                            });
+                          }}
+                          placeholder={nestedField.placeholder}
+                          required={nestedField.isRequired}
+                          className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                            nestedError ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
+                          }`}
+                        />
+                      ) : nestedField.type === 'textarea' ? (
+                        <textarea
+                          value={nestedValue || ''}
+                          onChange={(e) => {
+                            handleFieldChange(field.id, {
+                              ...objectValue,
+                              [nestedField.id]: e.target.value,
+                            });
+                          }}
+                          placeholder={nestedField.placeholder}
+                          required={nestedField.isRequired}
+                          rows={3}
+                          className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                            nestedError ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
+                          }`}
+                        />
+                      ) : nestedField.type === 'number' ? (
+                        <input
+                          type="number"
+                          value={nestedValue || ''}
+                          onChange={(e) => {
+                            handleFieldChange(field.id, {
+                              ...objectValue,
+                              [nestedField.id]: parseFloat(e.target.value) || 0,
+                            });
+                          }}
+                          placeholder={nestedField.placeholder}
+                          required={nestedField.isRequired}
+                          min={nestedField.validation?.min}
+                          max={nestedField.validation?.max}
+                          className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                            nestedError ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
+                          }`}
+                        />
+                      ) : nestedField.type === 'date' ? (
+                        <input
+                          type="date"
+                          value={nestedValue ? new Date(nestedValue).toISOString().split('T')[0] : ''}
+                          onChange={(e) => {
+                            handleFieldChange(field.id, {
+                              ...objectValue,
+                              [nestedField.id]: e.target.value,
+                            });
+                          }}
+                          required={nestedField.isRequired}
+                          className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                            nestedError ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
+                          }`}
+                        />
+                      ) : nestedField.type === 'select' ? (
+                        <select
+                          value={nestedValue || ''}
+                          onChange={(e) => {
+                            handleFieldChange(field.id, {
+                              ...objectValue,
+                              [nestedField.id]: e.target.value || null,
+                            });
+                          }}
+                          required={nestedField.isRequired}
+                          className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                            nestedError ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
+                          }`}
+                        >
+                          <option value="">Select</option>
+                          {nestedField.options?.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      ) : null}
+                      {nestedError && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{nestedError}</p>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
+          </div>
+        );
+
+      case 'userselect':
+        const selectedUserIds = Array.isArray(value) ? value : value ? [value] : [];
+        const maxUsers = field.validation?.maxItems || 2;
+        return (
+          <div key={fieldKey} className="sm:col-span-2">
+            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+              {field.label} {field.isRequired && '*'}
+              {maxUsers > 1 && (
+                <span className="ml-2 text-xs font-normal text-slate-500 dark:text-slate-400">
+                  (Select up to {maxUsers})
+                </span>
+              )}
+            </label>
+            <div className="space-y-2">
+              {users.map((user) => {
+                const isSelected = selectedUserIds.includes(user._id);
+                const canSelect = isSelected || selectedUserIds.length < maxUsers;
+                return (
+                  <label
+                    key={user._id}
+                    className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-all ${
+                      isSelected
+                        ? 'border-emerald-400 bg-emerald-50 dark:border-emerald-600 dark:bg-emerald-900/20'
+                        : canSelect
+                        ? 'border-slate-200 bg-white hover:border-emerald-200 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600'
+                        : 'border-slate-200 bg-slate-50 opacity-50 cursor-not-allowed dark:border-slate-700 dark:bg-slate-900/50'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={(e) => {
+                        let newValue: string[] = [...selectedUserIds];
+                        if (e.target.checked) {
+                          if (!newValue.includes(user._id) && newValue.length < maxUsers) {
+                            newValue.push(user._id);
+                          }
+                        } else {
+                          newValue = newValue.filter((id) => id !== user._id);
+                        }
+                        handleFieldChange(field.id, newValue);
+                      }}
+                      disabled={!canSelect}
+                      className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 disabled:opacity-50"
+                    />
+                    <div className="flex-1">
+                      <div className="font-medium text-slate-900 dark:text-slate-100">{user.name}</div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400">{user.email}</div>
+                    </div>
+                    {isSelected && (
+                      <svg className="h-5 w-5 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
+                        <path
+                          fillRule="evenodd"
+                          d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                    )}
+                  </label>
+                );
+              })}
+              {selectedUserIds.length > 0 && (
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {selectedUserIds.length} of {maxUsers} selected
+                </p>
+              )}
+            </div>
+            {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent"></div>
+      </div>
+    );
+  }
+
+  if (!settings) {
+    return (
+      <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+        Form settings not found. Please initialize settings first.
+      </div>
+    );
+  }
+
+  // Sort groups by order
+  const sortedGroups = [...settings.groups]
+    .filter((g) => g.isEnabled)
+    .sort((a, b) => a.order - b.order);
+
+  return (
+    <div className="space-y-6">
+      {sortedGroups.map((group) => {
+        // Sort fields by order
+        const sortedFields = [...group.fields]
+          .filter((f) => f.isEnabled)
+          .sort((a, b) => a.order - b.order);
+
+        if (sortedFields.length === 0) return null;
+
+        return (
+          <div
+            key={group.id}
+            className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50"
+          >
+            <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              {group.label}
+            </h3>
+            {group.description && (
+              <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">{group.description}</p>
+            )}
+
+            <div
+              className={`grid grid-cols-1 gap-4 ${
+                group.id === 'basic_info'
+                  ? 'sm:grid-cols-2 lg:grid-cols-3'
+                  : group.id === 'personal_info'
+                  ? 'sm:grid-cols-2 lg:grid-cols-4'
+                  : group.id === 'contact_info'
+                  ? 'sm:grid-cols-2 lg:grid-cols-4'
+                  : group.id === 'bank_details'
+                  ? 'sm:grid-cols-2 lg:grid-cols-4'
+                  : group.id === 'reporting_authority'
+                  ? 'sm:grid-cols-1'
+                  : 'sm:grid-cols-2'
+              }`}
+            >
+              {sortedFields.map((field) => renderField(field, group.id))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
