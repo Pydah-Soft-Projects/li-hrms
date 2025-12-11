@@ -194,6 +194,30 @@ export const api = {
       body: JSON.stringify({ email, password }),
     });
   },
+  // Payroll include-missing setting (global)
+  getIncludeMissingSetting: async () => {
+    return apiRequest<Setting>('/settings/include_missing_employee_components', { method: 'GET' });
+  },
+  saveIncludeMissingSetting: async (value: boolean) => {
+    return apiRequest<Setting>('/settings', {
+      method: 'POST',
+      body: JSON.stringify({
+        key: 'include_missing_employee_components',
+        value,
+        category: 'payroll',
+        description: 'Include Missing Allowances & Deductions for Employees',
+      }),
+    });
+  },
+
+  // Employee allowance/deduction defaults (resolved with includeMissing)
+  getEmployeeComponentDefaults: async (params: { departmentId: string; grossSalary: number; empNo?: string }) => {
+    const searchParams = new URLSearchParams();
+    searchParams.set('departmentId', params.departmentId);
+    searchParams.set('grossSalary', String(params.grossSalary));
+    if (params.empNo) searchParams.set('empNo', params.empNo);
+    return apiRequest<any>(`/employees/components/defaults?${searchParams.toString()}`, { method: 'GET' });
+  },
 
   // Get current user profile
   getCurrentUser: async () => {

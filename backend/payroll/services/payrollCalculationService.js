@@ -9,6 +9,18 @@ const otPayService = require('./otPayService');
 const allowanceService = require('./allowanceService');
 const deductionService = require('./deductionService');
 const loanAdvanceService = require('./loanAdvanceService');
+const {
+  getIncludeMissingFlag,
+  mergeWithOverrides,
+} = require('./allowanceDeductionResolverService');
+
+// Normalize employee override payloads so missing category/amount fields don't block usage
+const normalizeOverrides = (list, fallbackCategory) =>
+  (list || []).map((ov) => ({
+    ...ov,
+    category: ov.category || fallbackCategory,
+    amount: ov.amount ?? ov.overrideAmount ?? 0,
+  }));
 
 /**
  * Main Payroll Calculation Service
@@ -147,9 +159,15 @@ async function calculatePayroll(employeeId, month, userId) {
       console.log(`  [${idx + 1}] ${allow.name}: ${allow.amount} (${allow.type}, base: ${allow.base})`);
     });
 
-    // Merge allowances
+    // Merge allowances and apply employee overrides
     const allAllowances = [...allowances, ...allowancesWithGrossBase];
-    const totalAllowances = allowanceService.calculateTotalAllowances(allAllowances);
+    const includeMissing = await getIncludeMissingFlag(departmentId);
+    // Accept employee overrides even if category was missing/old; normalize to 'allowance'
+    const allowanceOverrides = normalizeOverrides(employee.employeeAllowances, 'allowance').filter(
+      (a) => a.category === 'allowance'
+    );
+    const mergedAllowances = mergeWithOverrides(allAllowances, allowanceOverrides, includeMissing);
+    const totalAllowances = allowanceService.calculateTotalAllowances(mergedAllowances);
     console.log(`Total Allowances: ${totalAllowances}`);
 
     // Recalculate Gross Salary (Final)
@@ -278,7 +296,12 @@ async function calculatePayroll(employeeId, month, userId) {
       console.log('    (None)');
     }
     
-    const totalOtherDeductions = deductionService.calculateTotalOtherDeductions(allOtherDeductions);
+    // Accept employee overrides even if category was missing/old; normalize to 'deduction'
+    const deductionOverrides = normalizeOverrides(employee.employeeDeductions, 'deduction').filter(
+      (d) => d.category === 'deduction'
+    );
+    const mergedDeductions = mergeWithOverrides(allOtherDeductions, deductionOverrides, includeMissing);
+    const totalOtherDeductions = deductionService.calculateTotalOtherDeductions(mergedDeductions);
     console.log(`\n✓ Total Other Deductions: ₹${totalOtherDeductions}`);
     console.log(`  (Fixed: ₹${deductionService.calculateTotalOtherDeductions(fixedDeds)}, ` +
                 `Percentage-Basic: ₹${deductionService.calculateTotalOtherDeductions(percentageBasicDeds)}, ` +
@@ -419,7 +442,7 @@ async function calculatePayroll(employeeId, month, userId) {
     payrollRecord.set('earnings.otHours', Number(finalOTHours) || 0);
     payrollRecord.set('earnings.otRatePerHour', Number(finalOTRatePerHour) || 0);
     payrollRecord.set('earnings.totalAllowances', Number(finalTotalAllowances) || 0);
-    payrollRecord.set('earnings.allowances', Array.isArray(allAllowances) ? allAllowances : []);
+    payrollRecord.set('earnings.allowances', Array.isArray(mergedAllowances) ? mergedAllowances : []);
     payrollRecord.set('earnings.grossSalary', Number(finalGrossSalary) || 0);
     
     // Set deductions fields using set() with dot notation
@@ -448,7 +471,7 @@ async function calculatePayroll(employeeId, month, userId) {
       daysDeducted: 0,
     });
     payrollRecord.set('deductions.totalOtherDeductions', Number(finalTotalOtherDeductions) || 0);
-    payrollRecord.set('deductions.otherDeductions', Array.isArray(allOtherDeductions) ? allOtherDeductions : []);
+    payrollRecord.set('deductions.otherDeductions', Array.isArray(mergedDeductions) ? mergedDeductions : []);
     payrollRecord.set('deductions.totalDeductions', Number(finalTotalDeductions) || 0);
     
     // Set loan/advance fields using set() with dot notation

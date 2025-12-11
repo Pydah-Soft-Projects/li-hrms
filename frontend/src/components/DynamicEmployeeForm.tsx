@@ -792,10 +792,21 @@ export default function DynamicEmployeeForm({
     );
   }
 
-  // Sort groups by order
+  // Sort groups by desired priority first, then by their own order
+  const groupPriority: Record<string, number> = {
+    basic_info: 1,
+    personal_info: 2,
+    contact_info: 3,
+    bank_details: 4,
+  };
   const sortedGroups = [...settings.groups]
     .filter((g) => g.isEnabled)
-    .sort((a, b) => a.order - b.order);
+    .sort((a, b) => {
+      const pa = groupPriority[a.id] ?? 5;
+      const pb = groupPriority[b.id] ?? 5;
+      if (pa !== pb) return pa - pb;
+      return a.order - b.order;
+    });
 
   // Render qualifications section
   const renderQualifications = () => {
@@ -991,9 +1002,10 @@ export default function DynamicEmployeeForm({
     );
   };
 
+  const qualificationsBlock = renderQualifications();
+
   return (
     <div className="space-y-6">
-      {renderQualifications()}
       {sortedGroups.map((group) => {
         // Sort fields by order
         const sortedFields = [...group.fields]
@@ -1003,37 +1015,45 @@ export default function DynamicEmployeeForm({
         if (sortedFields.length === 0) return null;
 
         return (
-          <div
-            key={group.id}
-            className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50"
-          >
-            <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              {group.label}
-            </h3>
-            {group.description && (
-              <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">{group.description}</p>
-            )}
-
+          <div key={group.id}>
             <div
-              className={`grid grid-cols-1 gap-4 ${
-                group.id === 'basic_info'
-                  ? 'sm:grid-cols-2 lg:grid-cols-3'
-                  : group.id === 'personal_info'
-                  ? 'sm:grid-cols-2 lg:grid-cols-4'
-                  : group.id === 'contact_info'
-                  ? 'sm:grid-cols-2 lg:grid-cols-4'
-                  : group.id === 'bank_details'
-                  ? 'sm:grid-cols-2 lg:grid-cols-4'
-                  : group.id === 'reporting_authority'
-                  ? 'sm:grid-cols-1'
-                  : 'sm:grid-cols-2'
-              }`}
+              className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50"
             >
-              {sortedFields.map((field) => renderField(field, group.id))}
+              <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                {group.label}
+              </h3>
+              {group.description && (
+                <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">{group.description}</p>
+              )}
+
+              <div
+                className={`grid grid-cols-1 gap-4 ${
+                  group.id === 'basic_info'
+                    ? 'sm:grid-cols-2 lg:grid-cols-3'
+                    : group.id === 'personal_info'
+                    ? 'sm:grid-cols-2 lg:grid-cols-4'
+                    : group.id === 'contact_info'
+                    ? 'sm:grid-cols-2 lg:grid-cols-4'
+                    : group.id === 'bank_details'
+                    ? 'sm:grid-cols-2 lg:grid-cols-4'
+                    : group.id === 'reporting_authority'
+                    ? 'sm:grid-cols-1'
+                    : 'sm:grid-cols-2'
+                }`}
+              >
+                {sortedFields.map((field) => renderField(field, group.id))}
+              </div>
             </div>
+
+            {/* Render qualifications immediately after personal info */}
+            {group.id === 'personal_info' && qualificationsBlock && (
+              <div className="mt-6">{qualificationsBlock}</div>
+            )}
           </div>
         );
       })}
+      {/* If no personal info group exists, still show qualifications at the end */}
+      {!sortedGroups.some((g) => g.id === 'personal_info') && qualificationsBlock}
     </div>
   );
 }

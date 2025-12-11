@@ -89,13 +89,23 @@ exports.upsertSetting = async (req, res) => {
       }
     }
 
+    // Validate include_missing_employee_components: must be boolean
+    if (key === 'include_missing_employee_components') {
+      if (typeof value !== 'boolean') {
+        return res.status(400).json({
+          success: false,
+          message: 'include_missing_employee_components must be a boolean',
+        });
+      }
+    }
+
     const setting = await Settings.findOneAndUpdate(
       { key },
       {
         key,
         value,
         description: description || `Setting for ${key}`,
-        category: category || 'general',
+        category: category || (key === 'include_missing_employee_components' ? 'payroll' : 'general'),
       },
       {
         new: true,

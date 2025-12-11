@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
+import { toast } from 'react-toastify';
 
 type TabType = 'shift' | 'employee' | 'leaves' | 'loan' | 'salary_advance' | 'attendance' | 'payroll' | 'overtime' | 'permissions' | 'attendance_deductions' | 'general';
 
@@ -117,6 +118,28 @@ export default function SettingsPage() {
   const [employeeDeleteTarget, setEmployeeDeleteTarget] = useState<string>('both');
   const [mssqlConnected, setMssqlConnected] = useState(false);
   const [employeeSettingsLoading, setEmployeeSettingsLoading] = useState(false);
+
+  // Payroll include-missing toggle (global)
+  const [includeMissingLoading, setIncludeMissingLoading] = useState(false);
+  const [includeMissingSaving, setIncludeMissingSaving] = useState(false);
+  const [includeMissing, setIncludeMissing] = useState<boolean>(true);
+
+  const loadIncludeMissingSetting = async () => {
+    try {
+      setIncludeMissingLoading(true);
+      const res = await api.getIncludeMissingSetting();
+      if (res?.data?.value !== undefined && res?.data?.value !== null) {
+        setIncludeMissing(!!res.data.value);
+      } else {
+        setIncludeMissing(true);
+      }
+    } catch (err) {
+      console.error('Failed to load includeMissing setting', err);
+      setIncludeMissing(true);
+    } finally {
+      setIncludeMissingLoading(false);
+    }
+  };
 
   // Leave settings state
   const [leaveSettings, setLeaveSettings] = useState<LeaveSettingsData | null>(null);
@@ -249,6 +272,8 @@ export default function SettingsPage() {
     } else if (activeTab === 'attendance_deductions') {
       loadAttendanceDeductionRules();
       loadEarlyOutSettings();
+    } else if (activeTab === 'payroll') {
+      loadIncludeMissingSetting();
     }
   }, [activeTab]);
   
@@ -3153,8 +3178,65 @@ export default function SettingsPage() {
 
         {activeTab === 'payroll' && (
           <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg dark:border-slate-800 dark:bg-slate-950/95 sm:p-8">
-            <h2 className="mb-2 text-xl font-semibold text-slate-900 dark:text-slate-100">Payroll Settings</h2>
-            <p className="text-sm text-slate-600 dark:text-slate-400">Payroll-related settings will be configured here.</p>
+            <div className="mb-6 flex items-start justify-between gap-4">
+              <div>
+                <h2 className="mb-1 text-xl font-semibold text-slate-900 dark:text-slate-100">Payroll Settings</h2>
+                <p className="text-sm text-slate-600 dark:text-slate-400">
+                  Control global payroll behaviors. Department settings can override these.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-blue-900/10">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                      Include Missing Allowances &amp; Deductions for Employees
+                    </h3>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      When enabled, if an employee has partial overrides, missing items will be auto-filled from Department then Global.
+                      When disabled, only the employee’s own overrides are used.
+                    </p>
+                  </div>
+                  <label className="relative inline-flex cursor-pointer items-center">
+                    <input
+                      type="checkbox"
+                      className="peer sr-only"
+                      checked={includeMissing}
+                      disabled={includeMissingSaving || includeMissingLoading}
+                      onChange={(e) => setIncludeMissing(e.target.checked)}
+                    />
+                    <div className="peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-blue-600 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-blue-800"></div>
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  onClick={async () => {
+                    setIncludeMissingSaving(true);
+                    try {
+                      const res = await api.saveIncludeMissingSetting(includeMissing);
+                      if (res?.success) {
+                        setMessage({ type: 'success', text: 'Payroll setting saved' });
+                      } else {
+                        setMessage({ type: 'error', text: res?.message || 'Failed to save setting' });
+                      }
+                    } catch (err) {
+                      console.error(err);
+                      setMessage({ type: 'error', text: 'Failed to save setting' });
+                    } finally {
+                      setIncludeMissingSaving(false);
+                    }
+                  }}
+                  disabled={includeMissingSaving || includeMissingLoading}
+                  className="rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {includeMissingSaving ? 'Saving...' : 'Save Payroll Settings'}
+                </button>
+              </div>
+            </div>
           </div>
         )}
 

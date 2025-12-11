@@ -120,6 +120,7 @@ async function calculateAllowances(departmentId, basicPay, grossSalary = null, u
 
       if (amount > 0) {
         allowances.push({
+          masterId: master._id,
           name: master.name,
           amount,
           type: rule.type,

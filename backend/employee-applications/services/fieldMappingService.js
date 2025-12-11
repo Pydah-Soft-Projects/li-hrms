@@ -37,6 +37,8 @@ const PERMANENT_FIELDS = [
   'bank_place',
   'ifsc_code',
   'paidLeaves',
+  'employeeAllowances',
+  'employeeDeductions',
   'is_active',
 ];
 

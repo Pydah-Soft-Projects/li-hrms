@@ -16,6 +16,7 @@ const {
   extractPermanentFields,
   extractDynamicFields,
 } = require('../../employee-applications/services/fieldMappingService');
+const { resolveForEmployee } = require('../../payroll/services/allowanceDeductionResolverService');
 const mongoose = require('mongoose');
 const {
   isHRMSConnected,
@@ -443,12 +444,35 @@ exports.createEmployee = async (req, res) => {
     const permanentFields = extractPermanentFields(employeeData);
     const dynamicFields = employeeData.dynamicFields || extractDynamicFields(employeeData, permanentFields);
 
+    const normalizeOverrides = (list) =>
+      Array.isArray(list)
+        ? list
+            .filter((item) => item && (item.masterId || item.name))
+            .map((item) => ({
+              masterId: item.masterId || null,
+              code: item.code || null,
+              name: item.name || '',
+              category: item.category || null,
+              type: item.type || null,
+              amount: item.amount ?? item.overrideAmount ?? null,
+              percentage: item.percentage ?? null,
+              percentageBase: item.percentageBase ?? null,
+              minAmount: item.minAmount ?? null,
+              maxAmount: item.maxAmount ?? null,
+              isOverride: true,
+            }))
+        : [];
+    const employeeAllowances = normalizeOverrides(employeeData.employeeAllowances);
+    const employeeDeductions = normalizeOverrides(employeeData.employeeDeductions);
+
     // Create in MongoDB
     try {
       const mongoEmployee = await Employee.create({
         ...permanentFields,
         dynamicFields: Object.keys(dynamicFields).length > 0 ? dynamicFields : {},
         emp_no: employeeData.emp_no.toUpperCase(),
+        employeeAllowances,
+        employeeDeductions,
       });
       results.mongodb = true;
     } catch (mongoError) {
@@ -572,6 +596,8 @@ exports.updateEmployee = async (req, res) => {
       const updateData = {
         ...permanentFields,
         dynamicFields: Object.keys(dynamicFields).length > 0 ? dynamicFields : existingEmployee.dynamicFields || {},
+        employeeAllowances,
+        employeeDeductions,
         updated_at: new Date(),
       };
       // Explicitly handle paidLeaves to ensure it's saved even if 0
@@ -746,6 +772,54 @@ exports.getSettings = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error getting employee settings',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * @desc    Get resolved allowance/deduction components for a department/gross salary (with optional employee overrides)
+ * @route   GET /api/employees/components/defaults
+ * @access  Private
+ */
+exports.getAllowanceDeductionDefaults = async (req, res) => {
+  try {
+    const { departmentId, grossSalary, empNo } = req.query;
+
+    if (!departmentId || !grossSalary) {
+      return res.status(400).json({
+        success: false,
+        message: 'departmentId and grossSalary are required',
+      });
+    }
+
+    let employeeAllowances = [];
+    let employeeDeductions = [];
+
+    if (empNo) {
+      const existingEmployee = await Employee.findOne({ emp_no: empNo.toUpperCase() });
+      if (existingEmployee) {
+        employeeAllowances = Array.isArray(existingEmployee.employeeAllowances) ? existingEmployee.employeeAllowances : [];
+        employeeDeductions = Array.isArray(existingEmployee.employeeDeductions) ? existingEmployee.employeeDeductions : [];
+      }
+    }
+
+    const resolved = await resolveForEmployee({
+      departmentId,
+      grossSalary: Number(grossSalary),
+      employeeAllowances,
+      employeeDeductions,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: resolved,
+    });
+  } catch (error) {
+    console.error('Error resolving allowance/deduction defaults:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error resolving allowance/deduction defaults',
       error: error.message,
     });
   }
