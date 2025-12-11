@@ -88,6 +88,11 @@ interface ODApplication {
   numberOfDays: number;
   isHalfDay?: boolean;
   halfDayType?: string;
+  // NEW: Hour-based OD fields
+  odType_extended?: string;
+  odStartTime?: string;
+  odEndTime?: string;
+  durationHours?: number;
   purpose: string;
   placeVisited: string;
   contactNumber: string;
@@ -214,8 +219,12 @@ export default function LeavesPage() {
     contactNumber: '',
     placeVisited: '',
     isHalfDay: false,
-    halfDayType: '',
+    halfDayType: null,
     remarks: '',
+    // NEW: Hour-based OD fields
+    odType_extended: 'full_day', // 'full_day' | 'half_day' | 'hours'
+    odStartTime: '',
+    odEndTime: '',
   });
 
   // Types from settings
@@ -630,8 +639,12 @@ export default function LeavesPage() {
       contactNumber: '',
       placeVisited: '',
       isHalfDay: false,
-      halfDayType: '',
+      halfDayType: null,
       remarks: '',
+      // NEW: Hour-based OD fields
+      odType_extended: 'full_day',
+      odStartTime: '',
+      odEndTime: '',
     });
     
     // Reset employee selection
@@ -704,6 +717,15 @@ export default function LeavesPage() {
           setError('Please fill all required fields');
           return;
         }
+
+        // Validate hours input if selected
+        if (formData.odType_extended === 'hours') {
+          if (!formData.odStartTime || !formData.odEndTime) {
+            setError('Please select start and end times for OD');
+            return;
+          }
+        }
+
         response = await api.applyOD({
           ...(empNo && { empNo }), // Only send empNo if applying for others
           odType: formData.odType,
@@ -715,6 +737,10 @@ export default function LeavesPage() {
           isHalfDay: formData.isHalfDay,
           halfDayType: formData.isHalfDay ? formData.halfDayType : null,
           remarks: formData.remarks,
+          // NEW: Hour-based OD fields
+          odType_extended: formData.odType_extended,
+          odStartTime: formData.odType_extended === 'hours' ? formData.odStartTime : null,
+          odEndTime: formData.odType_extended === 'hours' ? formData.odEndTime : null,
         });
       }
 
@@ -732,8 +758,12 @@ export default function LeavesPage() {
           contactNumber: '',
           placeVisited: '',
           isHalfDay: false,
-          halfDayType: '',
+          halfDayType: null,
           remarks: '',
+          // NEW
+          odType_extended: 'full_day',
+          odStartTime: '',
+          odEndTime: '',
         });
         setSelectedEmployee(null);
         setEmployeeSearch('');
@@ -1479,20 +1509,56 @@ export default function LeavesPage() {
                   <input
                     type="date"
                     value={formData.fromDate}
-                    onChange={(e) => setFormData({ ...formData, fromDate: e.target.value })}
+                    onChange={(e) => {
+                      const newFromDate = e.target.value;
+                      // Auto-set end date = start date for half-day and hour-based OD
+                      const newToDate = (applyType === 'od' && (formData.odType_extended === 'half_day' || formData.odType_extended === 'hours'))
+                        ? newFromDate
+                        : formData.toDate;
+                      setFormData({ ...formData, fromDate: newFromDate, toDate: newToDate });
+                    }}
                     required
                     className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">To Date *</label>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    To Date *
+                    {/* Today button for hour-based OD */}
+                    {applyType === 'od' && formData.odType_extended === 'hours' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const today = new Date().toISOString().split('T')[0];
+                          setFormData({ ...formData, fromDate: today, toDate: today });
+                        }}
+                        className="ml-2 text-xs px-2 py-1 rounded-lg bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50 transition-colors"
+                      >
+                        Today
+                      </button>
+                    )}
+                  </label>
                   <input
                     type="date"
                     value={formData.toDate}
-                    onChange={(e) => setFormData({ ...formData, toDate: e.target.value })}
+                    onChange={(e) => {
+                      // For half-day and hour-based OD, prevent changing end date separately
+                      if (applyType === 'od' && (formData.odType_extended === 'half_day' || formData.odType_extended === 'hours')) {
+                        // Auto-set to start date
+                        setFormData({ ...formData, toDate: formData.fromDate });
+                      } else {
+                        setFormData({ ...formData, toDate: e.target.value });
+                      }
+                    }}
                     required
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    disabled={applyType === 'od' && (formData.odType_extended === 'half_day' || formData.odType_extended === 'hours')}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white disabled:bg-slate-100 dark:disabled:bg-slate-700 disabled:cursor-not-allowed"
                   />
+                  {applyType === 'od' && (formData.odType_extended === 'half_day' || formData.odType_extended === 'hours') && (
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      End date is automatically set to start date for {formData.odType_extended === 'half_day' ? 'half-day' : 'hour-based'} OD
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -1518,6 +1584,141 @@ export default function LeavesPage() {
                   </select>
                 )}
               </div>
+
+              {/* OD Type Selection (Full Day / Half Day / Hours) - NEW */}
+              {applyType === 'od' && (
+                <div className="space-y-3">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">OD Duration Type *</label>
+                  <div className="grid grid-cols-3 gap-3">
+                    {/* Full Day */}
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, odType_extended: 'full_day', isHalfDay: false, halfDayType: null, odStartTime: null, odEndTime: null })}
+                      className={`p-3 rounded-lg border-2 transition-all ${
+                        formData.odType_extended === 'full_day'
+                          ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
+                          : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                      }`}
+                    >
+                      <div className="text-sm font-semibold text-slate-900 dark:text-white">Full Day</div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400">Complete day</div>
+                    </button>
+
+                    {/* Half Day */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // Auto-set end date = start date for half-day OD
+                        const endDate = formData.fromDate || formData.toDate;
+                        setFormData({ 
+                          ...formData, 
+                          odType_extended: 'half_day', 
+                          isHalfDay: true, 
+                          halfDayType: formData.halfDayType || 'first_half',
+                          odStartTime: null, 
+                          odEndTime: null,
+                          toDate: endDate || formData.fromDate // Set end date = start date
+                        });
+                      }}
+                      className={`p-3 rounded-lg border-2 transition-all ${
+                        formData.odType_extended === 'half_day'
+                          ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
+                          : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                      }`}
+                    >
+                      <div className="text-sm font-semibold text-slate-900 dark:text-white">Half Day</div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400">4 hours</div>
+                    </button>
+
+                    {/* Hours */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // Auto-set end date = start date for hour-based OD
+                        const endDate = formData.fromDate || formData.toDate;
+                        setFormData({ 
+                          ...formData, 
+                          odType_extended: 'hours', 
+                          isHalfDay: false,
+                          halfDayType: null,
+                          toDate: endDate || formData.fromDate // Set end date = start date
+                        });
+                      }}
+                      className={`p-3 rounded-lg border-2 transition-all ${
+                        formData.odType_extended === 'hours'
+                          ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
+                          : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                      }`}
+                    >
+                      <div className="text-sm font-semibold text-slate-900 dark:text-white">Specific Hours</div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400">Custom duration</div>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Hours Input (NEW) */}
+              {applyType === 'od' && formData.odType_extended === 'hours' && (
+                <div className="space-y-4 p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-700">
+                  <div className="grid grid-cols-2 gap-4">
+                    {/* Start Time */}
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Start Time *</label>
+                      <input
+                        type="time"
+                        value={formData.odStartTime}
+                        onChange={(e) => setFormData({ ...formData, odStartTime: e.target.value })}
+                        required={formData.odType_extended === 'hours'}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      />
+                    </div>
+
+                    {/* End Time */}
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">End Time *</label>
+                      <input
+                        type="time"
+                        value={formData.odEndTime}
+                        onChange={(e) => setFormData({ ...formData, odEndTime: e.target.value })}
+                        required={formData.odType_extended === 'hours'}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Duration Display */}
+                  {formData.odStartTime && formData.odEndTime && (
+                    <div className="p-3 bg-white dark:bg-slate-800 rounded-lg border border-purple-300 dark:border-purple-600">
+                      <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                        {(() => {
+                          const [startHour, startMin] = formData.odStartTime.split(':').map(Number);
+                          const [endHour, endMin] = formData.odEndTime.split(':').map(Number);
+                          const startMinutes = startHour * 60 + startMin;
+                          const endMinutes = endHour * 60 + endMin;
+                          const durationMinutes = endMinutes - startMinutes;
+                          
+                          if (durationMinutes <= 0) {
+                            return <span className="text-red-600 dark:text-red-400">❌ End time must be after start time</span>;
+                          }
+                          
+                          const hours = Math.floor(durationMinutes / 60);
+                          const minutes = durationMinutes % 60;
+                          
+                          if (durationMinutes > 480) {
+                            return <span className="text-red-600 dark:text-red-400">❌ Maximum duration is 8 hours</span>;
+                          }
+                          
+                          return (
+                            <span className="text-green-600 dark:text-green-400">
+                              ✓ Duration: {hours}h {minutes}m
+                            </span>
+                          );
+                        })()}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Purpose */}
               <div>
@@ -1699,10 +1900,42 @@ export default function LeavesPage() {
                 {/* Duration */}
                 <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
                   <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-semibold mb-1">Duration</p>
+                  {detailType === 'od' && (selectedItem as any).odType_extended === 'hours' ? (
+                    (() => {
+                      const odItem = selectedItem as any;
+                      const start = odItem.odStartTime || odItem.od_start_time || '';
+                      const end = odItem.odEndTime || odItem.od_end_time || '';
+                      if (start && end && typeof start === 'string' && typeof end === 'string') {
+                        try {
+                          const [sh, sm] = start.split(':').map(Number);
+                          const [eh, em] = end.split(':').map(Number);
+                          const sMin = sh * 60 + sm;
+                          const eMin = eh * 60 + em;
+                          if (isNaN(sMin) || isNaN(eMin) || eMin <= sMin) {
+                            return <p className="text-sm font-medium text-slate-900 dark:text-white">Invalid times</p>;
+                          }
+                          const durationMin = eMin - sMin;
+                          const hours = Math.floor(durationMin / 60);
+                          const mins = durationMin % 60;
+                          return (
+                            <div>
+                              <p className="text-sm font-medium text-slate-900 dark:text-white">{hours}h {mins}m</p>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">{start} - {end}</p>
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Hour-based OD</p>
+                            </div>
+                          );
+                        } catch (e) {
+                          return <p className="text-sm font-medium text-slate-900 dark:text-white">Invalid times</p>;
+                        }
+                      }
+                      return <p className="text-sm font-medium text-slate-900 dark:text-white">{selectedItem.numberOfDays} day{selectedItem.numberOfDays !== 1 ? 's' : ''}</p>;
+                    })()
+                  ) : (
                   <p className="text-sm font-medium text-slate-900 dark:text-white">
                     {selectedItem.numberOfDays} day{selectedItem.numberOfDays !== 1 ? 's' : ''}
                     {selectedItem.isHalfDay && ` (${selectedItem.halfDayType?.replace('_', ' ')})`}
                   </p>
+                  )}
                 </div>
 
                 {/* From Date */}

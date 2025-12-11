@@ -102,8 +102,14 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber) {
     });
 
     // Calculate total OD days in this month
+    // IMPORTANT: Exclude hour-based ODs (they're stored as hours, not days)
     let totalODDays = 0;
     for (const od of approvedODs) {
+      // Skip hour-based ODs - they don't count as days
+      if (od.odType_extended === 'hours') {
+        continue;
+      }
+      
       const odStart = new Date(od.fromDate);
       const odEnd = new Date(od.toDate);
       
@@ -129,6 +135,8 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber) {
     summary.totalODs = Math.round(totalODDays * 10) / 10; // Round to 1 decimal
 
     // 6. Add ODs to payable shifts (each OD day = 1 payable shift)
+    // IMPORTANT: Only full-day and half-day ODs contribute to payable shifts
+    // Hour-based ODs are excluded (they're stored as hours in attendance, not days)
     totalPayableShifts += totalODDays;
     summary.totalPayableShifts = Math.round(totalPayableShifts * 100) / 100; // Round to 2 decimals
 
@@ -172,10 +180,24 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber) {
     summary.totalPermissionHours = Math.round(totalPermissionHours * 100) / 100; // Round to 2 decimals
     summary.totalPermissionCount = totalPermissionCount;
 
-    // 10. Update last calculated timestamp
+    // 10. Calculate early-out deductions (NEW)
+    const { calculateMonthlyEarlyOutDeductions } = require('./earlyOutDeductionService');
+    const earlyOutDeductions = await calculateMonthlyEarlyOutDeductions(emp_no, year, monthNumber);
+    summary.totalEarlyOutMinutes = earlyOutDeductions.totalEarlyOutMinutes;
+    summary.totalEarlyOutDeductionDays = earlyOutDeductions.totalDeductionDays;
+    summary.totalEarlyOutDeductionAmount = earlyOutDeductions.totalDeductionAmount;
+    summary.earlyOutDeductionBreakdown = {
+      quarter_day: earlyOutDeductions.deductionBreakdown.quarter_day,
+      half_day: earlyOutDeductions.deductionBreakdown.half_day,
+      full_day: earlyOutDeductions.deductionBreakdown.full_day,
+      custom_amount: earlyOutDeductions.deductionBreakdown.custom_amount,
+    };
+    summary.earlyOutCount = earlyOutDeductions.earlyOutCount;
+
+    // 11. Update last calculated timestamp
     summary.lastCalculatedAt = new Date();
 
-    // 11. Save summary
+    // 12. Save summary
     await summary.save();
 
     return summary;

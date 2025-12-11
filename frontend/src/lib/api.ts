@@ -548,6 +548,38 @@ export const api = {
     });
   },
 
+  // Early-Out Settings
+  getEarlyOutSettings: async () => {
+    return apiRequest<any>('/attendance/settings/early-out', { method: 'GET' });
+  },
+
+  saveEarlyOutSettings: async (data: { isEnabled?: boolean; allowedDurationMinutes?: number; minimumDuration?: number; deductionRanges?: any[] }) => {
+    return apiRequest<any>('/attendance/settings/early-out', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  addEarlyOutRange: async (data: { minMinutes: number; maxMinutes: number; deductionType: string; deductionAmount?: number; description?: string }) => {
+    return apiRequest<any>('/attendance/settings/early-out/ranges', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  updateEarlyOutRange: async (rangeId: string, data: { minMinutes?: number; maxMinutes?: number; deductionType?: string; deductionAmount?: number; description?: string }) => {
+    return apiRequest<any>(`/attendance/settings/early-out/ranges/${rangeId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  deleteEarlyOutRange: async (rangeId: string) => {
+    return apiRequest<any>(`/attendance/settings/early-out/ranges/${rangeId}`, {
+      method: 'DELETE',
+    });
+  },
+
   updateSetting: async (key: string, data: { value: any; description?: string; category?: string }) => {
     return apiRequest<Setting>(`/settings/${key}`, {
       method: 'PUT',
@@ -660,6 +692,49 @@ export const api = {
   },
   deleteFormField: async (groupId: string, fieldId: string) => {
     return apiRequest<any>(`/employee-applications/form-settings/groups/${groupId}/fields/${fieldId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // Qualifications management
+  updateQualificationsConfig: async (isEnabled: boolean) => {
+    return apiRequest<any>('/employee-applications/form-settings/qualifications', {
+      method: 'PUT',
+      body: JSON.stringify({ isEnabled }),
+    });
+  },
+  addQualificationsField: async (data: {
+    id: string;
+    label: string;
+    type: string;
+    isRequired?: boolean;
+    isEnabled?: boolean;
+    placeholder?: string;
+    validation?: any;
+    options?: Array<{ label: string; value: string }>;
+    order?: number;
+  }) => {
+    return apiRequest<any>('/employee-applications/form-settings/qualifications/fields', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+  updateQualificationsField: async (fieldId: string, data: {
+    label?: string;
+    isRequired?: boolean;
+    isEnabled?: boolean;
+    placeholder?: string;
+    validation?: any;
+    options?: Array<{ label: string; value: string }>;
+    order?: number;
+  }) => {
+    return apiRequest<any>(`/employee-applications/form-settings/qualifications/fields/${fieldId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+  deleteQualificationsField: async (fieldId: string) => {
+    return apiRequest<any>(`/employee-applications/form-settings/qualifications/fields/${fieldId}`, {
       method: 'DELETE',
     });
   },

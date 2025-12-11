@@ -166,10 +166,11 @@ const createEmployeeMSSQL = async (employeeData) => {
   const pool = getHRMSPool();
   const request = pool.request();
 
-  // Extract only permanent fields (exclude dynamicFields)
-  // dynamicFields are MongoDB-only and not synced to MSSQL
+  // Extract only permanent fields (exclude dynamicFields and qualifications)
+  // dynamicFields and qualifications (new format - array of objects) are MongoDB-only and not synced to MSSQL
   const {
     dynamicFields,
+    qualifications, // Exclude qualifications as it's now dynamic (array of objects)
     _id,
     __v,
     created_at,
@@ -188,7 +189,8 @@ const createEmployeeMSSQL = async (employeeData) => {
   request.input('gender', sql.VarChar(10), permanentFields.gender || null);
   request.input('marital_status', sql.VarChar(20), permanentFields.marital_status || null);
   request.input('blood_group', sql.VarChar(5), permanentFields.blood_group || null);
-  request.input('qualifications', sql.NVarChar(255), permanentFields.qualifications || null);
+  // qualifications is now dynamic (array of objects) - not synced to MSSQL
+  request.input('qualifications', sql.NVarChar(255), null);
   request.input('experience', sql.Int, permanentFields.experience || null);
   request.input('address', sql.NVarChar(500), permanentFields.address || null);
   request.input('location', sql.NVarChar(100), permanentFields.location || null);
@@ -276,10 +278,11 @@ const updateEmployeeMSSQL = async (empNo, employeeData) => {
   const pool = getHRMSPool();
   const request = pool.request();
 
-  // Extract only permanent fields (exclude dynamicFields)
-  // dynamicFields are MongoDB-only and not synced to MSSQL
+  // Extract only permanent fields (exclude dynamicFields and qualifications)
+  // dynamicFields and qualifications (new format - array of objects) are MongoDB-only and not synced to MSSQL
   const {
     dynamicFields,
+    qualifications, // Exclude qualifications as it's now dynamic (array of objects)
     _id,
     __v,
     created_at,
@@ -297,7 +300,8 @@ const updateEmployeeMSSQL = async (empNo, employeeData) => {
   request.input('gender', sql.VarChar(10), permanentFields.gender || null);
   request.input('marital_status', sql.VarChar(20), permanentFields.marital_status || null);
   request.input('blood_group', sql.VarChar(5), permanentFields.blood_group || null);
-  request.input('qualifications', sql.NVarChar(255), permanentFields.qualifications || null);
+  // qualifications is now dynamic (array of objects) - not synced to MSSQL
+  request.input('qualifications', sql.NVarChar(255), null);
   request.input('experience', sql.Int, permanentFields.experience || null);
   request.input('address', sql.NVarChar(500), permanentFields.address || null);
   request.input('location', sql.NVarChar(100), permanentFields.location || null);

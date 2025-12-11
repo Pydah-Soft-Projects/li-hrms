@@ -263,6 +263,9 @@ exports.applyOD = async (req, res) => {
       empNo, // Primary - emp_no for applying on behalf
       employeeId, // Legacy - for backward compatibility
       isAssigned, // If this is an assigned OD
+      odType_extended, // NEW: Type of OD (full_day, half_day, hours)
+      odStartTime, // NEW: OD start time (HH:MM format)
+      odEndTime, // NEW: OD end time (HH:MM format)
     } = req.body;
 
     // Get employee
@@ -389,8 +392,45 @@ exports.applyOD = async (req, res) => {
     const from = new Date(fromDate);
     const to = new Date(toDate);
     let numberOfDays;
+    let durationHours = null;
 
-    if (isHalfDay) {
+    // NEW: Handle hour-based OD
+    if (odType_extended === 'hours' && odStartTime && odEndTime) {
+      // Validate time format (HH:MM)
+      const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+      if (!timeRegex.test(odStartTime) || !timeRegex.test(odEndTime)) {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid time format. Use HH:MM format (e.g., 10:00, 14:30)',
+        });
+      }
+
+      // Parse start and end times
+      const [startHour, startMin] = odStartTime.split(':').map(Number);
+      const [endHour, endMin] = odEndTime.split(':').map(Number);
+      const startMinutes = startHour * 60 + startMin;
+      const endMinutes = endHour * 60 + endMin;
+
+      // Validate: end time must be after start time
+      if (endMinutes <= startMinutes) {
+        return res.status(400).json({
+          success: false,
+          error: 'OD end time must be after start time',
+        });
+      }
+
+      // Calculate duration in hours
+      durationHours = (endMinutes - startMinutes) / 60;
+      // Validate: duration should be reasonable (max 8 hours)
+      if (durationHours > 8) {
+        return res.status(400).json({
+          success: false,
+          error: 'OD duration cannot exceed 8 hours. Use full day or half day for longer periods',
+        });
+      }
+
+      numberOfDays = durationHours / 8; // Convert to fraction of day
+    } else if (isHalfDay) {
       numberOfDays = 0.5;
     } else {
       const diffTime = Math.abs(to - from);
@@ -448,6 +488,11 @@ exports.applyOD = async (req, res) => {
       isAssigned: isAssigned || (employeeId && employeeId !== req.user.employeeRef?.toString()),
       assignedBy: isAssigned ? req.user._id : null,
       assignedByName: isAssigned ? req.user.name : null,
+      // NEW: Hour-based OD fields
+      odType_extended: odType_extended || (isHalfDay ? 'half_day' : 'full_day'),
+      odStartTime: odStartTime || null,
+      odEndTime: odEndTime || null,
+      durationHours: durationHours,
       workflow: {
         currentStep: 'hod',
         nextApprover: 'hod',
@@ -529,7 +574,8 @@ exports.updateOD = async (req, res) => {
 
     const allowedUpdates = [
       'odType', 'fromDate', 'toDate', 'purpose', 'placeVisited', 'placesVisited',
-      'contactNumber', 'isHalfDay', 'halfDayType', 'expectedOutcome', 'travelDetails', 'remarks'
+      'contactNumber', 'isHalfDay', 'halfDayType', 'expectedOutcome', 'travelDetails', 'remarks',
+      'odType_extended', 'odStartTime', 'odEndTime', 'durationHours' // NEW: Hour-based OD fields
     ];
 
     // Super Admin can also change status
@@ -571,12 +617,30 @@ exports.updateOD = async (req, res) => {
       }
     }
 
+    // Clean up enum fields - convert empty strings to null
+    if (req.body.halfDayType !== undefined) {
+      if (req.body.halfDayType === '' || req.body.halfDayType === null) {
+        req.body.halfDayType = null;
+      }
+    }
+    if (req.body.odStartTime !== undefined && req.body.odStartTime === '') {
+      req.body.odStartTime = null;
+    }
+    if (req.body.odEndTime !== undefined && req.body.odEndTime === '') {
+      req.body.odEndTime = null;
+    }
+
     // Track changes (max 2-3 changes)
     const changes = [];
     allowedUpdates.forEach((field) => {
       if (req.body[field] !== undefined && od[field] !== req.body[field]) {
         const originalValue = od[field];
-        const newValue = req.body[field];
+        let newValue = req.body[field];
+        
+        // Convert empty strings to null for enum fields
+        if (field === 'halfDayType' && (newValue === '' || newValue === null)) {
+          newValue = null;
+        }
         
         // Store change
         changes.push({
@@ -606,8 +670,50 @@ exports.updateOD = async (req, res) => {
       }
     }
 
-    // Recalculate days if dates changed
-    if (req.body.fromDate || req.body.toDate || req.body.isHalfDay !== undefined) {
+    // Handle hour-based OD updates
+    if (req.body.odType_extended === 'hours' || od.odType_extended === 'hours') {
+      if (req.body.odStartTime && req.body.odEndTime) {
+        // Validate time format (HH:MM)
+        const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+        if (!timeRegex.test(req.body.odStartTime) || !timeRegex.test(req.body.odEndTime)) {
+          return res.status(400).json({
+            success: false,
+            error: 'Invalid time format. Use HH:MM format (e.g., 10:00, 14:30)',
+          });
+        }
+
+        // Parse start and end times
+        const [startHour, startMin] = req.body.odStartTime.split(':').map(Number);
+        const [endHour, endMin] = req.body.odEndTime.split(':').map(Number);
+        const startMinutes = startHour * 60 + startMin;
+        const endMinutes = endHour * 60 + endMin;
+
+        // Validate: end time must be after start time
+        if (endMinutes <= startMinutes) {
+          return res.status(400).json({
+            success: false,
+            error: 'OD end time must be after start time',
+          });
+        }
+
+        // Calculate duration in hours
+        const durationHours = (endMinutes - startMinutes) / 60;
+        // Validate: duration should be reasonable (max 8 hours)
+        if (durationHours > 8) {
+          return res.status(400).json({
+            success: false,
+            error: 'OD duration cannot exceed 8 hours. Use full day or half day for longer periods',
+          });
+        }
+
+        od.durationHours = durationHours;
+        od.numberOfDays = durationHours / 8; // Convert to fraction of day for display
+        od.odType_extended = 'hours';
+        if (req.body.odStartTime) od.odStartTime = req.body.odStartTime;
+        if (req.body.odEndTime) od.odEndTime = req.body.odEndTime;
+      }
+    } else if (req.body.fromDate || req.body.toDate || req.body.isHalfDay !== undefined) {
+      // Recalculate days if dates changed (for non-hour-based OD)
       if (od.isHalfDay) {
         od.numberOfDays = 0.5;
       } else {
@@ -617,6 +723,43 @@ exports.updateOD = async (req, res) => {
     }
 
     await od.save();
+
+    // NEW: If OD is hour-based and approved, update AttendanceDaily
+    if (od.status === 'approved' && od.odType_extended === 'hours' && od.durationHours) {
+      try {
+        const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
+        const formatDate = (date) => {
+          const d = new Date(date);
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        };
+
+        // Get the attendance record for the OD date
+        const attendanceDate = formatDate(od.fromDate);
+        const attendance = await AttendanceDaily.findOne({
+          employeeNumber: od.emp_no.toUpperCase(),
+          date: attendanceDate,
+        });
+
+        if (attendance) {
+          // Update attendance record with OD hours
+          attendance.odHours = od.durationHours || 0;
+          attendance.odDetails = {
+            odStartTime: od.odStartTime,
+            odEndTime: od.odEndTime,
+            durationHours: od.durationHours,
+            odType: od.odType_extended,
+            odId: od._id,
+            approvedAt: od.approvedAt || new Date(),
+            approvedBy: od.approvedBy || req.user._id,
+          };
+          await attendance.save();
+          console.log(`✅ OD hours updated in AttendanceDaily for ${od.emp_no} on ${attendanceDate}`);
+        }
+      } catch (error) {
+        console.error('Error updating OD hours in AttendanceDaily:', error);
+        // Don't throw - OD is already updated, just log the error
+      }
+    }
 
     // Populate for response
     await od.populate([
@@ -901,6 +1044,43 @@ exports.processODAction = async (req, res) => {
 
     od.workflow.history.push(historyEntry);
     await od.save();
+
+    // NEW: If OD is fully approved and has hours, store in AttendanceDaily
+    if (action === 'approve' && od.status === 'approved' && od.odType_extended === 'hours') {
+      try {
+        const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
+        const formatDate = (date) => {
+          const d = new Date(date);
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        };
+
+        // Get the attendance record for the OD date
+        const attendanceDate = formatDate(od.fromDate);
+        const attendance = await AttendanceDaily.findOne({
+          employeeNumber: od.emp_no.toUpperCase(),
+          date: attendanceDate,
+        });
+
+        if (attendance) {
+          // Update attendance record with OD hours
+          attendance.odHours = od.durationHours || 0;
+          attendance.odDetails = {
+            odStartTime: od.odStartTime,
+            odEndTime: od.odEndTime,
+            durationHours: od.durationHours,
+            odType: od.odType_extended,
+            odId: od._id,
+            approvedAt: new Date(),
+            approvedBy: req.user._id,
+          };
+          await attendance.save();
+          console.log(`✅ OD hours stored in AttendanceDaily for ${od.emp_no} on ${attendanceDate}`);
+        }
+      } catch (error) {
+        console.error('Error storing OD hours in AttendanceDaily:', error);
+        // Don't throw - OD is already approved, just log the error
+      }
+    }
 
     await od.populate([
       { path: 'employeeId', select: 'first_name last_name emp_no' },

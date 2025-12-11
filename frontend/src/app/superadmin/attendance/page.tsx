@@ -35,6 +35,7 @@ interface AttendanceRecord {
   odInfo?: {
     odId: string;
     odType: string;
+    odType_extended?: 'full_day' | 'half_day' | 'hours' | null; // NEW: OD type
     isHalfDay: boolean;
     halfDayType?: string;
     purpose?: string;
@@ -42,6 +43,9 @@ interface AttendanceRecord {
     fromDate?: string;
     toDate?: string;
     numberOfDays?: number;
+    durationHours?: number; // NEW: Duration in hours for hour-based OD
+    odStartTime?: string; // NEW: Start time for hour-based OD
+    odEndTime?: string; // NEW: End time for hour-based OD
     dayInOD?: number;
     appliedAt?: string;
     approvedBy?: { name: string; email?: string } | null;
@@ -1688,6 +1692,13 @@ export default function AttendancePage() {
                     <div className="mt-1 text-sm font-semibold text-orange-600 dark:text-orange-400">
                       -{attendanceDetail.earlyOutMinutes} minutes
                     </div>
+                    {attendanceDetail.earlyOutDeduction?.deductionApplied && (
+                      <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                        Deduction: {attendanceDetail.earlyOutDeduction.deductionType?.replace('_', ' ')}
+                        {attendanceDetail.earlyOutDeduction.deductionDays ? ` (${attendanceDetail.earlyOutDeduction.deductionDays} day(s))` : ''}
+                        {attendanceDetail.earlyOutDeduction.deductionAmount ? ` (₹${attendanceDetail.earlyOutDeduction.deductionAmount})` : ''}
+                      </p>
+                    )}
                   </div>
                 )}
                 {attendanceDetail.otHours && attendanceDetail.otHours > 0 && (
@@ -1884,6 +1895,43 @@ export default function AttendancePage() {
                 <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
                   <h4 className="mb-3 text-base font-semibold text-blue-900 dark:text-blue-200">On Duty (OD) Information</h4>
                   
+                  {/* Early-Out Info */}
+                  {attendanceDetail.earlyOutMinutes !== undefined && attendanceDetail.earlyOutMinutes !== null && (
+                    <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-900/20">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-medium text-amber-700 dark:text-amber-300">Early-Out Minutes</p>
+                          <p className="text-lg font-semibold text-amber-900 dark:text-amber-100">
+                            {attendanceDetail.earlyOutMinutes} min
+                          </p>
+                        </div>
+                        {attendanceDetail.earlyOutDeduction?.deductionApplied && (
+                          <div className="text-right">
+                            <p className="text-xs font-medium text-amber-700 dark:text-amber-300">Deduction Applied</p>
+                            <p className="text-sm font-semibold text-amber-900 dark:text-amber-100 capitalize">
+                              {attendanceDetail.earlyOutDeduction.deductionType?.replace('_', ' ') || 'N/A'}
+                            </p>
+                            {attendanceDetail.earlyOutDeduction.deductionDays && (
+                              <p className="text-xs text-amber-700 dark:text-amber-300">
+                                {attendanceDetail.earlyOutDeduction.deductionDays} day(s)
+                              </p>
+                            )}
+                            {attendanceDetail.earlyOutDeduction.deductionAmount && (
+                              <p className="text-xs text-amber-700 dark:text-amber-300">
+                                ₹{attendanceDetail.earlyOutDeduction.deductionAmount}
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      {attendanceDetail.earlyOutDeduction?.reason && (
+                        <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+                          {attendanceDetail.earlyOutDeduction.reason}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
                   {/* Purpose/Reason */}
                   {attendanceDetail.odInfo.purpose && (
                     <div className="mb-3">
@@ -1912,11 +1960,21 @@ export default function AttendancePage() {
                       </div>
                     </div>
                     <div>
-                      <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Half Day</label>
+                      <label className="text-xs font-medium text-blue-700 dark:text-blue-300">
+                        {attendanceDetail.odInfo.odType_extended === 'hours' ? 'Duration Type' : 'Half Day'}
+                      </label>
                       <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
-                        {attendanceDetail.odInfo.isHalfDay ? 'Yes' : 'No'}
-                        {attendanceDetail.odInfo.isHalfDay && attendanceDetail.odInfo.halfDayType && (
-                          <span className="ml-1 text-xs">({attendanceDetail.odInfo.halfDayType === 'first_half' ? 'First Half' : 'Second Half'})</span>
+                        {attendanceDetail.odInfo.odType_extended === 'hours' ? (
+                          'Hour-Based OD'
+                        ) : attendanceDetail.odInfo.isHalfDay ? (
+                          <>
+                            Yes
+                            {attendanceDetail.odInfo.halfDayType && (
+                              <span className="ml-1 text-xs">({attendanceDetail.odInfo.halfDayType === 'first_half' ? 'First Half' : 'Second Half'})</span>
+                            )}
+                          </>
+                        ) : (
+                          'No'
                         )}
                       </div>
                     </div>
@@ -1932,15 +1990,35 @@ export default function AttendancePage() {
                     </div>
                   )}
 
-                  {/* Number of Days and Day in OD */}
-                  <div className="grid grid-cols-2 gap-3 text-sm mb-3">
-                    <div>
-                      <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Total Days</label>
-                      <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
-                        {attendanceDetail.odInfo.numberOfDays || 'N/A'} {attendanceDetail.odInfo.numberOfDays === 1 ? 'day' : 'days'}
+                  {/* Hour-Based OD: Show Hours */}
+                  {attendanceDetail.odInfo.odType_extended === 'hours' && attendanceDetail.odInfo.durationHours && (
+                    <div className="mb-3 p-3 rounded-lg bg-blue-100 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-700">
+                      <label className="text-xs font-medium text-blue-700 dark:text-blue-300 block mb-2">OD Hours</label>
+                      <div className="text-lg font-bold text-blue-900 dark:text-blue-100">
+                        {(() => {
+                          const hours = Math.floor(attendanceDetail.odInfo.durationHours || 0);
+                          const mins = Math.round((attendanceDetail.odInfo.durationHours || 0) % 1 * 60);
+                          return `${hours}h ${mins}m`;
+                        })()}
                       </div>
+                      {attendanceDetail.odInfo.odStartTime && attendanceDetail.odInfo.odEndTime && (
+                        <div className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                          Time: {attendanceDetail.odInfo.odStartTime} - {attendanceDetail.odInfo.odEndTime}
+                        </div>
+                      )}
                     </div>
-                    {attendanceDetail.odInfo.dayInOD && (
+                  )}
+
+                  {/* Full Day / Half Day: Show Days */}
+                  {attendanceDetail.odInfo.odType_extended !== 'hours' && (
+                    <div className="grid grid-cols-2 gap-3 text-sm mb-3">
+                      <div>
+                        <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Total Days</label>
+                        <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
+                          {attendanceDetail.odInfo.numberOfDays || 'N/A'} {attendanceDetail.odInfo.numberOfDays === 1 ? 'day' : 'days'}
+                        </div>
+                      </div>
+                      {attendanceDetail.odInfo.dayInOD && (
                       <div>
                         <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Day in OD</label>
                         <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
@@ -1949,6 +2027,7 @@ export default function AttendancePage() {
                       </div>
                     )}
                   </div>
+                  )}
 
                   {/* Applied Date */}
                   {attendanceDetail.odInfo.appliedAt && (
@@ -1980,7 +2059,11 @@ export default function AttendancePage() {
                     </div>
                   )}
 
-                  {attendanceDetail.isConflict && (
+                  {/* Only show conflict for full-day OD (not for half-day or hour-based OD) */}
+                  {attendanceDetail.isConflict && 
+                   attendanceDetail.odInfo && 
+                   attendanceDetail.odInfo.odType_extended !== 'half_day' && 
+                   attendanceDetail.odInfo.odType_extended !== 'hours' && (
                     <div className="mt-2 rounded border border-red-300 bg-red-50 p-2 text-xs font-semibold text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
                       ⚠️ Conflict: OD approved but attendance logged for this date
                     </div>

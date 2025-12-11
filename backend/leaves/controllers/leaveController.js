@@ -619,12 +619,24 @@ exports.updateLeave = async (req, res) => {
       }
     }
 
+    // Clean up enum fields - convert empty strings to null
+    if (req.body.halfDayType !== undefined) {
+      if (req.body.halfDayType === '' || req.body.halfDayType === null) {
+        req.body.halfDayType = null;
+      }
+    }
+
     // Track changes (max 2-3 changes)
     const changes = [];
     allowedUpdates.forEach((field) => {
       if (req.body[field] !== undefined && leave[field] !== req.body[field]) {
         const originalValue = leave[field];
-        const newValue = req.body[field];
+        let newValue = req.body[field];
+        
+        // Convert empty strings to null for enum fields
+        if (field === 'halfDayType' && (newValue === '' || newValue === null)) {
+          newValue = null;
+        }
         
         // Store change
         changes.push({

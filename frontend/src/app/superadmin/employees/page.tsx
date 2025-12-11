@@ -358,13 +358,6 @@ export default function EmployeesPage() {
   const handleEdit = (employee: Employee) => {
     setEditingEmployee(employee);
     
-    // Debug: Log the employee object to see what we're getting
-    console.log('=== EDITING EMPLOYEE ===');
-    console.log('Full employee object:', employee);
-    console.log('employee.paidLeaves:', employee.paidLeaves);
-    console.log('(employee as any).paidLeaves:', (employee as any).paidLeaves);
-    console.log('All employee keys:', Object.keys(employee));
-    
     // Extract paidLeaves - check multiple possible locations
     let paidLeavesValue = 0;
     if (employee.paidLeaves !== undefined && employee.paidLeaves !== null) {
@@ -372,30 +365,70 @@ export default function EmployeesPage() {
     } else if ((employee as any).paidLeaves !== undefined && (employee as any).paidLeaves !== null) {
       paidLeavesValue = Number((employee as any).paidLeaves);
     } else {
-      // Check if it's in the raw data
       const rawEmployee = employee as any;
       if (rawEmployee.paidLeaves !== undefined && rawEmployee.paidLeaves !== null) {
         paidLeavesValue = Number(rawEmployee.paidLeaves);
       }
     }
     
-    console.log('Extracted paidLeavesValue:', paidLeavesValue);
+    // Get qualifications - check if it's an array (new format) or string (old format)
+    let qualificationsValue: any[] = [];
+    if (employee.qualifications) {
+      if (Array.isArray(employee.qualifications)) {
+        qualificationsValue = employee.qualifications;
+      } else if (typeof employee.qualifications === 'string') {
+        // Old format - convert to array if needed
+        qualificationsValue = [];
+      }
+    }
+    // Also check in dynamicFields
+    if (employee.dynamicFields?.qualifications) {
+      if (Array.isArray(employee.dynamicFields.qualifications)) {
+        qualificationsValue = employee.dynamicFields.qualifications;
+      }
+    }
     
-    // Create form data object - set paidLeaves explicitly to ensure it's not overwritten
-    const newFormData: Partial<Employee> = {
+    // Merge dynamicFields into formData
+    const dynamicFieldsData = employee.dynamicFields || {};
+    
+    // Handle reporting_to field - extract user IDs from populated objects or use existing IDs
+    let reportingToValue: string[] = [];
+    const reportingToField = employee.reporting_to || employee.reporting_to_ || dynamicFieldsData.reporting_to || dynamicFieldsData.reporting_to_;
+    if (reportingToField && Array.isArray(reportingToField)) {
+      reportingToValue = reportingToField.map((item: any) => {
+        // If it's a populated user object, extract the _id
+        if (typeof item === 'object' && item._id) {
+          return item._id;
+        }
+        // If it's already a string ID, use it directly
+        return String(item);
+      }).filter(Boolean);
+    }
+    
+    // Map gross_salary to proposedSalary for the form (form uses proposedSalary field)
+    const salaryValue = employee.gross_salary || dynamicFieldsData.proposedSalary || 0;
+    
+    // Create form data object - merge all fields including dynamicFields
+    const newFormData: any = {
       ...employee,
       department_id: employee.department?._id || employee.department_id || '',
       designation_id: employee.designation?._id || employee.designation_id || '',
       doj: employee.doj ? new Date(employee.doj).toISOString().split('T')[0] : '',
       dob: employee.dob ? new Date(employee.dob).toISOString().split('T')[0] : '',
+      paidLeaves: paidLeavesValue,
+      qualifications: qualificationsValue,
+      // Map gross_salary to proposedSalary for form compatibility
+      proposedSalary: salaryValue,
+      gross_salary: salaryValue,
+      // Handle reporting_to - use the extracted IDs
+      reporting_to: reportingToValue,
+      reporting_to_: reportingToValue, // Also set the underscore version for compatibility
+      // Merge dynamicFields at root level for form (but override with processed values above)
+      ...dynamicFieldsData,
+      // Override with processed values
+      reporting_to: reportingToValue,
+      reporting_to_: reportingToValue,
     };
-    
-    // Explicitly set paidLeaves AFTER spreading to ensure it's not overwritten
-    newFormData.paidLeaves = paidLeavesValue;
-    
-    console.log('New formData:', newFormData);
-    console.log('New formData.paidLeaves:', newFormData.paidLeaves);
-    console.log('Type of paidLeaves:', typeof newFormData.paidLeaves);
     
     setFormData(newFormData);
     setShowDialog(true);
@@ -936,9 +969,9 @@ export default function EmployeesPage() {
                           title={employee.is_active !== false ? 'Deactivate' : 'Activate'}
                         >
                           {employee.is_active !== false ? (
-                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                            </svg>
+                          </svg>
                           ) : (
                             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -1209,220 +1242,13 @@ export default function EmployeesPage() {
             )}
 
             <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Basic Info */}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Basic Information</h3>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Employee No *
-                    </label>
-                    <input
-                      type="text"
-                      name="emp_no"
-                      value={formData.emp_no || ''}
-                      onChange={handleInputChange}
-                      required
-                      disabled={!!editingEmployee}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm uppercase transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                      placeholder="E.g., EMP001"
-                    />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Employee Name *
-                    </label>
-                    <input
-                      type="text"
-                      name="employee_name"
-                      value={formData.employee_name || ''}
-                      onChange={handleInputChange}
-                      required
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                      placeholder="Full Name"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Department</label>
-                    <select
-                      name="department_id"
-                      value={formData.department_id || ''}
-                      onChange={handleInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    >
-                      <option value="">Select Department</option>
-                      {departments.map((dept) => (
-                        <option key={dept._id} value={dept._id}>{dept.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Designation</label>
-                    <select
-                      name="designation_id"
-                      value={formData.designation_id || ''}
-                      onChange={handleInputChange}
-                      disabled={!formData.department_id}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    >
-                      <option value="">Select Designation</option>
-                      {filteredDesignations.map((desig) => (
-                        <option key={desig._id} value={desig._id}>{desig.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Date of Joining</label>
-                    <input
-                      type="date"
-                      name="doj"
-                      value={formData.doj || ''}
-                      onChange={handleInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Personal Info */}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Personal Information</h3>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Date of Birth</label>
-                    <input type="date" name="dob" value={formData.dob || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Gender</label>
-                    <select name="gender" value={formData.gender || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
-                      <option value="">Select</option>
-                      <option value="Male">Male</option>
-                      <option value="Female">Female</option>
-                      <option value="Other">Other</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Marital Status</label>
-                    <select name="marital_status" value={formData.marital_status || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
-                      <option value="">Select</option>
-                      <option value="Single">Single</option>
-                      <option value="Married">Married</option>
-                      <option value="Divorced">Divorced</option>
-                      <option value="Widowed">Widowed</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Blood Group</label>
-                    <select name="blood_group" value={formData.blood_group || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
-                      <option value="">Select</option>
-                      {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(bg => (
-                        <option key={bg} value={bg}>{bg}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Qualifications</label>
-                    <input type="text" name="qualifications" value={formData.qualifications || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" placeholder="E.g., B.Tech, MBA" />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Experience (Years)</label>
-                    <input type="number" name="experience" value={formData.experience || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Address</label>
-                    <input type="text" name="address" value={formData.address || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Location</label>
-                    <input type="text" name="location" value={formData.location || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Aadhar Number</label>
-                    <input type="text" name="aadhar_number" value={formData.aadhar_number || ''} onChange={handleInputChange} maxLength={12} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
-                  </div>
-                </div>
-              </div>
-
-              {/* Contact & Employment */}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Contact & Employment</h3>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Phone Number</label>
-                    <input type="text" name="phone_number" value={formData.phone_number || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Alt. Phone</label>
-                    <input type="text" name="alt_phone_number" value={formData.alt_phone_number || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Email</label>
-                    <input type="email" name="email" value={formData.email || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Gross Salary</label>
-                    <input type="number" name="gross_salary" value={formData.gross_salary || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Paid Leaves (per month)</label>
-                    <input 
-                      type="number" 
-                      name="paidLeaves" 
-                      min="0" 
-                      value={formData.paidLeaves !== undefined && formData.paidLeaves !== null ? Number(formData.paidLeaves) : 0} 
-                      onChange={handleInputChange} 
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" 
-                      placeholder="0 (uses department default if 0)" 
-                    />
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Leave as 0 to use department default</p>
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">PF Number</label>
-                    <input type="text" name="pf_number" value={formData.pf_number || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">ESI Number</label>
-                    <input type="text" name="esi_number" value={formData.esi_number || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
-                  </div>
-                </div>
-              </div>
-
-              {/* Bank Details */}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Bank Details</h3>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Bank A/C No</label>
-                    <input type="text" name="bank_account_no" value={formData.bank_account_no || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Bank Name</label>
-                    <input type="text" name="bank_name" value={formData.bank_name || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Bank Place</label>
-                    <input type="text" name="bank_place" value={formData.bank_place || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">IFSC Code</label>
-                    <input type="text" name="ifsc_code" value={formData.ifsc_code || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm uppercase transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
-                  </div>
-                </div>
-              </div>
-
-              {/* Status */}
-              <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                <input
-                  type="checkbox"
-                  id="is_active"
-                  checked={formData.is_active !== false}
-                  onChange={(e) => setFormData(prev => ({ ...prev, is_active: e.target.checked }))}
-                  className="h-4 w-4 rounded text-emerald-600 focus:ring-emerald-500"
-                />
-                <label htmlFor="is_active" className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Active Employee
-                </label>
-              </div>
+              <DynamicEmployeeForm
+                formData={formData}
+                onChange={setFormData}
+                errors={{}}
+                departments={departments}
+                designations={designations}
+              />
 
               {/* Actions */}
               <div className="flex gap-3 pt-2">

@@ -57,9 +57,11 @@ const employeeSchema = new mongoose.Schema(
       default: null,
     },
     qualifications: {
-      type: String,
-      trim: true,
+      type: mongoose.Schema.Types.Mixed,
       default: null,
+      // Supports both old string format and new array of objects format
+      // Old format: "B.Tech, MBA" (string)
+      // New format: [{ degree: "B.Tech", qualified_year: 2020 }, { degree: "MBA", qualified_year: 2022 }] (array)
     },
     experience: {
       type: Number,
@@ -178,14 +180,20 @@ employeeSchema.virtual('designation', {
 // Virtual getter for unified qualifications (backward compatibility)
 // Returns dynamicFields.qualifications if exists, otherwise falls back to old qualifications string
 employeeSchema.virtual('getQualifications').get(function () {
+  // Priority 1: Check dynamicFields.qualifications (new format - array of objects)
   if (this.dynamicFields?.qualifications && Array.isArray(this.dynamicFields.qualifications) && this.dynamicFields.qualifications.length > 0) {
     return this.dynamicFields.qualifications;
   }
-  // Fallback to old string format
-  if (this.qualifications) {
-    // Convert old string format to array format
+  // Priority 2: Check root level qualifications (new format - array of objects)
+  if (this.qualifications && Array.isArray(this.qualifications) && this.qualifications.length > 0) {
+    return this.qualifications;
+  }
+  // Priority 3: Fallback to old string format at root level
+  if (this.qualifications && typeof this.qualifications === 'string') {
+    // Convert old string format to array format for backward compatibility
     return [{ degree: this.qualifications }];
   }
+  // Return empty array if no qualifications found
   return [];
 });
 

@@ -103,6 +103,61 @@ const attendanceDailySchema = new mongoose.Schema(
       type: Number,
       default: 0, // Total deduction amount for permissions (if deduction is enabled)
     },
+    // NEW: OD (On-Duty) hours field
+    odHours: {
+      type: Number,
+      default: 0, // Hours spent on OD (from approved hour-based OD)
+    },
+    // Store full OD details for display
+    odDetails: {
+      odStartTime: String, // HH:MM format (e.g., "10:00")
+      odEndTime: String,   // HH:MM format (e.g., "14:30")
+      durationHours: Number, // Duration in hours
+      odType: {
+        type: String,
+        enum: ['full_day', 'half_day', 'hours', null],
+        default: null,
+      },
+      odId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'OD',
+        default: null,
+      },
+      approvedAt: Date,
+      approvedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        default: null,
+      },
+    },
+    // NEW: Early-Out Deduction Fields
+    earlyOutDeduction: {
+      deductionApplied: {
+        type: Boolean,
+        default: false,
+      },
+      deductionType: {
+        type: String,
+        enum: ['quarter_day', 'half_day', 'full_day', 'custom_amount', null],
+        default: null,
+      },
+      deductionDays: {
+        type: Number,
+        default: null,
+      },
+      deductionAmount: {
+        type: Number,
+        default: null,
+      },
+      reason: {
+        type: String,
+        default: null,
+      },
+      rangeDescription: {
+        type: String,
+        default: null,
+      },
+    },
   },
   {
     timestamps: true,
@@ -149,10 +204,49 @@ attendanceDailySchema.methods.calculateTotalHours = function() {
   return null;
 };
 
-// Pre-save hook to calculate total hours
+// Pre-save hook to calculate total hours and early-out deduction
 attendanceDailySchema.pre('save', async function() {
   if (this.inTime && this.outTime) {
     this.calculateTotalHours();
+  }
+
+  // Calculate early-out deduction if earlyOutMinutes exists
+  if (this.earlyOutMinutes && this.earlyOutMinutes > 0) {
+    try {
+      const { calculateEarlyOutDeduction } = require('../services/earlyOutDeductionService');
+      const deduction = await calculateEarlyOutDeduction(this.earlyOutMinutes);
+      
+      // Update early-out deduction fields
+      this.earlyOutDeduction = {
+        deductionApplied: deduction.deductionApplied,
+        deductionType: deduction.deductionType,
+        deductionDays: deduction.deductionDays,
+        deductionAmount: deduction.deductionAmount,
+        reason: deduction.reason,
+        rangeDescription: deduction.rangeDescription || null,
+      };
+    } catch (error) {
+      console.error('Error calculating early-out deduction:', error);
+      // Don't throw - set default values
+      this.earlyOutDeduction = {
+        deductionApplied: false,
+        deductionType: null,
+        deductionDays: null,
+        deductionAmount: null,
+        reason: 'Error calculating deduction',
+        rangeDescription: null,
+      };
+    }
+  } else {
+    // Reset deduction if no early-out
+    this.earlyOutDeduction = {
+      deductionApplied: false,
+      deductionType: null,
+      deductionDays: null,
+      deductionAmount: null,
+      reason: null,
+      rangeDescription: null,
+    };
   }
 });
 

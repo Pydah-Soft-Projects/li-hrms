@@ -147,6 +147,8 @@ async function getResolvedAttendanceSettings(departmentId) {
     // Get global attendance deduction settings
     const AttendanceDeductionSettings = require('../../attendance/model/AttendanceDeductionSettings');
     const globalSettings = await AttendanceDeductionSettings.getActiveSettings();
+    const EarlyOutSettings = require('../../attendance/model/EarlyOutSettings');
+    const globalEarlyOut = await EarlyOutSettings.getActiveSettings();
     
     // Merge: Department settings override global
     const resolved = {
@@ -156,6 +158,12 @@ async function getResolvedAttendanceSettings(departmentId) {
         deductionAmount: deptSettings?.attendance?.deductionRules?.deductionAmount ?? globalSettings?.deductionRules?.deductionAmount ?? null,
         minimumDuration: deptSettings?.attendance?.deductionRules?.minimumDuration ?? globalSettings?.deductionRules?.minimumDuration ?? null,
         calculationMode: deptSettings?.attendance?.deductionRules?.calculationMode ?? globalSettings?.deductionRules?.calculationMode ?? null,
+      },
+      earlyOut: {
+        isEnabled: deptSettings?.attendance?.earlyOut?.isEnabled ?? globalEarlyOut?.isEnabled ?? false,
+        allowedDurationMinutes: deptSettings?.attendance?.earlyOut?.allowedDurationMinutes ?? globalEarlyOut?.allowedDurationMinutes ?? 0,
+        minimumDuration: deptSettings?.attendance?.earlyOut?.minimumDuration ?? globalEarlyOut?.minimumDuration ?? 0,
+        deductionRanges: deptSettings?.attendance?.earlyOut?.deductionRanges?.length ? deptSettings.attendance.earlyOut.deductionRanges : (globalEarlyOut?.deductionRanges || []),
       },
     };
     
@@ -326,6 +334,15 @@ exports.updateDepartmentSettings = async (req, res) => {
           settings.attendance.deductionRules.calculationMode = attendance.deductionRules.calculationMode;
         }
       }
+
+      // Update early-out settings
+      if (attendance.earlyOut) {
+        if (attendance.earlyOut.isEnabled !== undefined) settings.attendance.earlyOut.isEnabled = attendance.earlyOut.isEnabled;
+        if (attendance.earlyOut.allowedDurationMinutes !== undefined) settings.attendance.earlyOut.allowedDurationMinutes = attendance.earlyOut.allowedDurationMinutes;
+        if (attendance.earlyOut.minimumDuration !== undefined) settings.attendance.earlyOut.minimumDuration = attendance.earlyOut.minimumDuration;
+        if (attendance.earlyOut.deductionRanges !== undefined) settings.attendance.earlyOut.deductionRanges = attendance.earlyOut.deductionRanges;
+      }
+
       settings.markModified('attendance');
     }
 

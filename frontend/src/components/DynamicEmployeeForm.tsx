@@ -43,8 +43,31 @@ interface Group {
   isEnabled: boolean;
 }
 
+interface QualificationsField {
+  id: string;
+  label: string;
+  type: string;
+  isRequired: boolean;
+  isEnabled: boolean;
+  placeholder?: string;
+  validation?: {
+    minLength?: number;
+    maxLength?: number;
+    min?: number;
+    max?: number;
+  };
+  options?: Array<{ label: string; value: string }>;
+  order: number;
+}
+
+interface QualificationsConfig {
+  isEnabled: boolean;
+  fields: QualificationsField[];
+}
+
 interface FormSettings {
   groups: Group[];
+  qualifications?: QualificationsConfig;
 }
 
 interface DynamicEmployeeFormProps {
@@ -774,8 +797,203 @@ export default function DynamicEmployeeForm({
     .filter((g) => g.isEnabled)
     .sort((a, b) => a.order - b.order);
 
+  // Render qualifications section
+  const renderQualifications = () => {
+    if (!settings.qualifications || !settings.qualifications.isEnabled) {
+      return null;
+    }
+
+    const qualFields = settings.qualifications.fields
+      .filter((f) => f.isEnabled)
+      .sort((a, b) => a.order - b.order);
+
+    if (qualFields.length === 0) {
+      return null;
+    }
+
+    const qualifications = formData.qualifications || [];
+
+    const handleQualificationChange = (index: number, fieldId: string, value: any) => {
+      const newQualifications = [...qualifications];
+      if (!newQualifications[index]) {
+        newQualifications[index] = {};
+      }
+      newQualifications[index] = {
+        ...newQualifications[index],
+        [fieldId]: value,
+      };
+      handleFieldChange('qualifications', newQualifications);
+    };
+
+    const handleAddQualification = () => {
+      const newQual = qualFields.reduce((acc, field) => {
+        acc[field.id] = field.type === 'number' ? 0 : '';
+        return acc;
+      }, {} as any);
+      handleFieldChange('qualifications', [...qualifications, newQual]);
+    };
+
+    const handleRemoveQualification = (index: number) => {
+      const newQualifications = qualifications.filter((_: any, i: number) => i !== index);
+      handleFieldChange('qualifications', newQualifications);
+    };
+
+    const renderQualificationField = (field: QualificationsField, qualIndex: number) => {
+      const value = qualifications[qualIndex]?.[field.id] || '';
+      const error = errors[`qualifications[${qualIndex}].${field.id}`];
+
+      switch (field.type) {
+        case 'text':
+        case 'textarea':
+          return (
+            <div key={field.id}>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                {field.label} {field.isRequired && '*'}
+              </label>
+              {field.type === 'textarea' ? (
+                <textarea
+                  value={value}
+                  onChange={(e) => handleQualificationChange(qualIndex, field.id, e.target.value)}
+                  placeholder={field.placeholder}
+                  required={field.isRequired}
+                  rows={3}
+                  className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                    error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
+                  }`}
+                />
+              ) : (
+                <input
+                  type="text"
+                  value={value}
+                  onChange={(e) => handleQualificationChange(qualIndex, field.id, e.target.value)}
+                  placeholder={field.placeholder}
+                  required={field.isRequired}
+                  className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                    error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
+                  }`}
+                />
+              )}
+              {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
+            </div>
+          );
+
+        case 'number':
+          return (
+            <div key={field.id}>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                {field.label} {field.isRequired && '*'}
+              </label>
+              <input
+                type="number"
+                value={value}
+                onChange={(e) => handleQualificationChange(qualIndex, field.id, parseFloat(e.target.value) || 0)}
+                placeholder={field.placeholder}
+                required={field.isRequired}
+                min={field.validation?.min}
+                max={field.validation?.max}
+                className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                  error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
+                }`}
+              />
+              {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
+            </div>
+          );
+
+        case 'date':
+          return (
+            <div key={field.id}>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                {field.label} {field.isRequired && '*'}
+              </label>
+              <input
+                type="date"
+                value={value}
+                onChange={(e) => handleQualificationChange(qualIndex, field.id, e.target.value)}
+                required={field.isRequired}
+                className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                  error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
+                }`}
+              />
+              {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
+            </div>
+          );
+
+        case 'select':
+          return (
+            <div key={field.id}>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                {field.label} {field.isRequired && '*'}
+              </label>
+              <select
+                value={value}
+                onChange={(e) => handleQualificationChange(qualIndex, field.id, e.target.value)}
+                required={field.isRequired}
+                className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                  error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
+                }`}
+              >
+                <option value="">Select</option>
+                {field.options?.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
+            </div>
+          );
+
+        default:
+          return null;
+      }
+    };
+
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+        <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+          Qualifications
+        </h3>
+        <div className="space-y-4">
+          {qualifications.map((qual: any, index: number) => (
+            <div
+              key={index}
+              className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800"
+            >
+              <div className="mb-4 flex items-center justify-between">
+                <h4 className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                  Qualification {index + 1}
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveQualification(index)}
+                  className="rounded-lg px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
+                >
+                  Remove
+                </button>
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {qualFields.map((field) => renderQualificationField(field, index))}
+              </div>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={handleAddQualification}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-600 transition-colors hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:border-emerald-500 dark:hover:bg-emerald-900/20 dark:hover:text-emerald-400"
+          >
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Add Qualification
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6">
+      {renderQualifications()}
       {sortedGroups.map((group) => {
         // Sort fields by order
         const sortedFields = [...group.fields]

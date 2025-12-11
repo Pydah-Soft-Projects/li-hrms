@@ -43,7 +43,16 @@ const ODSchema = new mongoose.Schema(
     numberOfDays: {
       type: Number,
       required: true,
-      min: [0.5, 'Minimum OD is half day'],
+      validate: {
+        validator: function (v) {
+          // Allow smaller fractions for hour-based OD; for full/half day enforce minimum 0.5
+          if (this.odType_extended === 'hours') {
+            return v >= 0; // allow 0 and above for hour-based OD
+          }
+          return v >= 0.5;
+        },
+        message: 'Minimum OD is half day',
+      },
     },
 
     // Half day options
@@ -56,6 +65,35 @@ const ODSchema = new mongoose.Schema(
       type: String,
       enum: ['first_half', 'second_half', null],
       default: null,
+    },
+
+    // NEW: Hour-based OD fields
+    odType_extended: {
+      type: String,
+      enum: ['full_day', 'half_day', 'hours', null],
+      default: null,
+      description: 'Type of OD: full_day, half_day, or specific hours'
+    },
+
+    // Start time for hour-based OD (HH:MM format, e.g., "10:00")
+    odStartTime: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+
+    // End time for hour-based OD (HH:MM format, e.g., "14:30")
+    odEndTime: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+
+    // Duration in hours (calculated from start and end time)
+    durationHours: {
+      type: Number,
+      default: null,
+      min: 0,
     },
 
     // Purpose of OD

@@ -201,6 +201,63 @@ const EmployeeApplicationFormSettingsSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
     },
+
+    // Qualifications Configuration (Special hardcoded field)
+    qualifications: {
+      // Enable/disable qualifications feature
+      isEnabled: {
+        type: Boolean,
+        default: true,
+      },
+      // Fields within each qualification object
+      fields: [
+        {
+          id: {
+            type: String,
+            required: true,
+            trim: true,
+          },
+          label: {
+            type: String,
+            required: true,
+            trim: true,
+          },
+          type: {
+            type: String,
+            enum: ['text', 'textarea', 'number', 'date', 'select'],
+            required: true,
+          },
+          isRequired: {
+            type: Boolean,
+            default: false,
+          },
+          isEnabled: {
+            type: Boolean,
+            default: true,
+          },
+          placeholder: {
+            type: String,
+            default: '',
+          },
+          validation: {
+            minLength: Number,
+            maxLength: Number,
+            min: Number,
+            max: Number,
+          },
+          options: [
+            {
+              label: String,
+              value: String,
+            },
+          ],
+          order: {
+            type: Number,
+            default: 0,
+          },
+        },
+      ],
+    },
   },
   {
     timestamps: true,
@@ -466,6 +523,32 @@ EmployeeApplicationFormSettingsSchema.statics.initializeDefault = async function
         ],
       },
     ],
+    // Default Qualifications Configuration
+    qualifications: {
+      isEnabled: true,
+      fields: [
+        {
+          id: 'degree',
+          label: 'Degree',
+          type: 'text',
+          isRequired: true,
+          isEnabled: true,
+          placeholder: 'E.g., B.Tech, MBA',
+          validation: { minLength: 2, maxLength: 100 },
+          order: 1,
+        },
+        {
+          id: 'qualified_year',
+          label: 'Qualified Year',
+          type: 'number',
+          isRequired: true,
+          isEnabled: true,
+          placeholder: 'E.g., 2020',
+          validation: { min: 1900, max: 2100 },
+          order: 2,
+        },
+      ],
+    },
   };
 
   // Check if settings already exist

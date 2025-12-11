@@ -22,7 +22,7 @@ const PERMANENT_FIELDS = [
   'gender',
   'marital_status',
   'blood_group',
-  'qualifications', // Keep for backward compatibility
+  // qualifications is now dynamic (array of objects) - stored in dynamicFields
   'experience',
   'address',
   'location',

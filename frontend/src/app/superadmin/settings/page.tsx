@@ -207,6 +207,30 @@ export default function SettingsPage() {
   });
   const [attendanceRulesLoading, setAttendanceRulesLoading] = useState(false);
 
+  // Early-out settings state
+  const [earlyOutSettings, setEarlyOutSettings] = useState({
+    isEnabled: false,
+    allowedDurationMinutes: 0,
+    minimumDuration: 0,
+    deductionRanges: [] as {
+      _id?: string;
+      minMinutes: number;
+      maxMinutes: number;
+      deductionType: 'quarter_day' | 'half_day' | 'full_day' | 'custom_amount';
+      deductionAmount?: number | null;
+      description?: string;
+    }[],
+  });
+  const [earlyOutLoading, setEarlyOutLoading] = useState(false);
+  const [earlyOutSaving, setEarlyOutSaving] = useState(false);
+  const [newRange, setNewRange] = useState({
+    minMinutes: '',
+    maxMinutes: '',
+    deductionType: 'quarter_day' as 'quarter_day' | 'half_day' | 'full_day' | 'custom_amount',
+    deductionAmount: '',
+    description: '',
+  });
+
   useEffect(() => {
     if (activeTab === 'shift') {
       loadShiftDurations();
@@ -224,6 +248,7 @@ export default function SettingsPage() {
       loadPermissionDeductionRules();
     } else if (activeTab === 'attendance_deductions') {
       loadAttendanceDeductionRules();
+      loadEarlyOutSettings();
     }
   }, [activeTab]);
   
@@ -445,6 +470,29 @@ export default function SettingsPage() {
     }
   };
 
+  const loadEarlyOutSettings = async () => {
+    try {
+      setEarlyOutLoading(true);
+      const response = await api.getEarlyOutSettings();
+      if (response.success) {
+        const data = response.data || {};
+        setEarlyOutSettings({
+          isEnabled: data.isEnabled ?? false,
+          allowedDurationMinutes: data.allowedDurationMinutes ?? 0,
+          minimumDuration: data.minimumDuration ?? 0,
+          deductionRanges: Array.isArray(data.deductionRanges) ? data.deductionRanges : [],
+        });
+      } else {
+        setMessage({ type: 'error', text: 'Failed to load early-out settings' });
+      }
+    } catch (err) {
+      console.error('Error loading early-out settings:', err);
+      setMessage({ type: 'error', text: 'Failed to load early-out settings' });
+    } finally {
+      setEarlyOutLoading(false);
+    }
+  };
+
   const saveAttendanceDeductionRules = async () => {
     try {
       setSaving(true);
@@ -463,6 +511,90 @@ export default function SettingsPage() {
       setMessage({ type: 'error', text: 'Failed to save attendance deduction rules' });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const saveEarlyOutSettings = async () => {
+    try {
+      setEarlyOutSaving(true);
+      const payload = {
+        isEnabled: earlyOutSettings.isEnabled,
+        allowedDurationMinutes: earlyOutSettings.allowedDurationMinutes,
+        minimumDuration: earlyOutSettings.minimumDuration,
+        deductionRanges: earlyOutSettings.deductionRanges,
+      };
+      const response = await api.saveEarlyOutSettings(payload);
+      if (response.success) {
+        setMessage({ type: 'success', text: 'Early-out settings saved successfully' });
+        await loadEarlyOutSettings();
+      } else {
+        setMessage({ type: 'error', text: response.error || 'Failed to save early-out settings' });
+      }
+    } catch (err) {
+      console.error('Error saving early-out settings:', err);
+      setMessage({ type: 'error', text: 'Failed to save early-out settings' });
+    } finally {
+      setEarlyOutSaving(false);
+    }
+  };
+
+  const addEarlyOutRange = async () => {
+    try {
+      if (!newRange.minMinutes || !newRange.maxMinutes || Number(newRange.maxMinutes) <= Number(newRange.minMinutes)) {
+        setMessage({ type: 'error', text: 'Please enter valid min and max minutes' });
+        return;
+      }
+      if (newRange.deductionType === 'custom_amount' && (!newRange.deductionAmount || Number(newRange.deductionAmount) <= 0)) {
+        setMessage({ type: 'error', text: 'Custom amount must be greater than 0' });
+        return;
+      }
+      const response = await api.addEarlyOutRange({
+        minMinutes: Number(newRange.minMinutes),
+        maxMinutes: Number(newRange.maxMinutes),
+        deductionType: newRange.deductionType,
+        deductionAmount: newRange.deductionType === 'custom_amount' ? Number(newRange.deductionAmount) : undefined,
+        description: newRange.description || undefined,
+      });
+      if (response.success) {
+        setMessage({ type: 'success', text: 'Early-out range added' });
+        setNewRange({ minMinutes: '', maxMinutes: '', deductionType: 'quarter_day', deductionAmount: '', description: '' });
+        await loadEarlyOutSettings();
+      } else {
+        setMessage({ type: 'error', text: response.error || 'Failed to add range' });
+      }
+    } catch (err) {
+      console.error('Error adding early-out range:', err);
+      setMessage({ type: 'error', text: 'Failed to add range' });
+    }
+  };
+
+  const updateEarlyOutRange = async (id: string, data: any) => {
+    try {
+      const response = await api.updateEarlyOutRange(id, data);
+      if (response.success) {
+        setMessage({ type: 'success', text: 'Range updated' });
+        await loadEarlyOutSettings();
+      } else {
+        setMessage({ type: 'error', text: response.error || 'Failed to update range' });
+      }
+    } catch (err) {
+      console.error('Error updating early-out range:', err);
+      setMessage({ type: 'error', text: 'Failed to update range' });
+    }
+  };
+
+  const deleteEarlyOutRange = async (id: string) => {
+    try {
+      const response = await api.deleteEarlyOutRange(id);
+      if (response.success) {
+        setMessage({ type: 'success', text: 'Range deleted' });
+        await loadEarlyOutSettings();
+      } else {
+        setMessage({ type: 'error', text: response.error || 'Failed to delete range' });
+      }
+    } catch (err) {
+      console.error('Error deleting early-out range:', err);
+      setMessage({ type: 'error', text: 'Failed to delete range' });
     }
   };
 
@@ -3356,6 +3488,190 @@ export default function SettingsPage() {
                         className="rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 hover:shadow-xl hover:shadow-blue-500/40 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {saving ? 'Saving...' : 'Save Attendance Deduction Rules'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'attendance_deductions' && (
+          <div className="space-y-6">
+            {earlyOutLoading ? (
+              <div className="flex items-center justify-center rounded-3xl border border-slate-200 bg-white/95 py-16 shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
+              </div>
+            ) : (
+              <>
+                <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg dark:border-slate-800 dark:bg-slate-950/95 sm:p-8">
+                  <h2 className="mb-2 text-xl font-semibold text-slate-900 dark:text-slate-100">Early-Out Rules</h2>
+                  <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">
+                    Configure independent early-out rules. When enabled, early-outs follow these settings; otherwise they use the combined late-in + early-out logic.
+                  </p>
+
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-blue-900/10">
+                      <div>
+                        <p className="text-sm font-medium text-slate-800 dark:text-slate-200">Enable Early-Out Rules</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Toggle to apply dedicated early-out logic</p>
+                      </div>
+                      <label className="relative inline-flex cursor-pointer items-center">
+                        <input
+                          type="checkbox"
+                          className="peer sr-only"
+                          checked={earlyOutSettings.isEnabled}
+                          onChange={(e) => setEarlyOutSettings(prev => ({ ...prev, isEnabled: e.target.checked }))}
+                        />
+                        <div className="peer h-6 w-11 rounded-full bg-slate-300 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-blue-500 peer-checked:after:translate-x-5"></div>
+                      </label>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-blue-900/10">
+                      <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                        Allowed Early-Out Per Day (Minutes)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={earlyOutSettings.allowedDurationMinutes}
+                        onChange={(e) => setEarlyOutSettings(prev => ({ ...prev, allowedDurationMinutes: parseInt(e.target.value || '0') }))}
+                        placeholder="e.g., 30"
+                        className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-400 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                      />
+                      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                        Minutes of early-out allowed per day without deduction.
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-blue-900/10">
+                      <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                        Minimum Duration to Count (Minutes)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={earlyOutSettings.minimumDuration}
+                        onChange={(e) => setEarlyOutSettings(prev => ({ ...prev, minimumDuration: parseInt(e.target.value || '0') }))}
+                        placeholder="e.g., 10"
+                        className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-400 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                      />
+                      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                        Only early-outs greater than or equal to this duration will be considered for deduction.
+                      </p>
+                    </div>
+
+                    <div className="space-y-3 rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-blue-900/10">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">Early-Out Deduction Ranges</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">Define ranges and apply quarter/half/full day or custom amount</p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        {earlyOutSettings.deductionRanges.length === 0 && (
+                          <p className="text-sm text-slate-500 dark:text-slate-400">No ranges configured.</p>
+                        )}
+                        {earlyOutSettings.deductionRanges.map((range, idx) => (
+                          <div key={range._id || idx} className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+                            <div className="flex flex-wrap items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                              <span className="font-semibold">{range.minMinutes}–{range.maxMinutes} min</span>
+                              <span className="text-slate-500">|</span>
+                              <span className="capitalize">{range.deductionType.replace('_', ' ')}</span>
+                              {range.deductionType === 'custom_amount' && range.deductionAmount && (
+                                <span className="text-slate-500">₹{range.deductionAmount}</span>
+                              )}
+                              {range.description && <span className="text-slate-500">— {range.description}</span>}
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => updateEarlyOutRange(range._id || '', {
+                                  deductionType: range.deductionType,
+                                  deductionAmount: range.deductionType === 'custom_amount' ? range.deductionAmount : undefined,
+                                })}
+                                className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:border-blue-400 hover:text-blue-600 dark:border-slate-700 dark:text-slate-200 dark:hover:border-blue-400 dark:hover:text-blue-300"
+                              >
+                                Refresh
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => deleteEarlyOutRange(range._id || '')}
+                                className="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-600 hover:border-red-400 dark:border-red-700 dark:text-red-300 dark:hover:border-red-500"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-1 gap-3 rounded-xl border border-dashed border-slate-300 bg-white p-4 dark:border-slate-700 dark:bg-slate-800 md:grid-cols-5">
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="Min (min)"
+                          value={newRange.minMinutes}
+                          onChange={(e) => setNewRange(prev => ({ ...prev, minMinutes: e.target.value }))}
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                        />
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="Max (min)"
+                          value={newRange.maxMinutes}
+                          onChange={(e) => setNewRange(prev => ({ ...prev, maxMinutes: e.target.value }))}
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                        />
+                        <select
+                          value={newRange.deductionType}
+                          onChange={(e) => setNewRange(prev => ({ ...prev, deductionType: e.target.value as any }))}
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                        >
+                          <option value="quarter_day">Quarter Day</option>
+                          <option value="half_day">Half Day</option>
+                          <option value="full_day">Full Day</option>
+                          <option value="custom_amount">Custom Amount</option>
+                        </select>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder="Amount (₹, if custom)"
+                          value={newRange.deductionAmount}
+                          onChange={(e) => setNewRange(prev => ({ ...prev, deductionAmount: e.target.value }))}
+                          disabled={newRange.deductionType !== 'custom_amount'}
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white disabled:cursor-not-allowed disabled:bg-slate-50 dark:disabled:bg-slate-800"
+                        />
+                        <input
+                          type="text"
+                          placeholder="Description"
+                          value={newRange.description}
+                          onChange={(e) => setNewRange(prev => ({ ...prev, description: e.target.value }))}
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                        />
+                        <div className="md:col-span-5 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={addEarlyOutRange}
+                            className="rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600"
+                          >
+                            Add Range
+                          </button>
+                        </div>
+                      </div>
+
+                    </div>
+
+                    <div className="flex justify-end">
+                      <button
+                        onClick={saveEarlyOutSettings}
+                        disabled={earlyOutSaving || earlyOutLoading}
+                        className="rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 hover:shadow-xl hover:shadow-blue-500/40 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {earlyOutSaving ? 'Saving...' : 'Save Early-Out Settings'}
                       </button>
                     </div>
                   </div>

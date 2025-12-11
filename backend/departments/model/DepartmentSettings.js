@@ -269,6 +269,52 @@ const departmentSettingsSchema = new mongoose.Schema(
           default: null,
         },
       },
+      // Early-Out specific settings
+      earlyOut: {
+        isEnabled: {
+          type: Boolean,
+          default: false,
+        },
+        allowedDurationMinutes: {
+          type: Number,
+          default: 0,
+          min: 0,
+        },
+        minimumDuration: {
+          type: Number,
+          default: 0,
+          min: 0,
+        },
+        deductionRanges: [
+          {
+            minMinutes: {
+              type: Number,
+              required: true,
+              min: 0,
+            },
+            maxMinutes: {
+              type: Number,
+              required: true,
+              min: 0,
+            },
+            deductionType: {
+              type: String,
+              enum: ['quarter_day', 'half_day', 'full_day', 'custom_amount'],
+              required: true,
+            },
+            deductionAmount: {
+              type: Number,
+              default: null,
+              min: 0,
+            },
+            description: {
+              type: String,
+              trim: true,
+              default: '',
+            },
+          },
+        ],
+      },
     },
 
     // Created by

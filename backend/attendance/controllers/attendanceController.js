@@ -166,6 +166,7 @@ exports.getAttendanceCalendar = async (req, res) => {
           odMap[dateStr] = {
             odId: od._id,
             odType: od.odType,
+            odType_extended: od.odType_extended, // NEW: Include OD type
             isHalfDay: od.isHalfDay,
             halfDayType: od.halfDayType,
             purpose: od.purpose,
@@ -173,6 +174,9 @@ exports.getAttendanceCalendar = async (req, res) => {
             fromDate: od.fromDate,
             toDate: od.toDate,
             numberOfDays: od.numberOfDays,
+            durationHours: od.durationHours, // NEW: Include duration in hours
+            odStartTime: od.odStartTime, // NEW: Include start time
+            odEndTime: od.odEndTime, // NEW: Include end time
             dayInOD: dayCounter,
             appliedAt: od.appliedAt || od.createdAt,
             approvedBy: approvedBy ? {
@@ -191,9 +195,13 @@ exports.getAttendanceCalendar = async (req, res) => {
     const attendanceMap = {};
     records.forEach(record => {
       const hasLeave = !!leaveMap[record.date];
-      const hasOD = !!odMap[record.date];
+      const odInfo = odMap[record.date];
+      const hasOD = !!odInfo;
       const hasAttendance = record.status === 'PRESENT' || record.status === 'PARTIAL';
-      const isConflict = (hasLeave || hasOD) && hasAttendance;
+      // Don't show conflict for hour-based OD or half-day OD (they can work and be on OD)
+      const odIsHourBased = odInfo?.odType_extended === 'hours';
+      const odIsHalfDay = odInfo?.odType_extended === 'half_day' || odInfo?.isHalfDay;
+      const isConflict = (hasLeave || (hasOD && !odIsHourBased && !odIsHalfDay)) && hasAttendance;
       
       attendanceMap[record.date] = {
         date: record.date,
@@ -206,6 +214,7 @@ exports.getAttendanceCalendar = async (req, res) => {
         isEarlyOut: record.isEarlyOut || false,
         lateInMinutes: record.lateInMinutes || null,
         earlyOutMinutes: record.earlyOutMinutes || null,
+        earlyOutDeduction: record.earlyOutDeduction || null,
         expectedHours: record.expectedHours || null,
         otHours: record.otHours || 0,
         extraHours: record.extraHours || 0,
@@ -577,6 +586,7 @@ exports.getMonthlyAttendance = async (req, res) => {
           odMapByEmployee[empNo][dateStr] = {
             odId: od._id,
             odType: od.odType,
+            odType_extended: od.odType_extended, // NEW: Include OD type (full_day, half_day, hours)
             isHalfDay: od.isHalfDay,
             halfDayType: od.halfDayType,
             purpose: od.purpose,
@@ -584,6 +594,9 @@ exports.getMonthlyAttendance = async (req, res) => {
             fromDate: od.fromDate,
             toDate: od.toDate,
             numberOfDays: od.numberOfDays,
+            durationHours: od.durationHours, // NEW: Include duration in hours for hour-based OD
+            odStartTime: od.odStartTime, // NEW: Include start time for hour-based OD
+            odEndTime: od.odEndTime, // NEW: Include end time for hour-based OD
             dayInOD: dayCounter,
             appliedAt: od.appliedAt || od.createdAt,
             approvedBy: approvedBy ? {
@@ -644,12 +657,18 @@ exports.getMonthlyAttendance = async (req, res) => {
         }
         
         // Count ODs manually for verification
+        // IMPORTANT: Exclude hour-based ODs (they don't count as days)
         let verifiedODDays = 0;
         const empODs = allODs.filter(od => {
           const empNo = od.employeeId?.emp_no || od.emp_no;
           return empNo === emp.emp_no;
         });
         for (const od of empODs) {
+          // Skip hour-based ODs - they don't count as days
+          if (od.odType_extended === 'hours') {
+            continue;
+          }
+          
           const odStart = new Date(od.fromDate);
           const odEnd = new Date(od.toDate);
           odStart.setHours(0, 0, 0, 0);
@@ -724,7 +743,10 @@ exports.getMonthlyAttendance = async (req, res) => {
         const hasLeave = !!leaveInfo;
         const hasOD = !!odInfo;
         const hasAttendance = !!record && (record.status === 'PRESENT' || record.status === 'PARTIAL');
-        const isConflict = (hasLeave || hasOD) && hasAttendance;
+        // Don't show conflict for hour-based OD or half-day OD (they can work and be on OD)
+        const odIsHourBased = odInfo?.odType_extended === 'hours';
+        const odIsHalfDay = odInfo?.odType_extended === 'half_day' || odInfo?.isHalfDay;
+        const isConflict = (hasLeave || (hasOD && !odIsHourBased && !odIsHalfDay)) && hasAttendance;
         
         dailyAttendance[dateStr] = record ? {
           date: record.date,
@@ -744,7 +766,7 @@ exports.getMonthlyAttendance = async (req, res) => {
           hasLeave: hasLeave,
           leaveInfo: leaveInfo,
           hasOD: hasOD,
-          odInfo: odInfo,
+        odInfo: odInfo,
           isConflict: isConflict,
         } : {
           date: dateStr,
@@ -752,7 +774,7 @@ exports.getMonthlyAttendance = async (req, res) => {
           hasLeave: hasLeave,
           leaveInfo: leaveInfo,
           hasOD: hasOD,
-          odInfo: odInfo,
+        odInfo: odInfo,
           isConflict: false,
         };
       }

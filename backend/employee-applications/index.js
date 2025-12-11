@@ -23,6 +23,10 @@ const {
   addField,
   updateField,
   deleteField,
+  updateQualificationsConfig,
+  addQualificationsField,
+  updateQualificationsField,
+  deleteQualificationsField,
 } = require('./controllers/formSettingsController');
 
 // All routes require authentication
@@ -50,6 +54,12 @@ router.delete('/form-settings/groups/:groupId', authorize('super_admin', 'sub_ad
 router.post('/form-settings/groups/:groupId/fields', authorize('super_admin', 'sub_admin'), addField);
 router.put('/form-settings/groups/:groupId/fields/:fieldId', authorize('super_admin', 'sub_admin'), updateField);
 router.delete('/form-settings/groups/:groupId/fields/:fieldId', authorize('super_admin', 'sub_admin'), deleteField);
+
+// Qualifications management
+router.put('/form-settings/qualifications', authorize('super_admin', 'sub_admin'), updateQualificationsConfig);
+router.post('/form-settings/qualifications/fields', authorize('super_admin', 'sub_admin'), addQualificationsField);
+router.put('/form-settings/qualifications/fields/:fieldId', authorize('super_admin', 'sub_admin'), updateQualificationsField);
+router.delete('/form-settings/qualifications/fields/:fieldId', authorize('super_admin', 'sub_admin'), deleteQualificationsField);
 
 // ==========================================
 // APPLICATION ROUTES

@@ -108,6 +108,7 @@ interface FormSettings {
   code: string;
   description?: string;
   groups: FormGroup[];
+  qualifications?: QualificationsConfig;
   version: number;
   isActive: boolean;
 }
@@ -130,6 +131,28 @@ export default function EmployeeFormSettingsPage() {
     dataType: 'string',
     isRequired: false,
     isEnabled: true,
+    order: 0,
+  });
+  const [showNewQualField, setShowNewQualField] = useState(false);
+  const [newQualField, setNewQualField] = useState<{
+    id: string;
+    label: string;
+    type: 'text' | 'textarea' | 'number' | 'date' | 'select';
+    isRequired: boolean;
+    isEnabled: boolean;
+    placeholder: string;
+    validation: any;
+    options: Array<{ label: string; value: string }>;
+    order: number;
+  }>({
+    id: '',
+    label: '',
+    type: 'text',
+    isRequired: false,
+    isEnabled: true,
+    placeholder: '',
+    validation: {},
+    options: [],
     order: 0,
   });
 
@@ -1264,6 +1287,229 @@ export default function EmployeeFormSettingsPage() {
               )}
             </div>
           ))}
+        </div>
+
+        {/* Qualifications Configuration Section */}
+        <div className="mt-8 rounded-2xl border border-purple-200 bg-purple-50/50 p-6 dark:border-purple-800 dark:bg-purple-900/20">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-purple-900 dark:text-purple-300">Qualifications Configuration</h3>
+              <p className="mt-1 text-sm text-purple-700 dark:text-purple-400">
+                Configure qualifications as a special array of objects field. Each qualification can have multiple fields.
+              </p>
+            </div>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={settings.qualifications?.isEnabled !== false}
+                onChange={async (e) => {
+                  const updatedSettings = {
+                    ...settings,
+                    qualifications: {
+                      ...settings.qualifications,
+                      isEnabled: e.target.checked,
+                      fields: settings.qualifications?.fields || [],
+                    },
+                  };
+                  setSettings(updatedSettings);
+                  await api.updateQualificationsConfig(e.target.checked);
+                  await loadSettings();
+                }}
+                className="h-4 w-4 rounded text-purple-600 focus:ring-purple-500"
+              />
+              <span className="text-sm font-medium text-purple-900 dark:text-purple-300">Enable Qualifications</span>
+            </label>
+          </div>
+
+          {settings.qualifications?.isEnabled !== false && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-semibold text-purple-800 dark:text-purple-300">Qualification Fields</h4>
+                <button
+                  onClick={() => {
+                    const newFieldId = `qual_field_${Date.now()}`;
+                    setNewQualField({
+                      id: newFieldId,
+                      label: '',
+                      type: 'text',
+                      isRequired: false,
+                      isEnabled: true,
+                      placeholder: '',
+                      validation: {},
+                      options: [],
+                      order: (settings.qualifications?.fields?.length || 0) + 1,
+                    });
+                    setShowNewQualField(true);
+                  }}
+                  className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700"
+                >
+                  + Add Field
+                </button>
+              </div>
+
+              {settings.qualifications?.fields && settings.qualifications.fields.length > 0 ? (
+                <div className="space-y-3">
+                  {settings.qualifications.fields
+                    .sort((a, b) => a.order - b.order)
+                    .map((field) => (
+                      <div
+                        key={field.id}
+                        className="rounded-lg border border-purple-200 bg-white p-4 dark:border-purple-700 dark:bg-slate-800"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400">
+                              {field.type === 'text' && <TextIcon className="h-4 w-4" />}
+                              {field.type === 'textarea' && <TextareaIcon className="h-4 w-4" />}
+                              {field.type === 'number' && <NumberIcon className="h-4 w-4" />}
+                              {field.type === 'date' && <DateIcon className="h-4 w-4" />}
+                              {field.type === 'select' && <SelectIcon className="h-4 w-4" />}
+                            </div>
+                            <div>
+                              <div className="font-medium text-slate-900 dark:text-slate-100">{field.label}</div>
+                              <div className="text-xs text-slate-500 dark:text-slate-400">
+                                {field.type} {field.isRequired && '• Required'}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <label className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={field.isEnabled}
+                                onChange={async (e) => {
+                                  await api.updateQualificationsField(field.id, { isEnabled: e.target.checked });
+                                  await loadSettings();
+                                }}
+                                className="h-4 w-4 rounded text-purple-600 focus:ring-purple-500"
+                              />
+                              <span className="text-xs text-slate-600 dark:text-slate-400">Enabled</span>
+                            </label>
+                            <button
+                              onClick={async () => {
+                                await api.deleteQualificationsField(field.id);
+                                await loadSettings();
+                              }}
+                              className="rounded-lg bg-red-500 px-3 py-1 text-xs text-white hover:bg-red-600"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500 dark:text-slate-400">No qualification fields configured yet.</p>
+              )}
+
+              {/* Add Qualification Field Modal */}
+              {showNewQualField && (
+                <div className="mt-4 rounded-lg border border-purple-200 bg-purple-50 p-4 dark:border-purple-800 dark:bg-purple-900/20">
+                  <h4 className="mb-3 font-semibold text-purple-900 dark:text-purple-300">Add Qualification Field</h4>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                        Field ID *
+                      </label>
+                      <input
+                        type="text"
+                        value={newQualField.id}
+                        onChange={(e) => setNewQualField({ ...newQualField, id: e.target.value })}
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800"
+                        placeholder="e.g., degree, qualified_year"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                        Field Label *
+                      </label>
+                      <input
+                        type="text"
+                        value={newQualField.label}
+                        onChange={(e) => setNewQualField({ ...newQualField, label: e.target.value })}
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800"
+                        placeholder="e.g., Degree, Qualified Year"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                        Field Type *
+                      </label>
+                      <select
+                        value={newQualField.type}
+                        onChange={(e) => setNewQualField({ ...newQualField, type: e.target.value as any })}
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800"
+                      >
+                        <option value="text">Single Line Text</option>
+                        <option value="textarea">Multi-line Text</option>
+                        <option value="number">Number</option>
+                        <option value="date">Date</option>
+                        <option value="select">Dropdown Selection</option>
+                      </select>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={newQualField.isRequired}
+                          onChange={(e) => setNewQualField({ ...newQualField, isRequired: e.target.checked })}
+                          className="h-4 w-4 rounded text-purple-600 focus:ring-purple-500"
+                        />
+                        <span className="text-xs text-slate-700 dark:text-slate-300">Required</span>
+                      </label>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={async () => {
+                          if (!newQualField.id || !newQualField.label) {
+                            alert('Field ID and Label are required');
+                            return;
+                          }
+                          await api.addQualificationsField(newQualField);
+                          setShowNewQualField(false);
+                          setNewQualField({
+                            id: '',
+                            label: '',
+                            type: 'text',
+                            isRequired: false,
+                            isEnabled: true,
+                            placeholder: '',
+                            validation: {},
+                            options: [],
+                            order: 0,
+                          });
+                          await loadSettings();
+                        }}
+                        className="flex-1 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700"
+                      >
+                        Add Field
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowNewQualField(false);
+                          setNewQualField({
+                            id: '',
+                            label: '',
+                            type: 'text',
+                            isRequired: false,
+                            isEnabled: true,
+                            placeholder: '',
+                            validation: {},
+                            options: [],
+                            order: 0,
+                          });
+                        }}
+                        className="flex-1 rounded-lg bg-slate-500 px-4 py-2 text-sm font-medium text-white hover:bg-slate-600"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Info Box */}

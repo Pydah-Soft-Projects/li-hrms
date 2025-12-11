@@ -11,6 +11,7 @@ const { protect, authorize } = require('../authentication/middleware/authMiddlew
 const attendanceController = require('./controllers/attendanceController');
 const attendanceSettingsController = require('./controllers/attendanceSettingsController');
 const attendanceDeductionSettingsController = require('./controllers/attendanceDeductionSettingsController');
+const earlyOutSettingsController = require('./controllers/earlyOutSettingsController');
 const attendanceSyncController = require('./controllers/attendanceSyncController');
 const attendanceUploadController = require('./controllers/attendanceUploadController');
 const monthlySummaryController = require('./controllers/monthlySummaryController');
@@ -60,6 +61,19 @@ router.get('/settings/deduction', attendanceDeductionSettingsController.getSetti
 // Save attendance deduction settings
 router.post('/settings/deduction', authorize('super_admin', 'sub_admin'), attendanceDeductionSettingsController.saveSettings);
 router.put('/settings/deduction', authorize('super_admin', 'sub_admin'), attendanceDeductionSettingsController.saveSettings);
+
+// Early-Out Settings Routes
+// Get early-out settings
+router.get('/settings/early-out', earlyOutSettingsController.getSettings);
+
+// Save early-out settings
+router.post('/settings/early-out', authorize('super_admin', 'sub_admin'), earlyOutSettingsController.saveSettings);
+router.put('/settings/early-out', authorize('super_admin', 'sub_admin'), earlyOutSettingsController.saveSettings);
+
+// Early-Out Deduction Range Routes
+router.post('/settings/early-out/ranges', authorize('super_admin', 'sub_admin'), earlyOutSettingsController.addRange);
+router.put('/settings/early-out/ranges/:rangeId', authorize('super_admin', 'sub_admin'), earlyOutSettingsController.updateRange);
+router.delete('/settings/early-out/ranges/:rangeId', authorize('super_admin', 'sub_admin'), earlyOutSettingsController.deleteRange);
 
 // Sync Routes (Super Admin, Sub Admin only)
 router.post('/sync', authorize('super_admin', 'sub_admin'), attendanceSyncController.manualSync);

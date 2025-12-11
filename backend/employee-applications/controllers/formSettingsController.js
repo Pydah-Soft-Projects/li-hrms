@@ -536,3 +536,233 @@ exports.deleteField = async (req, res) => {
   }
 };
 
+/**
+ * @desc    Update qualifications configuration (enable/disable)
+ * @route   PUT /api/employee-applications/form-settings/qualifications
+ * @access  Private (Super Admin, Sub Admin)
+ */
+exports.updateQualificationsConfig = async (req, res) => {
+  try {
+    const { isEnabled } = req.body;
+
+    const settings = await EmployeeApplicationFormSettings.getActiveSettings();
+    if (!settings) {
+      return res.status(404).json({
+        success: false,
+        message: 'Form settings not found',
+      });
+    }
+
+    if (!settings.qualifications) {
+      settings.qualifications = { isEnabled: true, fields: [] };
+    }
+
+    settings.qualifications.isEnabled = isEnabled !== undefined ? isEnabled : settings.qualifications.isEnabled;
+    settings.updatedBy = req.user._id;
+    settings.version = (settings.version || 1) + 1;
+
+    await settings.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Qualifications configuration updated successfully',
+      data: settings.qualifications,
+    });
+  } catch (error) {
+    console.error('Error updating qualifications config:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update qualifications configuration',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * @desc    Add field to qualifications
+ * @route   POST /api/employee-applications/form-settings/qualifications/fields
+ * @access  Private (Super Admin, Sub Admin)
+ */
+exports.addQualificationsField = async (req, res) => {
+  try {
+    const { id, label, type, isRequired, isEnabled, placeholder, validation, options, order } = req.body;
+
+    if (!id || !label || !type) {
+      return res.status(400).json({
+        success: false,
+        message: 'Field id, label, and type are required',
+      });
+    }
+
+    const settings = await EmployeeApplicationFormSettings.getActiveSettings();
+    if (!settings) {
+      return res.status(404).json({
+        success: false,
+        message: 'Form settings not found',
+      });
+    }
+
+    if (!settings.qualifications) {
+      settings.qualifications = { isEnabled: true, fields: [] };
+    }
+
+    // Check if field already exists
+    const existingField = settings.qualifications.fields.find((f) => f.id === id);
+    if (existingField) {
+      return res.status(400).json({
+        success: false,
+        message: 'Field with this id already exists',
+      });
+    }
+
+    const newField = {
+      id,
+      label,
+      type,
+      isRequired: isRequired || false,
+      isEnabled: isEnabled !== undefined ? isEnabled : true,
+      placeholder: placeholder || '',
+      validation: validation || {},
+      options: options || [],
+      order: order || settings.qualifications.fields.length + 1,
+    };
+
+    settings.qualifications.fields.push(newField);
+    settings.qualifications.fields.sort((a, b) => a.order - b.order);
+    settings.updatedBy = req.user._id;
+    settings.version = (settings.version || 1) + 1;
+
+    await settings.save();
+
+    res.status(201).json({
+      success: true,
+      message: 'Qualifications field added successfully',
+      data: newField,
+    });
+  } catch (error) {
+    console.error('Error adding qualifications field:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to add qualifications field',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * @desc    Update qualifications field
+ * @route   PUT /api/employee-applications/form-settings/qualifications/fields/:fieldId
+ * @access  Private (Super Admin, Sub Admin)
+ */
+exports.updateQualificationsField = async (req, res) => {
+  try {
+    const { fieldId } = req.params;
+    const { label, isRequired, isEnabled, placeholder, validation, options, order } = req.body;
+
+    const settings = await EmployeeApplicationFormSettings.getActiveSettings();
+    if (!settings) {
+      return res.status(404).json({
+        success: false,
+        message: 'Form settings not found',
+      });
+    }
+
+    if (!settings.qualifications || !settings.qualifications.fields) {
+      return res.status(404).json({
+        success: false,
+        message: 'Qualifications fields not found',
+      });
+    }
+
+    const field = settings.qualifications.fields.find((f) => f.id === fieldId);
+    if (!field) {
+      return res.status(404).json({
+        success: false,
+        message: 'Qualifications field not found',
+      });
+    }
+
+    // Update allowed fields
+    if (label !== undefined) field.label = label;
+    if (isRequired !== undefined) field.isRequired = isRequired;
+    if (isEnabled !== undefined) field.isEnabled = isEnabled;
+    if (placeholder !== undefined) field.placeholder = placeholder;
+    if (validation !== undefined) field.validation = { ...field.validation, ...validation };
+    if (options !== undefined) field.options = options;
+    if (order !== undefined) {
+      field.order = order;
+      settings.qualifications.fields.sort((a, b) => a.order - b.order);
+    }
+
+    settings.updatedBy = req.user._id;
+    settings.version = (settings.version || 1) + 1;
+
+    await settings.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Qualifications field updated successfully',
+      data: field,
+    });
+  } catch (error) {
+    console.error('Error updating qualifications field:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update qualifications field',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * @desc    Delete qualifications field
+ * @route   DELETE /api/employee-applications/form-settings/qualifications/fields/:fieldId
+ * @access  Private (Super Admin, Sub Admin)
+ */
+exports.deleteQualificationsField = async (req, res) => {
+  try {
+    const { fieldId } = req.params;
+
+    const settings = await EmployeeApplicationFormSettings.getActiveSettings();
+    if (!settings) {
+      return res.status(404).json({
+        success: false,
+        message: 'Form settings not found',
+      });
+    }
+
+    if (!settings.qualifications || !settings.qualifications.fields) {
+      return res.status(404).json({
+        success: false,
+        message: 'Qualifications fields not found',
+      });
+    }
+
+    const fieldIndex = settings.qualifications.fields.findIndex((f) => f.id === fieldId);
+    if (fieldIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        message: 'Qualifications field not found',
+      });
+    }
+
+    settings.qualifications.fields.splice(fieldIndex, 1);
+    settings.updatedBy = req.user._id;
+    settings.version = (settings.version || 1) + 1;
+
+    await settings.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Qualifications field deleted successfully',
+    });
+  } catch (error) {
+    console.error('Error deleting qualifications field:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete qualifications field',
+      error: error.message,
+    });
+  }
+};
+

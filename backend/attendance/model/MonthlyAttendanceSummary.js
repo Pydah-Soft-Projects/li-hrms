@@ -116,6 +116,55 @@ const monthlyAttendanceSummarySchema = new mongoose.Schema(
       min: 0,
     },
 
+    // NEW: Early-Out Deduction Fields
+    // Total early-out minutes in this month
+    totalEarlyOutMinutes: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    // Total early-out deduction days (quarter/half/full days)
+    totalEarlyOutDeductionDays: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    // Total early-out deduction amount (for custom_amount deductions)
+    totalEarlyOutDeductionAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    // Breakdown of deduction types
+    earlyOutDeductionBreakdown: {
+      quarter_day: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      half_day: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      full_day: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      custom_amount: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+    },
+    // Count of early-out instances
+    earlyOutCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
     // Last calculated/updated timestamp
     lastCalculatedAt: {
       type: Date,
