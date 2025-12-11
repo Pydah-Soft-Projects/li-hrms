@@ -13,6 +13,9 @@ interface Department {
 interface DepartmentSettings {
   _id?: string;
   department: Department | string;
+  payroll?: {
+    includeMissingEmployeeComponents?: boolean | null;
+  };
   leaves: {
     leavesPerDay: number | null;
     paidLeavesCount: number | null;
@@ -105,6 +108,7 @@ export default function DepartmentalSettingsPage() {
     permissions: DepartmentSettings['permissions'];
     ot: DepartmentSettings['ot'];
     attendance?: DepartmentSettings['attendance'];
+    payroll?: DepartmentSettings['payroll'];
   }>({
     leaves: {
       leavesPerDay: null,
@@ -165,6 +169,9 @@ export default function DepartmentalSettingsPage() {
         minimumDuration: 0,
         deductionRanges: [],
       },
+    },
+    payroll: {
+      includeMissingEmployeeComponents: null,
     },
   });
 
@@ -265,6 +272,10 @@ export default function DepartmentalSettingsPage() {
               deductionRanges: Array.isArray(s.attendance?.earlyOut?.deductionRanges) ? s.attendance.earlyOut.deductionRanges : [],
             },
           },
+          payroll: {
+            includeMissingEmployeeComponents:
+              s.payroll?.includeMissingEmployeeComponents ?? null,
+          },
         });
       }
     } catch (error) {
@@ -338,10 +349,18 @@ export default function DepartmentalSettingsPage() {
           deductionRanges: [],
         },
       },
+      payroll: {
+        includeMissingEmployeeComponents: null,
+      },
     });
   };
 
-  const handleInputChange = (section: 'leaves' | 'loans' | 'salaryAdvance' | 'permissions' | 'ot' | 'attendance', field: string, value: any, nestedField?: string) => {
+  const handleInputChange = (
+    section: 'leaves' | 'loans' | 'salaryAdvance' | 'permissions' | 'ot' | 'attendance' | 'payroll',
+    field: string,
+    value: any,
+    nestedField?: string
+  ) => {
     setFormData(prev => {
       if (nestedField && (section === 'permissions' || section === 'attendance')) {
         // Handle nested fields like deductionRules
@@ -353,6 +372,14 @@ export default function DepartmentalSettingsPage() {
               ...(prev[section] as any)?.[field],
               [nestedField]: value === '' ? null : value,
             },
+          },
+        };
+      } else if (section === 'payroll') {
+        return {
+          ...prev,
+          payroll: {
+            ...(prev.payroll || {}),
+            [field]: value === '' ? null : value,
           },
         };
       }
@@ -383,6 +410,7 @@ export default function DepartmentalSettingsPage() {
         permissions: formData.permissions,
         ot: formData.ot,
         attendance: formData.attendance,
+        payroll: formData.payroll,
       };
 
       const response = await api.updateDepartmentSettings(selectedDepartmentId, updateData);
@@ -1221,6 +1249,30 @@ export default function DepartmentalSettingsPage() {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+
+          {/* Payroll Settings */}
+          <div className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/60">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-base font-semibold text-slate-900 dark:text-white">Payroll</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Department override for “Include Missing Allowances &amp; Deductions for Employees”. If unset, global applies.
+                </p>
+              </div>
+              <label className="relative inline-flex cursor-pointer items-center">
+                <input
+                  type="checkbox"
+                  className="peer sr-only"
+                  checked={(formData.payroll?.includeMissingEmployeeComponents ?? true)}
+                  onChange={(e) => handleInputChange('payroll', 'includeMissingEmployeeComponents', e.target.checked)}
+                />
+                <div className="peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-emerald-500 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-emerald-800"></div>
+              </label>
+            </div>
+            <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              Enabled: partial employee overrides fill missing items from Department then Global. Disabled: only employee overrides are used.
             </div>
           </div>
 

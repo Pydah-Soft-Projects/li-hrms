@@ -171,6 +171,8 @@ const createEmployeeMSSQL = async (employeeData) => {
   const {
     dynamicFields,
     qualifications, // Exclude qualifications as it's now dynamic (array of objects)
+    employeeAllowances, // Mongo-only
+    employeeDeductions, // Mongo-only
     _id,
     __v,
     created_at,
@@ -283,6 +285,8 @@ const updateEmployeeMSSQL = async (empNo, employeeData) => {
   const {
     dynamicFields,
     qualifications, // Exclude qualifications as it's now dynamic (array of objects)
+    employeeAllowances, // Mongo-only
+    employeeDeductions, // Mongo-only
     _id,
     __v,
     created_at,

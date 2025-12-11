@@ -395,6 +395,7 @@ async function calculateOtherDeductions(departmentId, basicPay, grossSalary = nu
         const amount = calculateDeductionAmount(rule, basicPay, grossSalary);
         if (amount > 0) {
           fixedDeductions.push({
+            masterId: deduction.masterId,
             name: deduction.name,
             amount,
             type: 'fixed',
@@ -420,6 +421,7 @@ async function calculateOtherDeductions(departmentId, basicPay, grossSalary = nu
       const amount = calculateDeductionAmount(deduction.rule, basicPay, null);
       if (amount > 0) {
         percentageBasicResults.push({
+          masterId: deduction.masterId,
           name: deduction.name,
           amount,
           type: 'percentage',
@@ -435,6 +437,7 @@ async function calculateOtherDeductions(departmentId, basicPay, grossSalary = nu
         const amount = calculateDeductionAmount(deduction.rule, basicPay, grossSalary);
         if (amount > 0) {
           percentageGrossResults.push({
+            masterId: deduction.masterId,
             name: deduction.name,
             amount,
             type: 'percentage',

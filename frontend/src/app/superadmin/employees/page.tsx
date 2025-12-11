@@ -43,6 +43,8 @@ interface Employee {
   ifsc_code?: string;
   is_active?: boolean;
   dynamicFields?: any;
+  employeeAllowances?: any[];
+  employeeDeductions?: any[];
 }
 
 interface Department {
@@ -127,6 +129,8 @@ const initialFormState: Partial<Employee> = {
   bank_place: '',
   ifsc_code: '',
   is_active: true,
+  employeeAllowances: [],
+  employeeDeductions: [],
 };
 
 export default function EmployeesPage() {
@@ -158,6 +162,258 @@ export default function EmployeesPage() {
   const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [userRole, setUserRole] = useState<string>('');
 
+  // Allowance/Deduction defaults & overrides
+  const [componentDefaults, setComponentDefaults] = useState<{ allowances: any[]; deductions: any[] }>({
+    allowances: [],
+    deductions: [],
+  });
+  const [overrideAllowances, setOverrideAllowances] = useState<Record<string, number | null>>({});
+  const [overrideDeductions, setOverrideDeductions] = useState<Record<string, number | null>>({});
+  const [loadingComponents, setLoadingComponents] = useState(false);
+  const [salarySummary, setSalarySummary] = useState({
+    totalAllowances: 0,
+    totalDeductions: 0,
+    netSalary: 0,
+    ctcSalary: 0,
+  });
+  const [applicationSalarySummary, setApplicationSalarySummary] = useState({
+    totalAllowances: 0,
+    totalDeductions: 0,
+    netSalary: 0,
+    ctcSalary: 0,
+  });
+  // Approval dialog allowance/deduction state
+  const [approvalComponentDefaults, setApprovalComponentDefaults] = useState<{ allowances: any[]; deductions: any[] }>({
+    allowances: [],
+    deductions: [],
+  });
+  const [approvalOverrideAllowances, setApprovalOverrideAllowances] = useState<Record<string, number | null>>({});
+  const [approvalOverrideDeductions, setApprovalOverrideDeductions] = useState<Record<string, number | null>>({});
+  const [approvalLoadingComponents, setApprovalLoadingComponents] = useState(false);
+  const [approvalSalarySummary, setApprovalSalarySummary] = useState({
+    totalAllowances: 0,
+    totalDeductions: 0,
+    netSalary: 0,
+    ctcSalary: 0,
+  });
+
+  // Build override payload: only include rows user changed (matched by masterId or name)
+  const buildOverridePayload = (defaults: any[], overrides: Record<string, number | null>, categoryFallback: 'allowance' | 'deduction') => {
+    return defaults
+      .map((item) => {
+        const key = item.masterId ? item.masterId.toString() : (item.name || '').toLowerCase();
+        if (Object.prototype.hasOwnProperty.call(overrides, key)) {
+          const amt = overrides[key];
+          return {
+            masterId: item.masterId || null,
+            code: item.code || null,
+            name: item.name || '',
+            category: item.category || categoryFallback,
+            type: item.type || (item.base ? 'percentage' : 'fixed'),
+            amount: amt === null || amt === undefined ? null : Number(amt),
+            overrideAmount: amt === null || amt === undefined ? null : Number(amt),
+            percentage: item.type === 'percentage' ? (item.percentage ?? null) : null,
+            percentageBase: item.base || item.percentageBase || null,
+            minAmount: item.minAmount ?? null,
+            maxAmount: item.maxAmount ?? null,
+          };
+        }
+        return null;
+      })
+      .filter(Boolean);
+  };
+
+  // Fetch component defaults (allowances/deductions) for a dept + gross salary (+optional empNo to include existing overrides)
+  const fetchComponentDefaults = async (departmentId: string, grossSalary: number, empNo?: string) => {
+    setLoadingComponents(true);
+    try {
+      const res = await api.getEmployeeComponentDefaults({ departmentId, grossSalary, empNo });
+      if (res?.success && res?.data) {
+        const allowances = Array.isArray(res.data.allowances) ? res.data.allowances : [];
+        const deductions = Array.isArray(res.data.deductions) ? res.data.deductions : [];
+
+        // Prefill overrides map from existing employee data if editing
+        const newOverrideAllowances: Record<string, number | null> = {};
+        const newOverrideDeductions: Record<string, number | null> = {};
+
+        if (editingEmployee?.employeeAllowances) {
+          editingEmployee.employeeAllowances.forEach((ov: any) => {
+            const key = ov.masterId ? ov.masterId.toString() : (ov.name || '').toLowerCase();
+            newOverrideAllowances[key] = ov.amount ?? ov.overrideAmount ?? null;
+          });
+        }
+        if (editingEmployee?.employeeDeductions) {
+          editingEmployee.employeeDeductions.forEach((ov: any) => {
+            const key = ov.masterId ? ov.masterId.toString() : (ov.name || '').toLowerCase();
+            newOverrideDeductions[key] = ov.amount ?? ov.overrideAmount ?? null;
+          });
+        }
+
+        setComponentDefaults({ allowances, deductions });
+        setOverrideAllowances(newOverrideAllowances);
+        setOverrideDeductions(newOverrideDeductions);
+      } else {
+        setComponentDefaults({ allowances: [], deductions: [] });
+        setOverrideAllowances({});
+        setOverrideDeductions({});
+      }
+    } catch (err) {
+      console.error('Failed to load component defaults', err);
+      setComponentDefaults({ allowances: [], deductions: [] });
+      setOverrideAllowances({});
+      setOverrideDeductions({});
+    } finally {
+      setLoadingComponents(false);
+    }
+  };
+
+  // Fetch components for approval dialog
+  const fetchApprovalComponentDefaults = async (departmentId: string, grossSalary: number) => {
+    setApprovalLoadingComponents(true);
+    try {
+      const res = await api.getEmployeeComponentDefaults({ departmentId, grossSalary });
+      if (res?.success && res?.data) {
+        const allowances = Array.isArray(res.data.allowances) ? res.data.allowances : [];
+        const deductions = Array.isArray(res.data.deductions) ? res.data.deductions : [];
+
+        const prefAllow: Record<string, number | null> = {};
+        const prefDed: Record<string, number | null> = {};
+
+        if (selectedApplication?.employeeAllowances) {
+          selectedApplication.employeeAllowances.forEach((ov: any) => {
+            const key = ov.masterId ? ov.masterId.toString() : (ov.name || '').toLowerCase();
+            prefAllow[key] = ov.amount ?? ov.overrideAmount ?? null;
+          });
+        }
+        if (selectedApplication?.employeeDeductions) {
+          selectedApplication.employeeDeductions.forEach((ov: any) => {
+            const key = ov.masterId ? ov.masterId.toString() : (ov.name || '').toLowerCase();
+            prefDed[key] = ov.amount ?? ov.overrideAmount ?? null;
+          });
+        }
+
+        setApprovalComponentDefaults({ allowances, deductions });
+        setApprovalOverrideAllowances(prefAllow);
+        setApprovalOverrideDeductions(prefDed);
+      } else {
+        setApprovalComponentDefaults({ allowances: [], deductions: [] });
+        setApprovalOverrideAllowances({});
+        setApprovalOverrideDeductions({});
+      }
+    } catch (err) {
+      console.error('Failed to load component defaults (approval)', err);
+      setApprovalComponentDefaults({ allowances: [], deductions: [] });
+      setApprovalOverrideAllowances({});
+      setApprovalOverrideDeductions({});
+    } finally {
+      setApprovalLoadingComponents(false);
+    }
+  };
+
+  const getKey = (item: any) => (item.masterId ? item.masterId.toString() : (item.name || '').toLowerCase());
+
+  // Recompute salary summary (frontend-only) whenever salary or overrides change
+  useEffect(() => {
+    const gross = Number(formData.gross_salary || 0);
+
+    const sumWithOverrides = (items: any[], overrides: Record<string, number | null>) =>
+      items.reduce((acc, item) => {
+        const key = getKey(item);
+        const overrideVal = Object.prototype.hasOwnProperty.call(overrides, key) ? overrides[key] : undefined;
+        const amount = overrideVal === null || overrideVal === undefined ? item.amount || 0 : Number(overrideVal);
+        return acc + (Number.isFinite(amount) ? Number(amount) : 0);
+      }, 0);
+
+    const totalAllowances = sumWithOverrides(componentDefaults.allowances, overrideAllowances);
+    const totalDeductions = sumWithOverrides(componentDefaults.deductions, overrideDeductions);
+    const netSalary = gross + totalAllowances - totalDeductions;
+
+    setSalarySummary({
+      totalAllowances,
+      totalDeductions,
+      netSalary,
+      ctcSalary: netSalary, // treat calculated/net as CTC for now per instructions
+    });
+  }, [formData.gross_salary, componentDefaults, overrideAllowances, overrideDeductions]);
+
+  // Application salary summary based on proposed salary and overrides
+  useEffect(() => {
+    const gross = Number((applicationFormData as any).proposedSalary || 0);
+
+    const sumWithOverrides = (items: any[], overrides: Record<string, number | null>) =>
+      items.reduce((acc, item) => {
+        const key = getKey(item);
+        const overrideVal = Object.prototype.hasOwnProperty.call(overrides, key) ? overrides[key] : undefined;
+        const amount = overrideVal === null || overrideVal === undefined ? item.amount || 0 : Number(overrideVal);
+        return acc + (Number.isFinite(amount) ? Number(amount) : 0);
+      }, 0);
+
+    const totalAllowances = sumWithOverrides(componentDefaults.allowances, overrideAllowances);
+    const totalDeductions = sumWithOverrides(componentDefaults.deductions, overrideDeductions);
+    const netSalary = gross + totalAllowances - totalDeductions;
+
+    setApplicationSalarySummary({
+      totalAllowances,
+      totalDeductions,
+      netSalary,
+      ctcSalary: netSalary,
+    });
+  }, [applicationFormData, componentDefaults, overrideAllowances, overrideDeductions]);
+
+  // Approval salary summary
+  useEffect(() => {
+    const gross = Number(approvalData.approvedSalary || selectedApplication?.proposedSalary || 0);
+
+    const sumWithOverrides = (items: any[], overrides: Record<string, number | null>) =>
+      items.reduce((acc, item) => {
+        const key = getKey(item);
+        const overrideVal = Object.prototype.hasOwnProperty.call(overrides, key) ? overrides[key] : undefined;
+        const amount = overrideVal === null || overrideVal === undefined ? item.amount || 0 : Number(overrideVal);
+        return acc + (Number.isFinite(amount) ? Number(amount) : 0);
+      }, 0);
+
+    const totalAllowances = sumWithOverrides(approvalComponentDefaults.allowances, approvalOverrideAllowances);
+    const totalDeductions = sumWithOverrides(approvalComponentDefaults.deductions, approvalOverrideDeductions);
+    const netSalary = gross + totalAllowances - totalDeductions;
+
+    setApprovalSalarySummary({
+      totalAllowances,
+      totalDeductions,
+      netSalary,
+      ctcSalary: netSalary,
+    });
+  }, [approvalData.approvedSalary, selectedApplication?.proposedSalary, approvalComponentDefaults, approvalOverrideAllowances, approvalOverrideDeductions]);
+
+  const handleOverrideChange = (
+    type: 'allowance' | 'deduction',
+    item: any,
+    value: string
+  ) => {
+    const parsed = value === '' ? null : Number(value);
+    if (Number.isNaN(parsed as number)) return;
+    const key = getKey(item);
+    if (type === 'allowance') {
+      setOverrideAllowances((prev) => ({ ...prev, [key]: parsed }));
+    } else {
+      setOverrideDeductions((prev) => ({ ...prev, [key]: parsed }));
+    }
+  };
+
+  const handleApprovalOverrideChange = (
+    type: 'allowance' | 'deduction',
+    item: any,
+    value: string
+  ) => {
+    const parsed = value === '' ? null : Number(value);
+    if (Number.isNaN(parsed as number)) return;
+    const key = getKey(item);
+    if (type === 'allowance') {
+      setApprovalOverrideAllowances((prev) => ({ ...prev, [key]: parsed }));
+    } else {
+      setApprovalOverrideDeductions((prev) => ({ ...prev, [key]: parsed }));
+    }
+  };
+
   useEffect(() => {
     const user = auth.getUser();
     if (user) {
@@ -188,6 +444,44 @@ export default function EmployeesPage() {
       setFilteredDesignations([]);
     }
   }, [formData.department_id, designations]);
+
+  // Load allowance/deduction defaults when department and gross salary are set
+  useEffect(() => {
+    const deptId = formData.department_id;
+    const gross = formData.gross_salary;
+    if (deptId && gross !== undefined && gross !== null && gross > 0) {
+      fetchComponentDefaults(deptId as string, Number(gross), editingEmployee?.emp_no);
+    } else {
+      setComponentDefaults({ allowances: [], deductions: [] });
+      setOverrideAllowances({});
+      setOverrideDeductions({});
+    }
+  }, [formData.department_id, formData.gross_salary, editingEmployee?.emp_no]);
+
+  // Load allowance/deduction defaults for application dialog when dept + proposed salary are set
+  useEffect(() => {
+    const deptRaw = applicationFormData.department_id;
+    const deptId = typeof deptRaw === 'string' ? deptRaw : deptRaw?._id;
+    const gross = (applicationFormData as any).proposedSalary;
+    if (deptId && gross !== undefined && gross !== null && Number(gross) > 0) {
+      fetchComponentDefaults(deptId as string, Number(gross), undefined);
+    }
+  }, [applicationFormData.department_id, (applicationFormData as any).proposedSalary]);
+
+  // Load allowance/deduction defaults for approval dialog when opened or salary changes
+  useEffect(() => {
+    if (!showApprovalDialog || !selectedApplication) return;
+    const deptRaw = selectedApplication.department_id || selectedApplication.department?._id;
+    const deptId = typeof deptRaw === 'string' ? deptRaw : (deptRaw as any)?._id;
+    const gross = approvalData.approvedSalary || selectedApplication.proposedSalary;
+    if (deptId && gross !== undefined && gross !== null && Number(gross) > 0) {
+      fetchApprovalComponentDefaults(deptId as string, Number(gross));
+    } else {
+      setApprovalComponentDefaults({ allowances: [], deductions: [] });
+      setApprovalOverrideAllowances({});
+      setApprovalOverrideDeductions({});
+    }
+  }, [showApprovalDialog, selectedApplication, approvalData.approvedSalary]);
 
   useEffect(() => {
     if (applicationFormData.department_id) {
@@ -330,7 +624,11 @@ export default function EmployeesPage() {
       // Ensure paidLeaves is always sent (even if 0)
       const submitData = {
         ...formData,
+        employeeAllowances: buildOverridePayload(componentDefaults.allowances, overrideAllowances, 'allowance'),
+        employeeDeductions: buildOverridePayload(componentDefaults.deductions, overrideDeductions, 'deduction'),
         paidLeaves: formData.paidLeaves !== null && formData.paidLeaves !== undefined ? formData.paidLeaves : 0,
+        ctcSalary: salarySummary.ctcSalary,
+        calculatedSalary: salarySummary.netSalary,
       };
       
       let response;
@@ -345,6 +643,9 @@ export default function EmployeesPage() {
         setShowDialog(false);
         setEditingEmployee(null);
         setFormData(initialFormState);
+        setComponentDefaults({ allowances: [], deductions: [] });
+        setOverrideAllowances({});
+        setOverrideDeductions({});
         loadEmployees();
       } else {
         setError(response.message || 'Operation failed');
@@ -420,6 +721,9 @@ export default function EmployeesPage() {
       // Map gross_salary to proposedSalary for form compatibility
       proposedSalary: salaryValue,
       gross_salary: salaryValue,
+      // Prefill employee overrides if present
+      employeeAllowances: Array.isArray(employee.employeeAllowances) ? employee.employeeAllowances : [],
+      employeeDeductions: Array.isArray(employee.employeeDeductions) ? employee.employeeDeductions : [],
       // Handle reporting_to - use the extracted IDs
       reporting_to: reportingToValue,
       reporting_to_: reportingToValue, // Also set the underscore version for compatibility
@@ -466,6 +770,9 @@ export default function EmployeesPage() {
   const openCreateDialog = () => {
     setEditingEmployee(null);
     setFormData(initialFormState);
+    setComponentDefaults({ allowances: [], deductions: [] });
+    setOverrideAllowances({});
+    setOverrideDeductions({});
     setShowDialog(true);
     setError('');
   };
@@ -508,9 +815,19 @@ export default function EmployeesPage() {
         }
       });
 
+      // Normalize qualifications for backend (expects string)
+      const qualificationsPayload = Array.isArray(applicationFormData.qualifications)
+        ? JSON.stringify(applicationFormData.qualifications)
+        : applicationFormData.qualifications;
+
       const response = await api.createEmployeeApplication({
         ...cleanedData,
         proposedSalary: applicationFormData.proposedSalary,
+        qualifications: qualificationsPayload,
+        employeeAllowances: buildOverridePayload(componentDefaults.allowances, overrideAllowances, 'allowance'),
+        employeeDeductions: buildOverridePayload(componentDefaults.deductions, overrideDeductions, 'deduction'),
+        ctcSalary: applicationSalarySummary.ctcSalary,
+        calculatedSalary: applicationSalarySummary.netSalary,
       });
 
       if (response.success) {
@@ -555,6 +872,10 @@ export default function EmployeesPage() {
         approvedSalary: approvalData.approvedSalary,
         doj: approvalData.doj || undefined,
         comments: approvalData.comments,
+        employeeAllowances: buildOverridePayload(approvalComponentDefaults.allowances, approvalOverrideAllowances, 'allowance'),
+        employeeDeductions: buildOverridePayload(approvalComponentDefaults.deductions, approvalOverrideDeductions, 'deduction'),
+        ctcSalary: approvalSalarySummary.ctcSalary,
+        calculatedSalary: approvalSalarySummary.netSalary,
       });
 
       if (response.success) {
@@ -608,6 +929,15 @@ export default function EmployeesPage() {
       doj: today,
       comments: '',
     });
+    setApprovalComponentDefaults({ allowances: [], deductions: [] });
+    setApprovalOverrideAllowances({});
+    setApprovalOverrideDeductions({});
+    setApprovalSalarySummary({
+      totalAllowances: 0,
+      totalDeductions: 0,
+      netSalary: 0,
+      ctcSalary: 0,
+    });
     setShowApprovalDialog(true);
     setError('');
     setSuccess('');
@@ -615,6 +945,15 @@ export default function EmployeesPage() {
 
   const openApplicationDialog = () => {
     setApplicationFormData({ ...initialFormState, proposedSalary: 0 });
+    setComponentDefaults({ allowances: [], deductions: [] });
+    setOverrideAllowances({});
+    setOverrideDeductions({});
+    setApplicationSalarySummary({
+      totalAllowances: 0,
+      totalDeductions: 0,
+      netSalary: 0,
+      ctcSalary: 0,
+    });
     setShowApplicationDialog(true);
     setError('');
   };
@@ -1034,6 +1373,139 @@ export default function EmployeesPage() {
                 designations={filteredApplicationDesignations}
               />
 
+              {/* Allowances & Deductions Overrides */}
+              <div className="space-y-4 rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Allowances &amp; Deductions</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Defaults come from Department/Global. Enter an amount to override for this employee.
+                    </p>
+                  </div>
+                  {loadingComponents && (
+                    <div className="text-xs text-slate-500 dark:text-slate-400">Loading components...</div>
+                  )}
+              </div>
+
+                {/* Salary summary */}
+                <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60 md:grid-cols-4">
+                  <div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Proposed / Gross Salary</p>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                      ₹{Number((applicationFormData as any).proposedSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-emerald-700 dark:text-emerald-300">Total Allowances</p>
+                    <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">
+                      ₹{applicationSalarySummary.totalAllowances.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-rose-700 dark:text-rose-300">Total Deductions</p>
+                    <p className="text-sm font-semibold text-rose-700 dark:text-rose-300">
+                      ₹{applicationSalarySummary.totalDeductions.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Calculated / CTC</p>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                      ₹{applicationSalarySummary.netSalary.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  {/* Allowances */}
+                  <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-3 dark:border-emerald-900/40 dark:bg-emerald-900/20">
+                    <div className="mb-2 flex items-center justify-between">
+                      <h4 className="text-sm font-semibold text-emerald-800 dark:text-emerald-200">Allowances</h4>
+                      <span className="text-xs text-emerald-700 dark:text-emerald-300">
+                        {componentDefaults.allowances.length} items
+                      </span>
+                  </div>
+                    <div className="space-y-2">
+                      {componentDefaults.allowances.length === 0 && (
+                        <p className="text-xs text-emerald-700/70 dark:text-emerald-200/70">No allowances available.</p>
+                      )}
+                      {componentDefaults.allowances.map((item) => {
+                        const key = getKey(item);
+                        const current = overrideAllowances[key] ?? item.amount ?? 0;
+                        return (
+                          <div key={key} className="rounded-lg border border-emerald-100 bg-white/70 px-3 py-2 text-xs dark:border-emerald-900/50 dark:bg-emerald-950/40">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex-1">
+                                <div className="font-semibold text-emerald-900 dark:text-emerald-100">{item.name}</div>
+                                <div className="text-[11px] text-emerald-700 dark:text-emerald-300">
+                                  {item.type === 'percentage'
+                                    ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
+                                    : 'Fixed'}
+                  </div>
+                  </div>
+                              <div className="flex items-center gap-1">
+                                <span className="text-[11px] text-emerald-700 dark:text-emerald-300">Override</span>
+                    <input
+                      type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={current === null ? '' : current}
+                                  onChange={(e) => handleOverrideChange('allowance', item, e.target.value)}
+                                  className="w-24 rounded border border-emerald-200 bg-white px-2 py-1 text-[11px] text-emerald-900 focus:border-emerald-400 focus:outline-none dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100"
+                    />
+                  </div>
+                  </div>
+                  </div>
+                        );
+                      })}
+                </div>
+              </div>
+
+                  {/* Deductions */}
+                  <div className="rounded-xl border border-rose-100 bg-rose-50/70 p-3 dark:border-rose-900/40 dark:bg-rose-900/20">
+                    <div className="mb-2 flex items-center justify-between">
+                      <h4 className="text-sm font-semibold text-rose-800 dark:text-rose-200">Deductions</h4>
+                      <span className="text-xs text-rose-700 dark:text-rose-300">
+                        {componentDefaults.deductions.length} items
+                      </span>
+                  </div>
+                    <div className="space-y-2">
+                      {componentDefaults.deductions.length === 0 && (
+                        <p className="text-xs text-rose-700/70 dark:text-rose-200/70">No deductions available.</p>
+                      )}
+                      {componentDefaults.deductions.map((item) => {
+                        const key = getKey(item);
+                        const current = overrideDeductions[key] ?? item.amount ?? 0;
+                        return (
+                          <div key={key} className="rounded-lg border border-rose-100 bg-white/70 px-3 py-2 text-xs dark:border-rose-900/50 dark:bg-rose-950/40">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex-1">
+                                <div className="font-semibold text-rose-900 dark:text-rose-100">{item.name}</div>
+                                <div className="text-[11px] text-rose-700 dark:text-rose-300">
+                                  {item.type === 'percentage'
+                                    ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
+                                    : 'Fixed'}
+                  </div>
+                  </div>
+                              <div className="flex items-center gap-1">
+                                <span className="text-[11px] text-rose-700 dark:text-rose-300">Override</span>
+                    <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={current === null ? '' : current}
+                                  onChange={(e) => handleOverrideChange('deduction', item, e.target.value)}
+                                  className="w-24 rounded border border-rose-200 bg-white px-2 py-1 text-[11px] text-rose-900 focus:border-rose-400 focus:outline-none dark:border-rose-800 dark:bg-rose-950 dark:text-rose-100"
+                    />
+                  </div>
+                  </div>
+                </div>
+                        );
+                      })}
+              </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Actions */}
               <div className="flex gap-3 pt-2">
                 <button
@@ -1170,6 +1642,138 @@ export default function EmployeesPage() {
                 </div>
               </div>
 
+              {/* Allowances & Deductions with summary in approval */}
+              <div className="space-y-4 rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Allowances &amp; Deductions</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Based on department/global defaults. Adjust overrides as needed before approval.
+                    </p>
+                  </div>
+                  {approvalLoadingComponents && (
+                    <div className="text-xs text-slate-500 dark:text-slate-400">Loading components...</div>
+                  )}
+                </div>
+
+                <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60 md:grid-cols-4">
+                  <div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Approved / Gross Salary</p>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                      ₹{Number(approvalData.approvedSalary || selectedApplication.proposedSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-emerald-700 dark:text-emerald-300">Total Allowances</p>
+                    <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">
+                      ₹{approvalSalarySummary.totalAllowances.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-rose-700 dark:text-rose-300">Total Deductions</p>
+                    <p className="text-sm font-semibold text-rose-700 dark:text-rose-300">
+                      ₹{approvalSalarySummary.totalDeductions.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Calculated / CTC</p>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                      ₹{approvalSalarySummary.netSalary.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  {/* Allowances */}
+                  <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-3 dark:border-emerald-900/40 dark:bg-emerald-900/20">
+                    <div className="mb-2 flex items-center justify-between">
+                      <h4 className="text-sm font-semibold text-emerald-800 dark:text-emerald-200">Allowances</h4>
+                      <span className="text-xs text-emerald-700 dark:text-emerald-300">
+                        {approvalComponentDefaults.allowances.length} items
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      {approvalComponentDefaults.allowances.length === 0 && (
+                        <p className="text-xs text-emerald-700/70 dark:text-emerald-200/70">No allowances available.</p>
+                      )}
+                      {approvalComponentDefaults.allowances.map((item) => {
+                        const key = getKey(item);
+                        const current = approvalOverrideAllowances[key] ?? item.amount ?? 0;
+                        return (
+                          <div key={key} className="rounded-lg border border-emerald-100 bg-white/70 px-3 py-2 text-xs dark:border-emerald-900/50 dark:bg-emerald-950/40">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex-1">
+                                <div className="font-semibold text-emerald-900 dark:text-emerald-100">{item.name}</div>
+                                <div className="text-[11px] text-emerald-700 dark:text-emerald-300">
+                                  {item.type === 'percentage'
+                                    ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
+                                    : 'Fixed'}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <span className="text-[11px] text-emerald-700 dark:text-emerald-300">Override</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={current === null ? '' : current}
+                                  onChange={(e) => handleApprovalOverrideChange('allowance', item, e.target.value)}
+                                  className="w-24 rounded border border-emerald-200 bg-white px-2 py-1 text-[11px] text-emerald-900 focus:border-emerald-400 focus:outline-none dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Deductions */}
+                  <div className="rounded-xl border border-rose-100 bg-rose-50/70 p-3 dark:border-rose-900/40 dark:bg-rose-900/20">
+                    <div className="mb-2 flex items-center justify-between">
+                      <h4 className="text-sm font-semibold text-rose-800 dark:text-rose-200">Deductions</h4>
+                      <span className="text-xs text-rose-700 dark:text-rose-300">
+                        {approvalComponentDefaults.deductions.length} items
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      {approvalComponentDefaults.deductions.length === 0 && (
+                        <p className="text-xs text-rose-700/70 dark:text-rose-200/70">No deductions available.</p>
+                      )}
+                      {approvalComponentDefaults.deductions.map((item) => {
+                        const key = getKey(item);
+                        const current = approvalOverrideDeductions[key] ?? item.amount ?? 0;
+                        return (
+                          <div key={key} className="rounded-lg border border-rose-100 bg-white/70 px-3 py-2 text-xs dark:border-rose-900/50 dark:bg-rose-950/40">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex-1">
+                                <div className="font-semibold text-rose-900 dark:text-rose-100">{item.name}</div>
+                                <div className="text-[11px] text-rose-700 dark:text-rose-300">
+                                  {item.type === 'percentage'
+                                    ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
+                                    : 'Fixed'}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <span className="text-[11px] text-rose-700 dark:text-rose-300">Override</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={current === null ? '' : current}
+                                  onChange={(e) => handleApprovalOverrideChange('deduction', item, e.target.value)}
+                                  className="w-24 rounded border border-rose-200 bg-white px-2 py-1 text-[11px] text-rose-900 focus:border-rose-400 focus:outline-none dark:border-rose-800 dark:bg-rose-950 dark:text-rose-100"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Comments */}
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -1249,6 +1853,140 @@ export default function EmployeesPage() {
                 departments={departments}
                 designations={designations}
               />
+
+              {/* Allowances & Deductions Overrides + Salary Summary */}
+              <div className="space-y-4 rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Allowances &amp; Deductions</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Defaults come from Department/Global. Enter an amount to override for this employee.
+                    </p>
+                  </div>
+                  {loadingComponents && (
+                    <div className="text-xs text-slate-500 dark:text-slate-400">Loading components...</div>
+                  )}
+                </div>
+
+                {/* Salary summary */}
+                <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60 md:grid-cols-4">
+                  <div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Gross Salary</p>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                      ₹{Number(formData.gross_salary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-emerald-700 dark:text-emerald-300">Total Allowances</p>
+                    <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">
+                      ₹{salarySummary.totalAllowances.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-rose-700 dark:text-rose-300">Total Deductions</p>
+                    <p className="text-sm font-semibold text-rose-700 dark:text-rose-300">
+                      ₹{salarySummary.totalDeductions.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Calculated / CTC</p>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                      ₹{salarySummary.netSalary.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  {/* Allowances */}
+                  <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-3 dark:border-emerald-900/40 dark:bg-emerald-900/20">
+                    <div className="mb-2 flex items-center justify-between">
+                      <h4 className="text-sm font-semibold text-emerald-800 dark:text-emerald-200">Allowances</h4>
+                      <span className="text-xs text-emerald-700 dark:text-emerald-300">
+                        {componentDefaults.allowances.length} items
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      {componentDefaults.allowances.length === 0 && (
+                        <p className="text-xs text-emerald-700/70 dark:text-emerald-200/70">No allowances available.</p>
+                      )}
+                      {componentDefaults.allowances.map((item) => {
+                        const key = getKey(item);
+                        const current = overrideAllowances[key] ?? item.amount ?? 0;
+                        return (
+                          <div key={key} className="rounded-lg border border-emerald-100 bg-white/70 px-3 py-2 text-xs dark:border-emerald-900/50 dark:bg-emerald-950/40">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex-1">
+                                <div className="font-semibold text-emerald-900 dark:text-emerald-100">{item.name}</div>
+                                <div className="text-[11px] text-emerald-700 dark:text-emerald-300">
+                                  {item.type === 'percentage'
+                                    ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
+                                    : 'Fixed'}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <span className="text-[11px] text-emerald-700 dark:text-emerald-300">Override</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={current === null ? '' : current}
+                                  onChange={(e) => handleOverrideChange('allowance', item, e.target.value)}
+                                  className="w-24 rounded border border-emerald-200 bg-white px-2 py-1 text-[11px] text-emerald-900 focus:border-emerald-400 focus:outline-none dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Deductions */}
+                  <div className="rounded-xl border border-rose-100 bg-rose-50/70 p-3 dark:border-rose-900/40 dark:bg-rose-900/20">
+                    <div className="mb-2 flex items-center justify-between">
+                      <h4 className="text-sm font-semibold text-rose-800 dark:text-rose-200">Deductions</h4>
+                      <span className="text-xs text-rose-700 dark:text-rose-300">
+                        {componentDefaults.deductions.length} items
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      {componentDefaults.deductions.length === 0 && (
+                        <p className="text-xs text-rose-700/70 dark:text-rose-200/70">No deductions available.</p>
+                      )}
+                      {componentDefaults.deductions.map((item) => {
+                        const key = getKey(item);
+                        const current = overrideDeductions[key] ?? item.amount ?? 0;
+                        return (
+                          <div key={key} className="rounded-lg border border-rose-100 bg-white/70 px-3 py-2 text-xs dark:border-rose-900/50 dark:bg-rose-950/40">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex-1">
+                                <div className="font-semibold text-rose-900 dark:text-rose-100">{item.name}</div>
+                                <div className="text-[11px] text-rose-700 dark:text-rose-300">
+                                  {item.type === 'percentage'
+                                    ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
+                                    : 'Fixed'}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <span className="text-[11px] text-rose-700 dark:text-rose-300">Override</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={current === null ? '' : current}
+                                  onChange={(e) => handleOverrideChange('deduction', item, e.target.value)}
+                                  className="w-24 rounded border border-rose-200 bg-white px-2 py-1 text-[11px] text-rose-900 focus:border-rose-400 focus:outline-none dark:border-rose-800 dark:bg-rose-950 dark:text-rose-100"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
 
               {/* Actions */}
               <div className="flex gap-3 pt-2">

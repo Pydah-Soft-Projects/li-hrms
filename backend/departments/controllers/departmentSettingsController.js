@@ -230,7 +230,7 @@ exports.getDepartmentSettings = async (req, res) => {
 exports.updateDepartmentSettings = async (req, res) => {
   try {
     const { deptId } = req.params;
-    const { leaves, loans, salaryAdvance, permissions, ot, attendance } = req.body;
+    const { leaves, loans, salaryAdvance, permissions, ot, attendance, payroll } = req.body;
 
     // Verify department exists
     const department = await Department.findById(deptId);
@@ -346,6 +346,13 @@ exports.updateDepartmentSettings = async (req, res) => {
       settings.markModified('attendance');
     }
 
+    if (payroll) {
+      if (payroll.includeMissingEmployeeComponents !== undefined) {
+        settings.payroll.includeMissingEmployeeComponents = payroll.includeMissingEmployeeComponents;
+      }
+      settings.markModified('payroll');
+    }
+
     settings.updatedBy = req.user._id;
     await settings.save();
 
@@ -407,6 +414,22 @@ exports.getResolvedSettings = async (req, res) => {
     if (!type || type === 'all' || type === 'ot' || type === 'overtime') {
       resolved.ot = await getResolvedOTSettings(deptId);
     }
+
+  if (!type || type === 'all' || type === 'payroll') {
+    const deptSettings = await DepartmentSettings.findOne({ department: deptId });
+    const globalIncludeMissingSetting = await Settings.findOne({ key: 'include_missing_employee_components' });
+    const includeMissingGlobal =
+      globalIncludeMissingSetting && globalIncludeMissingSetting.value !== undefined && globalIncludeMissingSetting.value !== null
+        ? !!globalIncludeMissingSetting.value
+        : true;
+    resolved.payroll = {
+      includeMissingEmployeeComponents:
+        deptSettings?.payroll?.includeMissingEmployeeComponents !== undefined &&
+        deptSettings?.payroll?.includeMissingEmployeeComponents !== null
+          ? deptSettings.payroll.includeMissingEmployeeComponents
+          : includeMissingGlobal,
+    };
+  }
 
     res.status(200).json({
       success: true,

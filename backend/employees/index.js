@@ -9,6 +9,9 @@ router.use(protect);
 // Get employee settings
 router.get('/settings', employeeController.getSettings);
 
+// Get resolved allowance/deduction defaults for a department/gross salary (optional employee overrides via empNo)
+router.get('/components/defaults', employeeController.getAllowanceDeductionDefaults);
+
 // Get employee count
 router.get('/count', employeeController.getEmployeeCount);
 

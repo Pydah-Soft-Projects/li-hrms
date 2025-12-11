@@ -134,6 +134,44 @@ const employeeSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+
+    // Employee-level Allowance & Deduction Overrides (only store items the employee edited)
+    employeeAllowances: {
+      type: [
+        {
+          masterId: { type: mongoose.Schema.Types.ObjectId, ref: 'AllowanceDeductionMaster' },
+          code: { type: String, trim: true },
+          name: { type: String, trim: true },
+          category: { type: String, enum: ['allowance', 'deduction'] },
+          type: { type: String, enum: ['fixed', 'percentage'] },
+          amount: { type: Number, default: null }, // override amount if fixed
+          percentage: { type: Number, default: null },
+          percentageBase: { type: String, enum: ['basic', 'gross', null], default: null },
+          minAmount: { type: Number, default: null },
+          maxAmount: { type: Number, default: null },
+          isOverride: { type: Boolean, default: true },
+        },
+      ],
+      default: [],
+    },
+    employeeDeductions: {
+      type: [
+        {
+          masterId: { type: mongoose.Schema.Types.ObjectId, ref: 'AllowanceDeductionMaster' },
+          code: { type: String, trim: true },
+          name: { type: String, trim: true },
+          category: { type: String, enum: ['allowance', 'deduction'] },
+          type: { type: String, enum: ['fixed', 'percentage'] },
+          amount: { type: Number, default: null }, // override amount if fixed
+          percentage: { type: Number, default: null },
+          percentageBase: { type: String, enum: ['basic', 'gross', null], default: null },
+          minAmount: { type: Number, default: null },
+          maxAmount: { type: Number, default: null },
+          isOverride: { type: Boolean, default: true },
+        },
+      ],
+      default: [],
+    },
     // Dynamic fields for configurable form fields
     dynamicFields: {
       type: mongoose.Schema.Types.Mixed,

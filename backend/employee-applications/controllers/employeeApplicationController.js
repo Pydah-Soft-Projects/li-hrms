@@ -113,11 +113,34 @@ exports.createApplication = async (req, res) => {
     // Transform form data: separate permanent fields from dynamic fields
     const { permanentFields, dynamicFields } = transformFormData(applicationData, settings);
 
+    const normalizeOverrides = (list) =>
+      Array.isArray(list)
+        ? list
+            .filter((item) => item && (item.masterId || item.name))
+            .map((item) => ({
+              masterId: item.masterId || null,
+              code: item.code || null,
+              name: item.name || '',
+              category: item.category || null,
+              type: item.type || null,
+              amount: item.amount ?? item.overrideAmount ?? null,
+              percentage: item.percentage ?? null,
+              percentageBase: item.percentageBase ?? null,
+              minAmount: item.minAmount ?? null,
+              maxAmount: item.maxAmount ?? null,
+              isOverride: true,
+            }))
+        : [];
+    const employeeAllowances = normalizeOverrides(applicationData.employeeAllowances);
+    const employeeDeductions = normalizeOverrides(applicationData.employeeDeductions);
+
     // Create application with separated fields
     const application = await EmployeeApplication.create({
       ...permanentFields,
       dynamicFields: dynamicFields,
       emp_no: applicationData.emp_no.toUpperCase(),
+      employeeAllowances,
+      employeeDeductions,
       createdBy: req.user._id,
       status: 'pending',
     });
@@ -295,6 +318,9 @@ exports.approveApplication = async (req, res) => {
     const employeeData = {
       ...permanentFields,
       dynamicFields: dynamicFields || {},
+      // Carry over employee-level allowances/deductions overrides if present
+      employeeAllowances: application.employeeAllowances || [],
+      employeeDeductions: application.employeeDeductions || [],
     };
 
     const results = { mongodb: false, mssql: false };

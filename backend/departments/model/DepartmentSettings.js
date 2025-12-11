@@ -317,6 +317,15 @@ const departmentSettingsSchema = new mongoose.Schema(
       },
     },
 
+    // Payroll Settings
+    payroll: {
+      // Controls whether missing allowances/deductions should be auto-included for employees with partial overrides
+      includeMissingEmployeeComponents: {
+        type: Boolean,
+        default: null, // null => fallback to global setting
+      },
+    },
+
     // Created by
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
