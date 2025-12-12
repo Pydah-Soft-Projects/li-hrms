@@ -190,6 +190,15 @@ const employeeApplicationSchema = new mongoose.Schema(
       ],
       default: [],
     },
+    // Calculated salary fields (from allowances/deductions)
+    ctcSalary: {
+      type: Number,
+      default: null, // Gross Salary + Total Allowances
+    },
+    calculatedSalary: {
+      type: Number,
+      default: null, // Gross Salary + Allowances - Deductions (Net Salary)
+    },
     is_active: {
       type: Boolean,
       default: true,

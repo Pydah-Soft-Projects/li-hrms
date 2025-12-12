@@ -39,6 +39,8 @@ const PERMANENT_FIELDS = [
   'paidLeaves',
   'employeeAllowances',
   'employeeDeductions',
+  'ctcSalary',
+  'calculatedSalary',
   'is_active',
 ];
 

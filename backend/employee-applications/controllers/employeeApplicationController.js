@@ -254,7 +254,7 @@ exports.getApplication = async (req, res) => {
  */
 exports.approveApplication = async (req, res) => {
   try {
-    const { approvedSalary, doj, comments } = req.body;
+    const { approvedSalary, doj, comments, employeeAllowances, employeeDeductions, ctcSalary, calculatedSalary } = req.body;
 
     // Only Superadmin and Sub Admin can approve
     if (!['super_admin', 'sub_admin'].includes(req.user.role)) {
@@ -294,9 +294,10 @@ exports.approveApplication = async (req, res) => {
     const finalDOJ = doj ? new Date(doj) : new Date();
 
     // Update application status
+    // Keep proposedSalary for reference, set approvedSalary
     application.status = 'approved';
-    application.approvedSalary = finalSalary;
-    application.gross_salary = finalSalary;
+    application.approvedSalary = finalSalary; // Store approved salary
+    // Keep proposedSalary in application (don't overwrite it)
     application.doj = finalDOJ;
     application.approvedBy = req.user._id;
     application.approvalComments = comments || null;
@@ -304,13 +305,61 @@ exports.approveApplication = async (req, res) => {
 
     await application.save();
 
+    // Normalize employee allowances and deductions from request (if provided) or use from application
+    const normalizeOverrides = (list) =>
+      Array.isArray(list)
+        ? list
+            .filter((item) => item && (item.masterId || item.name))
+            .map((item) => ({
+              masterId: item.masterId || null,
+              code: item.code || null,
+              name: item.name || '',
+              category: item.category || null,
+              type: item.type || null,
+              amount: item.amount ?? item.overrideAmount ?? null,
+              percentage: item.percentage ?? null,
+              percentageBase: item.percentageBase ?? null,
+              minAmount: item.minAmount ?? null,
+              maxAmount: item.maxAmount ?? null,
+              isOverride: true,
+            }))
+        : [];
+
+    // Use provided overrides from request (from approval dialog) or fall back to application
+    let finalEmployeeAllowances = employeeAllowances ? normalizeOverrides(employeeAllowances) : (application.employeeAllowances || []);
+    let finalEmployeeDeductions = employeeDeductions ? normalizeOverrides(employeeDeductions) : (application.employeeDeductions || []);
+    
+    // Use provided calculated salaries from request (from approval dialog) or calculate them
+    let finalCtcSalary = ctcSalary !== undefined && ctcSalary !== null ? ctcSalary : null;
+    let finalCalculatedSalary = calculatedSalary !== undefined && calculatedSalary !== null ? calculatedSalary : null;
+
+    // If calculated salaries not provided, calculate them from allowances/deductions
+    if ((finalCtcSalary === null || finalCalculatedSalary === null) && (finalEmployeeAllowances.length > 0 || finalEmployeeDeductions.length > 0)) {
+      const totalAllowances = (finalEmployeeAllowances || []).reduce((sum, a) => sum + (a.amount || 0), 0);
+      const totalDeductions = (finalEmployeeDeductions || []).reduce((sum, d) => sum + (d.amount || 0), 0);
+      if (finalCtcSalary === null) {
+        finalCtcSalary = finalSalary + totalAllowances; // CTC = Gross + Allowances
+      }
+      if (finalCalculatedSalary === null) {
+        finalCalculatedSalary = finalSalary + totalAllowances - totalDeductions; // Net = Gross + Allowances - Deductions
+      }
+    }
+
+    // Update application with the final values (for reference)
+    application.employeeAllowances = finalEmployeeAllowances;
+    application.employeeDeductions = finalEmployeeDeductions;
+    application.ctcSalary = finalCtcSalary;
+    application.calculatedSalary = finalCalculatedSalary;
+
     // Transform application to employee data using field mapping service
     // This automatically extracts all permanent fields and dynamicFields
     const { permanentFields, dynamicFields } = transformApplicationToEmployee(
       application.toObject(),
       {
-        gross_salary: finalSalary, // Override with approved salary
+        gross_salary: finalSalary, // approvedSalary → gross_salary for employee
         doj: finalDOJ, // Override with approved DOJ
+        ctcSalary: finalCtcSalary, // Include calculated CTC
+        calculatedSalary: finalCalculatedSalary, // Include calculated net salary
       }
     );
 
@@ -318,9 +367,12 @@ exports.approveApplication = async (req, res) => {
     const employeeData = {
       ...permanentFields,
       dynamicFields: dynamicFields || {},
-      // Carry over employee-level allowances/deductions overrides if present
-      employeeAllowances: application.employeeAllowances || [],
-      employeeDeductions: application.employeeDeductions || [],
+      // Carry over employee-level allowances/deductions overrides
+      employeeAllowances: finalEmployeeAllowances,
+      employeeDeductions: finalEmployeeDeductions,
+      // Ensure calculated salaries are included
+      ctcSalary: finalCtcSalary,
+      calculatedSalary: finalCalculatedSalary,
     };
 
     const results = { mongodb: false, mssql: false };

@@ -1,4 +1,4 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://192.168.3.185:5000/api';
 
 // Workspace types - defined first as they're used in ApiResponse
 export interface WorkspaceModule {

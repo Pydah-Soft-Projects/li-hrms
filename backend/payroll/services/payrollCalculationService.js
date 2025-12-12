@@ -42,6 +42,34 @@ async function calculatePayroll(employeeId, month, userId) {
       throw new Error('Employee not found');
     }
 
+    // Debug: Log employee allowance/deduction data
+    console.log(`\n--- Employee Data Check (${employee.emp_no}) ---`);
+    console.log(`Employee gross_salary: ${employee.gross_salary}`);
+    console.log(`Employee ctcSalary: ${employee.ctcSalary}`);
+    console.log(`Employee calculatedSalary: ${employee.calculatedSalary}`);
+    console.log(`employeeAllowances exists: ${!!employee.employeeAllowances}`);
+    console.log(`employeeAllowances type: ${Array.isArray(employee.employeeAllowances) ? 'array' : typeof employee.employeeAllowances}`);
+    console.log(`employeeAllowances length: ${Array.isArray(employee.employeeAllowances) ? employee.employeeAllowances.length : 'N/A'}`);
+    if (Array.isArray(employee.employeeAllowances) && employee.employeeAllowances.length > 0) {
+      console.log('employeeAllowances content:');
+      employee.employeeAllowances.forEach((ov, idx) => {
+        console.log(`  [${idx + 1}] name: ${ov.name}, masterId: ${ov.masterId ? ov.masterId.toString() : 'null'}, amount: ${ov.amount}, category: ${ov.category}`);
+      });
+    } else {
+      console.log('  ⚠️ No employee allowances found in employee record');
+    }
+    console.log(`employeeDeductions exists: ${!!employee.employeeDeductions}`);
+    console.log(`employeeDeductions type: ${Array.isArray(employee.employeeDeductions) ? 'array' : typeof employee.employeeDeductions}`);
+    console.log(`employeeDeductions length: ${Array.isArray(employee.employeeDeductions) ? employee.employeeDeductions.length : 'N/A'}`);
+    if (Array.isArray(employee.employeeDeductions) && employee.employeeDeductions.length > 0) {
+      console.log('employeeDeductions content:');
+      employee.employeeDeductions.forEach((ov, idx) => {
+        console.log(`  [${idx + 1}] name: ${ov.name}, masterId: ${ov.masterId ? ov.masterId.toString() : 'null'}, amount: ${ov.amount}, category: ${ov.category}`);
+      });
+    } else {
+      console.log('  ⚠️ No employee deductions found in employee record');
+    }
+
     if (!employee.gross_salary || employee.gross_salary <= 0) {
       throw new Error('Employee gross salary is missing or invalid');
     }
@@ -162,11 +190,29 @@ async function calculatePayroll(employeeId, month, userId) {
     // Merge allowances and apply employee overrides
     const allAllowances = [...allowances, ...allowancesWithGrossBase];
     const includeMissing = await getIncludeMissingFlag(departmentId);
+    
     // Accept employee overrides even if category was missing/old; normalize to 'allowance'
-    const allowanceOverrides = normalizeOverrides(employee.employeeAllowances, 'allowance').filter(
+    const allowanceOverrides = normalizeOverrides(employee.employeeAllowances || [], 'allowance').filter(
       (a) => a.category === 'allowance'
     );
+    
+    console.log(`\n--- Employee Allowance Overrides: ${allowanceOverrides.length} items ---`);
+    allowanceOverrides.forEach((ov, idx) => {
+      console.log(`  [${idx + 1}] ${ov.name} (masterId: ${ov.masterId}, amount: ${ov.amount})`);
+    });
+    
+    console.log(`\n--- Base Allowances (Dept/Global): ${allAllowances.length} items ---`);
+    allAllowances.forEach((base, idx) => {
+      console.log(`  [${idx + 1}] ${base.name} (masterId: ${base.masterId}, amount: ${base.amount})`);
+    });
+    
     const mergedAllowances = mergeWithOverrides(allAllowances, allowanceOverrides, includeMissing);
+    
+    console.log(`\n--- Merged Allowances (After Override): ${mergedAllowances.length} items (includeMissing: ${includeMissing}) ---`);
+    mergedAllowances.forEach((merged, idx) => {
+      console.log(`  [${idx + 1}] ${merged.name} (masterId: ${merged.masterId}, amount: ${merged.amount}, isOverride: ${merged.isEmployeeOverride || false})`);
+    });
+    
     const totalAllowances = allowanceService.calculateTotalAllowances(mergedAllowances);
     console.log(`Total Allowances: ${totalAllowances}`);
 
@@ -297,10 +343,27 @@ async function calculatePayroll(employeeId, month, userId) {
     }
     
     // Accept employee overrides even if category was missing/old; normalize to 'deduction'
-    const deductionOverrides = normalizeOverrides(employee.employeeDeductions, 'deduction').filter(
+    const deductionOverrides = normalizeOverrides(employee.employeeDeductions || [], 'deduction').filter(
       (d) => d.category === 'deduction'
     );
+    
+    console.log(`\n--- Employee Deduction Overrides: ${deductionOverrides.length} items ---`);
+    deductionOverrides.forEach((ov, idx) => {
+      console.log(`  [${idx + 1}] ${ov.name} (masterId: ${ov.masterId}, amount: ${ov.amount})`);
+    });
+    
+    console.log(`\n--- Base Deductions (Dept/Global): ${allOtherDeductions.length} items ---`);
+    allOtherDeductions.forEach((base, idx) => {
+      console.log(`  [${idx + 1}] ${base.name} (masterId: ${base.masterId}, amount: ${base.amount})`);
+    });
+    
     const mergedDeductions = mergeWithOverrides(allOtherDeductions, deductionOverrides, includeMissing);
+    
+    console.log(`\n--- Merged Deductions (After Override): ${mergedDeductions.length} items (includeMissing: ${includeMissing}) ---`);
+    mergedDeductions.forEach((merged, idx) => {
+      console.log(`  [${idx + 1}] ${merged.name} (masterId: ${merged.masterId}, amount: ${merged.amount}, isOverride: ${merged.isEmployeeOverride || false})`);
+    });
+    
     const totalOtherDeductions = deductionService.calculateTotalOtherDeductions(mergedDeductions);
     console.log(`\n✓ Total Other Deductions: ₹${totalOtherDeductions}`);
     console.log(`  (Fixed: ₹${deductionService.calculateTotalOtherDeductions(fixedDeds)}, ` +
