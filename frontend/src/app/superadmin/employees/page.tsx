@@ -224,7 +224,7 @@ export default function EmployeesPage() {
   };
 
   // Fetch component defaults (allowances/deductions) for a dept + gross salary (+optional empNo to include existing overrides)
-  const fetchComponentDefaults = async (departmentId: string, grossSalary: number, empNo?: string) => {
+  const fetchComponentDefaults = async (departmentId: string, grossSalary: number, empNo?: string, preserveOverrides: boolean = false) => {
     setLoadingComponents(true);
     try {
       const res = await api.getEmployeeComponentDefaults({ departmentId, grossSalary, empNo });
@@ -232,20 +232,26 @@ export default function EmployeesPage() {
         const allowances = Array.isArray(res.data.allowances) ? res.data.allowances : [];
         const deductions = Array.isArray(res.data.deductions) ? res.data.deductions : [];
 
-        // Prefill overrides map from existing employee data if editing
-        const newOverrideAllowances: Record<string, number | null> = {};
-        const newOverrideDeductions: Record<string, number | null> = {};
+        // Prefill overrides map from existing employee data if editing, or preserve current overrides if preserveOverrides is true
+        const newOverrideAllowances: Record<string, number | null> = preserveOverrides ? { ...overrideAllowances } : {};
+        const newOverrideDeductions: Record<string, number | null> = preserveOverrides ? { ...overrideDeductions } : {};
 
-        if (editingEmployee?.employeeAllowances) {
+        // If preserveOverrides is true, we keep the existing overrides (set in handleEdit)
+        // If preserveOverrides is false, we load from editingEmployee if available
+        if (!preserveOverrides && editingEmployee?.employeeAllowances) {
           editingEmployee.employeeAllowances.forEach((ov: any) => {
             const key = ov.masterId ? ov.masterId.toString() : (ov.name || '').toLowerCase();
-            newOverrideAllowances[key] = ov.amount ?? ov.overrideAmount ?? null;
+            if (key && (ov.amount !== null && ov.amount !== undefined)) {
+              newOverrideAllowances[key] = Number(ov.amount);
+            }
           });
         }
-        if (editingEmployee?.employeeDeductions) {
+        if (!preserveOverrides && editingEmployee?.employeeDeductions) {
           editingEmployee.employeeDeductions.forEach((ov: any) => {
             const key = ov.masterId ? ov.masterId.toString() : (ov.name || '').toLowerCase();
-            newOverrideDeductions[key] = ov.amount ?? ov.overrideAmount ?? null;
+            if (key && (ov.amount !== null && ov.amount !== undefined)) {
+              newOverrideDeductions[key] = Number(ov.amount);
+            }
           });
         }
 
@@ -253,15 +259,19 @@ export default function EmployeesPage() {
         setOverrideAllowances(newOverrideAllowances);
         setOverrideDeductions(newOverrideDeductions);
       } else {
+        if (!preserveOverrides) {
+          setComponentDefaults({ allowances: [], deductions: [] });
+          setOverrideAllowances({});
+          setOverrideDeductions({});
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load component defaults', err);
+      if (!preserveOverrides) {
         setComponentDefaults({ allowances: [], deductions: [] });
         setOverrideAllowances({});
         setOverrideDeductions({});
       }
-    } catch (err) {
-      console.error('Failed to load component defaults', err);
-      setComponentDefaults({ allowances: [], deductions: [] });
-      setOverrideAllowances({});
-      setOverrideDeductions({});
     } finally {
       setLoadingComponents(false);
     }
@@ -314,7 +324,8 @@ export default function EmployeesPage() {
 
   // Recompute salary summary (frontend-only) whenever salary or overrides change
   useEffect(() => {
-    const gross = Number(formData.gross_salary || 0);
+    // Check both gross_salary and proposedSalary (form might use either)
+    const gross = Number(formData.gross_salary || (formData as any).proposedSalary || 0);
 
     const sumWithOverrides = (items: any[], overrides: Record<string, number | null>) =>
       items.reduce((acc, item) => {
@@ -327,12 +338,13 @@ export default function EmployeesPage() {
     const totalAllowances = sumWithOverrides(componentDefaults.allowances, overrideAllowances);
     const totalDeductions = sumWithOverrides(componentDefaults.deductions, overrideDeductions);
     const netSalary = gross + totalAllowances - totalDeductions;
+    const ctcSalary = gross + totalAllowances; // CTC = Gross + Allowances
 
     setSalarySummary({
       totalAllowances,
       totalDeductions,
       netSalary,
-      ctcSalary: netSalary, // treat calculated/net as CTC for now per instructions
+      ctcSalary,
     });
   }, [formData.gross_salary, componentDefaults, overrideAllowances, overrideDeductions]);
 
@@ -351,12 +363,13 @@ export default function EmployeesPage() {
     const totalAllowances = sumWithOverrides(componentDefaults.allowances, overrideAllowances);
     const totalDeductions = sumWithOverrides(componentDefaults.deductions, overrideDeductions);
     const netSalary = gross + totalAllowances - totalDeductions;
+    const ctcSalary = gross + totalAllowances; // CTC = Gross + Allowances
 
     setApplicationSalarySummary({
       totalAllowances,
       totalDeductions,
       netSalary,
-      ctcSalary: netSalary,
+      ctcSalary,
     });
   }, [applicationFormData, componentDefaults, overrideAllowances, overrideDeductions]);
 
@@ -375,12 +388,13 @@ export default function EmployeesPage() {
     const totalAllowances = sumWithOverrides(approvalComponentDefaults.allowances, approvalOverrideAllowances);
     const totalDeductions = sumWithOverrides(approvalComponentDefaults.deductions, approvalOverrideDeductions);
     const netSalary = gross + totalAllowances - totalDeductions;
+    const ctcSalary = gross + totalAllowances; // CTC = Gross + Allowances
 
     setApprovalSalarySummary({
       totalAllowances,
       totalDeductions,
       netSalary,
-      ctcSalary: netSalary,
+      ctcSalary,
     });
   }, [approvalData.approvedSalary, selectedApplication?.proposedSalary, approvalComponentDefaults, approvalOverrideAllowances, approvalOverrideDeductions]);
 
@@ -448,15 +462,18 @@ export default function EmployeesPage() {
   // Load allowance/deduction defaults when department and gross salary are set
   useEffect(() => {
     const deptId = formData.department_id;
-    const gross = formData.gross_salary;
+    // Check both gross_salary and proposedSalary (form might use either)
+    const gross = formData.gross_salary || (formData as any).proposedSalary;
     if (deptId && gross !== undefined && gross !== null && gross > 0) {
-      fetchComponentDefaults(deptId as string, Number(gross), editingEmployee?.emp_no);
+      // If editing and salary changed, preserve current overrides so user edits aren't lost
+      const preserveOverrides = !!editingEmployee && (Object.keys(overrideAllowances).length > 0 || Object.keys(overrideDeductions).length > 0);
+      fetchComponentDefaults(deptId as string, Number(gross), editingEmployee?.emp_no, preserveOverrides);
     } else {
       setComponentDefaults({ allowances: [], deductions: [] });
       setOverrideAllowances({});
       setOverrideDeductions({});
     }
-  }, [formData.department_id, formData.gross_salary, editingEmployee?.emp_no]);
+  }, [formData.department_id, formData.gross_salary, (formData as any).proposedSalary, editingEmployee?.emp_no]);
 
   // Load allowance/deduction defaults for application dialog when dept + proposed salary are set
   useEffect(() => {
@@ -586,12 +603,25 @@ export default function EmployeesPage() {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'number' 
-        ? (value === '' ? (name === 'paidLeaves' ? 0 : undefined) : Number(value))
-        : value,
-    }));
+    const processedValue = type === 'number' 
+      ? (value === '' ? (name === 'paidLeaves' ? 0 : undefined) : Number(value))
+      : value;
+    
+    setFormData(prev => {
+      const updated = {
+        ...prev,
+        [name]: processedValue,
+      };
+      
+      // Sync gross_salary and proposedSalary so calculations work with either field
+      if (name === 'gross_salary') {
+        updated.proposedSalary = processedValue as number;
+      } else if (name === 'proposedSalary') {
+        updated.gross_salary = processedValue as number;
+      }
+      
+      return updated;
+    });
   };
 
   const handleApplicationInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -648,7 +678,11 @@ export default function EmployeesPage() {
         setOverrideDeductions({});
         loadEmployees();
       } else {
-        setError(response.message || 'Operation failed');
+        // Display validation errors if available
+        const errorMsg = response.message || 'Operation failed';
+        const errorDetails = response.errors ? Object.values(response.errors).join(', ') : '';
+        setError(errorDetails ? `${errorMsg}: ${errorDetails}` : errorMsg);
+        console.error('Update error:', response);
       }
     } catch (err) {
       setError('An error occurred');
@@ -736,6 +770,40 @@ export default function EmployeesPage() {
     
     setFormData(newFormData);
     setShowDialog(true);
+    
+    // Pre-populate override state from existing employee overrides
+    if (Array.isArray(employee.employeeAllowances) && employee.employeeAllowances.length > 0) {
+      const allowanceOverrides: Record<string, number | null> = {};
+      employee.employeeAllowances.forEach((allowance: any) => {
+        const key = allowance.masterId ? allowance.masterId.toString() : (allowance.name || '').toLowerCase();
+        if (key && (allowance.amount !== null && allowance.amount !== undefined)) {
+          allowanceOverrides[key] = Number(allowance.amount);
+        }
+      });
+      setOverrideAllowances(allowanceOverrides);
+    }
+    
+    if (Array.isArray(employee.employeeDeductions) && employee.employeeDeductions.length > 0) {
+      const deductionOverrides: Record<string, number | null> = {};
+      employee.employeeDeductions.forEach((deduction: any) => {
+        const key = deduction.masterId ? deduction.masterId.toString() : (deduction.name || '').toLowerCase();
+        if (key && (deduction.amount !== null && deduction.amount !== undefined)) {
+          deductionOverrides[key] = Number(deduction.amount);
+        }
+      });
+      setOverrideDeductions(deductionOverrides);
+    }
+    
+    // Trigger fetch of component defaults after a brief delay to ensure formData is set
+    // This ensures recalculation happens when editing
+    // Use preserveOverrides: true to keep the overrides we just set
+    setTimeout(() => {
+      const deptId = newFormData.department_id;
+      const gross = newFormData.gross_salary;
+      if (deptId && gross !== undefined && gross !== null && gross > 0) {
+        fetchComponentDefaults(deptId as string, Number(gross), employee.emp_no, true);
+      }
+    }, 100);
   };
 
   const handleDeactivate = async (empNo: string, currentStatus: boolean) => {
@@ -1869,7 +1937,7 @@ export default function EmployeesPage() {
                 </div>
 
                 {/* Salary summary */}
-                <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60 md:grid-cols-4">
+                <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
                   <div>
                     <p className="text-xs text-slate-500 dark:text-slate-400">Gross Salary</p>
                     <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
@@ -1889,7 +1957,13 @@ export default function EmployeesPage() {
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Calculated / CTC</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">CTC Salary</p>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                      ₹{salarySummary.ctcSalary.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Calculated (Net)</p>
                     <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                       ₹{salarySummary.netSalary.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                     </p>
@@ -2134,11 +2208,9 @@ export default function EmployeesPage() {
             <div className="space-y-6">
               {/* Status Badge */}
               <div className="flex items-center gap-2">
-                <span className={`inline-flex rounded-full px-3 py-1 text-sm font-medium ${
-                  viewingEmployee.is_active !== false
-                    ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                    : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                }`}>
+                <span className={viewingEmployee.is_active !== false 
+                  ? 'inline-flex rounded-full px-3 py-1 text-sm font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                  : 'inline-flex rounded-full px-3 py-1 text-sm font-medium bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}>
                   {viewingEmployee.is_active !== false ? 'Active' : 'Inactive'}
                 </span>
               </div>
@@ -2174,6 +2246,14 @@ export default function EmployeesPage() {
                   <div>
                     <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Gross Salary</label>
                     <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.gross_salary ? `₹${viewingEmployee.gross_salary.toLocaleString()}` : '-'}</p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">CTC Salary</label>
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.ctcSalary ? `₹${viewingEmployee.ctcSalary.toLocaleString()}` : '-'}</p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Calculated Salary (Net)</label>
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.calculatedSalary ? `₹${viewingEmployee.calculatedSalary.toLocaleString()}` : '-'}</p>
                   </div>
                   <div>
                     <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Paid Leaves</label>
@@ -2227,7 +2307,53 @@ export default function EmployeesPage() {
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   <div className="sm:col-span-2 lg:col-span-3">
                     <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Qualifications</label>
-                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.qualifications || '-'}</p>
+                    <div className="mt-1">
+                      {(() => {
+                        const quals = viewingEmployee.qualifications;
+                        if (!quals) return <p className="text-sm font-medium text-slate-900 dark:text-slate-100">-</p>;
+                        
+                        // Handle array of objects (new format)
+                        if (Array.isArray(quals) && quals.length > 0) {
+                          return (
+                            <div className="space-y-2">
+                              {quals.map((qual: any, idx: number) => {
+                                if (typeof qual === 'object' && qual !== null) {
+                                  // Render object fields
+                                  const entries = Object.entries(qual).filter(([_, v]) => v !== null && v !== undefined && v !== '');
+                                  if (entries.length === 0) return null;
+                                  return (
+                                    <div key={idx} className="rounded-lg border border-slate-200 bg-white p-2 text-sm dark:border-slate-700 dark:bg-slate-800">
+                                      {entries.map(([key, value]) => {
+                                        const underscoreRegex = new RegExp('_', 'g');
+                                        return (
+                                          <div key={key} className="flex gap-2">
+                                            <span className="font-medium text-slate-600 dark:text-slate-400 capitalize">{key.replace(underscoreRegex, ' ')}:</span>
+                                            <span className="text-slate-900 dark:text-slate-100">{String(value)}</span>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <p key={idx} className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                                    {String(qual)}
+                                  </p>
+                                );
+                              })}
+                            </div>
+                          );
+                        }
+                        
+                        // Handle string (old format)
+                        if (typeof quals === 'string') {
+                          return <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{quals}</p>;
+                        }
+                        
+                        // Fallback
+                        return <p className="text-sm font-medium text-slate-900 dark:text-slate-100">-</p>;
+                      })()}
+                    </div>
                   </div>
                   <div>
                     <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Experience (Years)</label>
@@ -2276,6 +2402,85 @@ export default function EmployeesPage() {
                     <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.ifsc_code || '-'}</p>
                   </div>
                 </div>
+              </div>
+
+              {/* Allowances & Deductions - Always show this section */}
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Allowances & Deductions</h3>
+                
+                {/* Allowances */}
+                {viewingEmployee.employeeAllowances && viewingEmployee.employeeAllowances.length > 0 ? (
+                  <div className="mb-6">
+                    <h4 className="mb-3 text-sm font-semibold text-green-700 dark:text-green-400">Allowances</h4>
+                    <div className="space-y-2">
+                      {viewingEmployee.employeeAllowances.map((allowance: any, idx: number) => (
+                        <div key={idx} className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50/50 p-3 dark:border-green-800 dark:bg-green-900/20">
+                          <div className="flex-1">
+                            <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{allowance.name || '-'}</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                              {allowance.type === 'percentage' 
+                                ? `${allowance.percentage}% of ${allowance.percentageBase || 'basic'}`
+                                : 'Fixed Amount'}
+                              {allowance.isOverride && (
+                                <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                  Override
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                          <p className="text-sm font-semibold text-green-700 dark:text-green-400">
+                            {allowance.amount !== null && allowance.amount !== undefined 
+                              ? `₹${Number(allowance.amount).toLocaleString()}` 
+                              : '-'}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+                    <p className="text-sm text-slate-500 dark:text-slate-400">
+                      No employee-level allowance overrides. Default allowances from Department/Global settings will be used during payroll calculation.
+                    </p>
+                  </div>
+                )}
+
+                {/* Deductions */}
+                {viewingEmployee.employeeDeductions && viewingEmployee.employeeDeductions.length > 0 ? (
+                  <div>
+                    <h4 className="mb-3 text-sm font-semibold text-red-700 dark:text-red-400">Deductions</h4>
+                    <div className="space-y-2">
+                      {viewingEmployee.employeeDeductions.map((deduction: any, idx: number) => (
+                        <div key={idx} className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50/50 p-3 dark:border-red-800 dark:bg-red-900/20">
+                          <div className="flex-1">
+                            <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{deduction.name || '-'}</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                              {deduction.type === 'percentage' 
+                                ? `${deduction.percentage}% of ${deduction.percentageBase || 'basic'}`
+                                : 'Fixed Amount'}
+                              {deduction.isOverride && (
+                                <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                  Override
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                          <p className="text-sm font-semibold text-red-700 dark:text-red-400">
+                            {deduction.amount !== null && deduction.amount !== undefined 
+                              ? `₹${Number(deduction.amount).toLocaleString()}` 
+                              : '-'}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+                    <p className="text-sm text-slate-500 dark:text-slate-400">
+                      No employee-level deduction overrides. Default deductions from Department/Global settings will be used during payroll calculation.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Reporting Authority Section - Check both root and dynamicFields, handle both reporting_to and reporting_to_ */}
@@ -2334,70 +2539,38 @@ export default function EmployeesPage() {
                   <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Additional Information</h3>
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     {Object.entries(viewingEmployee.dynamicFields)
-                      .filter(([key]) => key !== 'reporting_to' && key !== 'reporting_to_') // Exclude reporting_to fields as they're shown above
+                      .filter(([key]) => key !== 'reporting_to' && key !== 'reporting_to_' && key !== 'qualifications')
                       .map(([key, value]) => {
-                      if (value === null || value === undefined || value === '') return null;
-                      const displayKey = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-                      
-                      // Special handling for reporting_to field (array of user objects)
-                      if (key === 'reporting_to' && Array.isArray(value) && value.length > 0) {
-                        const isPopulated = value[0] && typeof value[0] === 'object' && value[0].name;
+                        if (value === null || value === undefined || value === '') {
+                          return null;
+                        }
+                        const underscoreRegex = new RegExp('_', 'g');
+                        const wordBoundaryRegex = new RegExp('\\b\\w', 'g');
+                        const displayKey = key.replace(underscoreRegex, ' ').replace(wordBoundaryRegex, (l: string) => l.toUpperCase());
+                        
+                        let displayValue: string = '';
+                        if (Array.isArray(value)) {
+                          displayValue = value.length > 0 ? JSON.stringify(value) : '-';
+                        } else if (typeof value === 'object') {
+                          displayValue = JSON.stringify(value, null, 2);
+                        } else {
+                          displayValue = String(value);
+                        }
+                        
+                        const isComplexType = Array.isArray(value) || typeof value === 'object';
+                        const colSpanClass = isComplexType ? 'sm:col-span-2 lg:col-span-3' : '';
+                        const whitespaceClass = isComplexType ? 'whitespace-pre-wrap' : '';
+                        const paragraphClassName = 'mt-1 text-sm font-medium text-slate-900 dark:text-slate-100 ' + whitespaceClass;
+                        
                         return (
-                          <div key={key} className="sm:col-span-2 lg:col-span-3">
+                          <div key={key} className={colSpanClass}>
                             <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{displayKey}</label>
-                            <div className="mt-2 space-y-2">
-                              {isPopulated ? (
-                                value.map((user: any, idx: number) => (
-                                  <div key={idx} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-800">
-                                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                      </svg>
-                                    </div>
-                                    <div className="flex-1">
-                                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{user.name || 'Unknown'}</p>
-                                      <p className="text-xs text-slate-500 dark:text-slate-400">{user.email || ''}</p>
-                                    </div>
-                                    {user.role && (
-                                      <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-400">
-                                        {user.role}
-                                      </span>
-                                    )}
-                                  </div>
-                                ))
-                              ) : (
-                                // Fallback if not populated (show IDs)
-                                value.map((id: any, idx: number) => (
-                                  <div key={idx} className="text-sm text-slate-600 dark:text-slate-400">
-                                    {typeof id === 'object' ? id._id || id.toString() : id}
-                                  </div>
-                                ))
-                              )}
-                            </div>
+                            <p className={paragraphClassName}>
+                              {displayValue}
+                            </p>
                           </div>
                         );
-                      }
-                      
-                      // Regular handling for other fields
-                      let displayValue: string = '';
-                      
-                      if (Array.isArray(value)) {
-                        displayValue = value.length > 0 ? JSON.stringify(value) : '-';
-                      } else if (typeof value === 'object') {
-                        displayValue = JSON.stringify(value, null, 2);
-                      } else {
-                        displayValue = String(value);
-                      }
-                      
-                      return (
-                        <div key={key} className={Array.isArray(value) || typeof value === 'object' ? 'sm:col-span-2 lg:col-span-3' : ''}>
-                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{displayKey}</label>
-                          <p className={`mt-1 text-sm font-medium text-slate-900 dark:text-slate-100 ${Array.isArray(value) || typeof value === 'object' ? 'whitespace-pre-wrap' : ''}`}>
-                            {displayValue}
-                          </p>
-                        </div>
-                      );
-                    })}
+                      })}
                   </div>
                 </div>
               )}

@@ -172,6 +172,15 @@ const employeeSchema = new mongoose.Schema(
       ],
       default: [],
     },
+    // Calculated salary fields (from allowances/deductions)
+    ctcSalary: {
+      type: Number,
+      default: null, // Gross Salary + Total Allowances
+    },
+    calculatedSalary: {
+      type: Number,
+      default: null, // Gross Salary + Allowances - Deductions (Net Salary)
+    },
     // Dynamic fields for configurable form fields
     dynamicFields: {
       type: mongoose.Schema.Types.Mixed,

@@ -308,6 +308,11 @@ exports.getAllEmployees = async (req, res) => {
           designation: transformed.designation_id,
           // Explicitly ensure paidLeaves is included (default to 0 if not set)
           paidLeaves: transformed.paidLeaves !== undefined && transformed.paidLeaves !== null ? Number(transformed.paidLeaves) : 0,
+          // Explicitly include allowances, deductions, and calculated salaries
+          employeeAllowances: transformed.employeeAllowances || [],
+          employeeDeductions: transformed.employeeDeductions || [],
+          ctcSalary: transformed.ctcSalary !== undefined && transformed.ctcSalary !== null ? Number(transformed.ctcSalary) : null,
+          calculatedSalary: transformed.calculatedSalary !== undefined && transformed.calculatedSalary !== null ? Number(transformed.calculatedSalary) : null,
         };
       }));
     }
@@ -357,6 +362,11 @@ exports.getEmployee = async (req, res) => {
           ...transformed,
           department: transformed.department_id,
           designation: transformed.designation_id,
+          // Explicitly include allowances, deductions, and calculated salaries
+          employeeAllowances: transformed.employeeAllowances || [],
+          employeeDeductions: transformed.employeeDeductions || [],
+          ctcSalary: transformed.ctcSalary !== undefined && transformed.ctcSalary !== null ? Number(transformed.ctcSalary) : null,
+          calculatedSalary: transformed.calculatedSalary !== undefined && transformed.calculatedSalary !== null ? Number(transformed.calculatedSalary) : null,
         };
       }
     }
@@ -564,7 +574,20 @@ exports.updateEmployee = async (req, res) => {
     }
 
     // Validate dynamicFields if form settings exist
-    if (employeeData.dynamicFields && Object.keys(employeeData.dynamicFields).length > 0) {
+    // Only validate if dynamicFields are being updated and validation is explicitly needed
+    // Skip validation for updates that only change permanent fields (like allowances/deductions/salary)
+    const hasDynamicFieldsUpdate = employeeData.dynamicFields && Object.keys(employeeData.dynamicFields).length > 0;
+    const hasOnlyPermanentFieldsUpdate = !hasDynamicFieldsUpdate && (
+      employeeData.employeeAllowances !== undefined ||
+      employeeData.employeeDeductions !== undefined ||
+      employeeData.gross_salary !== undefined ||
+      employeeData.ctcSalary !== undefined ||
+      employeeData.calculatedSalary !== undefined ||
+      employeeData.paidLeaves !== undefined
+    );
+    
+    // Only validate if dynamicFields are being updated (not for simple permanent field updates)
+    if (hasDynamicFieldsUpdate && !hasOnlyPermanentFieldsUpdate) {
       const settings = await EmployeeApplicationFormSettings.getActiveSettings();
       if (settings) {
         // Merge existing employee data with update data for validation
@@ -575,6 +598,7 @@ exports.updateEmployee = async (req, res) => {
         
         const validation = await validateFormData(mergedData, settings);
         if (!validation.isValid) {
+          console.error('Validation errors:', validation.errors);
           return res.status(400).json({
             success: false,
             message: 'Validation failed',
@@ -588,6 +612,30 @@ exports.updateEmployee = async (req, res) => {
     const permanentFields = extractPermanentFields(employeeData);
     const dynamicFields = employeeData.dynamicFields || extractDynamicFields(employeeData, permanentFields);
 
+    // Normalize employee allowances and deductions
+    const normalizeOverrides = (list) =>
+      Array.isArray(list)
+        ? list
+            .filter((item) => item && (item.masterId || item.name))
+            .map((item) => ({
+              masterId: item.masterId || null,
+              code: item.code || null,
+              name: item.name || '',
+              category: item.category || null,
+              type: item.type || null,
+              amount: item.amount ?? item.overrideAmount ?? null,
+              percentage: item.percentage ?? null,
+              percentageBase: item.percentageBase ?? null,
+              minAmount: item.minAmount ?? null,
+              maxAmount: item.maxAmount ?? null,
+              isOverride: true,
+            }))
+        : [];
+    const employeeAllowances = normalizeOverrides(employeeData.employeeAllowances);
+    const employeeDeductions = normalizeOverrides(employeeData.employeeDeductions);
+    const ctcSalary = employeeData.ctcSalary ?? null;
+    const calculatedSalary = employeeData.calculatedSalary ?? null;
+
     const results = { mongodb: false, mssql: false };
 
     // Update in MongoDB
@@ -598,6 +646,8 @@ exports.updateEmployee = async (req, res) => {
         dynamicFields: Object.keys(dynamicFields).length > 0 ? dynamicFields : existingEmployee.dynamicFields || {},
         employeeAllowances,
         employeeDeductions,
+        ctcSalary,
+        calculatedSalary,
         updated_at: new Date(),
       };
       // Explicitly handle paidLeaves to ensure it's saved even if 0

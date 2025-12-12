@@ -36,34 +36,101 @@ async function getIncludeMissingFlag(departmentId) {
  * Merge a base list with employee overrides.
  * - Overrides replace matching base items (by masterId or name).
  * - If includeMissing=false, skip base items not overridden.
+ * - When includeMissing=true, only add base items that are NOT overridden by employee.
  */
 function mergeWithOverrides(baseList, overrides, includeMissing) {
-  if (!overrides || overrides.length === 0) return includeMissing ? baseList : [];
+  if (!overrides || overrides.length === 0) {
+    return includeMissing ? baseList : [];
+  }
 
   const result = [];
-  const baseMap = new Map();
+  
+  // Create a map of base items for quick lookup
+  // Use both masterId and name as keys to handle all matching scenarios
+  const baseMapById = new Map();
+  const baseMapByName = new Map();
+  
   baseList.forEach((item) => {
-    const key = item.masterId ? item.masterId.toString() : (item.name || '').toLowerCase();
-    baseMap.set(key, item);
+    // Normalize masterId to string for comparison
+    const masterIdKey = item.masterId ? item.masterId.toString() : null;
+    // Normalize name: lowercase, trim whitespace
+    const nameKey = item.name ? item.name.trim().toLowerCase() : null;
+    
+    if (masterIdKey) {
+      baseMapById.set(masterIdKey, item);
+    }
+    if (nameKey) {
+      baseMapByName.set(nameKey, item);
+    }
   });
 
-  const matched = new Set();
+  // Track which base items have been matched/overridden
+  const matchedBaseKeys = new Set();
 
+  // Process employee overrides first
   overrides.forEach((ov) => {
-    const key = ov.masterId ? ov.masterId.toString() : (ov.name || '').toLowerCase();
-    const baseItem = baseMap.get(key);
-    const overrideAmount = ov.amount ?? ov.overrideAmount ?? 0;
+    // Normalize override masterId and name
+    const ovMasterIdKey = ov.masterId ? ov.masterId.toString() : null;
+    const ovNameKey = ov.name ? ov.name.trim().toLowerCase() : null;
+    
+    // Try to find matching base item by masterId first, then by name
+    let baseItem = null;
+    let matchedKey = null;
+    
+    if (ovMasterIdKey && baseMapById.has(ovMasterIdKey)) {
+      baseItem = baseMapById.get(ovMasterIdKey);
+      matchedKey = ovMasterIdKey;
+    } else if (ovNameKey && baseMapByName.has(ovNameKey)) {
+      baseItem = baseMapByName.get(ovNameKey);
+      // Use the masterId from base item if available, otherwise use name
+      matchedKey = baseItem.masterId ? baseItem.masterId.toString() : ovNameKey;
+    }
+    
+    // Mark this base item as matched
+    if (matchedKey) {
+      matchedBaseKeys.add(matchedKey);
+      // Also mark by name if different
+      if (baseItem && baseItem.name) {
+        const baseNameKey = baseItem.name.trim().toLowerCase();
+        if (baseNameKey !== matchedKey) {
+          matchedBaseKeys.add(baseNameKey);
+        }
+      }
+    }
+    
+    // Use override amount (can be null for explicit override to 0)
+    const overrideAmount = ov.amount !== undefined && ov.amount !== null ? ov.amount : (ov.overrideAmount !== undefined && ov.overrideAmount !== null ? ov.overrideAmount : 0);
+    
+    // Create merged item: use base item structure but with override amount
     const merged = baseItem
-      ? { ...baseItem, amount: overrideAmount, isEmployeeOverride: true, masterId: ov.masterId || baseItem.masterId }
-      : { ...ov, amount: overrideAmount, isEmployeeOverride: true };
+      ? {
+          ...baseItem,
+          amount: overrideAmount,
+          isEmployeeOverride: true,
+          masterId: ovMasterIdKey || baseItem.masterId,
+        }
+      : {
+          ...ov,
+          amount: overrideAmount,
+          isEmployeeOverride: true,
+          masterId: ovMasterIdKey,
+        };
+    
     result.push(merged);
-    matched.add(key);
   });
 
+  // If includeMissing is true, add base items that were NOT overridden
   if (includeMissing) {
     baseList.forEach((item) => {
-      const key = item.masterId ? item.masterId.toString() : (item.name || '').toLowerCase();
-      if (!matched.has(key)) {
+      const masterIdKey = item.masterId ? item.masterId.toString() : null;
+      const nameKey = item.name ? item.name.trim().toLowerCase() : null;
+      
+      // Check if this base item was already matched/overridden
+      const isMatched = (masterIdKey && matchedBaseKeys.has(masterIdKey)) || 
+                        (nameKey && matchedBaseKeys.has(nameKey));
+      
+      if (!isMatched) {
+        // This base item is missing from employee overrides, add it
         result.push(item);
       }
     });
