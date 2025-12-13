@@ -149,7 +149,7 @@ export default function SettingsPage() {
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   
   // New leave type form
-  const [newLeaveType, setNewLeaveType] = useState({ code: '', name: '', description: '', maxDaysPerYear: 12 });
+  const [newLeaveType, setNewLeaveType] = useState({ code: '', name: '', description: '', maxDaysPerYear: 12, leaveNature: 'paid' as 'paid' | 'lop' | 'without_pay', carryForward: false, maxCarryForward: 0 });
   const [newODType, setNewODType] = useState({ code: '', name: '', description: '' });
   const [newStatus, setNewStatus] = useState({ code: '', name: '', description: '', color: '#6b7280' });
   
@@ -854,7 +854,7 @@ export default function SettingsPage() {
       
       if (response.success) {
         setLeaveSettings(prev => prev ? { ...prev, types: updatedTypes } : null);
-        setNewLeaveType({ code: '', name: '', description: '', maxDaysPerYear: 12 });
+        setNewLeaveType({ code: '', name: '', description: '', maxDaysPerYear: 12, leaveNature: 'paid', carryForward: false, maxCarryForward: 0 });
         setMessage({ type: 'success', text: 'Leave type added successfully' });
       } else {
         setMessage({ type: 'error', text: response.error || 'Failed to add leave type' });
@@ -1544,7 +1544,8 @@ export default function SettingsPage() {
                       <label className="mb-3 block text-sm font-semibold text-slate-900 dark:text-slate-100">
                         Add New Leave Type
                       </label>
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-5">
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
                         <input
                           type="text"
                           value={newLeaveType.code}
@@ -1566,12 +1567,43 @@ export default function SettingsPage() {
                           className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                           placeholder="Max Days/Year"
                         />
+                        </div>
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+                          <select
+                            value={newLeaveType.leaveNature}
+                            onChange={(e) => setNewLeaveType(prev => ({ ...prev, leaveNature: e.target.value as 'paid' | 'lop' | 'without_pay' }))}
+                            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                          >
+                            <option value="paid">Paid Leave</option>
+                            <option value="lop">Loss of Pay (LOP)</option>
+                            <option value="without_pay">Without Pay</option>
+                          </select>
+                          <div className="flex items-center gap-2 sm:col-span-2">
+                            <input
+                              type="checkbox"
+                              checked={newLeaveType.carryForward}
+                              onChange={(e) => setNewLeaveType(prev => ({ ...prev, carryForward: e.target.checked }))}
+                              className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <label className="text-sm text-slate-700 dark:text-slate-300">Allow Carry Forward</label>
+                          </div>
+                          {newLeaveType.carryForward && (
+                            <input
+                              type="number"
+                              value={newLeaveType.maxCarryForward}
+                              onChange={(e) => setNewLeaveType(prev => ({ ...prev, maxCarryForward: Number(e.target.value) }))}
+                              className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                              placeholder="Max Carry Forward Days"
+                              min="0"
+                            />
+                          )}
+                        </div>
                         <button
                           onClick={handleAddLeaveType}
                           disabled={saving || !newLeaveType.code || !newLeaveType.name}
-                          className="rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="w-full rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          Add
+                          Add Leave Type
                         </button>
                       </div>
                     </div>
@@ -1593,14 +1625,30 @@ export default function SettingsPage() {
                                   {type.code}
                                 </span>
                                 <div>
+                                  <div className="flex items-center gap-2 flex-wrap">
                                   <span className="font-medium text-slate-900 dark:text-slate-100">{type.name}</span>
+                                    <span className={`px-2 py-0.5 text-[10px] font-medium rounded ${
+                                      (type as any).leaveNature === 'paid' 
+                                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                                        : (type as any).leaveNature === 'lop'
+                                        ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'
+                                        : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                                    }`}>
+                                      {(type as any).leaveNature === 'paid' ? 'Paid' : (type as any).leaveNature === 'lop' ? 'LOP' : 'Without Pay'}
+                                    </span>
                                   {type.maxDaysPerYear && (
-                                    <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">
+                                      <span className="text-xs text-slate-500 dark:text-slate-400">
                                       (Max: {type.maxDaysPerYear} days/year)
                                     </span>
                                   )}
+                                    {type.carryForward && (
+                                      <span className="px-2 py-0.5 text-[10px] font-medium rounded bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                                        Carry Forward {type.maxCarryForward ? `(${type.maxCarryForward} days)` : ''}
+                                      </span>
+                                    )}
+                                  </div>
                                   {type.description && (
-                                    <p className="text-xs text-slate-400 dark:text-slate-500">{type.description}</p>
+                                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">{type.description}</p>
                                   )}
                                 </div>
                               </div>

@@ -56,6 +56,12 @@ const LeaveSettingsSchema = new mongoose.Schema(
           type: Boolean,
           default: true,
         },
+        // Leave nature: 'paid' = paid leave, 'lop' = loss of pay, 'without_pay' = without pay
+        leaveNature: {
+          type: String,
+          enum: ['paid', 'lop', 'without_pay'],
+          default: 'paid',
+        },
         // Is active
         isActive: {
           type: Boolean,

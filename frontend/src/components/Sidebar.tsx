@@ -196,6 +196,7 @@ const navItems: NavItem[] = [
   { href: '/superadmin/attendance', label: 'Attendance', icon: AttendanceIcon },
   { href: '/superadmin/ot-permissions', label: 'OT & Permissions', icon: OTPermissionIcon },
   { href: '/superadmin/confused-shifts', label: 'Confused Shifts', icon: ConfusedShiftIcon },
+  { href: '/superadmin/shift-roster', label: 'Shift Roster', icon: ClockIcon },
   { href: '/superadmin/leaves', label: 'Leave & OD', icon: LeaveIcon },
   { href: '/superadmin/loans', label: 'Loan & Salary Advance', icon: LoanIcon },
   { href: '/superadmin/shifts', label: 'Shifts', icon: ClockIcon },

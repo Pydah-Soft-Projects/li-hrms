@@ -122,10 +122,15 @@ export async function apiRequest<T>(
     };
   } catch (error) {
     console.error(`[API Error] ${options.method || 'GET'} ${API_BASE_URL}${endpoint}`, error);
+    const errorMessage = error instanceof Error ? error.message : 'Network error occurred';
+    const isNetworkError = errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError');
+    
     return {
       success: false,
-      message: error instanceof Error ? error.message : 'Network error occurred',
-      error: error instanceof Error ? error.message : 'Network error occurred',
+      message: isNetworkError 
+        ? 'Unable to connect to server. Please check your network connection and ensure the backend is running.' 
+        : errorMessage,
+      error: errorMessage,
     };
   }
 }
@@ -950,6 +955,67 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ reason }),
     });
+  },
+
+  // ==========================================
+  // SHIFT ROSTER
+  // ==========================================
+  getRoster: async (month: string, params?: { employeeNumber?: string; departmentId?: string }) => {
+    const query = new URLSearchParams();
+    query.append('month', month);
+    if (params?.employeeNumber) query.append('employeeNumber', params.employeeNumber);
+    if (params?.departmentId) query.append('departmentId', params.departmentId);
+    return apiRequest<any>(`/shifts/roster?${query.toString()}`, { method: 'GET' });
+  },
+
+  saveRoster: async (data: { month: string; strict: boolean; entries: any[] }) => {
+    return apiRequest<any>('/shifts/roster', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // ==========================================
+  // LEAVE SPLIT APIs
+  // ==========================================
+
+  // Validate splits before creating
+  validateLeaveSplits: async (leaveId: string, splits: any[]) => {
+    return apiRequest<any>(`/leaves/${leaveId}/validate-splits`, {
+      method: 'POST',
+      body: JSON.stringify({ splits }),
+    });
+  },
+
+  // Create splits for a leave
+  createLeaveSplits: async (leaveId: string, splits: any[]) => {
+    return apiRequest<any>(`/leaves/${leaveId}/split`, {
+      method: 'POST',
+      body: JSON.stringify({ splits }),
+    });
+  },
+
+  // Get splits for a leave
+  getLeaveSplits: async (leaveId: string) => {
+    return apiRequest<any>(`/leaves/${leaveId}/splits`, { method: 'GET' });
+  },
+
+  // Get split summary for a leave
+  getLeaveSplitSummary: async (leaveId: string) => {
+    return apiRequest<any>(`/leaves/${leaveId}/split-summary`, { method: 'GET' });
+  },
+
+  // Update a single split
+  updateLeaveSplit: async (leaveId: string, splitId: string, data: any) => {
+    return apiRequest<any>(`/leaves/${leaveId}/splits/${splitId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Delete a split
+  deleteLeaveSplit: async (leaveId: string, splitId: string) => {
+    return apiRequest<any>(`/leaves/${leaveId}/splits/${splitId}`, { method: 'DELETE' });
   },
 
   // Get approved records for a date (for conflict checking)

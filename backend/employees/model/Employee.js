@@ -134,6 +134,13 @@ const employeeSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    // Yearly allotted leaves (combined total for all leave types with nature "without_pay" or "lop")
+    // Used for tracking and carry forward
+    allottedLeaves: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
 
     // Employee-level Allowance & Deduction Overrides (only store items the employee edited)
     employeeAllowances: {

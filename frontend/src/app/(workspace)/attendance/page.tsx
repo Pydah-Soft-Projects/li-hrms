@@ -109,7 +109,7 @@ interface Designation {
 }
 
 export default function AttendancePage() {
-  const [viewMode, setViewMode] = useState<'calendar' | 'list'>('list'); // Default to list view
+  const [viewMode, setViewMode] = useState<'calendar' | 'list' | 'complete'>('list'); // Default to list view
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showPayslipModal, setShowPayslipModal] = useState(false);
   const [selectedEmployeeForPayslip, setSelectedEmployeeForPayslip] = useState<Employee | null>(null);
@@ -185,7 +185,7 @@ export default function AttendancePage() {
   }, [selectedDepartment]);
 
   useEffect(() => {
-    if (viewMode === 'list') {
+    if (viewMode === 'list' || viewMode === 'complete') {
       loadMonthlyAttendance();
     } else if (viewMode === 'calendar') {
       loadAllEmployeesAttendance();
@@ -1001,6 +1001,19 @@ export default function AttendancePage() {
                 </svg>
                 Calendar View
               </button>
+              <button
+                onClick={() => setViewMode('complete')}
+                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-all ${
+                  viewMode === 'complete'
+                    ? 'bg-gradient-to-r from-emerald-500 to-green-600 text-white shadow-sm'
+                    : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-700'
+                }`}
+              >
+                <svg className="mr-1.5 inline h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                </svg>
+                Complete
+              </button>
             </div>
 
             {/* Month Selection */}
@@ -1389,6 +1402,191 @@ export default function AttendancePage() {
                 <p className="text-slate-500 dark:text-slate-400">No employees found matching the selected filters.</p>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Complete View - Detailed Summary Table */}
+        {viewMode === 'complete' && (
+          <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-emerald-50 dark:border-slate-700 dark:from-slate-800 dark:to-emerald-900/20">
+                    <th className="sticky left-0 z-10 w-[200px] border-r border-slate-200 bg-gradient-to-r from-slate-50 to-emerald-50 px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:from-slate-800 dark:to-emerald-900/20 dark:text-slate-300">
+                      Employee Details
+                    </th>
+                    <th className="w-[100px] border-r border-slate-200 px-3 py-3 text-center text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-blue-50 dark:bg-blue-900/20">
+                      Present Days
+                    </th>
+                    <th className="w-[100px] border-r border-slate-200 px-3 py-3 text-center text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-red-50 dark:bg-red-900/20">
+                      Leaves
+                    </th>
+                    <th className="w-[100px] border-r border-slate-200 px-3 py-3 text-center text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-purple-50 dark:bg-purple-900/20">
+                      ODs
+                    </th>
+                    <th className="w-[100px] border-r border-slate-200 px-3 py-3 text-center text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-orange-50 dark:bg-orange-900/20">
+                      OT Hours
+                    </th>
+                    <th className="w-[100px] border-r border-slate-200 px-3 py-3 text-center text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-pink-50 dark:bg-pink-900/20">
+                      Extra Hours
+                    </th>
+                    <th className="w-[100px] border-r border-slate-200 px-3 py-3 text-center text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-fuchsia-50 dark:bg-fuchsia-900/20">
+                      OD Hours
+                    </th>
+                    <th className="w-[100px] border-r border-slate-200 px-3 py-3 text-center text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-cyan-50 dark:bg-cyan-900/20">
+                      Permissions
+                    </th>
+                    <th className="w-[100px] border-r border-slate-200 px-3 py-3 text-center text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-indigo-50 dark:bg-indigo-900/20">
+                      Absent Days
+                    </th>
+                    <th className="w-[100px] border-r-0 border-slate-200 px-3 py-3 text-center text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-green-50 dark:bg-green-900/20">
+                      Payable Shifts
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                  {loading ? (
+                    <>
+                      {[1, 2, 3, 4, 5].map((i) => (
+                        <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                          <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-900">
+                            <div className="h-4 w-40 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                            <div className="mt-1 h-3 w-32 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                          </td>
+                          {Array.from({ length: 9 }).map((_, j) => (
+                            <td key={j} className="border-r border-slate-200 px-3 py-3 text-center dark:border-slate-700">
+                              <div className="h-4 w-12 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </>
+                  ) : (
+                    <>
+                      {filteredMonthlyData.length === 0 ? (
+                        <tr>
+                          <td colSpan={10} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                            No employees found matching the selected filters.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredMonthlyData.map((item) => {
+                          // Calculate summary statistics
+                          const daysPresent = item.presentDays !== undefined 
+                            ? item.presentDays 
+                            : Object.values(item.dailyAttendance).filter(
+                                (record) => record && (record.status === 'PRESENT' || record.status === 'PARTIAL')
+                              ).length;
+                          
+                          const totalLeaves = item.summary?.totalLeaves || 
+                            Object.values(item.dailyAttendance).filter(
+                              (record) => record && (record.status === 'LEAVE' || record.hasLeave)
+                            ).length;
+                          
+                          const totalODs = item.summary?.totalODs || 
+                            Object.values(item.dailyAttendance).filter(
+                              (record) => record && (record.status === 'OD' || record.hasOD)
+                            ).length;
+                          
+                          const totalOTHours = Object.values(item.dailyAttendance).reduce(
+                            (sum, record) => sum + (record?.otHours || 0), 0
+                          );
+                          
+                          const totalExtraHours = Object.values(item.dailyAttendance).reduce(
+                            (sum, record) => sum + (record?.extraHours || 0), 0
+                          );
+                          
+                          const totalODHours = Object.values(item.dailyAttendance).reduce(
+                            (sum, record) => sum + (record?.odHours || 0), 0
+                          );
+                          
+                          const totalPermissions = Object.values(item.dailyAttendance).reduce(
+                            (sum, record) => sum + (record?.permissionCount || 0), 0
+                          );
+                          
+                          const totalAbsent = Object.values(item.dailyAttendance).filter(
+                            (record) => record && record.status === 'ABSENT' && !record.hasLeave && !record.hasOD
+                          ).length;
+                          
+                          const payableShifts = item.payableShifts !== undefined ? item.payableShifts : 0;
+                          const totalDaysInMonth = item.summary?.totalDaysInMonth || daysInMonth;
+                          
+                          return (
+                            <tr 
+                              key={item.employee._id} 
+                              className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer"
+                              onClick={() => handleEmployeeClick(item.employee)}
+                            >
+                              <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-900">
+                                <div className="flex items-center gap-3">
+                                  <div className="flex-1">
+                                    <div className="font-semibold text-slate-900 dark:text-white text-sm">
+                                      {item.employee.employee_name}
+                                    </div>
+                                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                      {item.employee.emp_no}
+                                    </div>
+                                    <div className="flex flex-wrap gap-1 mt-1">
+                                      {item.employee.department && (
+                                        <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 rounded">
+                                          {(item.employee.department as any)?.name || ''}
+                                        </span>
+                                      )}
+                                      {item.employee.designation && (
+                                        <span className="px-1.5 py-0.5 text-[10px] font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 rounded">
+                                          {(item.employee.designation as any)?.name || ''}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleViewPayslip(item.employee);
+                                    }}
+                                    className="rounded-md bg-gradient-to-r from-green-500 to-emerald-600 px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:from-green-600 hover:to-emerald-700 hover:shadow-md"
+                                    title="View Payslip"
+                                  >
+                                    Payslip
+                                  </button>
+                                </div>
+                              </td>
+                              <td className="border-r border-slate-200 bg-blue-50 px-3 py-3 text-center text-sm font-bold text-blue-700 dark:border-slate-700 dark:bg-blue-900/20 dark:text-blue-300">
+                                {daysPresent}
+                              </td>
+                              <td className="border-r border-slate-200 bg-red-50 px-3 py-3 text-center text-sm font-bold text-red-700 dark:border-slate-700 dark:bg-red-900/20 dark:text-red-300">
+                                {totalLeaves.toFixed(1)}
+                              </td>
+                              <td className="border-r border-slate-200 bg-purple-50 px-3 py-3 text-center text-sm font-bold text-purple-700 dark:border-slate-700 dark:bg-purple-900/20 dark:text-purple-300">
+                                {totalODs.toFixed(1)}
+                              </td>
+                              <td className="border-r border-slate-200 bg-orange-50 px-3 py-3 text-center text-sm font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300">
+                                {totalOTHours.toFixed(1)}h
+                              </td>
+                              <td className="border-r border-slate-200 bg-pink-50 px-3 py-3 text-center text-sm font-bold text-pink-700 dark:border-slate-700 dark:bg-pink-900/20 dark:text-pink-300">
+                                {totalExtraHours.toFixed(1)}h
+                              </td>
+                              <td className="border-r border-slate-200 bg-fuchsia-50 px-3 py-3 text-center text-sm font-bold text-fuchsia-700 dark:border-slate-700 dark:bg-fuchsia-900/20 dark:text-fuchsia-300">
+                                {totalODHours.toFixed(1)}h
+                              </td>
+                              <td className="border-r border-slate-200 bg-cyan-50 px-3 py-3 text-center text-sm font-bold text-cyan-700 dark:border-slate-700 dark:bg-cyan-900/20 dark:text-cyan-300">
+                                {totalPermissions}
+                              </td>
+                              <td className="border-r border-slate-200 bg-indigo-50 px-3 py-3 text-center text-sm font-bold text-indigo-700 dark:border-slate-700 dark:bg-indigo-900/20 dark:text-indigo-300">
+                                {totalAbsent}
+                              </td>
+                              <td className="border-r-0 border-slate-200 bg-green-50 px-3 py-3 text-center text-sm font-bold text-green-700 dark:border-slate-700 dark:bg-green-900/20 dark:text-green-300">
+                                {payableShifts.toFixed(2)}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>

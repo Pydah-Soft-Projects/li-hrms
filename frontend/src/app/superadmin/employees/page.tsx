@@ -24,6 +24,7 @@ interface Employee {
   dob?: string;
   gross_salary?: number;
   paidLeaves?: number;
+  allottedLeaves?: number;
   gender?: string;
   marital_status?: string;
   blood_group?: string;
@@ -111,6 +112,7 @@ const initialFormState: Partial<Employee> = {
   dob: '',
   gross_salary: undefined,
   paidLeaves: 0,
+  allottedLeaves: 0,
   gender: '',
   marital_status: '',
   blood_group: '',
@@ -604,12 +606,12 @@ export default function EmployeesPage() {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target;
     const processedValue = type === 'number' 
-      ? (value === '' ? (name === 'paidLeaves' ? 0 : undefined) : Number(value))
+        ? (value === '' ? (name === 'paidLeaves' || name === 'allottedLeaves' ? 0 : undefined) : Number(value))
       : value;
     
     setFormData(prev => {
       const updated = {
-        ...prev,
+      ...prev,
         [name]: processedValue,
       };
       
@@ -657,6 +659,7 @@ export default function EmployeesPage() {
         employeeAllowances: buildOverridePayload(componentDefaults.allowances, overrideAllowances, 'allowance'),
         employeeDeductions: buildOverridePayload(componentDefaults.deductions, overrideDeductions, 'deduction'),
         paidLeaves: formData.paidLeaves !== null && formData.paidLeaves !== undefined ? formData.paidLeaves : 0,
+        allottedLeaves: formData.allottedLeaves !== null && formData.allottedLeaves !== undefined ? formData.allottedLeaves : 0,
         ctcSalary: salarySummary.ctcSalary,
         calculatedSalary: salarySummary.netSalary,
       };
@@ -706,6 +709,19 @@ export default function EmployeesPage() {
       }
     }
     
+    // Extract allottedLeaves - check multiple possible locations
+    let allottedLeavesValue = 0;
+    if (employee.allottedLeaves !== undefined && employee.allottedLeaves !== null) {
+      allottedLeavesValue = Number(employee.allottedLeaves);
+    } else if ((employee as any).allottedLeaves !== undefined && (employee as any).allottedLeaves !== null) {
+      allottedLeavesValue = Number((employee as any).allottedLeaves);
+    } else {
+      const rawEmployee = employee as any;
+      if (rawEmployee.allottedLeaves !== undefined && rawEmployee.allottedLeaves !== null) {
+        allottedLeavesValue = Number(rawEmployee.allottedLeaves);
+      }
+    }
+    
     // Get qualifications - check if it's an array (new format) or string (old format)
     let qualificationsValue: any[] = [];
     if (employee.qualifications) {
@@ -751,6 +767,7 @@ export default function EmployeesPage() {
       doj: employee.doj ? new Date(employee.doj).toISOString().split('T')[0] : '',
       dob: employee.dob ? new Date(employee.dob).toISOString().split('T')[0] : '',
       paidLeaves: paidLeavesValue,
+      allottedLeaves: allottedLeavesValue,
       qualifications: qualificationsValue,
       // Map gross_salary to proposedSalary for form compatibility
       proposedSalary: salaryValue,
@@ -1453,7 +1470,7 @@ export default function EmployeesPage() {
                   {loadingComponents && (
                     <div className="text-xs text-slate-500 dark:text-slate-400">Loading components...</div>
                   )}
-              </div>
+                  </div>
 
                 {/* Salary summary */}
                 <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60 md:grid-cols-4">
@@ -1480,8 +1497,8 @@ export default function EmployeesPage() {
                     <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                       ₹{applicationSalarySummary.netSalary.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                     </p>
-                  </div>
                 </div>
+              </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
                   {/* Allowances */}
@@ -1922,6 +1939,49 @@ export default function EmployeesPage() {
                 designations={designations}
               />
 
+              {/* Leave Settings */}
+              <div className="rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
+                <h3 className="mb-3 text-base font-semibold text-slate-900 dark:text-slate-100">Leave Settings</h3>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                      Monthly Paid Leaves
+                    </label>
+                    <input
+                      type="number"
+                      name="paidLeaves"
+                      value={formData.paidLeaves ?? 0}
+                      onChange={handleInputChange}
+                      min="0"
+                      step="0.5"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      placeholder="0"
+                    />
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      Monthly recurring paid leaves
+                    </p>
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                      Yearly Allotted Leaves
+                    </label>
+                    <input
+                      type="number"
+                      name="allottedLeaves"
+                      value={formData.allottedLeaves ?? 0}
+                      onChange={handleInputChange}
+                      min="0"
+                      step="0.5"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      placeholder="0"
+                    />
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      Yearly total for without_pay/LOP leaves (for balance tracking)
+                    </p>
+                  </div>
+                  </div>
+                  </div>
+
               {/* Allowances & Deductions Overrides + Salary Summary */}
               <div className="space-y-4 rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
                 <div className="flex items-center justify-between">
@@ -1934,7 +1994,7 @@ export default function EmployeesPage() {
                   {loadingComponents && (
                     <div className="text-xs text-slate-500 dark:text-slate-400">Loading components...</div>
                   )}
-                </div>
+              </div>
 
                 {/* Salary summary */}
                 <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
@@ -1967,8 +2027,8 @@ export default function EmployeesPage() {
                     <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                       ₹{salarySummary.netSalary.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                     </p>
-                  </div>
                 </div>
+              </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
                   {/* Allowances */}
@@ -1978,7 +2038,7 @@ export default function EmployeesPage() {
                       <span className="text-xs text-emerald-700 dark:text-emerald-300">
                         {componentDefaults.allowances.length} items
                       </span>
-                    </div>
+                  </div>
                     <div className="space-y-2">
                       {componentDefaults.allowances.length === 0 && (
                         <p className="text-xs text-emerald-700/70 dark:text-emerald-200/70">No allowances available.</p>
@@ -1995,25 +2055,25 @@ export default function EmployeesPage() {
                                   {item.type === 'percentage'
                                     ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
                                     : 'Fixed'}
-                                </div>
-                              </div>
+                  </div>
+                  </div>
                               <div className="flex items-center gap-1">
                                 <span className="text-[11px] text-emerald-700 dark:text-emerald-300">Override</span>
-                                <input
-                                  type="number"
-                                  min="0"
+                    <input 
+                      type="number" 
+                      min="0" 
                                   step="0.01"
                                   value={current === null ? '' : current}
                                   onChange={(e) => handleOverrideChange('allowance', item, e.target.value)}
                                   className="w-24 rounded border border-emerald-200 bg-white px-2 py-1 text-[11px] text-emerald-900 focus:border-emerald-400 focus:outline-none dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100"
                                 />
-                              </div>
-                            </div>
-                          </div>
+                  </div>
+                  </div>
+                  </div>
                         );
                       })}
-                    </div>
-                  </div>
+                </div>
+              </div>
 
                   {/* Deductions */}
                   <div className="rounded-xl border border-rose-100 bg-rose-50/70 p-3 dark:border-rose-900/40 dark:bg-rose-900/20">
@@ -2022,7 +2082,7 @@ export default function EmployeesPage() {
                       <span className="text-xs text-rose-700 dark:text-rose-300">
                         {componentDefaults.deductions.length} items
                       </span>
-                    </div>
+                  </div>
                     <div className="space-y-2">
                       {componentDefaults.deductions.length === 0 && (
                         <p className="text-xs text-rose-700/70 dark:text-rose-200/70">No deductions available.</p>
@@ -2039,25 +2099,25 @@ export default function EmployeesPage() {
                                   {item.type === 'percentage'
                                     ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
                                     : 'Fixed'}
-                                </div>
-                              </div>
+                  </div>
+                  </div>
                               <div className="flex items-center gap-1">
                                 <span className="text-[11px] text-rose-700 dark:text-rose-300">Override</span>
-                                <input
-                                  type="number"
-                                  min="0"
+                    <input 
+                      type="number" 
+                      min="0" 
                                   step="0.01"
                                   value={current === null ? '' : current}
                                   onChange={(e) => handleOverrideChange('deduction', item, e.target.value)}
                                   className="w-24 rounded border border-rose-200 bg-white px-2 py-1 text-[11px] text-rose-900 focus:border-rose-400 focus:outline-none dark:border-rose-800 dark:bg-rose-950 dark:text-rose-100"
                                 />
-                              </div>
-                            </div>
-                          </div>
+                  </div>
+                </div>
+              </div>
                         );
                       })}
-                    </div>
-                  </div>
+                </div>
+              </div>
                 </div>
               </div>
 
@@ -2481,6 +2541,51 @@ export default function EmployeesPage() {
                     </p>
                   </div>
                 )}
+              </div>
+
+              {/* Leave Information */}
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Leave Information</h3>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Monthly Paid Leaves</label>
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                      {viewingEmployee.paidLeaves !== undefined && viewingEmployee.paidLeaves !== null 
+                        ? `${viewingEmployee.paidLeaves} days/month`
+                        : '0 days/month'}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      Recurring monthly paid leaves
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Yearly Allotted Leaves</label>
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                      {viewingEmployee.allottedLeaves !== undefined && viewingEmployee.allottedLeaves !== null 
+                        ? `${viewingEmployee.allottedLeaves} days/year`
+                        : '0 days/year'}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      Total for without_pay/LOP leaves (for balance tracking)
+                    </p>
+                  </div>
+                  {((viewingEmployee as any).ctcSalary !== undefined && (viewingEmployee as any).ctcSalary !== null) && (
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">CTC Salary</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                        ₹{Number((viewingEmployee as any).ctcSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                  )}
+                  {((viewingEmployee as any).calculatedSalary !== undefined && (viewingEmployee as any).calculatedSalary !== null) && (
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Calculated Salary (Net)</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                        ₹{Number((viewingEmployee as any).calculatedSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Reporting Authority Section - Check both root and dynamicFields, handle both reporting_to and reporting_to_ */}

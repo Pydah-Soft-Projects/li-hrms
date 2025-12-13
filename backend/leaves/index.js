@@ -119,5 +119,27 @@ router.put('/:id/revoke', authorize('hod', 'hr', 'sub_admin', 'super_admin'), le
 // Delete leave
 router.delete('/:id', authorize('sub_admin', 'super_admin'), leaveController.deleteLeave);
 
+// ==========================================
+// LEAVE SPLIT ROUTES
+// ==========================================
+
+// Validate splits before creating
+router.post('/:id/validate-splits', authorize('hod', 'hr', 'sub_admin', 'super_admin'), leaveController.validateLeaveSplits);
+
+// Create splits for a leave
+router.post('/:id/split', authorize('hod', 'hr', 'sub_admin', 'super_admin'), leaveController.createLeaveSplits);
+
+// Get splits for a leave
+router.get('/:id/splits', leaveController.getLeaveSplits);
+
+// Get split summary for a leave
+router.get('/:id/split-summary', leaveController.getLeaveSplitSummary);
+
+// Update a single split
+router.put('/:id/splits/:splitId', authorize('hod', 'hr', 'sub_admin', 'super_admin'), leaveController.updateLeaveSplit);
+
+// Delete a split
+router.delete('/:id/splits/:splitId', authorize('hod', 'hr', 'sub_admin', 'super_admin'), leaveController.deleteLeaveSplit);
+
 module.exports = router;
 

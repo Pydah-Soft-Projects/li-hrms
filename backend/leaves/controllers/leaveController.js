@@ -240,9 +240,26 @@ exports.getLeave = async (req, res) => {
       });
     }
 
+    // Get splits if leave has been split
+    let splits = null;
+    let splitSummary = null;
+    if (leave.splitStatus === 'split_approved') {
+      const leaveSplitService = require('../services/leaveSplitService');
+      splits = await leaveSplitService.getSplits(leave._id);
+      splitSummary = await leaveSplitService.getSplitSummary(leave._id);
+    }
+
+    const leaveData = leave.toObject();
+    if (splits) {
+      leaveData.splits = splits;
+    }
+    if (splitSummary) {
+      leaveData.splitSummary = splitSummary;
+    }
+
     res.status(200).json({
       success: true,
-      data: leave,
+      data: leaveData,
     });
   } catch (error) {
     console.error('Error fetching leave:', error);
@@ -1467,6 +1484,195 @@ exports.updateLeaveForAttendance = async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to update leave',
+    });
+  }
+};
+
+// @desc    Create splits for a leave
+// @route   POST /api/leaves/:id/split
+// @access  Private (HOD, HR, Admin)
+exports.createLeaveSplits = async (req, res) => {
+  try {
+    const { splits } = req.body;
+    const leaveId = req.params.id;
+
+    if (!splits || !Array.isArray(splits) || splits.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Splits array is required',
+      });
+    }
+
+    const leaveSplitService = require('../services/leaveSplitService');
+    const result = await leaveSplitService.createSplits(leaveId, splits, req.user);
+
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        errors: result.errors,
+        warnings: result.warnings || [],
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Leave splits created successfully',
+      data: result.data,
+      warnings: result.warnings || [],
+    });
+  } catch (error) {
+    console.error('Error creating leave splits:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to create leave splits',
+    });
+  }
+};
+
+// @desc    Get splits for a leave
+// @route   GET /api/leaves/:id/splits
+// @access  Private
+exports.getLeaveSplits = async (req, res) => {
+  try {
+    const leaveId = req.params.id;
+    const leaveSplitService = require('../services/leaveSplitService');
+    const splits = await leaveSplitService.getSplits(leaveId);
+
+    res.status(200).json({
+      success: true,
+      data: splits,
+    });
+  } catch (error) {
+    console.error('Error getting leave splits:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to get leave splits',
+    });
+  }
+};
+
+// @desc    Get split summary for a leave
+// @route   GET /api/leaves/:id/split-summary
+// @access  Private
+exports.getLeaveSplitSummary = async (req, res) => {
+  try {
+    const leaveId = req.params.id;
+    const leaveSplitService = require('../services/leaveSplitService');
+    const summary = await leaveSplitService.getSplitSummary(leaveId);
+
+    if (!summary) {
+      return res.status(404).json({
+        success: false,
+        error: 'Leave not found or has no splits',
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: summary,
+    });
+  } catch (error) {
+    console.error('Error getting leave split summary:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to get leave split summary',
+    });
+  }
+};
+
+// @desc    Update a single split
+// @route   PUT /api/leaves/:id/splits/:splitId
+// @access  Private (HOD, HR, Admin)
+exports.updateLeaveSplit = async (req, res) => {
+  try {
+    const { splitId } = req.params;
+    const updateData = req.body;
+
+    const leaveSplitService = require('../services/leaveSplitService');
+    const result = await leaveSplitService.updateSplit(splitId, updateData, req.user);
+
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        errors: result.errors,
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Split updated successfully',
+      data: result.data,
+    });
+  } catch (error) {
+    console.error('Error updating leave split:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to update leave split',
+    });
+  }
+};
+
+// @desc    Delete a split
+// @route   DELETE /api/leaves/:id/splits/:splitId
+// @access  Private (HOD, HR, Admin)
+exports.deleteLeaveSplit = async (req, res) => {
+  try {
+    const { splitId } = req.params;
+
+    const leaveSplitService = require('../services/leaveSplitService');
+    const result = await leaveSplitService.deleteSplit(splitId);
+
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        errors: result.errors,
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Split deleted successfully',
+    });
+  } catch (error) {
+    console.error('Error deleting leave split:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to delete leave split',
+    });
+  }
+};
+
+// @desc    Validate splits before creating
+// @route   POST /api/leaves/:id/validate-splits
+// @access  Private (HOD, HR, Admin)
+exports.validateLeaveSplits = async (req, res) => {
+  try {
+    const { splits } = req.body;
+    const leaveId = req.params.id;
+
+    if (!splits || !Array.isArray(splits)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Splits array is required',
+      });
+    }
+
+    const leaveSplitService = require('../services/leaveSplitService');
+    const validation = await leaveSplitService.validateSplits(leaveId, splits);
+
+    res.status(200).json({
+      success: validation.isValid,
+      isValid: validation.isValid,
+      errors: validation.errors || [],
+      warnings: validation.warnings || [],
+      totalSplitDays: validation.totalSplitDays || 0,
+      originalTotalDays: validation.originalTotalDays || 0,
+    });
+  } catch (error) {
+    console.error('Error validating leave splits:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to validate leave splits',
     });
   }
 };
