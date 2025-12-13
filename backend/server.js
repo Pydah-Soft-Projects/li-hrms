@@ -106,6 +106,10 @@ app.use('/api/allowances-deductions', allowanceDeductionRoutes);
 const payrollRoutes = require('./payroll/index.js');
 app.use('/api/payroll', payrollRoutes);
 
+// Pay Register routes
+const payRegisterRoutes = require('./pay-register/index.js');
+app.use('/api/pay-register', payRegisterRoutes);
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({
@@ -151,6 +155,8 @@ const startServer = async () => {
       console.log(`   - Leaves & OD: /api/leaves`);
       console.log(`   - Loans: /api/loans`);
       console.log(`   - Attendance: /api/attendance`);
+      console.log(`   - Payroll: /api/payroll`);
+      console.log(`   - Pay Register: /api/pay-register`);
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error.message);

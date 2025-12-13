@@ -202,5 +202,19 @@ otSchema.pre('save', function() {
   }
 });
 
+// Post-save hook to auto-sync pay register when OT is approved
+otSchema.post('save', async function() {
+  try {
+    // Auto-sync pay register when OT is approved/rejected
+    if (this.isModified('status') && (this.status === 'approved' || this.status === 'rejected')) {
+      const { syncPayRegisterFromOT } = require('../../pay-register/services/autoSyncService');
+      await syncPayRegisterFromOT(this);
+    }
+  } catch (error) {
+    // Don't throw - this is a background operation
+    console.error('Error syncing pay register from OT:', error);
+  }
+});
+
 module.exports = mongoose.model('OT', otSchema);
 

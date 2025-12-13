@@ -447,6 +447,12 @@ LeaveSchema.post('save', async function() {
         await updateMonthlyRecordOnLeaveAction(this, action);
       }
     }
+
+    // Auto-sync pay register when leave is approved/rejected/cancelled
+    if (this.isModified('status') && (this.status === 'approved' || this.status === 'hr_approved' || this.status === 'hod_approved' || this.status === 'rejected' || this.status === 'cancelled')) {
+      const { syncPayRegisterFromLeave } = require('../../pay-register/services/autoSyncService');
+      await syncPayRegisterFromLeave(this);
+    }
   } catch (error) {
     // Don't throw - this is a background operation
     console.error('Error updating monthly summary/leave record on leave status change:', error);

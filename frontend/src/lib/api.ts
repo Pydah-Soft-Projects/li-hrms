@@ -1928,5 +1928,53 @@ export const api = {
       method: 'GET',
     });
   },
+
+  // Pay Register APIs
+  getPayRegister: async (employeeId: string, month: string) => {
+    return apiRequest<any>(`/pay-register/${employeeId}/${month}`, {
+      method: 'GET',
+    });
+  },
+
+  createPayRegister: async (employeeId: string, month: string) => {
+    return apiRequest<any>(`/pay-register/${employeeId}/${month}`, {
+      method: 'POST',
+    });
+  },
+
+  updatePayRegister: async (employeeId: string, month: string, data: any) => {
+    return apiRequest<any>(`/pay-register/${employeeId}/${month}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  updateDailyRecord: async (employeeId: string, month: string, date: string, data: any) => {
+    return apiRequest<any>(`/pay-register/${employeeId}/${month}/daily/${date}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  syncPayRegister: async (employeeId: string, month: string) => {
+    return apiRequest<any>(`/pay-register/${employeeId}/${month}/sync`, {
+      method: 'POST',
+    });
+  },
+
+  getPayRegisterHistory: async (employeeId: string, month: string) => {
+    return apiRequest<any>(`/pay-register/${employeeId}/${month}/history`, {
+      method: 'GET',
+    });
+  },
+
+  getEmployeesWithPayRegister: async (month: string, departmentId?: string, status?: string) => {
+    const query = new URLSearchParams();
+    if (departmentId) query.append('departmentId', departmentId);
+    if (status) query.append('status', status);
+    return apiRequest<any>(`/pay-register/employees/${month}${query.toString() ? `?${query.toString()}` : ''}`, {
+      method: 'GET',
+    });
+  },
 };
 

@@ -1,4 +1,5 @@
 const MonthlyAttendanceSummary = require('../../attendance/model/MonthlyAttendanceSummary');
+const PayRegisterSummary = require('../../pay-register/model/PayRegisterSummary');
 const Employee = require('../../employees/model/Employee');
 const Department = require('../../departments/model/Department');
 const PayrollRecord = require('../model/PayrollRecord');
@@ -74,13 +75,41 @@ async function calculatePayroll(employeeId, month, userId) {
       throw new Error('Employee gross salary is missing or invalid');
     }
 
-    const attendanceSummary = await MonthlyAttendanceSummary.findOne({
+    // Check for PayRegisterSummary first (source of truth if exists)
+    let payRegisterSummary = await PayRegisterSummary.findOne({
       employeeId,
       month,
     });
 
-    if (!attendanceSummary) {
-      throw new Error(`Attendance summary not found for month ${month}`);
+    let attendanceSummary;
+    
+    if (payRegisterSummary) {
+      // Use PayRegisterSummary as source of truth
+      console.log('Using PayRegisterSummary as source of truth');
+      // Create a compatible attendance summary object from pay register totals
+      attendanceSummary = {
+        totalPayableShifts: payRegisterSummary.totals.totalPayableShifts || 0,
+        totalOTHours: payRegisterSummary.totals.totalOTHours || 0,
+        totalLeaves: payRegisterSummary.totals.totalLeaveDays || 0,
+        totalODs: payRegisterSummary.totals.totalODDays || 0,
+        totalPresentDays: payRegisterSummary.totals.totalPresentDays || 0,
+        totalDaysInMonth: payRegisterSummary.totalDaysInMonth,
+        // For backward compatibility, we'll use these from pay register
+        paidLeaves: payRegisterSummary.totals.totalPaidLeaveDays || 0,
+        unpaidLeaves: payRegisterSummary.totals.totalUnpaidLeaveDays || 0,
+        lopLeaves: payRegisterSummary.totals.totalLopDays || 0,
+      };
+    } else {
+      // Fall back to MonthlyAttendanceSummary
+      console.log('Using MonthlyAttendanceSummary (PayRegisterSummary not found)');
+      attendanceSummary = await MonthlyAttendanceSummary.findOne({
+        employeeId,
+        month,
+      });
+
+      if (!attendanceSummary) {
+        throw new Error(`Attendance summary not found for month ${month}`);
+      }
     }
 
     const departmentId = employee.department_id?._id || employee.department_id;

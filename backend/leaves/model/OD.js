@@ -427,6 +427,12 @@ ODSchema.post('save', async function() {
       const { recalculateOnODApproval } = require('../../attendance/services/summaryCalculationService');
       await recalculateOnODApproval(this);
     }
+
+    // Auto-sync pay register when OD is approved/rejected/cancelled
+    if (this.isModified('status') && (this.status === 'approved' || this.status === 'hr_approved' || this.status === 'hod_approved' || this.status === 'rejected' || this.status === 'cancelled')) {
+      const { syncPayRegisterFromOD } = require('../../pay-register/services/autoSyncService');
+      await syncPayRegisterFromOD(this);
+    }
   } catch (error) {
     // Don't throw - this is a background operation
     console.error('Error updating monthly summary on OD approval:', error);
