@@ -308,6 +308,8 @@ exports.getAllEmployees = async (req, res) => {
           designation: transformed.designation_id,
           // Explicitly ensure paidLeaves is included (default to 0 if not set)
           paidLeaves: transformed.paidLeaves !== undefined && transformed.paidLeaves !== null ? Number(transformed.paidLeaves) : 0,
+          // Explicitly ensure allottedLeaves is included (default to 0 if not set)
+          allottedLeaves: transformed.allottedLeaves !== undefined && transformed.allottedLeaves !== null ? Number(transformed.allottedLeaves) : 0,
           // Explicitly include allowances, deductions, and calculated salaries
           employeeAllowances: transformed.employeeAllowances || [],
           employeeDeductions: transformed.employeeDeductions || [],
@@ -362,6 +364,9 @@ exports.getEmployee = async (req, res) => {
           ...transformed,
           department: transformed.department_id,
           designation: transformed.designation_id,
+          // Explicitly ensure paidLeaves and allottedLeaves are included
+          paidLeaves: transformed.paidLeaves !== undefined && transformed.paidLeaves !== null ? Number(transformed.paidLeaves) : 0,
+          allottedLeaves: transformed.allottedLeaves !== undefined && transformed.allottedLeaves !== null ? Number(transformed.allottedLeaves) : 0,
           // Explicitly include allowances, deductions, and calculated salaries
           employeeAllowances: transformed.employeeAllowances || [],
           employeeDeductions: transformed.employeeDeductions || [],
@@ -583,7 +588,8 @@ exports.updateEmployee = async (req, res) => {
       employeeData.gross_salary !== undefined ||
       employeeData.ctcSalary !== undefined ||
       employeeData.calculatedSalary !== undefined ||
-      employeeData.paidLeaves !== undefined
+      employeeData.paidLeaves !== undefined ||
+      employeeData.allottedLeaves !== undefined
     );
     
     // Only validate if dynamicFields are being updated (not for simple permanent field updates)
@@ -654,6 +660,10 @@ exports.updateEmployee = async (req, res) => {
       if (employeeData.paidLeaves !== undefined && employeeData.paidLeaves !== null) {
         updateData.paidLeaves = Number(employeeData.paidLeaves);
       }
+      // Explicitly handle allottedLeaves to ensure it's saved even if 0
+      if (employeeData.allottedLeaves !== undefined && employeeData.allottedLeaves !== null) {
+        updateData.allottedLeaves = Number(employeeData.allottedLeaves);
+      }
       
       await Employee.findOneAndUpdate(
         { emp_no: empNo },
@@ -689,6 +699,9 @@ exports.updateEmployee = async (req, res) => {
     if (updatedEmployee) {
       updatedEmployee.paidLeaves = updatedEmployee.paidLeaves !== undefined && updatedEmployee.paidLeaves !== null 
         ? Number(updatedEmployee.paidLeaves) 
+        : 0;
+      updatedEmployee.allottedLeaves = updatedEmployee.allottedLeaves !== undefined && updatedEmployee.allottedLeaves !== null 
+        ? Number(updatedEmployee.allottedLeaves) 
         : 0;
     }
 

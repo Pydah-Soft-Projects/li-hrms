@@ -42,6 +42,34 @@ const ClockIcon = () => (
   </svg>
 );
 
+interface LeaveSplit {
+  _id?: string;
+  date: string;
+  leaveType: string;
+  leaveNature?: 'paid' | 'lop' | 'without_pay';
+  isHalfDay?: boolean;
+  halfDayType?: 'first_half' | 'second_half' | null;
+  status: 'approved' | 'rejected';
+  numberOfDays?: number;
+  notes?: string | null;
+}
+
+interface LeaveSplitSummary {
+  originalDays: number;
+  originalLeaveType: string;
+  totalSplits: number;
+  approvedDays: number;
+  rejectedDays: number;
+  breakdown: Record<
+    string,
+    {
+      leaveType: string;
+      status: string;
+      days: number;
+    }
+  >;
+}
+
 interface LeaveApplication {
   _id: string;
   employeeId?: { 
@@ -61,6 +89,10 @@ interface LeaveApplication {
   purpose: string;
   contactNumber: string;
   status: string;
+  originalLeaveType?: string;
+  splitStatus?: 'pending_split' | 'split_approved' | 'split_rejected' | null;
+  splits?: LeaveSplit[];
+  splitSummary?: LeaveSplitSummary | null;
   department?: { name: string };
   designation?: { name: string };
   appliedAt: string;
@@ -155,6 +187,78 @@ const formatDate = (dateStr: string) => {
   });
 };
 
+const parseDateOnly = (value: Date | string) => {
+  if (value instanceof Date) {
+    return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+  }
+  const str = String(value);
+  // If ISO with time, take only the date portion to avoid TZ shifts
+  const datePart = str.includes('T') ? str.split('T')[0] : str;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+    return new Date(`${datePart}T00:00:00`);
+  }
+  // Fallback
+  const d = new Date(str);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+};
+
+const toISODate = (date: Date | string) => {
+  const d = parseDateOnly(date);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+const clampSplitsToRange = (leave: LeaveApplication, splits: LeaveSplit[]) => {
+  const start = parseDateOnly(leave.fromDate).getTime();
+  const end = parseDateOnly(leave.toDate).getTime();
+  const byKey = new Map<string, LeaveSplit>();
+
+  splits.forEach((s) => {
+    const d = parseDateOnly(s.date);
+    const t = d.getTime();
+    if (Number.isNaN(t) || t < start || t > end) return; // skip outside range
+    const iso = toISODate(d);
+    const key = `${iso}_${s.isHalfDay ? s.halfDayType || 'half' : 'full'}`;
+    if (!byKey.has(key)) {
+      byKey.set(key, {
+        ...s,
+        date: iso,
+        numberOfDays: s.numberOfDays ?? (s.isHalfDay ? 0.5 : 1),
+        halfDayType: s.isHalfDay ? (s.halfDayType as any) || 'first_half' : null,
+      });
+    }
+  });
+
+  return Array.from(byKey.values()).sort(
+    (a, b) => parseDateOnly(a.date).getTime() - parseDateOnly(b.date).getTime()
+  );
+};
+
+const buildDateRange = (fromDate: string, toDate: string, isHalfDay?: boolean, halfDayType?: string | null) => {
+  const dates: LeaveSplit[] = [];
+  const start = parseDateOnly(fromDate);
+  const end = parseDateOnly(toDate);
+  start.setHours(0, 0, 0, 0);
+  end.setHours(0, 0, 0, 0);
+
+  let current = new Date(start);
+  while (current <= end) {
+    const isSingleHalf = isHalfDay && start.getTime() === end.getTime();
+    dates.push({
+      date: toISODate(current),
+      leaveType: '',
+      status: 'approved',
+      isHalfDay: Boolean(isSingleHalf),
+      halfDayType: isSingleHalf ? (halfDayType as any) || 'first_half' : null,
+      numberOfDays: isSingleHalf ? 0.5 : 1,
+    });
+    current.setDate(current.getDate() + 1);
+  }
+  return dates;
+};
+
 interface Employee {
   _id: string;
   employee_name: string;
@@ -193,6 +297,8 @@ const SearchIcon = () => (
 export default function LeavesPage() {
   const { activeWorkspace, hasPermission, getModuleConfig } = useWorkspace();
   const [activeTab, setActiveTab] = useState<'leaves' | 'od' | 'pending'>('leaves');
+  const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
+  const [calendarDate, setCalendarDate] = useState(new Date());
   const [leaves, setLeaves] = useState<LeaveApplication[]>([]);
   const [ods, setODs] = useState<ODApplication[]>([]);
   const [pendingLeaves, setPendingLeaves] = useState<LeaveApplication[]>([]);
@@ -200,6 +306,11 @@ export default function LeavesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [splitMode, setSplitMode] = useState(false);
+  const [splitDrafts, setSplitDrafts] = useState<LeaveSplit[]>([]);
+  const [splitWarnings, setSplitWarnings] = useState<string[]>([]);
+  const [splitErrors, setSplitErrors] = useState<string[]>([]);
+  const [splitSaving, setSplitSaving] = useState(false);
 
   // Dialog states
   const [showApplyDialog, setShowApplyDialog] = useState(false);
@@ -219,7 +330,7 @@ export default function LeavesPage() {
     contactNumber: '',
     placeVisited: '',
     isHalfDay: false,
-    halfDayType: null,
+    halfDayType: '',
     remarks: '',
     // NEW: Hour-based OD fields
     odType_extended: 'full_day', // 'full_day' | 'half_day' | 'hours'
@@ -639,7 +750,7 @@ export default function LeavesPage() {
       contactNumber: '',
       placeVisited: '',
       isHalfDay: false,
-      halfDayType: null,
+      halfDayType: '',
       remarks: '',
       // NEW: Hour-based OD fields
       odType_extended: 'full_day',
@@ -758,7 +869,7 @@ export default function LeavesPage() {
           contactNumber: '',
           placeVisited: '',
           isHalfDay: false,
-          halfDayType: null,
+          halfDayType: '',
           remarks: '',
           // NEW
           odType_extended: 'full_day',
@@ -777,11 +888,141 @@ export default function LeavesPage() {
     }
   };
 
-  const openDetailDialog = (item: LeaveApplication | ODApplication, type: 'leave' | 'od') => {
-    setSelectedItem(item);
-    setDetailType(type);
-    setActionComment('');
-    setShowDetailDialog(true);
+  const buildInitialSplits = (leave: LeaveApplication) => {
+    if (!leave) return [];
+    if (leave.splits && leave.splits.length > 0) {
+      return clampSplitsToRange(
+        leave,
+        leave.splits.map((s) => ({
+          _id: s._id,
+          date: toISODate(s.date),
+          leaveType: s.leaveType,
+          leaveNature: s.leaveNature,
+          isHalfDay: s.isHalfDay,
+          halfDayType: (s.halfDayType as any) || null,
+          status: s.status,
+          numberOfDays: s.numberOfDays ?? (s.isHalfDay ? 0.5 : 1),
+          notes: s.notes || null,
+        }))
+      );
+    }
+    const defaults = buildDateRange(leave.fromDate, leave.toDate, leave.isHalfDay, leave.halfDayType);
+    return defaults.map((d) => ({
+      ...d,
+      leaveType: leave.leaveType,
+      status: 'approved' as const,
+      numberOfDays: d.numberOfDays ?? (d.isHalfDay ? 0.5 : 1),
+    }));
+  };
+
+  const openDetailDialog = async (item: LeaveApplication | ODApplication, type: 'leave' | 'od') => {
+    try {
+      setSplitMode(false);
+      setSplitDrafts([]);
+      setSplitWarnings([]);
+      setSplitErrors([]);
+      setSplitSaving(false);
+      setActionComment('');
+
+      let enrichedItem = item;
+      if (type === 'leave') {
+        const response = await api.getLeave(item._id);
+        if (response?.success && response.data) {
+          enrichedItem = response.data;
+        }
+        const initialSplits = buildInitialSplits(enrichedItem as LeaveApplication);
+        setSplitDrafts(initialSplits);
+        setSplitMode(Boolean((enrichedItem as LeaveApplication)?.splits?.length));
+      }
+
+      setSelectedItem(enrichedItem);
+      setDetailType(type);
+      setShowDetailDialog(true);
+    } catch (err: any) {
+      console.error('Failed to load leave details', err);
+      setError(err.message || 'Failed to load leave details');
+    }
+  };
+
+  const updateSplitDraft = (index: number, updates: Partial<LeaveSplit>) => {
+    setSplitDrafts((prev) =>
+      prev.map((row, idx) => {
+        if (idx !== index) return row;
+        const next = { ...row, ...updates };
+        // Normalize numberOfDays based on half-day selection
+        next.numberOfDays = next.isHalfDay ? 0.5 : 1;
+        if (!next.isHalfDay) {
+          next.halfDayType = null;
+        }
+        return next;
+      })
+    );
+  };
+
+  const validateSplitsForLeave = async () => {
+    if (detailType !== 'leave' || !selectedItem) return null;
+    setSplitErrors([]);
+    setSplitWarnings([]);
+
+    try {
+      const payload = splitDrafts.map((s) => ({
+        date: s.date,
+        leaveType: s.leaveType,
+        isHalfDay: s.isHalfDay || false,
+        halfDayType: s.isHalfDay ? s.halfDayType : null,
+        status: s.status,
+        notes: s.notes,
+      }));
+
+      const resp: any = await api.validateLeaveSplits(selectedItem._id, payload);
+      const isValid = resp?.isValid ?? resp?.success;
+      const errors = resp?.errors || [];
+      const warnings = resp?.warnings || [];
+      if (!resp?.success && isValid === false) {
+        setSplitErrors(errors.length ? errors : ['Validation failed']);
+      } else {
+        setSplitErrors(errors);
+      }
+      setSplitWarnings(warnings);
+      return resp;
+    } catch (err: any) {
+      setSplitErrors([err.message || 'Failed to validate splits']);
+      return null;
+    }
+  };
+
+  const saveSplits = async () => {
+    if (detailType !== 'leave' || !selectedItem) return false;
+    const validation: any = await validateSplitsForLeave();
+    if (!validation || (validation.isValid !== undefined && validation.isValid === false)) {
+      return false;
+    }
+
+    try {
+      const payload = splitDrafts.map((s) => ({
+        date: s.date,
+        leaveType: s.leaveType,
+        isHalfDay: s.isHalfDay || false,
+        halfDayType: s.isHalfDay ? s.halfDayType : null,
+        status: s.status,
+        notes: s.notes,
+      }));
+
+      const resp: any = await api.createLeaveSplits(selectedItem._id, payload);
+      const errors = resp?.errors || [];
+      const warnings = resp?.warnings || [];
+      if (!resp?.success) {
+        setSplitErrors(errors.length ? errors : ['Failed to save splits']);
+        setSplitWarnings(warnings);
+        return false;
+      }
+
+      setSplitWarnings(warnings);
+      return true;
+    } catch (err: any) {
+      setSplitErrors([err.message || 'Failed to save splits']);
+      return false;
+    }
   };
 
   const handleDetailAction = async (action: 'approve' | 'reject' | 'forward') => {
@@ -789,6 +1030,14 @@ export default function LeavesPage() {
 
     try {
       setError('');
+      if (detailType === 'leave' && action === 'approve' && splitMode) {
+        setSplitSaving(true);
+        const saved = await saveSplits();
+        if (!saved) {
+          setSplitSaving(false);
+          return;
+        }
+      }
       let response;
 
       if (detailType === 'leave') {
@@ -807,6 +1056,8 @@ export default function LeavesPage() {
       }
     } catch (err: any) {
       setError(err.message || `Failed to ${action}`);
+    } finally {
+      setSplitSaving(false);
     }
   };
 
@@ -1025,9 +1276,101 @@ export default function LeavesPage() {
         </div>
       </div>
 
+      {/* View Toggle for Leaves Tab */}
+      {activeTab === 'leaves' && (
+        <div className="mb-4 flex items-center justify-between">
+          <div className="flex rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-0.5">
+            <button
+              onClick={() => setViewMode('list')}
+              className={`rounded-md px-4 py-2 text-sm font-medium transition-all ${
+                viewMode === 'list'
+                  ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-sm'
+                  : 'text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-slate-700'
+              }`}
+            >
+              <span className="flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+                </svg>
+                List View
+              </span>
+            </button>
+            <button
+              onClick={() => setViewMode('calendar')}
+              className={`rounded-md px-4 py-2 text-sm font-medium transition-all ${
+                viewMode === 'calendar'
+                  ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-sm'
+                  : 'text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-slate-700'
+              }`}
+            >
+              <span className="flex items-center gap-2">
+                <CalendarIcon />
+                Calendar View
+              </span>
+            </button>
+          </div>
+          
+          {/* Month/Year Selector for Calendar */}
+          {viewMode === 'calendar' && (
+            <div className="flex items-center gap-2 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+              <button
+                onClick={() => {
+                  const newDate = new Date(calendarDate);
+                  newDate.setMonth(newDate.getMonth() - 1);
+                  setCalendarDate(newDate);
+                }}
+                className="rounded-md p-1 text-gray-600 transition-colors hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-slate-700"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <select
+                value={calendarDate.getMonth() + 1}
+                onChange={(e) => {
+                  const newDate = new Date(calendarDate);
+                  newDate.setMonth(parseInt(e.target.value) - 1);
+                  setCalendarDate(newDate);
+                }}
+                className="rounded-md border-0 bg-transparent px-2 py-1 text-sm font-medium text-gray-900 focus:outline-none focus:ring-0 dark:text-white"
+              >
+                {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map((name, idx) => (
+                  <option key={idx} value={idx + 1}>{name}</option>
+                ))}
+              </select>
+              <select
+                value={calendarDate.getFullYear()}
+                onChange={(e) => {
+                  const newDate = new Date(calendarDate);
+                  newDate.setFullYear(parseInt(e.target.value));
+                  setCalendarDate(newDate);
+                }}
+                className="rounded-md border-0 bg-transparent px-2 py-1 text-sm font-medium text-gray-900 focus:outline-none focus:ring-0 dark:text-white"
+              >
+                {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i).map((y) => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+              <button
+                onClick={() => {
+                  const newDate = new Date(calendarDate);
+                  newDate.setMonth(newDate.getMonth() + 1);
+                  setCalendarDate(newDate);
+                }}
+                className="rounded-md p-1 text-gray-600 transition-colors hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-slate-700"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Content */}
       <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 overflow-hidden">
-        {activeTab === 'leaves' && (
+        {activeTab === 'leaves' && viewMode === 'list' && (
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-gray-50 dark:bg-slate-900">
@@ -1104,6 +1447,116 @@ export default function LeavesPage() {
                 )}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {activeTab === 'leaves' && viewMode === 'calendar' && (
+          <div className="p-6">
+            {(() => {
+              const year = calendarDate.getFullYear();
+              const month = calendarDate.getMonth();
+              const firstDay = new Date(year, month, 1);
+              const lastDay = new Date(year, month + 1, 0);
+              const daysInMonth = lastDay.getDate();
+              const startingDayOfWeek = firstDay.getDay();
+              
+              // Get leaves for this month
+              const monthLeaves = leaves.filter((leave) => {
+                const fromDate = new Date(leave.fromDate);
+                const toDate = new Date(leave.toDate);
+                return (
+                  (fromDate.getFullYear() === year && fromDate.getMonth() === month) ||
+                  (toDate.getFullYear() === year && toDate.getMonth() === month) ||
+                  (fromDate <= firstDay && toDate >= lastDay)
+                );
+              });
+
+              // Helper to get leave for a specific date
+              const getLeaveForDate = (day: number) => {
+                const date = new Date(year, month, day);
+                return monthLeaves.find((leave) => {
+                  const fromDate = new Date(leave.fromDate);
+                  const toDate = new Date(leave.toDate);
+                  fromDate.setHours(0, 0, 0, 0);
+                  toDate.setHours(23, 59, 59, 999);
+                  date.setHours(0, 0, 0, 0);
+                  return date >= fromDate && date <= toDate;
+                });
+              };
+
+              const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+              
+              return (
+                <div>
+                  <div className="grid grid-cols-7 gap-2 mb-4">
+                    {dayNames.map((day) => (
+                      <div key={day} className="text-center text-xs font-semibold text-gray-600 dark:text-gray-400 py-2">
+                        {day}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-7 gap-2">
+                    {Array.from({ length: startingDayOfWeek }).map((_, idx) => (
+                      <div key={`empty-${idx}`} className="aspect-square"></div>
+                    ))}
+                    {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
+                      const leave = getLeaveForDate(day);
+                      const isToday = 
+                        day === new Date().getDate() &&
+                        month === new Date().getMonth() &&
+                        year === new Date().getFullYear();
+                      
+                      return (
+                        <div
+                          key={day}
+                          onClick={() => leave && openDetailDialog(leave, 'leave')}
+                          className={`aspect-square rounded-lg border-2 p-2 transition-all ${
+                            leave
+                              ? 'cursor-pointer hover:scale-105 border-blue-400 bg-blue-50 dark:bg-blue-900/30'
+                              : 'border-gray-200 dark:border-slate-700'
+                          } ${
+                            isToday ? 'ring-2 ring-emerald-500 ring-offset-2' : ''
+                          }`}
+                        >
+                          <div className="flex flex-col h-full">
+                            <div className={`text-sm font-semibold mb-1 ${isToday ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-900 dark:text-white'}`}>
+                              {day}
+                            </div>
+                            {leave && (
+                              <div className="flex-1 flex flex-col justify-center">
+                                <div className="text-xs font-medium text-blue-700 dark:text-blue-300 truncate">
+                                  {leave.leaveType}
+                                </div>
+                                <div className={`text-[10px] px-1.5 py-0.5 rounded mt-1 ${getStatusColor(leave.status)}`}>
+                                  {leave.status?.replace('_', ' ')}
+                                </div>
+                                {dataScope !== 'own' && leave.employeeId && (
+                                  <div className="text-[10px] text-gray-600 dark:text-gray-400 mt-1 truncate">
+                                    {getEmployeeName(leave.employeeId)}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  
+                  {/* Legend */}
+                  <div className="mt-6 flex flex-wrap gap-4 text-xs">
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 rounded border-2 border-blue-400 bg-blue-50 dark:bg-blue-900/30"></div>
+                      <span className="text-gray-600 dark:text-gray-400">Leave Day</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 rounded border-2 border-emerald-500 ring-2 ring-emerald-500 ring-offset-2"></div>
+                      <span className="text-gray-600 dark:text-gray-400">Today</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
 
@@ -1575,7 +2028,7 @@ export default function LeavesPage() {
                 </label>
                 {formData.isHalfDay && (
                   <select
-                    value={formData.halfDayType}
+                    value={formData.halfDayType || 'first_half'}
                     onChange={(e) => setFormData({ ...formData, halfDayType: e.target.value })}
                     className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   >
@@ -1593,7 +2046,7 @@ export default function LeavesPage() {
                     {/* Full Day */}
                     <button
                       type="button"
-                      onClick={() => setFormData({ ...formData, odType_extended: 'full_day', isHalfDay: false, halfDayType: null, odStartTime: null, odEndTime: null })}
+                  onClick={() => setFormData({ ...formData, odType_extended: 'full_day', isHalfDay: false, halfDayType: '', odStartTime: '', odEndTime: '' })}
                       className={`p-3 rounded-lg border-2 transition-all ${
                         formData.odType_extended === 'full_day'
                           ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
@@ -1615,8 +2068,8 @@ export default function LeavesPage() {
                           odType_extended: 'half_day', 
                           isHalfDay: true, 
                           halfDayType: formData.halfDayType || 'first_half',
-                          odStartTime: null, 
-                          odEndTime: null,
+                          odStartTime: '', 
+                          odEndTime: '',
                           toDate: endDate || formData.fromDate // Set end date = start date
                         });
                       }}
@@ -1640,8 +2093,10 @@ export default function LeavesPage() {
                           ...formData, 
                           odType_extended: 'hours', 
                           isHalfDay: false,
-                          halfDayType: null,
-                          toDate: endDate || formData.fromDate // Set end date = start date
+                          halfDayType: '',
+                          toDate: endDate || formData.fromDate, // Set end date = start date
+                          odStartTime: '',
+                          odEndTime: '',
                         });
                       }}
                       className={`p-3 rounded-lg border-2 transition-all ${
@@ -2004,6 +2459,199 @@ export default function LeavesPage() {
                   <p className="text-sm text-slate-700 dark:text-slate-300">
                     {selectedItem.contactNumber}
                   </p>
+                </div>
+              )}
+
+              {/* Split Breakdown (read-only for employees) */}
+              {detailType === 'leave' && (selectedItem as LeaveApplication)?.splits && (selectedItem as LeaveApplication).splits!.length > 0 && (
+                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-semibold">Approved Breakdown</p>
+                    {(selectedItem as LeaveApplication).splitSummary && (
+                      <span className="text-xs text-slate-500 dark:text-slate-400">
+                        Approved {((selectedItem as LeaveApplication).splitSummary as LeaveSplitSummary)?.approvedDays ?? 0} / {(selectedItem as LeaveApplication).numberOfDays}
+                      </span>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    {(selectedItem as LeaveApplication).splits!.map((split, idx) => (
+                      <div key={split._id || `${split.date}-${idx}`} className="flex items-center justify-between text-sm px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900/40">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-slate-900 dark:text-white">{formatDate(split.date)}</span>
+                          {split.isHalfDay && (
+                            <span className="text-xs px-2 py-1 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300">
+                              {split.halfDayType === 'first_half' ? 'First Half' : 'Second Half'}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
+                            {split.leaveType}
+                          </span>
+                          <span className={`text-xs px-2 py-1 rounded-full ${split.status === 'approved' ? 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300' : 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300'}`}>
+                            {split.status}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Split Editor for approvers */}
+              {detailType === 'leave' && canApprove && !['approved', 'rejected', 'cancelled'].includes(selectedItem.status) && (
+                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-semibold">Split & Approve</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Split days/half-days and assign leave types before approving.</p>
+                    </div>
+                    <label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
+                      <input
+                        type="checkbox"
+                        checked={splitMode}
+                        onChange={(e) => {
+                          const enable = e.target.checked;
+                          setSplitMode(enable);
+                          if (enable && splitDrafts.length === 0 && detailType === 'leave' && selectedItem) {
+                            setSplitDrafts(buildInitialSplits(selectedItem as LeaveApplication));
+                          }
+                          if (!enable) {
+                            setSplitWarnings([]);
+                            setSplitErrors([]);
+                          }
+                        }}
+                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      Enable split
+                    </label>
+                  </div>
+
+                  {splitMode && (
+                    <>
+                      <div className="flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
+                        <span>Applied: {(selectedItem as LeaveApplication).numberOfDays} day(s)</span>
+                        <span>|</span>
+                        <span>
+                          Approved in splits: {splitDrafts.filter(s => s.status === 'approved').reduce((sum, s) => sum + (s.isHalfDay ? 0.5 : 1), 0)}
+                        </span>
+                        <span>|</span>
+                        <span>
+                          Rejected in splits: {splitDrafts.filter(s => s.status === 'rejected').reduce((sum, s) => sum + (s.isHalfDay ? 0.5 : 1), 0)}
+                        </span>
+                      </div>
+
+                      {/* Validation messages */}
+                      {splitErrors.length > 0 && (
+                        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/40 dark:text-red-200">
+                          {splitErrors.map((msg, idx) => (
+                            <div key={idx}>• {msg}</div>
+                          ))}
+                        </div>
+                      )}
+                      {splitWarnings.length > 0 && (
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:border-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+                          {splitWarnings.map((msg, idx) => (
+                            <div key={idx}>• {msg}</div>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="space-y-3">
+                        {splitDrafts.map((split, idx) => (
+                          <div key={`${split.date}-${idx}`} className="rounded-lg border border-slate-200 dark:border-slate-700 p-3 bg-slate-50/70 dark:bg-slate-900/40">
+                            <div className="flex flex-wrap items-center gap-3">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-semibold text-slate-900 dark:text-white">{formatDate(split.date)}</span>
+                                <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+                                  <input
+                                    type="checkbox"
+                                    checked={split.isHalfDay || false}
+                                    onChange={(e) => updateSplitDraft(idx, { isHalfDay: e.target.checked })}
+                                    className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                  />
+                                  Half-day
+                                </label>
+                                {split.isHalfDay && (
+                                  <select
+                                    value={split.halfDayType || 'first_half'}
+                                    onChange={(e) => updateSplitDraft(idx, { halfDayType: e.target.value as any })}
+                                    className="text-xs rounded-lg border border-slate-300 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                  >
+                                    <option value="first_half">First Half</option>
+                                    <option value="second_half">Second Half</option>
+                                  </select>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <select
+                                  value={split.leaveType}
+                                  onChange={(e) => updateSplitDraft(idx, { leaveType: e.target.value })}
+                                  className="text-sm rounded-lg border border-slate-300 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                >
+                                  <option value="">Select Leave Type</option>
+                                  {leaveTypes.map((lt) => (
+                                    <option key={lt.code} value={lt.code}>
+                                      {lt.name || lt.code}
+                                    </option>
+                                  ))}
+                                </select>
+                                <select
+                                  value={split.status}
+                                  onChange={(e) => updateSplitDraft(idx, { status: e.target.value as 'approved' | 'rejected' })}
+                                  className="text-sm rounded-lg border border-slate-300 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                >
+                                  <option value="approved">Approve</option>
+                                  <option value="rejected">Reject</option>
+                                </select>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            setSplitSaving(true);
+                            await validateSplitsForLeave();
+                            setSplitSaving(false);
+                          }}
+                          className="px-3 py-2 text-sm font-semibold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                        >
+                          {splitSaving ? 'Validating...' : 'Validate splits'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSplitDrafts(buildInitialSplits(selectedItem as LeaveApplication))}
+                          className="px-3 py-2 text-sm font-semibold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                        >
+                          Reset to original
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            setSplitSaving(true);
+                            const saved = await saveSplits();
+                            if (saved) {
+                              setSuccess('Splits saved');
+                              const refreshed = await api.getLeave((selectedItem as LeaveApplication)._id);
+                              if (refreshed?.success && refreshed.data) {
+                                setSelectedItem(refreshed.data);
+                                setSplitDrafts(buildInitialSplits(refreshed.data));
+                              }
+                            }
+                            setSplitSaving(false);
+                          }}
+                          className="px-3 py-2 text-sm font-semibold text-white rounded-lg bg-indigo-600 hover:bg-indigo-700"
+                        >
+                          {splitSaving ? 'Saving...' : 'Save splits'}
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 

@@ -147,6 +147,17 @@ const employeeApplicationSchema = new mongoose.Schema(
       uppercase: true,
       default: null,
     },
+    paidLeaves: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    // Yearly allotted leaves (combined total for all leave types with nature "without_pay" or "lop")
+    allottedLeaves: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     // Dynamic fields for configurable form fields
     dynamicFields: {
       type: mongoose.Schema.Types.Mixed,

@@ -173,6 +173,10 @@ const createEmployeeMSSQL = async (employeeData) => {
     qualifications, // Exclude qualifications as it's now dynamic (array of objects)
     employeeAllowances, // Mongo-only
     employeeDeductions, // Mongo-only
+    paidLeaves, // Mongo-only (monthly paid leaves)
+    allottedLeaves, // Mongo-only (yearly allotted leaves for without_pay)
+    ctcSalary, // Mongo-only (calculated)
+    calculatedSalary, // Mongo-only (calculated)
     _id,
     __v,
     created_at,
@@ -287,6 +291,10 @@ const updateEmployeeMSSQL = async (empNo, employeeData) => {
     qualifications, // Exclude qualifications as it's now dynamic (array of objects)
     employeeAllowances, // Mongo-only
     employeeDeductions, // Mongo-only
+    paidLeaves, // Mongo-only (monthly paid leaves)
+    allottedLeaves, // Mongo-only (yearly allotted leaves for without_pay)
+    ctcSalary, // Mongo-only (calculated)
+    calculatedSalary, // Mongo-only (calculated)
     _id,
     __v,
     created_at,

@@ -220,6 +220,83 @@ const LeaveSchema = new mongoose.Schema(
       reason: String,
     },
 
+    // Leave Split Fields
+    // Whether this leave can be split by approvers
+    allowSplitting: {
+      type: Boolean,
+      default: true,
+    },
+
+    // Split status (null = not split, 'pending_split' = split in progress, 'split_approved' = split completed)
+    splitStatus: {
+      type: String,
+      enum: [null, 'pending_split', 'split_approved', 'split_rejected'],
+      default: null,
+    },
+
+    // Original leave type (preserved for audit - what employee originally applied for)
+    originalLeaveType: {
+      type: String,
+      trim: true,
+      uppercase: true,
+    },
+
+    // Who performed the split
+    splitBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+
+    splitByName: String,
+    splitByRole: String,
+
+    // When split was performed
+    splitAt: {
+      type: Date,
+      default: null,
+    },
+
+    // Notes about the split
+    splitNotes: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+
+    // Split history for audit trail
+    splitHistory: [
+      {
+        action: {
+          type: String,
+          enum: ['split_created', 'split_modified', 'split_approved', 'split_rejected'],
+          required: true,
+        },
+        actionBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+        },
+        actionByName: String,
+        actionByRole: String,
+        actionAt: {
+          type: Date,
+          default: Date.now,
+        },
+        originalDays: Number, // Original number of days applied
+        splits: [
+          {
+            date: Date,
+            leaveType: String,
+            isHalfDay: Boolean,
+            halfDayType: String,
+            status: String,
+            numberOfDays: Number,
+          },
+        ],
+        notes: String,
+      },
+    ],
+
     // Is this leave active (not deleted)
     isActive: {
       type: Boolean,
@@ -291,6 +368,12 @@ LeaveSchema.pre('save', function () {
       }
     }
   }
+  
+  // Preserve original leave type on first save if not set
+  if (this.isNew && !this.originalLeaveType && this.leaveType) {
+    this.originalLeaveType = this.leaveType;
+  }
+  
   // No need to call next() - Mongoose handles this automatically for synchronous middleware
 });
 
@@ -338,17 +421,35 @@ LeaveSchema.statics.getPendingForRole = async function (role, departmentIds = []
     .sort({ appliedAt: -1 });
 };
 
-// Post-save hook to update monthly attendance summary when leave is approved
+// Post-save hook to update monthly attendance summary and leave records when leave status changes
 LeaveSchema.post('save', async function() {
   try {
-    // Only update if status is 'approved' and this is a new approval
+    // Update monthly attendance summary when leave is approved
     if (this.status === 'approved' && this.isModified('status')) {
       const { recalculateOnLeaveApproval } = require('../../attendance/services/summaryCalculationService');
       await recalculateOnLeaveApproval(this);
     }
+
+    // Update monthly leave record for any status change (approved, rejected, cancelled)
+    if (this.isModified('status')) {
+      const { updateMonthlyRecordOnLeaveAction } = require('../services/leaveBalanceService');
+      let action = null;
+      
+      if (this.status === 'approved' || this.status === 'hod_approved' || this.status === 'hr_approved') {
+        action = 'approved';
+      } else if (this.status === 'rejected' || this.status === 'hod_rejected' || this.status === 'hr_rejected') {
+        action = 'rejected';
+      } else if (this.status === 'cancelled') {
+        action = 'cancelled';
+      }
+
+      if (action) {
+        await updateMonthlyRecordOnLeaveAction(this, action);
+      }
+    }
   } catch (error) {
     // Don't throw - this is a background operation
-    console.error('Error updating monthly summary on leave approval:', error);
+    console.error('Error updating monthly summary/leave record on leave status change:', error);
   }
 });
 
