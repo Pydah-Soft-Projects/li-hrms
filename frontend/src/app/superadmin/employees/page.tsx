@@ -101,6 +101,8 @@ interface EmployeeApplication {
   bank_place?: string;
   ifsc_code?: string;
   is_active?: boolean;
+  employeeAllowances?: any[];
+  employeeDeductions?: any[];
 }
 
 const initialFormState: Partial<Employee> = {
@@ -610,7 +612,7 @@ export default function EmployeesPage() {
       : value;
     
     setFormData(prev => {
-      const updated = {
+      const updated: any = {
       ...prev,
         [name]: processedValue,
       };
@@ -683,7 +685,7 @@ export default function EmployeesPage() {
       } else {
         // Display validation errors if available
         const errorMsg = response.message || 'Operation failed';
-        const errorDetails = response.errors ? Object.values(response.errors).join(', ') : '';
+        const errorDetails = (response as any).errors ? Object.values((response as any).errors).join(', ') : '';
         setError(errorDetails ? `${errorMsg}: ${errorDetails}` : errorMsg);
         console.error('Update error:', response);
       }
@@ -744,7 +746,7 @@ export default function EmployeesPage() {
     
     // Handle reporting_to field - extract user IDs from populated objects or use existing IDs
     let reportingToValue: string[] = [];
-    const reportingToField = employee.reporting_to || employee.reporting_to_ || dynamicFieldsData.reporting_to || dynamicFieldsData.reporting_to_;
+    const reportingToField = (employee as any).reporting_to || (employee as any).reporting_to_ || dynamicFieldsData.reporting_to || dynamicFieldsData.reporting_to_;
     if (reportingToField && Array.isArray(reportingToField)) {
       reportingToValue = reportingToField.map((item: any) => {
         // If it's a populated user object, extract the _id
@@ -775,12 +777,9 @@ export default function EmployeesPage() {
       // Prefill employee overrides if present
       employeeAllowances: Array.isArray(employee.employeeAllowances) ? employee.employeeAllowances : [],
       employeeDeductions: Array.isArray(employee.employeeDeductions) ? employee.employeeDeductions : [],
-      // Handle reporting_to - use the extracted IDs
-      reporting_to: reportingToValue,
-      reporting_to_: reportingToValue, // Also set the underscore version for compatibility
-      // Merge dynamicFields at root level for form (but override with processed values above)
+      // Merge dynamicFields at root level for form
       ...dynamicFieldsData,
-      // Override with processed values
+      // Override with processed values (after dynamicFields so they take precedence)
       reporting_to: reportingToValue,
       reporting_to_: reportingToValue,
     };
@@ -844,8 +843,8 @@ export default function EmployeesPage() {
   const handleViewEmployee = (employee: Employee) => {
     // Debug: Log the employee data to see what we're receiving
     console.log('Viewing employee data:', employee);
-    console.log('reporting_to at root:', employee.reporting_to);
-    console.log('reporting_to_ at root:', employee.reporting_to_);
+    console.log('reporting_to at root:', (employee as any).reporting_to);
+    console.log('reporting_to_ at root:', (employee as any).reporting_to_);
     console.log('reporting_to in dynamicFields:', employee.dynamicFields?.reporting_to);
     console.log('reporting_to_ in dynamicFields:', employee.dynamicFields?.reporting_to_);
     setViewingEmployee(employee);
@@ -923,8 +922,8 @@ export default function EmployeesPage() {
         loadApplications();
       } else {
         // Handle validation errors
-        if (response.errors) {
-          setFormErrors(response.errors);
+        if ((response as any).errors) {
+          setFormErrors((response as any).errors);
           setError('Please fix the errors below');
       } else {
         setError(response.message || 'Failed to create application');
@@ -2309,11 +2308,11 @@ export default function EmployeesPage() {
                   </div>
                   <div>
                     <label className="text-xs font-medium text-slate-500 dark:text-slate-400">CTC Salary</label>
-                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.ctcSalary ? `₹${viewingEmployee.ctcSalary.toLocaleString()}` : '-'}</p>
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{(viewingEmployee as any).ctcSalary ? `₹${(viewingEmployee as any).ctcSalary.toLocaleString()}` : '-'}</p>
                   </div>
                   <div>
                     <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Calculated Salary (Net)</label>
-                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.calculatedSalary ? `₹${viewingEmployee.calculatedSalary.toLocaleString()}` : '-'}</p>
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{(viewingEmployee as any).calculatedSalary ? `₹${(viewingEmployee as any).calculatedSalary.toLocaleString()}` : '-'}</p>
                   </div>
                   <div>
                     <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Paid Leaves</label>
@@ -2589,11 +2588,11 @@ export default function EmployeesPage() {
               </div>
 
               {/* Reporting Authority Section - Check both root and dynamicFields, handle both reporting_to and reporting_to_ */}
-              {(viewingEmployee.reporting_to || viewingEmployee.reporting_to_ || viewingEmployee.dynamicFields?.reporting_to || viewingEmployee.dynamicFields?.reporting_to_) && (
+              {((viewingEmployee as any).reporting_to || (viewingEmployee as any).reporting_to_ || viewingEmployee.dynamicFields?.reporting_to || viewingEmployee.dynamicFields?.reporting_to_) && (
                 <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
                   <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Reporting Authority</h3>
                   {(() => {
-                    const reportingTo = viewingEmployee.reporting_to || viewingEmployee.reporting_to_ || viewingEmployee.dynamicFields?.reporting_to || viewingEmployee.dynamicFields?.reporting_to_;
+                    const reportingTo = (viewingEmployee as any).reporting_to || (viewingEmployee as any).reporting_to_ || viewingEmployee.dynamicFields?.reporting_to || viewingEmployee.dynamicFields?.reporting_to_;
                     console.log('Displaying reporting_to:', reportingTo);
                     
                     if (!reportingTo || !Array.isArray(reportingTo) || reportingTo.length === 0) {

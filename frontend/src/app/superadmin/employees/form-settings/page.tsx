@@ -102,6 +102,11 @@ interface FormGroup {
   fields: FormField[];
 }
 
+interface QualificationsConfig {
+  isEnabled?: boolean;
+  fields?: FormField[];
+}
+
 interface FormSettings {
   _id?: string;
   name: string;
@@ -133,6 +138,9 @@ export default function EmployeeFormSettingsPage() {
     isEnabled: true,
     order: 0,
   });
+  const [nestedFields, setNestedFields] = useState<Array<{ id?: string; label: string; type: string; isRequired: boolean }>>([]);
+  const [showAddNestedField, setShowAddNestedField] = useState(false);
+  const [newNestedField, setNewNestedField] = useState<{ label: string; type: string; isRequired: boolean }>({ label: '', type: 'text', isRequired: false });
   const [showNewQualField, setShowNewQualField] = useState(false);
   const [newQualField, setNewQualField] = useState<{
     id: string;
@@ -166,13 +174,13 @@ export default function EmployeeFormSettingsPage() {
       const response = await api.getFormSettings();
       if (response.success && response.data) {
         setSettings(response.data);
-        const groupIds = new Set(response.data.groups.map((g: FormGroup) => g.id));
+        const groupIds = new Set<string>(response.data.groups.map((g: FormGroup) => g.id));
         setExpandedGroups(groupIds);
       } else {
         const initResponse = await api.initializeFormSettings();
         if (initResponse.success && initResponse.data) {
           setSettings(initResponse.data);
-          const groupIds = new Set(initResponse.data.groups.map((g: FormGroup) => g.id));
+          const groupIds = new Set<string>(initResponse.data.groups.map((g: FormGroup) => g.id));
           setExpandedGroups(groupIds);
         } else {
           setMessage({ type: 'error', text: 'Failed to load form settings. Please try again.' });

@@ -17,6 +17,10 @@ router.use((req, res, next) => {
   next();
 });
 
+// IMPORTANT: More specific routes must come before parameterized routes
+// Get all employees with pay registers for a month (must come before /:employeeId routes)
+router.get('/employees/:month', payRegisterController.getEmployeesWithPayRegister);
+
 // Get pay register for employee and month
 router.get('/:employeeId/:month', payRegisterController.getPayRegister);
 
@@ -34,9 +38,6 @@ router.post('/:employeeId/:month/sync', payRegisterController.syncPayRegister);
 
 // Get edit history
 router.get('/:employeeId/:month/history', payRegisterController.getEditHistory);
-
-// Get all employees with pay registers for a month (must come before /:employeeId routes)
-router.get('/employees/:month', payRegisterController.getEmployeesWithPayRegister);
 
 module.exports = router;
 

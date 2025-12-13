@@ -18,6 +18,7 @@ interface LeaveType {
   description?: string;
   maxDaysPerYear?: number;
   carryForward?: boolean;
+  maxCarryForward?: number;
   isPaid?: boolean;
   isActive: boolean;
   color?: string;

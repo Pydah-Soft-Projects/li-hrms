@@ -167,6 +167,7 @@ const moduleIcons: Record<string, React.ComponentType<IconProps>> = {
   REPORTS: ReportsIcon,
   ALLOWANCES_DEDUCTIONS: AllowancesDeductionsIcon,
   PAYROLL_TRANSACTIONS: ReportsIcon,
+  PAY_REGISTER: ReportsIcon,
 };
 
 // Module code to route mapping
@@ -191,6 +192,7 @@ const moduleRoutes: Record<string, string> = {
   REPORTS: '/reports',
   ALLOWANCES_DEDUCTIONS: '/allowances-deductions',
   PAYROLL_TRANSACTIONS: '/payroll-transactions',
+  PAY_REGISTER: '/pay-register',
 };
 
 // Workspace type colors

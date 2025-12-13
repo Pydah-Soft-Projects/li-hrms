@@ -2263,15 +2263,16 @@ export default function AttendancePage() {
                           {attendanceDetail.odInfo.numberOfDays || 'N/A'} {attendanceDetail.odInfo.numberOfDays === 1 ? 'day' : 'days'}
                         </div>
                       </div>
-                    {attendanceDetail.odInfo.dayInOD && (
-                      <div>
-                        <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Day in OD</label>
-                        <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
-                          {attendanceDetail.odInfo.dayInOD === 1 ? '1st day' : attendanceDetail.odInfo.dayInOD === 2 ? '2nd day' : attendanceDetail.odInfo.dayInOD === 3 ? '3rd day' : `${attendanceDetail.odInfo.dayInOD}th day`}
+                      {attendanceDetail.odInfo.dayInOD && (
+                        <div>
+                          <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Day in OD</label>
+                          <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
+                            {attendanceDetail.odInfo.dayInOD === 1 ? '1st day' : attendanceDetail.odInfo.dayInOD === 2 ? '2nd day' : attendanceDetail.odInfo.dayInOD === 3 ? '3rd day' : `${attendanceDetail.odInfo.dayInOD}th day`}
+                          </div>
                         </div>
-                      </div>
-                    )}
-                  </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Applied Date */}
                   {attendanceDetail.odInfo.appliedAt && (

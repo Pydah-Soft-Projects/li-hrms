@@ -1078,7 +1078,7 @@ export default function DepartmentalSettingsPage() {
                     onChange={(e) => handleInputChange('attendance', 'earlyOut', e.target.value ? parseInt(e.target.value) : 0, 'minimumDuration')}
                     className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
                   />
-                  <p className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">Only early-outs >= this duration will count</p>
+                  <p className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">Only early-outs {'>='} this duration will count</p>
                 </div>
               </div>
 

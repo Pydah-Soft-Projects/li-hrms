@@ -359,7 +359,21 @@ export default function LeavesPage() {
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
 
   // Form state
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    leaveType: string;
+    odType: string;
+    odType_extended: string;
+    odStartTime: string | null;
+    odEndTime: string | null;
+    fromDate: string;
+    toDate: string;
+    purpose: string;
+    contactNumber: string;
+    placeVisited: string;
+    isHalfDay: boolean;
+    halfDayType: 'first_half' | 'second_half' | null;
+    remarks: string;
+  }>({
     leaveType: '',
     odType: '',
     odType_extended: 'full_day',
@@ -820,7 +834,7 @@ export default function LeavesPage() {
       setSplitSaving(false);
       setActionComment('');
 
-      let enrichedItem = item;
+      let enrichedItem: LeaveApplication | ODApplication = item;
       if (type === 'leave') {
         const response = await api.getLeave(item._id);
         if (response?.success && response.data) {
@@ -828,7 +842,8 @@ export default function LeavesPage() {
         }
         const initialSplits = buildInitialSplits(enrichedItem as LeaveApplication);
         setSplitDrafts(initialSplits);
-        setSplitMode((enrichedItem as LeaveApplication)?.splits?.length > 0);
+        const leaveItem = enrichedItem as LeaveApplication;
+        setSplitMode((leaveItem.splits && leaveItem.splits.length > 0) || false);
       }
 
       setSelectedItem(enrichedItem);
@@ -883,12 +898,12 @@ export default function LeavesPage() {
       }));
 
       const resp = await api.validateLeaveSplits(selectedItem._id, payload);
-      if (!resp.success && resp.isValid === false) {
-        setSplitErrors(resp.errors || ['Validation failed']);
+      if (!resp.success && (resp as any).isValid === false) {
+        setSplitErrors((resp as any).errors || ['Validation failed']);
       } else {
-        setSplitErrors(resp.errors || []);
+        setSplitErrors((resp as any).errors || []);
       }
-      setSplitWarnings(resp.warnings || []);
+      setSplitWarnings((resp as any).warnings || []);
       return resp;
     } catch (err: any) {
       setSplitErrors([err.message || 'Failed to validate splits']);
@@ -898,10 +913,10 @@ export default function LeavesPage() {
 
   const saveSplits = async () => {
     if (detailType !== 'leave' || !selectedItem) return false;
-    const validation = await validateSplitsForLeave();
-    if (!validation || validation.isValid === false) {
-      return false;
-    }
+      const validation = await validateSplitsForLeave();
+      if (!validation || (validation as any).isValid === false) {
+        return false;
+      }
 
     try {
       const payload = splitDrafts.map((s) => ({
@@ -915,12 +930,12 @@ export default function LeavesPage() {
 
       const resp = await api.createLeaveSplits(selectedItem._id, payload);
       if (!resp.success) {
-        setSplitErrors(resp.errors || ['Failed to save splits']);
-        setSplitWarnings(resp.warnings || []);
+        setSplitErrors((resp as any).errors || ['Failed to save splits']);
+        setSplitWarnings((resp as any).warnings || []);
         return false;
       }
 
-      setSplitWarnings(resp.warnings || []);
+      setSplitWarnings((resp as any).warnings || []);
       return true;
     } catch (err: any) {
       setSplitErrors([err.message || 'Failed to save splits']);
@@ -1596,7 +1611,7 @@ export default function LeavesPage() {
                       <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Start Time (HH:MM) *</label>
                       <input
                         type="time"
-                        value={formData.odStartTime}
+                        value={formData.odStartTime || ''}
                         onChange={(e) => setFormData({ ...formData, odStartTime: e.target.value })}
                         className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                         placeholder="HH:MM"
@@ -1606,7 +1621,7 @@ export default function LeavesPage() {
                       <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">End Time (HH:MM) *</label>
                       <input
                         type="time"
-                        value={formData.odEndTime}
+                        value={formData.odEndTime || ''}
                         onChange={(e) => setFormData({ ...formData, odEndTime: e.target.value })}
                         className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                         placeholder="HH:MM"
