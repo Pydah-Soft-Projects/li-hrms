@@ -106,6 +106,7 @@ export default function PayRegisterPage() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingRecord, setEditingRecord] = useState<{ employeeId: string; month: string; date: string; record: DailyRecord; employee: Employee } | null>(null);
   const [editData, setEditData] = useState<Partial<DailyRecord>>({});
+  const [isHalfDayMode, setIsHalfDayMode] = useState(false);
   
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth() + 1;
@@ -291,7 +292,9 @@ export default function PayRegisterPage() {
   };
 
   const handleDateClick = (employee: Employee, date: string, record: DailyRecord) => {
+    const isSplit = record.isSplit || record.firstHalf.status !== record.secondHalf.status;
     setEditingRecord({ employeeId: typeof employee === 'object' ? employee._id : employee, month: monthStr, date, record, employee });
+    setIsHalfDayMode(isSplit);
     setEditData({
       firstHalf: { 
         ...record.firstHalf,
@@ -307,7 +310,7 @@ export default function PayRegisterPage() {
       leaveType: record.leaveType || null,
       leaveNature: record.leaveNature || null,
       isOD: record.isOD,
-      isSplit: record.isSplit,
+      isSplit: isSplit,
       shiftId: record.shiftId || null,
       shiftName: record.shiftName || null,
       otHours: record.otHours,
@@ -315,6 +318,38 @@ export default function PayRegisterPage() {
     });
     setShowEditModal(true);
   };
+
+  const getLeaveTotal = (totals: any) =>
+    totals?.totalLeaveDays ??
+    ((totals?.totalPaidLeaveDays || 0) +
+      (totals?.totalUnpaidLeaveDays || 0) +
+      (totals?.totalLopDays || 0));
+
+  const getSummaryRows = () =>
+    payRegisters.map((pr) => {
+      const totals = pr.totals || {};
+      const present = totals.totalPresentDays || 0;
+      const absent = totals.totalAbsentDays || 0;
+      const leave = getLeaveTotal(totals);
+      const od = totals.totalODDays || 0;
+      const ot = totals.totalOTHours || 0;
+      const extra = totals.totalOTHours || 0; // No separate extra hours field in totals
+      const monthDays = pr.totalDaysInMonth || daysInMonth;
+      const countedDays = present + absent + leave + od;
+      const matchesMonth = Math.abs(countedDays - monthDays) < 0.001;
+      return {
+        pr,
+        present,
+        absent,
+        leave,
+        od,
+        ot,
+        extra,
+        monthDays,
+        countedDays,
+        matchesMonth,
+      };
+    });
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -475,6 +510,84 @@ export default function PayRegisterPage() {
         </div>
       </div>
 
+      {/* Summary Table */}
+      {!loading && payRegisters.length > 0 && (
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-lg dark:border-slate-700 dark:bg-slate-900/80 overflow-x-auto">
+          <div className="p-4">
+            <h3 className="text-base font-semibold text-slate-900 dark:text-white mb-3">Monthly Summary</h3>
+            <table className="w-full border-collapse text-xs">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
+                  <th className="sticky left-0 z-10 w-[180px] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                    Employee
+                  </th>
+                  {[
+                    'Total Present',
+                    'Total Absent',
+                    'Total Leaves',
+                    'Total OD',
+                    'Total OT Hours',
+                    'Total Extra Hours',
+                    'Month Days',
+                    'Counted Days',
+                  ].map((label) => (
+                    <th
+                      key={label}
+                      className="border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 last:border-r-0"
+                    >
+                      {label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                {getSummaryRows().map((row) => {
+                  const employee = typeof row.pr.employeeId === 'object' ? row.pr.employeeId : null;
+                  const empNo =
+                    typeof row.pr.employeeId === 'object' ? row.pr.employeeId.emp_no : row.pr.emp_no;
+                  const empName = typeof row.pr.employeeId === 'object' ? row.pr.employeeId.employee_name : '';
+                  const department =
+                    typeof row.pr.employeeId === 'object' && row.pr.employeeId.department_id
+                      ? typeof row.pr.employeeId.department_id === 'object'
+                        ? row.pr.employeeId.department_id.name
+                        : ''
+                      : '';
+                  return (
+                    <tr key={row.pr._id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                      <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 text-[11px] font-medium text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white">
+                        <div>
+                          <div className="font-semibold truncate">{empName}</div>
+                          <div className="text-[9px] text-slate-500 dark:text-slate-400 truncate">
+                            {empNo}
+                            {department && ` • ${department}`}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="text-center px-2 py-2">{row.present.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2">{row.absent.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2">{row.leave.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2">{row.od.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2">{row.ot.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2">{row.extra.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2">{row.monthDays}</td>
+                      <td
+                        className={`text-center px-2 py-2 font-semibold ${
+                          row.matchesMonth
+                            ? 'text-green-700 dark:text-green-400'
+                            : 'text-red-700 dark:text-red-400'
+                        }`}
+                      >
+                        {row.countedDays.toFixed(1)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Table Tabs */}
       <div className="bg-white dark:bg-slate-800 rounded-lg shadow">
         <div className="border-b border-slate-200 dark:border-slate-700">
@@ -543,26 +656,59 @@ export default function PayRegisterPage() {
                     {daysArray.map((day) => (
                       <th
                         key={day}
-                        className={`w-[calc((100%-180px-240px)/${daysInMonth})] border-r border-slate-200 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300`}
+                        className={`w-[calc((100%-180px-${activeTable === 'leaves' ? '320px' : '80px'})/${daysInMonth})] border-r border-slate-200 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300`}
                       >
                         {day}
                       </th>
                     ))}
-                    <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-blue-50 dark:bg-blue-900/20">
-                      Days Present
-                    </th>
-                    <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-orange-50 dark:bg-orange-900/20">
-                      OT Hours
-                    </th>
-                    <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-green-50 dark:bg-green-900/20">
-                      Payable Shifts
-                    </th>
+                    {/* Dynamic columns based on active tab */}
+                    {activeTable === 'present' && (
+                      <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-green-50 dark:bg-green-900/20">
+                        Total Present Days
+                      </th>
+                    )}
+                    {activeTable === 'absent' && (
+                      <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-red-50 dark:bg-red-900/20">
+                        Total Absent Days
+                      </th>
+                    )}
+                    {activeTable === 'leaves' && (
+                      <>
+                        <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-yellow-50 dark:bg-yellow-900/20">
+                          Total Leaves
+                        </th>
+                        <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-green-50 dark:bg-green-900/20">
+                          Paid Leaves
+                        </th>
+                        <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-red-50 dark:bg-red-900/20">
+                          LOP
+                        </th>
+                        <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-orange-50 dark:bg-orange-900/20">
+                          Without Pay
+                        </th>
+                      </>
+                    )}
+                    {activeTable === 'od' && (
+                      <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-blue-50 dark:bg-blue-900/20">
+                        Total OD Days
+                      </th>
+                    )}
+                    {activeTable === 'ot' && (
+                      <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-orange-50 dark:bg-orange-900/20">
+                        Total OT Hours
+                      </th>
+                    )}
+                    {activeTable === 'extraHours' && (
+                      <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-purple-50 dark:bg-purple-900/20">
+                        Total Extra Hours
+                      </th>
+                    )}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                   {getFilteredPayRegisters().length === 0 ? (
                     <tr>
-                      <td colSpan={daysArray.length + 4} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                      <td colSpan={daysArray.length + (activeTable === 'leaves' ? 4 : 1)} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
                         No records found for {activeTable} table
                       </td>
                     </tr>
@@ -679,15 +825,48 @@ export default function PayRegisterPage() {
                               </td>
                             );
                           })}
-                          <td className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center text-[11px] font-bold text-blue-700 dark:border-slate-700 dark:bg-blue-900/20 dark:text-blue-300">
-                            {pr.totals.totalPresentDays.toFixed(1)}
-                          </td>
-                          <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300">
-                            {pr.totals.totalOTHours.toFixed(1)}
-                          </td>
-                          <td className="border-r-0 border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:border-slate-700 dark:bg-green-900/20 dark:text-green-300">
-                            {pr.totals.totalPayableShifts.toFixed(2)}
-                          </td>
+                          {/* Dynamic columns based on active tab */}
+                          {activeTable === 'present' && (
+                            <td className="border-r-0 border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:border-slate-700 dark:bg-green-900/20 dark:text-green-300">
+                              {pr.totals.totalPresentDays.toFixed(1)}
+                            </td>
+                          )}
+                          {activeTable === 'absent' && (
+                            <td className="border-r-0 border-slate-200 bg-red-50 px-2 py-2 text-center text-[11px] font-bold text-red-700 dark:border-slate-700 dark:bg-red-900/20 dark:text-red-300">
+                              {pr.totals.totalAbsentDays.toFixed(1)}
+                            </td>
+                          )}
+                          {activeTable === 'leaves' && (
+                            <>
+                              <td className="border-r border-slate-200 bg-yellow-50 px-2 py-2 text-center text-[11px] font-bold text-yellow-700 dark:border-slate-700 dark:bg-yellow-900/20 dark:text-yellow-300">
+                                {pr.totals.totalLeaveDays.toFixed(1)}
+                              </td>
+                              <td className="border-r border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:border-slate-700 dark:bg-green-900/20 dark:text-green-300">
+                                {pr.totals.totalPaidLeaveDays.toFixed(1)}
+                              </td>
+                              <td className="border-r border-slate-200 bg-red-50 px-2 py-2 text-center text-[11px] font-bold text-red-700 dark:border-slate-700 dark:bg-red-900/20 dark:text-red-300">
+                                {pr.totals.totalLopDays.toFixed(1)}
+                              </td>
+                              <td className="border-r-0 border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300">
+                                {pr.totals.totalUnpaidLeaveDays.toFixed(1)}
+                              </td>
+                            </>
+                          )}
+                          {activeTable === 'od' && (
+                            <td className="border-r-0 border-slate-200 bg-blue-50 px-2 py-2 text-center text-[11px] font-bold text-blue-700 dark:border-slate-700 dark:bg-blue-900/20 dark:text-blue-300">
+                              {pr.totals.totalODDays.toFixed(1)}
+                            </td>
+                          )}
+                          {activeTable === 'ot' && (
+                            <td className="border-r-0 border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300">
+                              {pr.totals.totalOTHours.toFixed(1)}
+                            </td>
+                          )}
+                          {activeTable === 'extraHours' && (
+                            <td className="border-r-0 border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700 dark:border-slate-700 dark:bg-purple-900/20 dark:text-purple-300">
+                              {pr.totals.totalOTHours.toFixed(1)}
+                            </td>
+                          )}
                         </tr>
                       );
                     })
@@ -787,9 +966,8 @@ export default function PayRegisterPage() {
                             })}
                             className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
                           >
-                            <option value="paid">Paid</option>
-                            <option value="lop">LOP (Loss of Pay)</option>
-                            <option value="without_pay">Without Pay</option>
+                  <option value="paid">Paid</option>
+                  <option value="lop">LOP (Loss of Pay)</option>
                           </select>
                         </div>
                       </>
@@ -918,9 +1096,8 @@ export default function PayRegisterPage() {
                             })}
                             className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
                           >
-                            <option value="paid">Paid</option>
-                            <option value="lop">LOP (Loss of Pay)</option>
-                            <option value="without_pay">Without Pay</option>
+                  <option value="paid">Paid</option>
+                  <option value="lop">LOP (Loss of Pay)</option>
                           </select>
                         </div>
                       </>

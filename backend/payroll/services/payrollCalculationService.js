@@ -13,7 +13,10 @@ const loanAdvanceService = require('./loanAdvanceService');
 const {
   getIncludeMissingFlag,
   mergeWithOverrides,
+  getAbsentDeductionSettings,
+  buildBaseComponents,
 } = require('./allowanceDeductionResolverService');
+const Settings = require('../../settings/model/Settings');
 
 // Normalize employee override payloads so missing category/amount fields don't block usage
 const normalizeOverrides = (list, fallbackCategory) =>
@@ -651,6 +654,252 @@ async function calculatePayroll(employeeId, month, userId) {
 }
 
 /**
+ * New payroll calculation flow (non-destructive; used when strategy=new)
+ */
+async function calculatePayrollNew(employeeId, month, userId, options = { source: 'payregister' }) {
+  try {
+    const employee = await Employee.findById(employeeId).populate('department_id designation_id');
+    if (!employee) throw new Error('Employee not found');
+    if (!employee.gross_salary || employee.gross_salary <= 0) throw new Error('Employee gross salary is missing or invalid');
+
+    // Source selection: payregister-only or all-related
+    const source = options.source || 'payregister';
+    let payRegisterSummary = null;
+    let attendanceSummary = null;
+
+    if (source === 'payregister') {
+      payRegisterSummary = await PayRegisterSummary.findOne({ employeeId, month });
+      if (!payRegisterSummary) throw new Error('Pay register not found for this month');
+      attendanceSummary = {
+        totalPayableShifts: payRegisterSummary.totals.totalPayableShifts || 0,
+        totalOTHours: payRegisterSummary.totals.totalOTHours || 0,
+        totalLeaveDays: payRegisterSummary.totals.totalLeaveDays || 0,
+        totalLeaves: payRegisterSummary.totals.totalLeaveDays || 0,
+        totalODs: payRegisterSummary.totals.totalODDays || 0,
+        totalPresentDays: payRegisterSummary.totals.totalPresentDays || 0,
+        totalDaysInMonth: payRegisterSummary.totalDaysInMonth,
+        paidLeaves: payRegisterSummary.totals.totalPaidLeaveDays || 0,
+        holidays: payRegisterSummary.holidays || 0,
+        weeklyOffs: payRegisterSummary.weeklyOffs || 0,
+      };
+    } else {
+      attendanceSummary = await MonthlyAttendanceSummary.findOne({ employeeId, month });
+      if (!attendanceSummary) {
+        // Fallback to pay register if attendance summary missing
+        payRegisterSummary = await PayRegisterSummary.findOne({ employeeId, month });
+        if (!payRegisterSummary) throw new Error(`Attendance summary not found for month ${month}`);
+        attendanceSummary = {
+          totalPayableShifts: payRegisterSummary.totals.totalPayableShifts || 0,
+          totalOTHours: payRegisterSummary.totals.totalOTHours || 0,
+          totalLeaveDays: payRegisterSummary.totals.totalLeaveDays || 0,
+          totalLeaves: payRegisterSummary.totals.totalLeaveDays || 0,
+          totalODs: payRegisterSummary.totals.totalODDays || 0,
+          totalPresentDays: payRegisterSummary.totals.totalPresentDays || 0,
+          totalDaysInMonth: payRegisterSummary.totalDaysInMonth,
+          paidLeaves: payRegisterSummary.totals.totalPaidLeaveDays || 0,
+          holidays: payRegisterSummary.holidays || 0,
+          weeklyOffs: payRegisterSummary.weeklyOffs || 0,
+        };
+      }
+    }
+
+    const departmentId = employee.department_id?._id || employee.department_id;
+    if (!departmentId) throw new Error('Employee department not found');
+
+    const monthDays = attendanceSummary.totalDaysInMonth;
+    const holidays = attendanceSummary.holidays || 0;
+    const weeklyOffs = attendanceSummary.weeklyOffs || 0;
+    const workingDays = monthDays - holidays - weeklyOffs;
+    if (workingDays <= 0) throw new Error('Working days computed as zero or negative');
+
+    const basicPay = employee.gross_salary;
+    const perDaySalary = basicPay / workingDays;
+
+    const presentDays = attendanceSummary.totalPresentDays || 0;
+    const paidLeaveDays =
+      attendanceSummary.paidLeaves !== undefined
+        ? attendanceSummary.paidLeaves
+        : attendanceSummary.totalPaidLeaveDays || 0;
+    const totalLeaveDays =
+      attendanceSummary.totalLeaveDays !== undefined
+        ? attendanceSummary.totalLeaveDays
+        : attendanceSummary.totalLeaves || 0;
+    const odDays =
+      attendanceSummary.totalODs !== undefined
+        ? attendanceSummary.totalODs
+        : 0;
+
+    const earnedSalary = perDaySalary * presentDays;
+    const paidLeaveSalary = perDaySalary * paidLeaveDays;
+    const odSalary = perDaySalary * odDays;
+
+    const payableShifts = attendanceSummary.totalPayableShifts || 0;
+    let incentiveDays = payableShifts - presentDays - paidLeaveDays - odDays;
+    if (incentiveDays < 0) incentiveDays = 0;
+    const incentiveAmount = perDaySalary * incentiveDays;
+
+    const otPayResult = await otPayService.calculateOTPay(
+      attendanceSummary.totalOTHours || 0,
+      departmentId.toString()
+    );
+    const otPay = otPayResult.otPay || 0;
+    const otHours = attendanceSummary.totalOTHours || 0;
+    const otRatePerHour = otPayResult.otPayPerHour || 0;
+
+    let grossAmountSalary = earnedSalary + paidLeaveSalary + odSalary + incentiveAmount + otPay;
+
+    // Allowances
+    const includeMissing = await getIncludeMissingFlag(departmentId);
+    const { allowances: baseAllowances, deductions: baseDeductions } = await buildBaseComponents(
+      departmentId,
+      basicPay
+    );
+    const normalizedEmployeeAllowances = normalizeOverrides(employee.employeeAllowances, 'allowance');
+    const resolvedAllowances = mergeWithOverrides(baseAllowances, normalizedEmployeeAllowances, includeMissing);
+
+    let totalAllowances = 0;
+    const allowanceBreakdown = resolvedAllowances.map((allowance) => {
+      const baseAmount = allowance.base === 'BASIC_PAY' ? earnedSalary : grossAmountSalary;
+      const amount = allowanceService.calculateAllowanceAmount(allowance, baseAmount);
+      totalAllowances += amount;
+      return {
+        name: allowance.name,
+        code: allowance.code || allowance.name,
+        amount,
+        base: allowance.base === 'BASIC_PAY' ? 'basic' : 'gross',
+        type: allowance.type || 'fixed',
+        source: allowance.source || 'default',
+      };
+    });
+
+    grossAmountSalary += totalAllowances;
+
+    // Deductions
+    const normalizedEmployeeDeductions = normalizeOverrides(employee.employeeDeductions, 'deduction');
+    const resolvedDeductions = mergeWithOverrides(baseDeductions, normalizedEmployeeDeductions, includeMissing);
+
+    let totalDeductions = 0;
+    const deductionBreakdown = resolvedDeductions.map((deduction) => {
+      const baseAmount = deduction.base === 'BASIC_PAY' ? earnedSalary : grossAmountSalary;
+      const amount = deductionService.calculateDeductionAmount(deduction, baseAmount);
+      totalDeductions += amount;
+      return {
+        name: deduction.name,
+        code: deduction.code || deduction.name,
+        amount,
+        base: deduction.base === 'BASIC_PAY' ? 'basic' : 'gross',
+        type: deduction.type || 'fixed',
+        source: deduction.source || 'default',
+      };
+    });
+
+    // Absent deduction
+    let absentDeductionAmount = 0;
+    let absentDays = workingDays - presentDays - totalLeaveDays - odDays;
+    if (absentDays < 0) absentDays = 0;
+    const absentSettings = await getAbsentDeductionSettings(departmentId);
+    if (absentSettings.enableAbsentDeduction) {
+      const extraLopPerAbsent = Math.max(0, (absentSettings.lopDaysPerAbsent || 1) - 1);
+      if (extraLopPerAbsent > 0) {
+        const totalAbsentLopDays = absentDays * extraLopPerAbsent;
+        absentDeductionAmount = totalAbsentLopDays * perDaySalary;
+        totalDeductions += absentDeductionAmount;
+        deductionBreakdown.push({
+          name: 'Absent LOP Deduction',
+          code: 'ABSENT_LOP',
+          amount: absentDeductionAmount,
+          base: 'per_day',
+          type: 'fixed',
+          source: 'absent_policy',
+        });
+      }
+    }
+
+    const loanAdvanceResult = await loanAdvanceService.calculateLoanAdvance(employeeId, month);
+    totalDeductions += (loanAdvanceResult.totalEMI || 0) + (loanAdvanceResult.totalAdvanceDeduction || 0);
+
+    const netSalary = Math.max(0, grossAmountSalary - totalDeductions);
+
+    // Upsert payroll record (mapped to existing schema)
+    let payrollRecord = await PayrollRecord.findOne({ employeeId, month });
+    if (!payrollRecord) {
+      payrollRecord = new PayrollRecord({
+        employeeId,
+        emp_no: employee.emp_no,
+        month,
+        monthName: new Date(month).toLocaleString('default', { month: 'long', year: 'numeric' }),
+        year: Number(month.split('-')[0]),
+        monthNumber: Number(month.split('-')[1]),
+        totalDaysInMonth: monthDays,
+      });
+    }
+
+    payrollRecord.set('totalPayableShifts', Number(payableShifts) || 0);
+    payrollRecord.set('netSalary', Number(netSalary) || 0);
+    payrollRecord.set('payableAmountBeforeAdvance', Number(grossAmountSalary) || 0);
+    payrollRecord.set('status', 'calculated');
+
+    // Earnings
+    payrollRecord.set('earnings.basicPay', Number(basicPay) || 0);
+    payrollRecord.set('earnings.perDayBasicPay', Number(perDaySalary) || 0);
+    payrollRecord.set('earnings.payableAmount', Number(earnedSalary + paidLeaveSalary + odSalary) || 0);
+    payrollRecord.set('earnings.incentive', Number(incentiveAmount) || 0);
+    payrollRecord.set('earnings.otPay', Number(otPay) || 0);
+    payrollRecord.set('earnings.otHours', Number(otHours) || 0);
+    payrollRecord.set('earnings.otRatePerHour', Number(otRatePerHour) || 0);
+    payrollRecord.set('earnings.totalAllowances', Number(totalAllowances) || 0);
+    payrollRecord.set(
+      'earnings.allowances',
+      Array.isArray(allowanceBreakdown)
+        ? allowanceBreakdown.map((a) => ({
+            name: a.name,
+            amount: a.amount,
+            type: a.type || 'fixed',
+            base: a.base === 'basic' ? 'basic' : 'gross',
+          }))
+        : []
+    );
+    payrollRecord.set('earnings.grossSalary', Number(grossAmountSalary) || 0);
+
+    // Deductions
+    payrollRecord.set('deductions.attendanceDeduction', 0);
+    payrollRecord.set('deductions.permissionDeduction', 0);
+    payrollRecord.set('deductions.leaveDeduction', 0);
+    payrollRecord.set(
+      'deductions.totalOtherDeductions',
+      Number(totalDeductions - absentDeductionAmount - (loanAdvanceResult.totalEMI || 0) - (loanAdvanceResult.totalAdvanceDeduction || 0)) || 0
+    );
+    payrollRecord.set(
+      'deductions.otherDeductions',
+      Array.isArray(deductionBreakdown)
+        ? deductionBreakdown.map((d) => ({
+            name: d.name,
+            amount: d.amount,
+            type: d.type || 'fixed',
+            base: d.base === 'basic' ? 'basic' : d.base === 'gross' ? 'gross' : 'fixed',
+          }))
+        : []
+    );
+    payrollRecord.set('deductions.totalDeductions', Number(totalDeductions) || 0);
+
+    // Loan/advance
+    payrollRecord.set('loanAdvance.totalEMI', Number(loanAdvanceResult.totalEMI || 0) || 0);
+    payrollRecord.set('loanAdvance.advanceDeduction', Number(loanAdvanceResult.totalAdvanceDeduction || 0) || 0);
+
+    payrollRecord.markModified('earnings');
+    payrollRecord.markModified('deductions');
+    payrollRecord.markModified('loanAdvance');
+
+    await payrollRecord.save();
+
+    return { success: true, payrollRecord };
+  } catch (error) {
+    console.error('Error calculating payroll (new flow):', error);
+    throw error;
+  }
+}
+
+/**
  * Create transaction logs for audit trail
  * @param {ObjectId} payrollRecordId - Payroll record ID
  * @param {String} employeeId - Employee ID
@@ -918,6 +1167,7 @@ async function processPayroll(payrollRecordId, userId) {
 
 module.exports = {
   calculatePayroll,
+  calculatePayrollNew,
   processPayroll,
 };
 

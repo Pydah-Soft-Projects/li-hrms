@@ -1,9 +1,11 @@
 const PayrollRecord = require('../model/PayrollRecord');
 const PayrollTransaction = require('../model/PayrollTransaction');
 const Employee = require('../../employees/model/Employee');
+const PayRegisterSummary = require('../../pay-register/model/PayRegisterSummary');
 const MonthlyAttendanceSummary = require('../../attendance/model/MonthlyAttendanceSummary');
 const Loan = require('../../loans/model/Loan');
 const payrollCalculationService = require('../services/payrollCalculationService');
+const XLSX = require('xlsx');
 
 /**
  * Payroll Controller
@@ -15,6 +17,188 @@ const payrollCalculationService = require('../services/payrollCalculationService
  * @route   POST /api/payroll/calculate
  * @access  Private (Super Admin, Sub Admin, HR)
  */
+// Shared payslip assembler (used by calculate & getPayslip)
+async function buildPayslipData(employeeId, month) {
+  const payrollRecord = await PayrollRecord.findOne({
+    employeeId,
+    month,
+  }).populate({
+    path: 'employeeId',
+    select:
+      'employee_name emp_no department_id designation_id gross_salary location bank_account_no pf_number esi_number',
+    populate: [
+      { path: 'department_id', select: 'name' },
+      { path: 'designation_id', select: 'name' },
+    ],
+  });
+
+  if (!payrollRecord) {
+    throw new Error('Payslip not found. Please calculate payroll first.');
+  }
+
+  // Try pay register summary for rich totals; fallback to attendance summary
+  const payRegisterSummary = await PayRegisterSummary.findOne({ employeeId, month });
+  const attendanceSummary = await MonthlyAttendanceSummary.findOne({ employeeId, month });
+
+  // Extract employee data with properly populated references
+  const employee = payrollRecord.employeeId;
+
+  // Department name
+  let departmentName = 'N/A';
+  if (employee?.department_id) {
+    if (typeof employee.department_id === 'object' && employee.department_id.name) {
+      departmentName = employee.department_id.name;
+    } else if (employee.department_id.toString) {
+      const Department = require('../../departments/model/Department');
+      const dept = await Department.findById(employee.department_id).select('name');
+      if (dept) departmentName = dept.name;
+    }
+  }
+
+  // Designation name
+  let designationName = 'N/A';
+  if (employee?.designation_id) {
+    if (typeof employee.designation_id === 'object' && employee.designation_id.name) {
+      designationName = employee.designation_id.name;
+    } else if (employee.designation_id.toString) {
+      const Designation = require('../../departments/model/Designation');
+      const desig = await Designation.findById(employee.designation_id).select('name');
+      if (desig) designationName = desig.name;
+    }
+  }
+
+  const perDay = payrollRecord.earnings.perDayBasicPay || 0;
+  const payableShifts = payrollRecord.totalPayableShifts || 0;
+  const presentDays =
+    payRegisterSummary?.totals?.totalPresentDays ?? attendanceSummary?.totalPresentDays ?? null;
+  const paidLeaveDays =
+    payRegisterSummary?.totals?.totalPaidLeaveDays ??
+    attendanceSummary?.paidLeaves ??
+    attendanceSummary?.totalPaidLeaveDays ??
+    null;
+  const odDays =
+    payRegisterSummary?.totals?.totalODDays ?? attendanceSummary?.totalODs ?? null;
+  const otHours =
+    payRegisterSummary?.totals?.totalOTHours ??
+    attendanceSummary?.totalOTHours ??
+    payrollRecord.earnings.otHours ??
+    0;
+  const monthDays = payrollRecord.totalDaysInMonth;
+  const incentiveDays =
+    presentDays !== null && paidLeaveDays !== null
+      ? Math.max(0, payableShifts - presentDays - paidLeaveDays - (odDays || 0))
+      : null;
+
+  const earnedSalary =
+    presentDays !== null ? perDay * presentDays : payrollRecord.earnings.payableAmount;
+  const paidLeaveSalary = paidLeaveDays !== null ? perDay * paidLeaveDays : 0;
+  const odSalary = odDays !== null ? perDay * odDays : 0;
+  const incentive = incentiveDays !== null ? perDay * incentiveDays : payrollRecord.earnings.incentive;
+
+  const totalAllowances = payrollRecord.earnings.totalAllowances || 0;
+  const otPay = payrollRecord.earnings.otPay || 0;
+  const grossSalary = earnedSalary + paidLeaveSalary + odSalary + incentive + otPay + totalAllowances;
+
+  const payslip = {
+    month: payrollRecord.monthName,
+    monthNumber: payrollRecord.monthNumber,
+    year: payrollRecord.year,
+    employee: {
+      emp_no: payrollRecord.emp_no,
+      name: employee?.employee_name || 'N/A',
+      department: departmentName,
+      designation: designationName,
+      location: employee?.location || '',
+      bank_account_no: employee?.bank_account_no || '',
+      pf_number: employee?.pf_number || '',
+      esi_number: employee?.esi_number || '',
+    },
+    attendance: {
+      monthDays,
+      workingDays: null, // not stored; can be derived if holidays/weekoffs available
+      presentDays,
+      paidLeaveDays,
+      odDays,
+      incentiveDays,
+      payableShifts,
+      otHours,
+    },
+    earnings: {
+      basicPay: payrollRecord.earnings.basicPay,
+      perDay,
+      earnedSalary,
+      paidLeaveSalary,
+      odSalary,
+      incentive,
+      otPay,
+      allowances: payrollRecord.earnings.allowances,
+      totalAllowances,
+      grossSalary,
+    },
+    deductions: {
+      attendanceDeduction: payrollRecord.deductions.attendanceDeduction,
+      permissionDeduction: payrollRecord.deductions.permissionDeduction,
+      leaveDeduction: payrollRecord.deductions.leaveDeduction,
+      otherDeductions: payrollRecord.deductions.otherDeductions,
+      totalOtherDeductions: payrollRecord.deductions.totalOtherDeductions,
+      totalDeductions: payrollRecord.deductions.totalDeductions,
+    },
+    loanAdvance: {
+      totalEMI: payrollRecord.loanAdvance.totalEMI,
+      advanceDeduction: payrollRecord.loanAdvance.advanceDeduction,
+    },
+    netSalary: payrollRecord.netSalary,
+    totalPayableShifts: payrollRecord.totalPayableShifts,
+    paidDays: payrollRecord.totalPayableShifts,
+    status: payrollRecord.status,
+  };
+
+  return { payrollRecord, payslip };
+}
+
+function buildPayslipExcelRows(payslip) {
+  return [
+    {
+      Month: payslip.month,
+      Employee: payslip.employee.name,
+      EmpNo: payslip.employee.emp_no,
+      Department: payslip.employee.department,
+      Designation: payslip.employee.designation,
+      MonthDays: payslip.attendance.monthDays,
+      PresentDays: payslip.attendance.presentDays,
+      PaidLeaveDays: payslip.attendance.paidLeaveDays,
+      ODDays: payslip.attendance.odDays,
+      IncentiveDays: payslip.attendance.incentiveDays,
+      PayableShifts: payslip.attendance.payableShifts,
+      OTHours: payslip.attendance.otHours,
+      BasicPay: payslip.earnings.basicPay,
+      PerDay: payslip.earnings.perDay,
+      EarnedSalary: payslip.earnings.earnedSalary,
+      PaidLeaveSalary: payslip.earnings.paidLeaveSalary,
+      ODSalary: payslip.earnings.odSalary,
+      Incentive: payslip.earnings.incentive,
+      OTPay: payslip.earnings.otPay,
+      TotalAllowances: payslip.earnings.totalAllowances,
+      GrossSalary: payslip.earnings.grossSalary,
+      AttendanceDeduction: payslip.deductions.attendanceDeduction,
+      PermissionDeduction: payslip.deductions.permissionDeduction,
+      LeaveDeduction: payslip.deductions.leaveDeduction,
+      OtherDeductions: payslip.deductions.totalOtherDeductions,
+      TotalDeductions: payslip.deductions.totalDeductions,
+      EMI: payslip.loanAdvance.totalEMI,
+      AdvanceDeduction: payslip.loanAdvance.advanceDeduction,
+      NetSalary: payslip.netSalary,
+      Status: payslip.status,
+      AllowancesBreakdown: Array.isArray(payslip.earnings.allowances)
+        ? JSON.stringify(payslip.earnings.allowances)
+        : '',
+      OtherDeductionsBreakdown: Array.isArray(payslip.deductions.otherDeductions)
+        ? JSON.stringify(payslip.deductions.otherDeductions)
+        : '',
+    },
+  ];
+}
+
 exports.calculatePayroll = async (req, res) => {
   try {
     const { employeeId, month } = req.body;
@@ -34,11 +218,30 @@ exports.calculatePayroll = async (req, res) => {
       });
     }
 
-    const result = await payrollCalculationService.calculatePayroll(
-      employeeId,
-      month,
-      req.user._id
-    );
+    // Strategy: default = new engine. legacy = new engine but using all related data (attendance summary cross-check).
+    const useLegacy = req.query.strategy === 'legacy';
+    const calcFn = payrollCalculationService.calculatePayrollNew;
+    const result = await calcFn(employeeId, month, req.user._id, {
+      source: useLegacy ? 'all' : 'payregister',
+    });
+
+    // If export is requested, return Excel immediately
+    if (req.query.export === 'excel') {
+      const { payslip } = await buildPayslipData(employeeId, month);
+      const rows = buildPayslipExcelRows(payslip);
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(rows);
+      XLSX.utils.book_append_sheet(wb, ws, 'Payslip');
+      const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+      const filename = `payslip_${payslip.employee.emp_no || employeeId}_${month}.xlsx`;
+      res.setHeader(
+        'Content-Type',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      );
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      return res.send(buf);
+    }
 
     res.status(200).json({
       success: true,
@@ -50,6 +253,85 @@ exports.calculatePayroll = async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message || 'Error calculating payroll',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * @desc    Export payroll payslips to Excel for the selected employees/month
+ * @route   GET /api/payroll/export
+ * @access  Private (Super Admin, Sub Admin, HR)
+ */
+exports.exportPayrollExcel = async (req, res) => {
+  try {
+    const { month, departmentId, employeeIds } = req.query;
+
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Month (YYYY-MM) is required',
+      });
+    }
+
+    let targetEmployeeIds = [];
+    if (employeeIds) {
+      targetEmployeeIds = String(employeeIds)
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean);
+    } else if (departmentId) {
+      const emps = await Employee.find({ department_id: departmentId }).select('_id');
+      targetEmployeeIds = emps.map((e) => e._id.toString());
+    }
+
+    const query = { month };
+    if (targetEmployeeIds.length > 0) {
+      query.employeeId = { $in: targetEmployeeIds };
+    }
+
+    const payrollRecords = await PayrollRecord.find(query).select('employeeId month');
+    if (!payrollRecords || payrollRecords.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'No payroll records found for export. Please calculate payroll first.',
+      });
+    }
+
+    const rows = [];
+    for (const pr of payrollRecords) {
+      try {
+        const { payslip } = await buildPayslipData(pr.employeeId, pr.month);
+        rows.push(...buildPayslipExcelRows(payslip));
+      } catch (err) {
+        console.error('Error building payslip for export:', err);
+      }
+    }
+
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'No payslip data available to export.',
+      });
+    }
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, ws, 'Payslips');
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+    const filename = `payslips_${month}${departmentId ? `_dept_${departmentId}` : ''}.xlsx`;
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.send(buf);
+  } catch (error) {
+    console.error('Error exporting payroll:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error exporting payroll',
       error: error.message,
     });
   }
@@ -287,106 +569,7 @@ exports.getPayslip = async (req, res) => {
       });
     }
 
-    const payrollRecord = await PayrollRecord.findOne({
-      employeeId,
-      month,
-    })
-      .populate({
-        path: 'employeeId',
-        select: 'employee_name emp_no department_id designation_id gross_salary location bank_account_no pf_number esi_number',
-        populate: [
-          { path: 'department_id', select: 'name' },
-          { path: 'designation_id', select: 'name' }
-        ]
-      });
-
-    if (!payrollRecord) {
-      return res.status(404).json({
-        success: false,
-        message: 'Payslip not found. Please calculate payroll first.',
-      });
-    }
-
-    // Get attendance summary for paid leaves and paid days
-    const attendanceSummary = await MonthlyAttendanceSummary.findOne({
-      employeeId,
-      month,
-    });
-
-    // Extract employee data with properly populated references
-    const employee = payrollRecord.employeeId;
-    
-    // Handle department name - check if it's populated or just an ObjectId
-    let departmentName = 'N/A';
-    if (employee?.department_id) {
-      if (typeof employee.department_id === 'object' && employee.department_id.name) {
-        departmentName = employee.department_id.name;
-      } else if (employee.department_id.toString) {
-        // It's just an ObjectId, not populated - fetch it
-        const Department = require('../../departments/model/Department');
-        const dept = await Department.findById(employee.department_id).select('name');
-        if (dept) {
-          departmentName = dept.name;
-        }
-      }
-    }
-    
-    // Handle designation name - check if it's populated or just an ObjectId
-    let designationName = 'N/A';
-    if (employee?.designation_id) {
-      if (typeof employee.designation_id === 'object' && employee.designation_id.name) {
-        designationName = employee.designation_id.name;
-      } else if (employee.designation_id.toString) {
-        // It's just an ObjectId, not populated - fetch it
-        const Designation = require('../../departments/model/Designation');
-        const desig = await Designation.findById(employee.designation_id).select('name');
-        if (desig) {
-          designationName = desig.name;
-        }
-      }
-    }
-
-    // Format payslip data
-    const payslip = {
-      month: payrollRecord.monthName,
-      monthNumber: payrollRecord.monthNumber,
-      year: payrollRecord.year,
-      employee: {
-        emp_no: payrollRecord.emp_no,
-        name: employee?.employee_name || 'N/A',
-        department: departmentName,
-        designation: designationName,
-        location: employee?.location || '',
-        bank_account_no: employee?.bank_account_no || '',
-        pf_number: employee?.pf_number || '',
-        esi_number: employee?.esi_number || '',
-        paidLeaves: attendanceSummary?.paidLeaves || 0,
-      },
-      earnings: {
-        basicPay: payrollRecord.earnings.basicPay,
-        incentive: payrollRecord.earnings.incentive,
-        otPay: payrollRecord.earnings.otPay,
-        allowances: payrollRecord.earnings.allowances,
-        totalAllowances: payrollRecord.earnings.totalAllowances,
-        grossSalary: payrollRecord.earnings.grossSalary,
-      },
-      deductions: {
-        attendanceDeduction: payrollRecord.deductions.attendanceDeduction,
-        permissionDeduction: payrollRecord.deductions.permissionDeduction,
-        leaveDeduction: payrollRecord.deductions.leaveDeduction,
-        otherDeductions: payrollRecord.deductions.otherDeductions,
-        totalOtherDeductions: payrollRecord.deductions.totalOtherDeductions,
-        totalDeductions: payrollRecord.deductions.totalDeductions,
-      },
-      loanAdvance: {
-        totalEMI: payrollRecord.loanAdvance.totalEMI,
-        advanceDeduction: payrollRecord.loanAdvance.advanceDeduction,
-      },
-      netSalary: payrollRecord.netSalary,
-      totalPayableShifts: payrollRecord.totalPayableShifts,
-      paidDays: payrollRecord.totalPayableShifts,
-      status: payrollRecord.status,
-    };
+    const { payslip } = await buildPayslipData(employeeId, month);
 
     res.status(200).json({
       success: true,

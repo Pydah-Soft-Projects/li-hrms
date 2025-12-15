@@ -1874,11 +1874,41 @@ export const api = {
   },
 
   // Payroll
-  calculatePayroll: async (employeeId: string, month: string) => {
-    return apiRequest<any>('/payroll/calculate', {
+  calculatePayroll: async (employeeId: string, month: string, query: string = '') => {
+    const path = `/payroll/calculate${query || ''}`;
+    return apiRequest<any>(path, {
       method: 'POST',
       body: JSON.stringify({ employeeId, month }),
     });
+  },
+
+  exportPayrollExcel: async (params: { month: string; departmentId?: string; employeeIds?: string[] }) => {
+    const query = new URLSearchParams();
+    query.append('month', params.month);
+    if (params.departmentId) query.append('departmentId', params.departmentId);
+    if (params.employeeIds && params.employeeIds.length > 0) {
+      query.append('employeeIds', params.employeeIds.join(','));
+    }
+
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/payroll/export?${query.toString()}`, {
+      method: 'GET',
+      credentials: 'include',
+      headers,
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || 'Failed to export payroll');
+    }
+
+    const blob = await response.blob();
+    return blob;
   },
 
   getPayrollRecord: async (employeeId: string, month: string) => {

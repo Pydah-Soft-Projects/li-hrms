@@ -101,11 +101,45 @@ export default function PayRegisterPage() {
   const [departments, setDepartments] = useState<any[]>([]);
   const [selectedDepartment, setSelectedDepartment] = useState<string>('');
   const [leaveTypes, setLeaveTypes] = useState<any[]>([]);
+  const [calculatingId, setCalculatingId] = useState<string | null>(null);
+  const [bulkCalculating, setBulkCalculating] = useState(false);
+  const [exportingExcel, setExportingExcel] = useState(false);
+  const normalizeHalfDay = (
+    half?: Partial<DailyRecord['firstHalf']>,
+    statusFallback: DailyRecord['status'] = 'absent'
+  ): DailyRecord['firstHalf'] => {
+    const allowedStatuses: DailyRecord['firstHalf']['status'][] = [
+      'present',
+      'absent',
+      'leave',
+      'od',
+      'holiday',
+      'week_off',
+    ];
+    const fallbackStatus = allowedStatuses.includes(statusFallback as any)
+      ? (statusFallback as DailyRecord['firstHalf']['status'])
+      : 'absent';
+    const resolvedStatus = allowedStatuses.includes(half?.status as any)
+      ? (half?.status as DailyRecord['firstHalf']['status'])
+      : fallbackStatus;
+
+    return {
+      status: resolvedStatus || fallbackStatus,
+      leaveType: half?.leaveType ?? null,
+      leaveNature: half?.leaveNature ?? null,
+      isOD: half?.isOD ?? false,
+      otHours: half?.otHours ?? 0,
+      shiftId: half?.shiftId ?? null,
+      remarks: half?.remarks ?? null,
+    };
+  };
   
   // Edit modal state
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingRecord, setEditingRecord] = useState<{ employeeId: string; month: string; date: string; record: DailyRecord; employee: Employee } | null>(null);
   const [editData, setEditData] = useState<Partial<DailyRecord>>({});
+  const [isHalfDayMode, setIsHalfDayMode] = useState(false);
+  const [payrollStrategy, setPayrollStrategy] = useState<'legacy' | 'new'>('new');
   
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth() + 1;
@@ -290,17 +324,24 @@ export default function PayRegisterPage() {
         await api.createPayRegister(editingRecord.employeeId, monthStr);
       }
       
+      // Prepare update data with isSplit flag
+      const updatePayload = {
+        ...editData,
+        isSplit: isHalfDayMode,
+      };
+      
       // Now update the daily record
       const response = await api.updateDailyRecord(
         editingRecord.employeeId,
         monthStr,
         editingRecord.date,
-        editData
+        updatePayload
       );
       if (response.success && response.data) {
         await loadPayRegisters();
         setShowEditModal(false);
         setEditingRecord(null);
+        setIsHalfDayMode(false);
         toast.success('Date updated successfully');
       } else {
         toast.error(response.message || 'Failed to update date');
@@ -314,7 +355,9 @@ export default function PayRegisterPage() {
   };
 
   const handleDateClick = (employee: Employee, date: string, record: DailyRecord) => {
+    const isSplit = record.isSplit || record.firstHalf.status !== record.secondHalf.status;
     setEditingRecord({ employeeId: typeof employee === 'object' ? employee._id : employee, month: monthStr, date, record, employee });
+    setIsHalfDayMode(isSplit);
     setEditData({
       firstHalf: { 
         ...record.firstHalf,
@@ -330,7 +373,7 @@ export default function PayRegisterPage() {
       leaveType: record.leaveType || null,
       leaveNature: record.leaveNature || null,
       isOD: record.isOD,
-      isSplit: record.isSplit,
+      isSplit: isSplit,
       shiftId: record.shiftId || null,
       shiftName: record.shiftName || null,
       otHours: record.otHours,
@@ -338,6 +381,38 @@ export default function PayRegisterPage() {
     });
     setShowEditModal(true);
   };
+
+  const getLeaveTotal = (totals: any) =>
+    totals?.totalLeaveDays ??
+    ((totals?.totalPaidLeaveDays || 0) +
+      (totals?.totalUnpaidLeaveDays || 0) +
+      (totals?.totalLopDays || 0));
+
+  const getSummaryRows = () =>
+    payRegisters.map((pr) => {
+      const totals = pr.totals || {};
+      const present = totals.totalPresentDays || 0;
+      const absent = totals.totalAbsentDays || 0;
+      const leave = getLeaveTotal(totals);
+      const od = totals.totalODDays || 0;
+      const ot = totals.totalOTHours || 0;
+      const extra = totals.totalOTHours || 0; // No separate extra hours field in totals
+      const monthDays = pr.totalDaysInMonth || daysInMonth;
+      const countedDays = present + absent + leave + od;
+      const matchesMonth = Math.abs(countedDays - monthDays) < 0.001;
+      return {
+        pr,
+        present,
+        absent,
+        leave,
+        od,
+        ot,
+        extra,
+        monthDays,
+        countedDays,
+        matchesMonth,
+      };
+    });
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -437,6 +512,86 @@ export default function PayRegisterPage() {
     window.location.href = `/superadmin/payroll-transactions?employeeId=${employee._id}&month=${monthStr}`;
   };
 
+  const handleCalculatePayroll = async (employee: Employee) => {
+    try {
+      const employeeId = typeof employee === 'object' ? employee._id : employee;
+      const params = payrollStrategy === 'new' ? '?strategy=new' : '?strategy=legacy';
+      setCalculatingId(employeeId);
+      toast.info('Calculating payroll...', { autoClose: 1200 });
+      await api.calculatePayroll(employeeId, monthStr, params);
+      toast.success('Payroll calculated');
+    } catch (err: any) {
+      console.error('Error calculating payroll:', err);
+      toast.error(err.message || 'Failed to calculate payroll');
+    } finally {
+      setCalculatingId(null);
+    }
+  };
+
+  const downloadPayrollExcel = async (employeeIds?: string[]) => {
+    try {
+      setExportingExcel(true);
+      const blob = await api.exportPayrollExcel({
+        month: monthStr,
+        departmentId:
+          selectedDepartment && selectedDepartment.trim() !== '' ? selectedDepartment : undefined,
+        employeeIds,
+      });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `payslips_${monthStr}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success('Payroll Excel ready');
+    } catch (err: any) {
+      console.error('Error exporting payroll:', err);
+      toast.error(err.message || 'Failed to export payroll Excel');
+    } finally {
+      setExportingExcel(false);
+    }
+  };
+
+  const handleCalculatePayrollForAll = async () => {
+    if (!payRegisters || payRegisters.length === 0) {
+      toast.info('No employees to calculate payroll for.');
+      return;
+    }
+    const params = payrollStrategy === 'new' ? '?strategy=new' : '?strategy=legacy';
+    let successCount = 0;
+    let failCount = 0;
+    setBulkCalculating(true);
+    toast.info('Calculating payroll for listed employees...');
+    try {
+      for (const pr of payRegisters) {
+        const employeeId = typeof pr.employeeId === 'object' ? pr.employeeId._id : pr.employeeId;
+        try {
+          await api.calculatePayroll(employeeId, monthStr, params);
+          successCount += 1;
+        } catch (err) {
+          failCount += 1;
+          console.error(`Error calculating payroll for employee ${employeeId}:`, err);
+        }
+      }
+      if (failCount === 0) {
+        toast.success(`Payroll calculated for ${successCount} employees`);
+      } else {
+        toast.error(`Calculated ${successCount}, failed ${failCount}`);
+      }
+
+      const listedEmployeeIds = payRegisters.map((pr) =>
+        typeof pr.employeeId === 'object' ? pr.employeeId._id : pr.employeeId
+      );
+      await downloadPayrollExcel(listedEmployeeIds);
+    } catch (error) {
+      console.error('Error in bulk payroll calculation:', error);
+    } finally {
+      setBulkCalculating(false);
+    }
+  };
+
   return (
     <div className="space-y-6 p-6">
       {/* Header */}
@@ -485,8 +640,19 @@ export default function PayRegisterPage() {
             </select>
           </div>
 
-          {/* Actions */}
-          <div className="flex items-end gap-2">
+          {/* Actions + Payroll Strategy */}
+          <div className="flex items-end gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">Payroll Engine</label>
+              <select
+                value={payrollStrategy}
+                onChange={(e) => setPayrollStrategy(e.target.value as any)}
+                className="px-2 py-1 text-xs border border-slate-300 dark:border-slate-700 rounded-md dark:bg-slate-800 dark:text-white"
+              >
+                <option value="new">Use Payroll Records Only (new)</option>
+                <option value="legacy">All related data (legacy)</option>
+              </select>
+            </div>
             <button
               onClick={handleSyncAll}
               disabled={syncing}
@@ -494,9 +660,94 @@ export default function PayRegisterPage() {
             >
               {syncing ? 'Syncing All...' : 'Sync All'}
             </button>
+            <button
+              onClick={handleCalculatePayrollForAll}
+              disabled={bulkCalculating || exportingExcel}
+              className="px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {bulkCalculating ? 'Calculating...' : exportingExcel ? 'Preparing Excel...' : 'Calculate Payroll (Listed)'}
+            </button>
           </div>
         </div>
       </div>
+
+      {/* Summary Table */}
+      {!loading && payRegisters.length > 0 && (
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-lg dark:border-slate-700 dark:bg-slate-900/80 overflow-x-auto">
+          <div className="p-4">
+            <h3 className="text-base font-semibold text-slate-900 dark:text-white mb-3">Monthly Summary</h3>
+            <table className="w-full border-collapse text-xs">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
+                  <th className="sticky left-0 z-10 w-[180px] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                    Employee
+                  </th>
+                  {[
+                    'Total Present',
+                    'Total Absent',
+                    'Total Leaves',
+                    'Total OD',
+                    'Total OT Hours',
+                    'Total Extra Hours',
+                    'Month Days',
+                    'Counted Days',
+                  ].map((label) => (
+                    <th
+                      key={label}
+                      className="border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 last:border-r-0"
+                    >
+                      {label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                {getSummaryRows().map((row) => {
+                  const employee = typeof row.pr.employeeId === 'object' ? row.pr.employeeId : null;
+                  const empNo =
+                    typeof row.pr.employeeId === 'object' ? row.pr.employeeId.emp_no : row.pr.emp_no;
+                  const empName = typeof row.pr.employeeId === 'object' ? row.pr.employeeId.employee_name : '';
+                  const department =
+                    typeof row.pr.employeeId === 'object' && row.pr.employeeId.department_id
+                      ? typeof row.pr.employeeId.department_id === 'object'
+                        ? row.pr.employeeId.department_id.name
+                        : ''
+                      : '';
+                  return (
+                    <tr key={row.pr._id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                      <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 text-[11px] font-medium text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white">
+                        <div>
+                          <div className="font-semibold truncate">{empName}</div>
+                          <div className="text-[9px] text-slate-500 dark:text-slate-400 truncate">
+                            {empNo}
+                            {department && ` • ${department}`}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="text-center px-2 py-2">{row.present.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2">{row.absent.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2">{row.leave.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2">{row.od.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2">{row.ot.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2">{row.extra.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2">{row.monthDays}</td>
+                      <td
+                        className={`text-center px-2 py-2 font-semibold ${
+                          row.matchesMonth
+                            ? 'text-green-700 dark:text-green-400'
+                            : 'text-red-700 dark:text-red-400'
+                        }`}
+                      >
+                        {row.countedDays.toFixed(1)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Table Tabs */}
       <div className="bg-white dark:bg-slate-800 rounded-lg shadow">
@@ -566,26 +817,59 @@ export default function PayRegisterPage() {
                     {daysArray.map((day) => (
                       <th
                         key={day}
-                        className={`w-[calc((100%-180px-240px)/${daysInMonth})] border-r border-slate-200 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300`}
+                        className={`w-[calc((100%-180px-${activeTable === 'leaves' ? '320px' : '80px'})/${daysInMonth})] border-r border-slate-200 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300`}
                       >
                         {day}
                       </th>
                     ))}
-                    <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-blue-50 dark:bg-blue-900/20">
-                      Days Present
-                    </th>
-                    <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-orange-50 dark:bg-orange-900/20">
-                      OT Hours
-                    </th>
-                    <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-green-50 dark:bg-green-900/20">
-                      Payable Shifts
-                    </th>
+                    {/* Dynamic columns based on active tab */}
+                    {activeTable === 'present' && (
+                      <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-green-50 dark:bg-green-900/20">
+                        Total Present Days
+                      </th>
+                    )}
+                    {activeTable === 'absent' && (
+                      <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-red-50 dark:bg-red-900/20">
+                        Total Absent Days
+                      </th>
+                    )}
+                    {activeTable === 'leaves' && (
+                      <>
+                        <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-yellow-50 dark:bg-yellow-900/20">
+                          Total Leaves
+                        </th>
+                        <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-green-50 dark:bg-green-900/20">
+                          Paid Leaves
+                        </th>
+                        <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-red-50 dark:bg-red-900/20">
+                          LOP
+                        </th>
+                        <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-orange-50 dark:bg-orange-900/20">
+                          Without Pay
+                        </th>
+                      </>
+                    )}
+                    {activeTable === 'od' && (
+                      <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-blue-50 dark:bg-blue-900/20">
+                        Total OD Days
+                      </th>
+                    )}
+                    {activeTable === 'ot' && (
+                      <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-orange-50 dark:bg-orange-900/20">
+                        Total OT Hours
+                      </th>
+                    )}
+                    {activeTable === 'extraHours' && (
+                      <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-purple-50 dark:bg-purple-900/20">
+                        Total Extra Hours
+                      </th>
+                    )}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                   {getFilteredPayRegisters().length === 0 ? (
                     <tr>
-                      <td colSpan={daysArray.length + 4} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                      <td colSpan={daysArray.length + (activeTable === 'leaves' ? 4 : 1)} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
                         No records found for {activeTable} table
                       </td>
                     </tr>
@@ -610,13 +894,23 @@ export default function PayRegisterPage() {
                                 <div className="font-semibold truncate flex-1">
                                   {employee_name}
                                 </div>
-                                <button
-                                  onClick={() => employee && handleViewPayslip(employee)}
-                                  className="rounded-md bg-gradient-to-r from-green-500 to-emerald-600 px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:from-green-600 hover:to-emerald-700 hover:shadow-md"
-                                  title="View Payslip"
-                                >
-                                  Payslip
-                                </button>
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => employee && handleViewPayslip(employee)}
+                                    className="rounded-md bg-gradient-to-r from-green-500 to-emerald-600 px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:from-green-600 hover:to-emerald-700 hover:shadow-md"
+                                    title="View Payslip"
+                                  >
+                                    Payslip
+                                  </button>
+                                  <button
+                                    onClick={() => employee && handleCalculatePayroll(employee)}
+                                    disabled={calculatingId === employeeId || bulkCalculating}
+                                    className="rounded-md bg-gradient-to-r from-blue-500 to-indigo-600 px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:from-blue-600 hover:to-indigo-700 hover:shadow-md disabled:opacity-60 disabled:cursor-not-allowed"
+                                    title="Calculate Payroll"
+                                  >
+                                    {calculatingId === employeeId ? 'Calculating...' : 'Calc Payroll'}
+                                  </button>
+                                </div>
                               </div>
                               <div className="text-[9px] text-slate-500 dark:text-slate-400 truncate mt-1">
                                 {emp_no}
@@ -702,15 +996,48 @@ export default function PayRegisterPage() {
                               </td>
                             );
                           })}
-                          <td className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center text-[11px] font-bold text-blue-700 dark:border-slate-700 dark:bg-blue-900/20 dark:text-blue-300">
-                            {pr.totals.totalPresentDays.toFixed(1)}
-                          </td>
-                          <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300">
-                            {pr.totals.totalOTHours.toFixed(1)}
-                          </td>
-                          <td className="border-r-0 border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:border-slate-700 dark:bg-green-900/20 dark:text-green-300">
-                            {pr.totals.totalPayableShifts.toFixed(2)}
-                          </td>
+                          {/* Dynamic columns based on active tab */}
+                          {activeTable === 'present' && (
+                            <td className="border-r-0 border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:border-slate-700 dark:bg-green-900/20 dark:text-green-300">
+                              {pr.totals.totalPresentDays.toFixed(1)}
+                            </td>
+                          )}
+                          {activeTable === 'absent' && (
+                            <td className="border-r-0 border-slate-200 bg-red-50 px-2 py-2 text-center text-[11px] font-bold text-red-700 dark:border-slate-700 dark:bg-red-900/20 dark:text-red-300">
+                              {pr.totals.totalAbsentDays.toFixed(1)}
+                            </td>
+                          )}
+                          {activeTable === 'leaves' && (
+                            <>
+                              <td className="border-r border-slate-200 bg-yellow-50 px-2 py-2 text-center text-[11px] font-bold text-yellow-700 dark:border-slate-700 dark:bg-yellow-900/20 dark:text-yellow-300">
+                                {pr.totals.totalLeaveDays.toFixed(1)}
+                              </td>
+                              <td className="border-r border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:border-slate-700 dark:bg-green-900/20 dark:text-green-300">
+                                {pr.totals.totalPaidLeaveDays.toFixed(1)}
+                              </td>
+                              <td className="border-r border-slate-200 bg-red-50 px-2 py-2 text-center text-[11px] font-bold text-red-700 dark:border-slate-700 dark:bg-red-900/20 dark:text-red-300">
+                                {pr.totals.totalLopDays.toFixed(1)}
+                              </td>
+                              <td className="border-r-0 border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300">
+                                {pr.totals.totalUnpaidLeaveDays.toFixed(1)}
+                              </td>
+                            </>
+                          )}
+                          {activeTable === 'od' && (
+                            <td className="border-r-0 border-slate-200 bg-blue-50 px-2 py-2 text-center text-[11px] font-bold text-blue-700 dark:border-slate-700 dark:bg-blue-900/20 dark:text-blue-300">
+                              {pr.totals.totalODDays.toFixed(1)}
+                            </td>
+                          )}
+                          {activeTable === 'ot' && (
+                            <td className="border-r-0 border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300">
+                              {pr.totals.totalOTHours.toFixed(1)}
+                            </td>
+                          )}
+                          {activeTable === 'extraHours' && (
+                            <td className="border-r-0 border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700 dark:border-slate-700 dark:bg-purple-900/20 dark:text-purple-300">
+                              {pr.totals.totalOTHours.toFixed(1)}
+                            </td>
+                          )}
                         </tr>
                       );
                     })
@@ -722,10 +1049,10 @@ export default function PayRegisterPage() {
         )}
       </div>
 
-      {/* Edit Modal */}
+      {/* Edit Modal - Tab-specific dialogs */}
       {showEditModal && editingRecord && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto border border-slate-200 dark:border-slate-700">
             <div className="p-6">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white">
@@ -740,9 +1067,48 @@ export default function PayRegisterPage() {
               </div>
 
               <div className="space-y-6">
-                {/* First Half */}
-                <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
-                  <h3 className="text-lg font-semibold mb-3 text-slate-900 dark:text-white">First Half</h3>
+                {/* Half-Day Mode Toggle */}
+                <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isHalfDayMode}
+                      onChange={(e) => {
+                        setIsHalfDayMode(e.target.checked);
+                        if (!e.target.checked) {
+                          // When disabling half-day mode, sync both halves to the same status
+                          const currentStatus = editData.status || editData.firstHalf?.status || 'absent';
+                          setEditData({
+                            ...editData,
+                            status: currentStatus,
+                            firstHalf: normalizeHalfDay(editData.firstHalf, currentStatus as any),
+                            secondHalf: normalizeHalfDay(editData.secondHalf, currentStatus as any),
+                            isSplit: false,
+                          });
+                        } else {
+                          setEditData({
+                            ...editData,
+                            isSplit: true,
+                          });
+                        }
+                      }}
+                      className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                      Enable Half-Day Mode
+                    </span>
+                  </label>
+                  {isHalfDayMode && (
+                    <span className="text-xs text-slate-500 dark:text-slate-400">
+                      (Edit first and second half separately)
+                    </span>
+                  )}
+                </div>
+
+                {/* First Half - Only show if half-day mode is enabled */}
+                {isHalfDayMode && (
+                  <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+                    <h3 className="text-lg font-semibold mb-3 text-slate-900 dark:text-white">First Half</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
@@ -810,9 +1176,8 @@ export default function PayRegisterPage() {
                             })}
                             className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
                           >
-                            <option value="paid">Paid</option>
-                            <option value="lop">LOP (Loss of Pay)</option>
-                            <option value="without_pay">Without Pay</option>
+                  <option value="paid">Paid</option>
+                  <option value="lop">LOP (Loss of Pay)</option>
                           </select>
                         </div>
                       </>
@@ -869,11 +1234,13 @@ export default function PayRegisterPage() {
                       </select>
                     </div>
                   </div>
-                </div>
+                  </div>
+                )}
 
-                {/* Second Half */}
-                <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
-                  <h3 className="text-lg font-semibold mb-3 text-slate-900 dark:text-white">Second Half</h3>
+                {/* Second Half - Only show if half-day mode is enabled */}
+                {isHalfDayMode && (
+                  <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+                    <h3 className="text-lg font-semibold mb-3 text-slate-900 dark:text-white">Second Half</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
@@ -941,9 +1308,8 @@ export default function PayRegisterPage() {
                             })}
                             className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
                           >
-                            <option value="paid">Paid</option>
-                            <option value="lop">LOP (Loss of Pay)</option>
-                            <option value="without_pay">Without Pay</option>
+                  <option value="paid">Paid</option>
+                  <option value="lop">LOP (Loss of Pay)</option>
                           </select>
                         </div>
                       </>
@@ -968,25 +1334,204 @@ export default function PayRegisterPage() {
                       />
                     </div>
                   </div>
-                </div>
+                  </div>
+                )}
 
-                {/* Full Day OT Hours */}
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Total OT Hours (Full Day)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.5"
-                    min="0"
-                    value={editData.otHours || 0}
-                    onChange={(e) => setEditData({
-                      ...editData,
-                      otHours: parseFloat(e.target.value) || 0,
-                    })}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                  />
-                </div>
+                {/* Full Day Fields - Show when NOT in half-day mode OR for specific tabs */}
+                {!isHalfDayMode && (
+                  <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+                    <h3 className="text-lg font-semibold mb-3 text-slate-900 dark:text-white">
+                      {activeTable === 'present' ? 'Present Status' :
+                       activeTable === 'absent' ? 'Absent Status' :
+                       activeTable === 'leaves' ? 'Leave Details' :
+                       activeTable === 'od' ? 'OD Details' :
+                       activeTable === 'ot' || activeTable === 'extraHours' ? 'OT Hours' :
+                       'Full Day'}
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {(activeTable === 'present' || activeTable === 'absent' || activeTable === 'leaves' || activeTable === 'od') && (
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                            Status
+                          </label>
+                          <select
+                            value={editData.status || 'absent'}
+                            onChange={(e) => {
+                              const newStatus = e.target.value as any;
+                              setEditData({
+                                ...editData,
+                                status: newStatus,
+                                firstHalf: {
+                                  ...editData.firstHalf!,
+                                  status: newStatus,
+                                  leaveType: newStatus === 'leave' ? (editData.firstHalf?.leaveType || null) : null,
+                                  leaveNature: newStatus === 'leave' ? (editData.firstHalf?.leaveNature || null) : null,
+                                  isOD: newStatus === 'od',
+                                },
+                                secondHalf: {
+                                  ...editData.secondHalf!,
+                                  status: newStatus,
+                                  leaveType: newStatus === 'leave' ? (editData.secondHalf?.leaveType || null) : null,
+                                  leaveNature: newStatus === 'leave' ? (editData.secondHalf?.leaveNature || null) : null,
+                                  isOD: newStatus === 'od',
+                                },
+                                leaveType: newStatus === 'leave' ? (editData.leaveType || null) : null,
+                                leaveNature: newStatus === 'leave' ? (editData.leaveNature || null) : null,
+                                isOD: newStatus === 'od',
+                                isSplit: false,
+                              });
+                            }}
+                            className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                          >
+                            <option value="present">Present</option>
+                            <option value="absent">Absent</option>
+                            <option value="leave">Leave</option>
+                            <option value="od">OD</option>
+                            <option value="holiday">Holiday</option>
+                            <option value="week_off">Week Off</option>
+                          </select>
+                        </div>
+                      )}
+                      {editData.status === 'leave' && (activeTable === 'leaves' || !isHalfDayMode) && (
+                        <>
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                              Leave Type
+                            </label>
+                            <select
+                              value={editData.leaveType || ''}
+                              onChange={(e) => setEditData({
+                                ...editData,
+                                leaveType: e.target.value,
+                                firstHalf: {
+                                  ...editData.firstHalf!,
+                                  leaveType: e.target.value,
+                                },
+                                secondHalf: {
+                                  ...editData.secondHalf!,
+                                  leaveType: e.target.value,
+                                },
+                              })}
+                              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                            >
+                              <option value="">Select Leave Type</option>
+                              {leaveTypes.map((lt) => (
+                                <option key={lt.code} value={lt.code}>
+                                  {lt.name} ({lt.code})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                              Leave Nature
+                            </label>
+                            <select
+                              value={editData.leaveNature || 'paid'}
+                              onChange={(e) => setEditData({
+                                ...editData,
+                                leaveNature: e.target.value as any,
+                                firstHalf: {
+                                  ...editData.firstHalf!,
+                                  leaveNature: e.target.value as any,
+                                },
+                                secondHalf: {
+                                  ...editData.secondHalf!,
+                                  leaveNature: e.target.value as any,
+                                },
+                              })}
+                              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                            >
+                              <option value="paid">Paid</option>
+                              <option value="lop">LOP (Loss of Pay)</option>
+                              <option value="without_pay">Without Pay</option>
+                            </select>
+                          </div>
+                        </>
+                      )}
+                      {/* Shift field for full day */}
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                          Shift
+                        </label>
+                        <select
+                          value={editData.shiftId || ''}
+                          onChange={(e) => {
+                            const shift = shifts.find((s) => s._id === e.target.value);
+                            setEditData({
+                              ...editData,
+                              shiftId: e.target.value || null,
+                              shiftName: shift?.name || null,
+                              firstHalf: {
+                                ...editData.firstHalf!,
+                                shiftId: e.target.value || null,
+                              },
+                              secondHalf: {
+                                ...editData.secondHalf!,
+                                shiftId: e.target.value || null,
+                              },
+                            });
+                          }}
+                          className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                        >
+                          <option value="">Select Shift</option>
+                          {shifts.map((shift) => (
+                            <option key={shift._id} value={shift._id}>
+                              {shift.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Full Day OT Hours - Show for OT/Extra Hours tabs or when not in half-day mode */}
+                {(activeTable === 'ot' || activeTable === 'extraHours' || !isHalfDayMode) && (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      {isHalfDayMode ? 'Total OT Hours (First + Second Half)' : 'Total OT Hours (Full Day)'}
+                    </label>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      value={editData.otHours || 0}
+                      onChange={(e) => {
+                        const otValue = parseFloat(e.target.value) || 0;
+                        if (isHalfDayMode) {
+                          // Distribute OT hours equally between halves
+                          setEditData({
+                            ...editData,
+                            otHours: otValue,
+                            firstHalf: {
+                              ...editData.firstHalf!,
+                              otHours: otValue / 2,
+                            },
+                            secondHalf: {
+                              ...editData.secondHalf!,
+                              otHours: otValue / 2,
+                            },
+                          });
+                        } else {
+                          setEditData({
+                            ...editData,
+                            otHours: otValue,
+                            firstHalf: {
+                              ...editData.firstHalf!,
+                              otHours: otValue,
+                            },
+                            secondHalf: {
+                              ...editData.secondHalf!,
+                              otHours: otValue,
+                            },
+                          });
+                        }
+                      }}
+                      className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                    />
+                  </div>
+                )}
 
                 {/* Remarks */}
                 <div>
@@ -1007,17 +1552,21 @@ export default function PayRegisterPage() {
 
               <div className="flex justify-end gap-3 mt-6">
                 <button
-                  onClick={() => setShowEditModal(false)}
-                  className="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-md text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
-                >
-                  Cancel
-                </button>
-                <button
                   onClick={handleSaveDate}
                   disabled={saving[editingRecord.employeeId]}
                   className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
                 >
                   {saving[editingRecord.employeeId] ? 'Saving...' : 'Save'}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowEditModal(false);
+                    setEditingRecord(null);
+                    setIsHalfDayMode(false);
+                  }}
+                  className="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-md text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
+                >
+                  Cancel
                 </button>
               </div>
             </div>

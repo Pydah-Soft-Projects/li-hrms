@@ -35,6 +35,13 @@ exports.getPayRegister = async (req, res) => {
       .populate('lastEditedBy', 'name email role')
       .populate('editedBy', 'name email role');
 
+    // Recalculate totals to ensure accuracy
+    if (payRegister) {
+      payRegister.totals = calculateTotals(payRegister.dailyRecords);
+      payRegister.recalculateTotals(); // Also use model method for consistency
+      await payRegister.save();
+    }
+
     if (!payRegister) {
       // Auto-create by populating from sources
       const employee = await Employee.findById(employeeId);
@@ -412,13 +419,20 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
     const payRegisters = [];
     for (const employee of employees) {
       try {
-        // Try to find existing pay register
+        // Try to find existing pay register - need dailyRecords for recalculation
         let payRegister = await PayRegisterSummary.findOne({
           employeeId: employee._id,
           month,
         })
           .populate('employeeId', 'employee_name emp_no department_id designation_id')
-          .select('employeeId emp_no month status totals lastEditedAt');
+          .select('employeeId emp_no month status totals lastEditedAt dailyRecords');
+
+        // Recalculate totals to ensure accuracy
+        if (payRegister && payRegister.dailyRecords) {
+          payRegister.totals = calculateTotals(payRegister.dailyRecords);
+          payRegister.recalculateTotals(); // Also use model method for consistency
+          await payRegister.save();
+        }
 
         // If not found, create it
         if (!payRegister) {
@@ -434,6 +448,7 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
           payRegister = await PayRegisterSummary.create({
             employeeId: employee._id,
             emp_no: employee.emp_no,
+            department_id: employee.department_id,
             month,
             monthName: new Date(year, monthNum - 1).toLocaleString('default', { month: 'long', year: 'numeric' }),
             year,

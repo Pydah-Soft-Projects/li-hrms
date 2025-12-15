@@ -913,10 +913,10 @@ export default function LeavesPage() {
 
   const saveSplits = async () => {
     if (detailType !== 'leave' || !selectedItem) return false;
-      const validation = await validateSplitsForLeave();
+    const validation = await validateSplitsForLeave();
       if (!validation || (validation as any).isValid === false) {
-        return false;
-      }
+      return false;
+    }
 
     try {
       const payload = splitDrafts.map((s) => ({

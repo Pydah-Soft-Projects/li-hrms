@@ -99,13 +99,37 @@ exports.upsertSetting = async (req, res) => {
       }
     }
 
+    // Validate absent deduction settings
+    if (key === 'enable_absent_deduction') {
+      if (typeof value !== 'boolean') {
+        return res.status(400).json({
+          success: false,
+          message: 'enable_absent_deduction must be a boolean',
+        });
+      }
+    }
+    if (key === 'lop_days_per_absent') {
+      if (typeof value !== 'number' || value < 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'lop_days_per_absent must be a non-negative number',
+        });
+      }
+    }
+
     const setting = await Settings.findOneAndUpdate(
       { key },
       {
         key,
         value,
         description: description || `Setting for ${key}`,
-        category: category || (key === 'include_missing_employee_components' ? 'payroll' : 'general'),
+        category:
+          category ||
+          (key === 'include_missing_employee_components' ||
+          key === 'enable_absent_deduction' ||
+          key === 'lop_days_per_absent'
+            ? 'payroll'
+            : 'general'),
       },
       {
         new: true,

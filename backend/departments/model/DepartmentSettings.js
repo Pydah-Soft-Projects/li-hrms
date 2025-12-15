@@ -324,6 +324,17 @@ const departmentSettingsSchema = new mongoose.Schema(
         type: Boolean,
         default: null, // null => fallback to global setting
       },
+      // Absent deduction enable/disable (department override)
+      enableAbsentDeduction: {
+        type: Boolean,
+        default: null, // null => fallback to global setting
+      },
+      // LOP days applied per absent day (e.g., 1 = no extra, 2 = one extra LOP per absent)
+      lopDaysPerAbsent: {
+        type: Number,
+        default: null, // null => fallback to global setting
+        min: 0,
+      },
     },
 
     // Created by

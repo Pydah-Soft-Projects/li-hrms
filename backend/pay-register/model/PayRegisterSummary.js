@@ -24,6 +24,13 @@ const payRegisterSummarySchema = new mongoose.Schema(
       index: true,
     },
 
+    // Department ID for quick filtering (denormalized from Employee)
+    department_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Department',
+      index: true,
+    },
+
     // Month in format "YYYY-MM" (e.g., "2024-01")
     month: {
       type: String,
@@ -80,6 +87,11 @@ const payRegisterSummarySchema = new mongoose.Schema(
             type: String,
             default: null, // Only set if status = 'leave'
           },
+        leaveNature: {
+          type: String,
+          enum: ['paid', 'lop', null],
+          default: null, // Only set if status = 'leave'
+        },
           isOD: {
             type: Boolean,
             default: false, // Only set if status = 'od'
@@ -112,6 +124,16 @@ const payRegisterSummarySchema = new mongoose.Schema(
             type: String,
             default: null,
           },
+        leaveNature: {
+          type: String,
+          enum: ['paid', 'lop', null],
+          default: null,
+        },
+    leaveNature: {
+      type: String,
+      enum: ['paid', 'lop', null],
+      default: null,
+    },
           isOD: {
             type: Boolean,
             default: false,
@@ -141,6 +163,11 @@ const payRegisterSummarySchema = new mongoose.Schema(
         },
         leaveType: {
           type: String,
+          default: null, // Only set if status = 'leave' and not split
+        },
+        leaveNature: {
+          type: String,
+          enum: ['paid', 'lop', 'without_pay', null],
           default: null, // Only set if status = 'leave' and not split
         },
         isOD: {
@@ -521,56 +548,87 @@ payRegisterSummarySchema.methods.recalculateTotals = function () {
   }
 
   for (const record of this.dailyRecords) {
-    // Process first half
-    if (record.firstHalf.status === 'present') {
-      totals.presentHalfDays++;
-    } else if (record.firstHalf.status === 'absent') {
-      totals.absentHalfDays++;
-    } else if (record.firstHalf.status === 'leave') {
-      if (record.firstHalf.leaveType === 'paid' || record.firstHalf.leaveType === 'PAID') {
-        totals.paidLeaveHalfDays++;
-      } else if (record.firstHalf.leaveType === 'lop' || record.firstHalf.leaveType === 'LOP') {
-        totals.lopHalfDays++;
-      } else {
-        totals.unpaidLeaveHalfDays++;
-      }
-    } else if (record.firstHalf.status === 'od') {
-      totals.odHalfDays++;
+    // Skip records with holiday or week_off status - they shouldn't be counted in any category
+    const isHoliday = record.status === 'holiday' || record.firstHalf?.status === 'holiday' || record.secondHalf?.status === 'holiday';
+    const isWeekOff = record.status === 'week_off' || record.firstHalf?.status === 'week_off' || record.secondHalf?.status === 'week_off';
+    
+    if (isHoliday || isWeekOff) {
+      // Still count OT hours for holidays/week_off if any
+      totals.totalOTHours += record.otHours || 0;
+      continue; // Skip counting this record in attendance categories
     }
 
-    // Process second half
-    if (record.secondHalf.status === 'present') {
-      totals.presentHalfDays++;
-    } else if (record.secondHalf.status === 'absent') {
-      totals.absentHalfDays++;
-    } else if (record.secondHalf.status === 'leave') {
-      if (record.secondHalf.leaveType === 'paid' || record.secondHalf.leaveType === 'PAID') {
-        totals.paidLeaveHalfDays++;
-      } else if (record.secondHalf.leaveType === 'lop' || record.secondHalf.leaveType === 'LOP') {
-        totals.lopHalfDays++;
-      } else {
-        totals.unpaidLeaveHalfDays++;
-      }
-    } else if (record.secondHalf.status === 'od') {
-      totals.odHalfDays++;
-    }
+    // Determine if actually split by checking if halves have different statuses
+    // Don't rely on isSplit flag as it might be incorrect
+    const firstHalfStatus = record.firstHalf?.status;
+    const secondHalfStatus = record.secondHalf?.status;
+    // Consider split if: both halves exist and have different statuses, OR if record.isSplit is explicitly true
+    const isActuallySplit = (firstHalfStatus && secondHalfStatus && firstHalfStatus !== secondHalfStatus) || 
+                           (record.isSplit === true && firstHalfStatus && secondHalfStatus);
 
-    // Count full days (when both halves are same)
-    if (!record.isSplit && record.status) {
-      if (record.status === 'present') {
-        totals.presentDays++;
-      } else if (record.status === 'absent') {
-        totals.absentDays++;
-      } else if (record.status === 'leave') {
-        if (record.leaveType === 'paid' || record.leaveType === 'PAID') {
-          totals.paidLeaveDays++;
-        } else if (record.leaveType === 'lop' || record.leaveType === 'LOP') {
-          totals.lopDays++;
-        } else {
-          totals.unpaidLeaveDays++;
+    // If record is actually split, count halves separately
+    if (isActuallySplit) {
+      // Process first half - only count if status is explicitly set and valid
+      if (record.firstHalf && record.firstHalf.status && 
+          ['present', 'absent', 'leave', 'od'].includes(record.firstHalf.status)) {
+        if (record.firstHalf.status === 'present') {
+          totals.presentHalfDays++;
+        } else if (record.firstHalf.status === 'absent') {
+          totals.absentHalfDays++;
+        } else if (record.firstHalf.status === 'leave') {
+          const leaveNature = record.firstHalf.leaveNature || (record.firstHalf.leaveType || '').toLowerCase();
+          if (leaveNature === 'paid') {
+            totals.paidLeaveHalfDays++;
+          } else {
+            // Treat any non-paid leave as LOP
+            totals.lopHalfDays++;
+          }
+        } else if (record.firstHalf.status === 'od') {
+          totals.odHalfDays++;
         }
-      } else if (record.status === 'od') {
-        totals.odDays++;
+      }
+
+      // Process second half - only count if status is explicitly set and valid
+      if (record.secondHalf && record.secondHalf.status && 
+          ['present', 'absent', 'leave', 'od'].includes(record.secondHalf.status)) {
+        if (record.secondHalf.status === 'present') {
+          totals.presentHalfDays++;
+        } else if (record.secondHalf.status === 'absent') {
+          totals.absentHalfDays++;
+        } else if (record.secondHalf.status === 'leave') {
+          const leaveNature = record.secondHalf.leaveNature || (record.secondHalf.leaveType || '').toLowerCase();
+          if (leaveNature === 'paid') {
+            totals.paidLeaveHalfDays++;
+          } else {
+            // Treat any non-paid leave as LOP
+            totals.lopHalfDays++;
+          }
+        } else if (record.secondHalf.status === 'od') {
+          totals.odHalfDays++;
+        }
+      }
+    } else {
+      // If not split, count as full day only (don't count halves separately)
+      // Use the record.status if available, otherwise use firstHalf.status (they should be the same)
+      const statusToCount = record.status || firstHalfStatus || secondHalfStatus;
+      
+      // Only count if status is explicitly set and valid (not null, not holiday, not week_off)
+      if (statusToCount && ['present', 'absent', 'leave', 'od'].includes(statusToCount)) {
+        if (statusToCount === 'present') {
+          totals.presentDays++;
+        } else if (statusToCount === 'absent') {
+          totals.absentDays++;
+        } else if (statusToCount === 'leave') {
+          const leaveNature = record.leaveNature || record.firstHalf?.leaveNature || (record.leaveType || record.firstHalf?.leaveType || '').toLowerCase();
+          if (leaveNature === 'paid') {
+            totals.paidLeaveDays++;
+          } else {
+            // Treat any non-paid leave as LOP
+            totals.lopDays++;
+          }
+        } else if (statusToCount === 'od') {
+          totals.odDays++;
+        }
       }
     }
 
@@ -582,9 +640,9 @@ payRegisterSummarySchema.methods.recalculateTotals = function () {
   totals.totalPresentDays = totals.presentDays + totals.presentHalfDays * 0.5;
   totals.totalAbsentDays = totals.absentDays + totals.absentHalfDays * 0.5;
   totals.totalPaidLeaveDays = totals.paidLeaveDays + totals.paidLeaveHalfDays * 0.5;
-  totals.totalUnpaidLeaveDays = totals.unpaidLeaveDays + totals.unpaidLeaveHalfDays * 0.5;
+  totals.totalUnpaidLeaveDays = 0; // No separate unpaid bucket; all non-paid leaves are LOP
   totals.totalLopDays = totals.lopDays + totals.lopHalfDays * 0.5;
-  totals.totalLeaveDays = totals.totalPaidLeaveDays + totals.totalUnpaidLeaveDays + totals.totalLopDays;
+  totals.totalLeaveDays = totals.totalPaidLeaveDays + totals.totalLopDays;
   totals.totalODDays = totals.odDays + totals.odHalfDays * 0.5;
 
   // Calculate payable shifts = present + OD + paid leaves

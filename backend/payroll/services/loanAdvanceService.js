@@ -253,10 +253,30 @@ async function updateAdvanceRecordsAfterDeduction(advanceBreakdown, month, userI
   }
 }
 
+/**
+ * Combined helper used by payroll: returns both loan EMI and advance deductions.
+ * - totalEMI / emiBreakdown from active loans
+ * - advanceDeduction / advanceBreakdown from active advances relative to payableAmount
+ */
+async function calculateLoanAdvance(employeeId, month, payableAmount = 0) {
+  const loanResult = await calculateTotalEMI(employeeId);
+  const advanceResult = await processSalaryAdvance(employeeId, payableAmount);
+
+  return {
+    totalEMI: loanResult.totalEMI || 0,
+    emiBreakdown: loanResult.emiBreakdown || [],
+    loanCount: loanResult.loanCount || 0,
+    advanceDeduction: advanceResult.advanceDeduction || 0,
+    advanceBreakdown: advanceResult.advanceBreakdown || [],
+    totalAdvanceBalance: advanceResult.totalAdvanceBalance || 0,
+  };
+}
+
 module.exports = {
   getActiveLoans,
   getActiveAdvances,
   calculateTotalEMI,
+  calculateLoanAdvance,
   processSalaryAdvance,
   updateLoanRecordsAfterEMI,
   updateAdvanceRecordsAfterDeduction,

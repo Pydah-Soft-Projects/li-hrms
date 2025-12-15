@@ -125,6 +125,7 @@ async function updateDailyRecord(payRegister, date, updateData, editedBy) {
       firstHalf: {
         status: 'absent',
         leaveType: null,
+        leaveNature: null,
         isOD: false,
         otHours: 0,
         shiftId: null,
@@ -133,6 +134,7 @@ async function updateDailyRecord(payRegister, date, updateData, editedBy) {
       secondHalf: {
         status: 'absent',
         leaveType: null,
+        leaveNature: null,
         isOD: false,
         otHours: 0,
         shiftId: null,
@@ -140,6 +142,7 @@ async function updateDailyRecord(payRegister, date, updateData, editedBy) {
       },
       status: null,
       leaveType: null,
+      leaveNature: null,
       isOD: false,
       isSplit: false,
       shiftId: null,
@@ -171,13 +174,16 @@ async function updateDailyRecord(payRegister, date, updateData, editedBy) {
     dailyRecord.firstHalf.status = updateData.firstHalf.status || dailyRecord.firstHalf.status;
     
     if (updateData.firstHalf.status === 'leave') {
-      dailyRecord.firstHalf.leaveType = await normalizeLeaveType(updateData.firstHalf.leaveType);
+      dailyRecord.firstHalf.leaveType = updateData.firstHalf.leaveType || await normalizeLeaveType(updateData.firstHalf.leaveType);
+      dailyRecord.firstHalf.leaveNature = updateData.firstHalf.leaveNature || dailyRecord.firstHalf.leaveNature || 'paid';
       dailyRecord.firstHalf.isOD = false;
     } else if (updateData.firstHalf.status === 'od') {
       dailyRecord.firstHalf.isOD = true;
       dailyRecord.firstHalf.leaveType = null;
+      dailyRecord.firstHalf.leaveNature = null;
     } else {
       dailyRecord.firstHalf.leaveType = null;
+      dailyRecord.firstHalf.leaveNature = null;
       dailyRecord.firstHalf.isOD = false;
     }
 
@@ -197,13 +203,16 @@ async function updateDailyRecord(payRegister, date, updateData, editedBy) {
     dailyRecord.secondHalf.status = updateData.secondHalf.status || dailyRecord.secondHalf.status;
     
     if (updateData.secondHalf.status === 'leave') {
-      dailyRecord.secondHalf.leaveType = await normalizeLeaveType(updateData.secondHalf.leaveType);
+      dailyRecord.secondHalf.leaveType = updateData.secondHalf.leaveType || await normalizeLeaveType(updateData.secondHalf.leaveType);
+      dailyRecord.secondHalf.leaveNature = updateData.secondHalf.leaveNature || dailyRecord.secondHalf.leaveNature || 'paid';
       dailyRecord.secondHalf.isOD = false;
     } else if (updateData.secondHalf.status === 'od') {
       dailyRecord.secondHalf.isOD = true;
       dailyRecord.secondHalf.leaveType = null;
+      dailyRecord.secondHalf.leaveNature = null;
     } else {
       dailyRecord.secondHalf.leaveType = null;
+      dailyRecord.secondHalf.leaveNature = null;
       dailyRecord.secondHalf.isOD = false;
     }
 
@@ -229,11 +238,13 @@ async function updateDailyRecord(payRegister, date, updateData, editedBy) {
   }
 
   if (updateData.leaveType !== undefined && dailyRecord.status === 'leave') {
-    const normalizedLeaveType = await normalizeLeaveType(updateData.leaveType);
-    dailyRecord.leaveType = normalizedLeaveType;
+    dailyRecord.leaveType = updateData.leaveType;
+    dailyRecord.leaveNature = updateData.leaveNature || dailyRecord.leaveNature || 'paid';
     if (!updateData.isSplit) {
-      dailyRecord.firstHalf.leaveType = normalizedLeaveType;
-      dailyRecord.secondHalf.leaveType = normalizedLeaveType;
+      dailyRecord.firstHalf.leaveType = updateData.leaveType;
+      dailyRecord.firstHalf.leaveNature = updateData.leaveNature || dailyRecord.leaveNature || 'paid';
+      dailyRecord.secondHalf.leaveType = updateData.leaveType;
+      dailyRecord.secondHalf.leaveNature = updateData.leaveNature || dailyRecord.leaveNature || 'paid';
     }
   }
 
@@ -263,17 +274,23 @@ async function updateDailyRecord(payRegister, date, updateData, editedBy) {
     dailyRecord.remarks = updateData.remarks;
   }
 
-  // Determine if split
-  dailyRecord.isSplit = dailyRecord.firstHalf.status !== dailyRecord.secondHalf.status;
+  // Determine if split - use updateData.isSplit if provided, otherwise check if halves differ
+  if (updateData.isSplit !== undefined) {
+    dailyRecord.isSplit = updateData.isSplit;
+  } else {
+    dailyRecord.isSplit = dailyRecord.firstHalf.status !== dailyRecord.secondHalf.status;
+  }
 
   // Update full day status if not split
   if (!dailyRecord.isSplit) {
     dailyRecord.status = dailyRecord.firstHalf.status;
     dailyRecord.leaveType = dailyRecord.firstHalf.leaveType;
+    dailyRecord.leaveNature = dailyRecord.firstHalf.leaveNature;
     dailyRecord.isOD = dailyRecord.firstHalf.isOD;
   } else {
     dailyRecord.status = null;
     dailyRecord.leaveType = null;
+    dailyRecord.leaveNature = null;
     dailyRecord.isOD = false;
   }
 

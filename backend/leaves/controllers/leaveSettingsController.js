@@ -13,7 +13,6 @@ const DEFAULT_LEAVE_TYPES = [
   { code: 'ML', name: 'Maternity Leave', description: 'Maternity leave', maxDaysPerYear: 180, requiresAttachment: true, isPaid: true, color: '#ec4899', sortOrder: 4 },
   { code: 'PL', name: 'Paternity Leave', description: 'Paternity leave', maxDaysPerYear: 15, isPaid: true, color: '#8b5cf6', sortOrder: 5 },
   { code: 'CO', name: 'Compensatory Off', description: 'Leave for extra work hours', maxDaysPerYear: null, isPaid: true, color: '#f59e0b', sortOrder: 6 },
-  { code: 'LWP', name: 'Leave Without Pay', description: 'Unpaid leave', maxDaysPerYear: null, isPaid: false, color: '#6b7280', sortOrder: 7 },
 ];
 
 // Default OD types

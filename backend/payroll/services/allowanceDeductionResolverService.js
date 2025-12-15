@@ -33,6 +33,55 @@ async function getIncludeMissingFlag(departmentId) {
 }
 
 /**
+ * Resolve absent deduction settings (enable + lopDaysPerAbsent) with department override then global fallback.
+ * Defaults: enable=false, lopDaysPerAbsent=1.
+ */
+async function getAbsentDeductionSettings(departmentId) {
+  const defaults = { enableAbsentDeduction: false, lopDaysPerAbsent: 1 };
+  try {
+    // Department override
+    if (departmentId) {
+      const deptSettings = await DepartmentSettings.findOne({ department: departmentId });
+      const hasEnable =
+        deptSettings?.payroll &&
+        (deptSettings.payroll.enableAbsentDeduction === true ||
+          deptSettings.payroll.enableAbsentDeduction === false);
+      const hasLop =
+        deptSettings?.payroll &&
+        typeof deptSettings.payroll.lopDaysPerAbsent === 'number' &&
+        deptSettings.payroll.lopDaysPerAbsent >= 0;
+      if (hasEnable || hasLop) {
+        return {
+          enableAbsentDeduction: hasEnable
+            ? deptSettings.payroll.enableAbsentDeduction
+            : defaults.enableAbsentDeduction,
+          lopDaysPerAbsent: hasLop
+            ? deptSettings.payroll.lopDaysPerAbsent
+            : defaults.lopDaysPerAbsent,
+        };
+      }
+    }
+
+    // Global fallback
+    const enableGlobal = await Settings.findOne({ key: 'enable_absent_deduction' });
+    const lopGlobal = await Settings.findOne({ key: 'lop_days_per_absent' });
+    const enableAbsentDeduction =
+      enableGlobal && enableGlobal.value !== undefined
+        ? !!enableGlobal.value
+        : defaults.enableAbsentDeduction;
+    const lopDaysPerAbsent =
+      lopGlobal && typeof lopGlobal.value === 'number' && lopGlobal.value >= 0
+        ? lopGlobal.value
+        : defaults.lopDaysPerAbsent;
+
+    return { enableAbsentDeduction, lopDaysPerAbsent };
+  } catch (e) {
+    console.error('Error determining absent deduction settings:', e);
+    return defaults;
+  }
+}
+
+/**
  * Merge a base list with employee overrides.
  * - Overrides replace matching base items (by masterId or name).
  * - If includeMissing=false, skip base items not overridden.
@@ -182,5 +231,6 @@ module.exports = {
   mergeWithOverrides,
   buildBaseComponents,
   resolveForEmployee,
+  getAbsentDeductionSettings,
 };
 

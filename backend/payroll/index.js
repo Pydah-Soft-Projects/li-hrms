@@ -24,6 +24,13 @@ router.get('/:payrollRecordId/transactions', payrollController.getPayrollTransac
 // Get payroll transactions with analytics for a month
 router.get('/transactions/analytics', payrollController.getPayrollTransactionsWithAnalytics);
 
+// Export payroll payslips as Excel
+router.get(
+  '/export',
+  // Allow any authenticated user to export (was restricted to admin roles)
+  payrollController.exportPayrollExcel
+);
+
 // Approve payroll (Super Admin, Sub Admin, HR)
 router.put('/:payrollRecordId/approve', authorize('super_admin', 'sub_admin', 'hr'), payrollController.approvePayroll);
 
