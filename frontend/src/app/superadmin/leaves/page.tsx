@@ -1664,8 +1664,8 @@ export default function LeavesPage() {
                 <div>
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Half Day Type *</label>
                   <select
-                    value={formData.halfDayType}
-                    onChange={(e) => setFormData({ ...formData, halfDayType: e.target.value })}
+                    value={formData.halfDayType || ''}
+                    onChange={(e) => setFormData({ ...formData, halfDayType: e.target.value as 'first_half' | 'second_half' | null || null })}
                     className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   >
                     <option value="first_half">First Half (Morning)</option>
@@ -1754,8 +1754,8 @@ export default function LeavesPage() {
                 </label>
                 {formData.isHalfDay && (
                   <select
-                    value={formData.halfDayType}
-                    onChange={(e) => setFormData({ ...formData, halfDayType: e.target.value })}
+                    value={formData.halfDayType || ''}
+                    onChange={(e) => setFormData({ ...formData, halfDayType: e.target.value as 'first_half' | 'second_half' | null || null })}
                     disabled={
                       approvedRecordsInfo
                         ? ((approvedRecordsInfo.hasLeave && approvedRecordsInfo.leaveInfo?.isHalfDay &&
@@ -2876,8 +2876,8 @@ export default function LeavesPage() {
                 </label>
                 {editFormData.isHalfDay && (
                   <select
-                    value={editFormData.halfDayType}
-                    onChange={(e) => setEditFormData({ ...editFormData, halfDayType: e.target.value })}
+                    value={editFormData.halfDayType || ''}
+                    onChange={(e) => setEditFormData({ ...editFormData, halfDayType: e.target.value as 'first_half' | 'second_half' | null || null })}
                     className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   >
                     <option value="first_half">First Half</option>

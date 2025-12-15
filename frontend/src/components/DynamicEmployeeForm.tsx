@@ -702,7 +702,7 @@ export default function DynamicEmployeeForm({
 
       case 'userselect':
         const selectedUserIds = Array.isArray(value) ? value : value ? [value] : [];
-        const maxUsers = field.validation?.maxItems || 2;
+        const maxUsers = (field.validation as any)?.maxItems || 2;
         return (
           <div key={fieldKey} className="sm:col-span-2">
             <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">

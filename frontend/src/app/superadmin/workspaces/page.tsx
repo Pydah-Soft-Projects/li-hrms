@@ -50,6 +50,7 @@ interface Module {
   category: string;
   isActive: boolean;
   isSystem: boolean;
+  sortOrder?: number;
 }
 
 interface WorkspaceModule {
