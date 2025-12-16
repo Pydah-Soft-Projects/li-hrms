@@ -729,7 +729,7 @@ export default function LoansPage() {
         </div>
           <button
             onClick={() => openApplyDialog('loan')}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-500 to-green-600 text-white text-xs font-semibold shadow-sm hover:shadow-md transition-all"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-green-500 to-green-600 text-white text-xs font-semibold shadow-sm hover:shadow-md transition-all"
           >
             <PlusIcon />
             Apply Loan / Salary Advance
@@ -1078,7 +1078,7 @@ export default function LoansPage() {
                               setSelectedLoan(loan);
                               setShowDetailDialog(true);
                             }}
-                            className="px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-emerald-500 to-emerald-600 rounded-xl hover:from-emerald-600 hover:to-emerald-700 flex items-center gap-2 transition-all duration-300 shadow-md shadow-emerald-500/30 hover:shadow-lg"
+                            className="px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-green-500 to-green-600 rounded-xl hover:from-green-600 hover:to-green-700 flex items-center gap-2 transition-all duration-300 shadow-md shadow-green-500/30 hover:shadow-lg"
                           >
                             <CheckIcon /> Approve
                           </button>
@@ -1133,7 +1133,7 @@ export default function LoansPage() {
                               setSelectedLoan(advance);
                               setShowDetailDialog(true);
                             }}
-                            className="px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-emerald-500 to-emerald-600 rounded-xl hover:from-emerald-600 hover:to-emerald-700 flex items-center gap-2 transition-all duration-300 shadow-md shadow-emerald-500/30 hover:shadow-lg"
+                            className="px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-green-500 to-green-600 rounded-xl hover:from-green-600 hover:to-green-700 flex items-center gap-2 transition-all duration-300 shadow-md shadow-green-500/30 hover:shadow-lg"
                           >
                             <CheckIcon /> Approve
                           </button>
@@ -1179,7 +1179,7 @@ export default function LoansPage() {
             <div className={`p-6 bg-gradient-to-r ${
               selectedLoan.requestType === 'loan'
                 ? 'from-blue-500 to-indigo-600'
-                : 'from-purple-500 to-pink-600'
+                : 'from-purple-500 to-red-600'
             } text-white`}>
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold">
@@ -1353,7 +1353,7 @@ export default function LoansPage() {
 
               {/* Early Settlement Calculator - Only for active/disbursed loans */}
               {selectedLoan.requestType === 'loan' && ['disbursed', 'active'].includes(selectedLoan.status) && (
-                <div className="p-4 rounded-xl border-2 border-green-200 bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 dark:border-green-800">
+                <div className="p-4 rounded-xl border-2 border-green-200 bg-gradient-to-br from-green-50 to-green-50 dark:from-green-900/20 dark:to-green-900/20 dark:border-green-800">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-sm font-semibold text-green-900 dark:text-green-100 flex items-center gap-2">
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -1420,7 +1420,7 @@ export default function LoansPage() {
                       <button
                         onClick={() => setShowSettlementDialog(true)}
                         disabled={saving}
-                        className="w-full px-4 py-3 text-sm font-semibold text-white bg-gradient-to-r from-green-600 to-emerald-600 rounded-xl hover:from-green-700 hover:to-emerald-700 transition-all shadow-md hover:shadow-lg disabled:opacity-50 flex items-center justify-center gap-2"
+                        className="w-full px-4 py-3 text-sm font-semibold text-white bg-gradient-to-r from-green-600 to-green-600 rounded-xl hover:from-green-700 hover:to-green-700 transition-all shadow-md hover:shadow-lg disabled:opacity-50 flex items-center justify-center gap-2"
                       >
                         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -2066,7 +2066,7 @@ export default function LoansPage() {
               </div>
 
               {/* Savings Highlight */}
-              <div className="p-4 rounded-xl border border-green-200 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/30 dark:to-emerald-900/30 dark:border-green-700">
+              <div className="p-4 rounded-xl border border-green-200 bg-gradient-to-r from-green-50 to-green-50 dark:from-green-900/30 dark:to-green-900/30 dark:border-green-700">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 rounded-full bg-green-500 flex items-center justify-center">
                     <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -2115,7 +2115,7 @@ export default function LoansPage() {
                 <button
                   onClick={handleEarlySettlement}
                   disabled={saving}
-                  className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-green-600 to-emerald-600 rounded-xl hover:from-green-700 hover:to-emerald-700 transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-green-600 to-green-600 rounded-xl hover:from-green-700 hover:to-green-700 transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {saving ? (
                     <>
@@ -2396,7 +2396,7 @@ export default function LoansPage() {
                   className={`flex-1 px-4 py-2.5 text-sm font-semibold text-white rounded-xl transition-all disabled:opacity-50 ${
                     applyType === 'loan'
                       ? 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600'
-                      : 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600'
+                      : 'bg-gradient-to-r from-purple-500 to-red-500 hover:from-purple-600 hover:to-red-600'
                   }`}
                 >
                   {saving ? 'Submitting...' : `Apply ${applyType === 'loan' ? 'Loan' : 'Salary Advance'}`}

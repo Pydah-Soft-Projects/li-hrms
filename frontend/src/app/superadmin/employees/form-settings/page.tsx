@@ -1024,7 +1024,7 @@ export default function EmployeeFormSettingsPage() {
                               order: 0,
                             });
                           }}
-                          className="rounded-lg bg-emerald-500 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-600"
+                          className="rounded-lg bg-green-500 px-3 py-1 text-xs font-medium text-white hover:bg-green-600"
                         >
                           + Add Another Field
                         </button>

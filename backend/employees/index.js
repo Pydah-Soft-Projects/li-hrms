@@ -27,6 +27,12 @@ router.post('/', authorize('super_admin', 'sub_admin', 'hr'), employeeController
 // Update employee (Super Admin, Sub Admin, HR)
 router.put('/:empNo', authorize('super_admin', 'sub_admin', 'hr'), employeeController.updateEmployee);
 
+// Set employee left date (Super Admin, Sub Admin, HR)
+router.put('/:empNo/left-date', authorize('super_admin', 'sub_admin', 'hr'), employeeController.setLeftDate);
+
+// Remove employee left date / Reactivate (Super Admin, Sub Admin, HR)
+router.delete('/:empNo/left-date', authorize('super_admin', 'sub_admin', 'hr'), employeeController.removeLeftDate);
+
 // Delete employee (Super Admin, Sub Admin)
 router.delete('/:empNo', authorize('super_admin', 'sub_admin'), employeeController.deleteEmployee);
 

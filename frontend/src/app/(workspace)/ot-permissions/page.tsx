@@ -562,7 +562,7 @@ export default function OTAndPermissionsPage() {
 
       {/* Background */}
       <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(to_right,#e2e8f01f_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f01f_1px,transparent_1px)] bg-[size:28px_28px] dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.12)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.12)_1px,transparent_1px)]" />
-      <div className="pointer-events-none fixed inset-0 bg-gradient-to-br from-emerald-50/40 via-teal-50/35 to-transparent dark:from-slate-900/60 dark:via-slate-900/65 dark:to-slate-900/80" />
+      <div className="pointer-events-none fixed inset-0 bg-gradient-to-br from-green-50/40 via-green-50/35 to-transparent dark:from-slate-900/60 dark:via-slate-900/65 dark:to-slate-900/80" />
 
       <div className="relative z-10 mx-auto max-w-[1920px] px-4 py-8 sm:px-6 lg:px-8">
         {/* Header */}
@@ -592,7 +592,7 @@ export default function OTAndPermissionsPage() {
                 onClick={() => setActiveTab('permissions')}
                 className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${
                   activeTab === 'permissions'
-                    ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-500/30'
+                    ? 'bg-gradient-to-r from-green-500 to-green-500 text-white shadow-lg shadow-green-500/30'
                     : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
                 }`}
               >
@@ -620,7 +620,7 @@ export default function OTAndPermissionsPage() {
                 setActiveTab('permissions');
                 setShowPermissionDialog(true);
               }}
-              className="rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-500/30 transition-all hover:from-emerald-600 hover:to-teal-600"
+              className="rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
             >
               <svg className="mr-2 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -1325,7 +1325,7 @@ export default function OTAndPermissionsPage() {
                   <button
                     onClick={handleCreatePermission}
                     disabled={loading}
-                    className="rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-emerald-500/30 hover:from-emerald-600 hover:to-teal-600 disabled:opacity-50"
+                    className="rounded-lg bg-gradient-to-r from-green-500 to-green-500 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-green-500/30 hover:from-green-600 hover:to-green-600 disabled:opacity-50"
                   >
                     {loading ? 'Creating...' : 'Create Permission'}
                   </button>

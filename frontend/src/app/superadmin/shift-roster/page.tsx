@@ -628,7 +628,7 @@ function RosterPage() {
         <button
           onClick={saveRoster}
           disabled={saving}
-          className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:opacity-60"
+          className="px-4 py-2 rounded-lg bg-green-600 text-white text-sm font-semibold disabled:opacity-60"
         >
           {saving ? 'Saving...' : 'Save roster'}
         </button>
@@ -636,7 +636,7 @@ function RosterPage() {
       {saving && (
         <div className="h-1 w-full rounded bg-slate-200 dark:bg-slate-800 overflow-hidden">
           <div
-            className="h-full bg-emerald-500 transition-all"
+            className="h-full bg-green-500 transition-all"
             style={{ width: `${savingProgress ?? 50}%` }}
           />
         </div>

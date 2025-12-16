@@ -1170,7 +1170,7 @@ export default function DepartmentsPage() {
                   </button>
                   <button
                     onClick={() => handleOpenShiftDialog(dept)}
-                    className="group flex-1 rounded-2xl border border-purple-200 bg-gradient-to-r from-purple-50 to-pink-50 px-4 py-2.5 text-sm font-semibold text-purple-700 transition-all hover:from-purple-100 hover:to-pink-100 hover:shadow-md dark:border-purple-800 dark:from-purple-900/20 dark:to-pink-900/20 dark:text-purple-300 dark:hover:from-purple-900/30 dark:hover:to-pink-900/30"
+                    className="group flex-1 rounded-2xl border border-purple-200 bg-gradient-to-r from-purple-50 to-red-50 px-4 py-2.5 text-sm font-semibold text-purple-700 transition-all hover:from-purple-100 hover:to-red-100 hover:shadow-md dark:border-purple-800 dark:from-purple-900/20 dark:to-red-900/20 dark:text-purple-300 dark:hover:from-purple-900/30 dark:hover:to-red-900/30"
                   >
                     Shifts
                   </button>
@@ -1182,7 +1182,7 @@ export default function DepartmentsPage() {
                   </button>
                   <button
                     onClick={() => handleDeleteDepartment(dept._id)}
-                    className="rounded-2xl border border-red-200 bg-gradient-to-r from-red-50 to-pink-50 px-4 py-2.5 text-sm font-semibold text-red-700 transition-all hover:from-red-100 hover:to-pink-100 hover:shadow-md dark:border-red-800 dark:from-red-900/20 dark:to-pink-900/20 dark:text-red-300 dark:hover:from-red-900/30 dark:hover:to-pink-900/30"
+                    className="rounded-2xl border border-red-200 bg-gradient-to-r from-red-50 to-red-50 px-4 py-2.5 text-sm font-semibold text-red-700 transition-all hover:from-red-100 hover:to-red-100 hover:shadow-md dark:border-red-800 dark:from-red-900/20 dark:to-red-900/20 dark:text-red-300 dark:hover:from-red-900/30 dark:hover:to-red-900/30"
                   >
                     Delete
                   </button>

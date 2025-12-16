@@ -617,11 +617,12 @@ export const api = {
   },
 
   // Employees
-  getEmployees: async (filters?: { is_active?: boolean; department_id?: string; designation_id?: string }) => {
+  getEmployees: async (filters?: { is_active?: boolean; department_id?: string; designation_id?: string; includeLeft?: boolean }) => {
     const params = new URLSearchParams();
     if (filters?.is_active !== undefined) params.append('is_active', String(filters.is_active));
     if (filters?.department_id) params.append('department_id', filters.department_id);
     if (filters?.designation_id) params.append('designation_id', filters.designation_id);
+    if (filters?.includeLeft !== undefined) params.append('includeLeft', String(filters.includeLeft));
     const query = params.toString() ? `?${params.toString()}` : '';
     return apiRequest<any>(`/employees${query}`, { method: 'GET' });
   },
@@ -641,6 +642,21 @@ export const api = {
     return apiRequest<any>(`/employees/${empNo}`, {
       method: 'PUT',
       body: JSON.stringify(data),
+    });
+  },
+
+  // Set employee left date (deactivate)
+  setEmployeeLeftDate: async (empNo: string, leftDate: string, leftReason?: string) => {
+    return apiRequest<any>(`/employees/${empNo}/left-date`, {
+      method: 'PUT',
+      body: JSON.stringify({ leftDate, leftReason }),
+    });
+  },
+
+  // Remove employee left date (reactivate)
+  removeEmployeeLeftDate: async (empNo: string) => {
+    return apiRequest<any>(`/employees/${empNo}/left-date`, {
+      method: 'DELETE',
     });
   },
 

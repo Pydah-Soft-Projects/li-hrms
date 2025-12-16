@@ -59,7 +59,7 @@ const getWorkspaceColor = (type: string) => {
     case 'department':
       return 'bg-purple-500';
     case 'hr':
-      return 'bg-emerald-500';
+      return 'bg-green-500';
     case 'subadmin':
       return 'bg-amber-500';
     default:
@@ -74,7 +74,7 @@ const getWorkspaceBgColor = (type: string) => {
     case 'department':
       return 'bg-purple-50 dark:bg-purple-900/20';
     case 'hr':
-      return 'bg-emerald-50 dark:bg-emerald-900/20';
+      return 'bg-green-50 dark:bg-green-900/20';
     case 'subadmin':
       return 'bg-amber-50 dark:bg-amber-900/20';
     default:
@@ -236,7 +236,7 @@ const WorkspaceDropdown: React.FC<WorkspaceDropdownProps> = ({ className }) => {
 
                   {isActive && (
                     <div className="flex-shrink-0">
-                      <CheckIcon className="w-5 h-5 text-emerald-500" />
+                      <CheckIcon className="w-5 h-5 text-green-500" />
                     </div>
                   )}
                 </button>

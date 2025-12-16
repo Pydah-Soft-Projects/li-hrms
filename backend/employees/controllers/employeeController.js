@@ -271,7 +271,7 @@ const transformEmployeeForResponse = async (employee, populateUsers = true) => {
  */
 exports.getAllEmployees = async (req, res) => {
   try {
-    const { is_active, department_id, designation_id } = req.query;
+    const { is_active, department_id, designation_id, includeLeft } = req.query;
     const settings = await getEmployeeSettings();
 
     let employees = [];
@@ -281,6 +281,12 @@ exports.getAllEmployees = async (req, res) => {
     if (is_active !== undefined) filters.is_active = is_active === 'true';
     if (department_id) filters.department_id = department_id;
     if (designation_id) filters.designation_id = designation_id;
+    
+    // By default, exclude employees who have left (unless includeLeft=true)
+    // Only include employees with no leftDate (active) or includeLeft is true
+    if (includeLeft !== 'true') {
+      filters.leftDate = null; // Only show employees who haven't left
+    }
 
     // Fetch based on data source setting
     if (settings.dataSource === 'mssql' && isHRMSConnected()) {
@@ -293,6 +299,7 @@ exports.getAllEmployees = async (req, res) => {
       if (filters.is_active !== undefined) query.is_active = filters.is_active;
       if (filters.department_id) query.department_id = filters.department_id;
       if (filters.designation_id) query.designation_id = filters.designation_id;
+      if (filters.leftDate !== undefined) query.leftDate = filters.leftDate;
 
       const mongoEmployees = await Employee.find(query)
         .populate('department_id', 'name code')
@@ -845,6 +852,115 @@ exports.getSettings = async (req, res) => {
  * @route   GET /api/employees/components/defaults
  * @access  Private
  */
+/**
+ * @desc    Set employee left date (deactivate employee)
+ * @route   PUT /api/employees/:empNo/left-date
+ * @access  Private (Super Admin, Sub Admin, HR)
+ */
+exports.setLeftDate = async (req, res) => {
+  try {
+    const { empNo } = req.params;
+    const { leftDate, leftReason } = req.body;
+
+    if (!leftDate) {
+      return res.status(400).json({
+        success: false,
+        message: 'Left date is required',
+      });
+    }
+
+    // Validate date format
+    const leftDateObj = new Date(leftDate);
+    if (isNaN(leftDateObj.getTime())) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid left date format',
+      });
+    }
+
+    // Find employee
+    const employee = await Employee.findOne({ emp_no: empNo.toUpperCase() });
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: 'Employee not found',
+      });
+    }
+
+    // Update left date and deactivate
+    employee.leftDate = leftDateObj;
+    employee.leftReason = leftReason || null;
+    employee.is_active = false; // Deactivate when left date is set
+
+    await employee.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Employee left date set successfully',
+      data: {
+        emp_no: employee.emp_no,
+        employee_name: employee.employee_name,
+        leftDate: employee.leftDate,
+        leftReason: employee.leftReason,
+        is_active: employee.is_active,
+      },
+    });
+  } catch (error) {
+    console.error('Error setting left date:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error setting left date',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * @desc    Remove employee left date (reactivate employee)
+ * @route   DELETE /api/employees/:empNo/left-date
+ * @access  Private (Super Admin, Sub Admin, HR)
+ */
+exports.removeLeftDate = async (req, res) => {
+  try {
+    const { empNo } = req.params;
+
+    // Find employee
+    const employee = await Employee.findOne({ emp_no: empNo.toUpperCase() });
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: 'Employee not found',
+      });
+    }
+
+    // Remove left date and reactivate
+    employee.leftDate = null;
+    employee.leftReason = null;
+    employee.is_active = true;
+
+    await employee.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Employee reactivated successfully',
+      data: {
+        emp_no: employee.emp_no,
+        employee_name: employee.employee_name,
+        leftDate: employee.leftDate,
+        leftReason: employee.leftReason,
+        is_active: employee.is_active,
+      },
+    });
+  } catch (error) {
+    console.error('Error removing left date:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error removing left date',
+      error: error.message,
+    });
+  }
+};
+
 exports.getAllowanceDeductionDefaults = async (req, res) => {
   try {
     const { departmentId, grossSalary, empNo } = req.query;

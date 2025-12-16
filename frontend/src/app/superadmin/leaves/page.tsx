@@ -1034,7 +1034,7 @@ export default function LeavesPage() {
           </div>
           <button
             onClick={() => openApplyDialog('leave')}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-500 to-green-600 text-white text-xs font-semibold shadow-sm hover:shadow-md transition-all"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-green-500 to-green-600 text-white text-xs font-semibold shadow-sm hover:shadow-md transition-all"
           >
             <PlusIcon />
             Apply Leave / OD
@@ -1839,7 +1839,7 @@ export default function LeavesPage() {
                   className={`flex-1 px-4 py-2.5 text-sm font-semibold text-white rounded-xl ${
                     applyType === 'leave'
                       ? 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600'
-                      : 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600'
+                      : 'bg-gradient-to-r from-purple-500 to-red-500 hover:from-purple-600 hover:to-red-600'
                   }`}
                 >
                   Apply {applyType === 'leave' ? 'Leave' : 'OD'}
@@ -1858,7 +1858,7 @@ export default function LeavesPage() {
             <div className={`px-6 py-4 border-b border-slate-200 dark:border-slate-700 ${
               detailType === 'leave' 
                 ? 'bg-gradient-to-r from-blue-500 to-indigo-500' 
-                : 'bg-gradient-to-r from-purple-500 to-pink-500'
+                : 'bg-gradient-to-r from-purple-500 to-red-500'
             }`}>
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold text-white flex items-center gap-2">
@@ -1909,7 +1909,7 @@ export default function LeavesPage() {
                   <div className={`w-16 h-16 rounded-2xl flex items-center justify-center text-white font-bold text-xl flex-shrink-0 shadow-lg ${
                     detailType === 'leave' 
                       ? 'bg-gradient-to-br from-blue-500 to-indigo-600' 
-                      : 'bg-gradient-to-br from-purple-500 to-pink-600'
+                      : 'bg-gradient-to-br from-purple-500 to-red-600'
                   }`}>
                     {(selectedItem.employeeId?.employee_name?.[0] || selectedItem.emp_no?.[0] || 'E').toUpperCase()}
                   </div>
@@ -2104,8 +2104,8 @@ export default function LeavesPage() {
               {selectedItem.contactNumber && (
                 <div className="rounded-2xl bg-white dark:bg-slate-800 p-6 shadow-md border border-slate-200 dark:border-slate-700">
                   <div className="flex items-center gap-3 mb-4">
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-teal-100 dark:bg-teal-900/30">
-                      <svg className="w-5 h-5 text-teal-600 dark:text-teal-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-green-100 dark:bg-green-900/30">
+                      <svg className="w-5 h-5 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                       </svg>
                     </div>

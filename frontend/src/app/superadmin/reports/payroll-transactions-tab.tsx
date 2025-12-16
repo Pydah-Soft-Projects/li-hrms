@@ -109,7 +109,7 @@ export default function PayrollTransactionsTab() {
   const getCategoryColor = (category: string) => {
     switch (category) {
       case 'earning':
-        return 'text-emerald-600 dark:text-emerald-400';
+        return 'text-green-600 dark:text-green-400';
       case 'deduction':
         return 'text-red-600 dark:text-red-400';
       case 'adjustment':
@@ -183,7 +183,7 @@ export default function PayrollTransactionsTab() {
               onClick={() => setFilterType('earnings')}
               className={`rounded-md px-4 py-2 text-sm font-medium ${
                 filterType === 'earnings'
-                  ? 'bg-emerald-600 text-white'
+                  ? 'bg-green-600 text-white'
                   : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600'
               }`}
             >
@@ -208,16 +208,16 @@ export default function PayrollTransactionsTab() {
         <>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
             {/* Total Earnings */}
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 shadow-sm dark:border-emerald-800 dark:bg-emerald-900/20">
+            <div className="rounded-lg border border-green-200 bg-green-50 p-4 shadow-sm dark:border-green-800 dark:bg-green-900/20">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">Total Earnings</p>
-                  <p className="mt-1 text-2xl font-bold text-emerald-900 dark:text-emerald-100">
+                  <p className="text-sm font-medium text-green-600 dark:text-green-400">Total Earnings</p>
+                  <p className="mt-1 text-2xl font-bold text-green-900 dark:text-green-100">
                     {formatCurrency(analytics.totalEarnings)}
                   </p>
                 </div>
-                <div className="rounded-full bg-emerald-100 p-3 dark:bg-emerald-900/40">
-                  <svg className="h-6 w-6 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <div className="rounded-full bg-green-100 p-3 dark:bg-green-900/40">
+                  <svg className="h-6 w-6 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </div>
@@ -406,7 +406,7 @@ export default function PayrollTransactionsTab() {
                       <span
                         className={`text-sm font-semibold ${
                           transaction.category === 'earning'
-                            ? 'text-emerald-600 dark:text-emerald-400'
+                            ? 'text-green-600 dark:text-green-400'
                             : transaction.category === 'deduction'
                             ? 'text-red-600 dark:text-red-400'
                             : 'text-blue-600 dark:text-blue-400'

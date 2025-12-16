@@ -174,7 +174,7 @@ export default function DynamicEmployeeForm({
             value={value || ''}
             onChange={(e) => handleFieldChange(field.id, e.target.value)}
             required={field.isRequired}
-            className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+            className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
               error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
             }`}
           >
@@ -204,7 +204,7 @@ export default function DynamicEmployeeForm({
             onChange={(e) => handleFieldChange(field.id, e.target.value)}
             required={field.isRequired}
             disabled={!formData.department_id}
-            className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+            className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
               error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
             }`}
           >
@@ -239,7 +239,7 @@ export default function DynamicEmployeeForm({
               placeholder={field.placeholder}
               required={field.isRequired}
               maxLength={field.validation?.maxLength}
-              className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+              className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
                 error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
               } ${field.id === 'emp_no' || field.id === 'ifsc_code' ? 'uppercase' : ''}`}
             />
@@ -260,7 +260,7 @@ export default function DynamicEmployeeForm({
               required={field.isRequired}
               rows={3}
               maxLength={field.validation?.maxLength}
-              className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+              className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
                 error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
               }`}
             />
@@ -283,7 +283,7 @@ export default function DynamicEmployeeForm({
               min={field.validation?.min}
               max={field.validation?.max}
               step={field.id === 'proposedSalary' ? '0.01' : '1'}
-              className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+              className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
                 error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
               }`}
             />
@@ -302,7 +302,7 @@ export default function DynamicEmployeeForm({
               value={value ? new Date(value).toISOString().split('T')[0] : ''}
               onChange={(e) => handleFieldChange(field.id, e.target.value)}
               required={field.isRequired}
-              className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+              className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
                 error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
               }`}
             />
@@ -320,7 +320,7 @@ export default function DynamicEmployeeForm({
               value={value || ''}
               onChange={(e) => handleFieldChange(field.id, e.target.value || null)}
               required={field.isRequired}
-              className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+              className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
                 error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
               }`}
             >
@@ -346,7 +346,7 @@ export default function DynamicEmployeeForm({
               <button
                 type="button"
                 onClick={() => handleArrayItemAdd(field.id, field.itemSchema)}
-                className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-emerald-600"
+                className="rounded-lg bg-green-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-green-600"
               >
                 + Add
               </button>
@@ -393,7 +393,7 @@ export default function DynamicEmployeeForm({
                                 placeholder={nestedField.placeholder}
                                 required={nestedField.isRequired}
                                 rows={3}
-                                className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                                className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
                                   nestedError ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
                                 }`}
                               />
@@ -407,7 +407,7 @@ export default function DynamicEmployeeForm({
                                 }}
                                 placeholder={nestedField.placeholder}
                                 required={nestedField.isRequired}
-                                className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                                className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
                                   nestedError ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
                                 }`}
                               />
@@ -424,7 +424,7 @@ export default function DynamicEmployeeForm({
                               required={nestedField.isRequired}
                               min={nestedField.validation?.min}
                               max={nestedField.validation?.max}
-                              className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                              className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
                                 nestedError ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
                               }`}
                             />
@@ -436,7 +436,7 @@ export default function DynamicEmployeeForm({
                                 handleArrayItemChange(field.id, index, newItem);
                               }}
                               required={nestedField.isRequired}
-                              className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                              className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
                                 nestedError ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
                               }`}
                             >
@@ -462,7 +462,7 @@ export default function DynamicEmployeeForm({
                       handleArrayItemChange(field.id, index, newValue);
                     }}
                     placeholder={field.placeholder}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                   />
                 )}
               </div>
@@ -487,7 +487,7 @@ export default function DynamicEmployeeForm({
               onChange={(e) => handleFieldChange(field.id, e.target.value)}
               placeholder={field.placeholder || 'example@email.com'}
               required={field.isRequired}
-              className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+              className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
                 error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
               }`}
             />
@@ -507,7 +507,7 @@ export default function DynamicEmployeeForm({
               onChange={(e) => handleFieldChange(field.id, e.target.value)}
               placeholder={field.placeholder || '+91 1234567890'}
               required={field.isRequired}
-              className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+              className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
                 error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
               }`}
             />
@@ -531,7 +531,7 @@ export default function DynamicEmployeeForm({
                 }
               }}
               required={field.isRequired}
-              className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+              className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
                 error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
               }`}
             />
@@ -566,7 +566,7 @@ export default function DynamicEmployeeForm({
                         }
                         handleFieldChange(field.id, newValue);
                       }}
-                      className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                      className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500"
                     />
                     <span className="text-sm text-slate-700 dark:text-slate-300">{opt.label}</span>
                   </label>
@@ -615,7 +615,7 @@ export default function DynamicEmployeeForm({
                           }}
                           placeholder={nestedField.placeholder}
                           required={nestedField.isRequired}
-                          className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                          className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
                             nestedError ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
                           }`}
                         />
@@ -631,7 +631,7 @@ export default function DynamicEmployeeForm({
                           placeholder={nestedField.placeholder}
                           required={nestedField.isRequired}
                           rows={3}
-                          className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                          className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
                             nestedError ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
                           }`}
                         />
@@ -649,7 +649,7 @@ export default function DynamicEmployeeForm({
                           required={nestedField.isRequired}
                           min={nestedField.validation?.min}
                           max={nestedField.validation?.max}
-                          className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                          className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
                             nestedError ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
                           }`}
                         />
@@ -664,7 +664,7 @@ export default function DynamicEmployeeForm({
                             });
                           }}
                           required={nestedField.isRequired}
-                          className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                          className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
                             nestedError ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
                           }`}
                         />
@@ -678,7 +678,7 @@ export default function DynamicEmployeeForm({
                             });
                           }}
                           required={nestedField.isRequired}
-                          className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                          className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
                             nestedError ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
                           }`}
                         >
@@ -722,9 +722,9 @@ export default function DynamicEmployeeForm({
                     key={user._id}
                     className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-all ${
                       isSelected
-                        ? 'border-emerald-400 bg-emerald-50 dark:border-emerald-600 dark:bg-emerald-900/20'
+                        ? 'border-green-400 bg-green-50 dark:border-green-600 dark:bg-green-900/20'
                         : canSelect
-                        ? 'border-slate-200 bg-white hover:border-emerald-200 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600'
+                        ? 'border-slate-200 bg-white hover:border-green-200 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600'
                         : 'border-slate-200 bg-slate-50 opacity-50 cursor-not-allowed dark:border-slate-700 dark:bg-slate-900/50'
                     }`}
                   >
@@ -743,14 +743,14 @@ export default function DynamicEmployeeForm({
                         handleFieldChange(field.id, newValue);
                       }}
                       disabled={!canSelect}
-                      className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 disabled:opacity-50"
+                      className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500 disabled:opacity-50"
                     />
                     <div className="flex-1">
                       <div className="font-medium text-slate-900 dark:text-slate-100">{user.name}</div>
                       <div className="text-xs text-slate-500 dark:text-slate-400">{user.email}</div>
                     </div>
                     {isSelected && (
-                      <svg className="h-5 w-5 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
+                      <svg className="h-5 w-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
                         <path
                           fillRule="evenodd"
                           d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
@@ -779,7 +779,7 @@ export default function DynamicEmployeeForm({
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent"></div>
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-green-500 border-t-transparent"></div>
       </div>
     );
   }
@@ -868,7 +868,7 @@ export default function DynamicEmployeeForm({
                   placeholder={field.placeholder}
                   required={field.isRequired}
                   rows={3}
-                  className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                  className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
                     error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
                   }`}
                 />
@@ -879,7 +879,7 @@ export default function DynamicEmployeeForm({
                   onChange={(e) => handleQualificationChange(qualIndex, field.id, e.target.value)}
                   placeholder={field.placeholder}
                   required={field.isRequired}
-                  className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                  className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
                     error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
                   }`}
                 />
@@ -902,7 +902,7 @@ export default function DynamicEmployeeForm({
                 required={field.isRequired}
                 min={field.validation?.min}
                 max={field.validation?.max}
-                className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
                   error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
                 }`}
               />
@@ -921,7 +921,7 @@ export default function DynamicEmployeeForm({
                 value={value}
                 onChange={(e) => handleQualificationChange(qualIndex, field.id, e.target.value)}
                 required={field.isRequired}
-                className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
                   error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
                 }`}
               />
@@ -939,7 +939,7 @@ export default function DynamicEmployeeForm({
                 value={value}
                 onChange={(e) => handleQualificationChange(qualIndex, field.id, e.target.value)}
                 required={field.isRequired}
-                className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
+                className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${
                   error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
                 }`}
               >
@@ -990,7 +990,7 @@ export default function DynamicEmployeeForm({
           <button
             type="button"
             onClick={handleAddQualification}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-600 transition-colors hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:border-emerald-500 dark:hover:bg-emerald-900/20 dark:hover:text-emerald-400"
+            className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-600 transition-colors hover:border-green-400 hover:bg-green-50 hover:text-green-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:border-green-500 dark:hover:bg-green-900/20 dark:hover:text-green-400"
           >
             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />

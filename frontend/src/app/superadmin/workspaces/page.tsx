@@ -94,7 +94,7 @@ const getWorkspaceTypeColor = (type: string) => {
     case 'department':
       return 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400';
     case 'hr':
-      return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400';
+      return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
     case 'subadmin':
       return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400';
     case 'superadmin':
@@ -443,7 +443,7 @@ export default function WorkspacesPage() {
                 });
                 setShowCreateModuleDialog(true);
               }}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400"
+              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-green-200 bg-green-50 text-green-700 hover:bg-green-100 dark:border-green-800 dark:bg-green-900/30 dark:text-green-400"
             >
               <PlusIcon />
               Create Module
@@ -486,7 +486,7 @@ export default function WorkspacesPage() {
           <div className="text-sm text-slate-500 dark:text-slate-400">System Modules</div>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
-          <div className="text-3xl font-bold text-emerald-600">{workspaces.filter(w => w.isSystem).length}</div>
+          <div className="text-3xl font-bold text-green-600">{workspaces.filter(w => w.isSystem).length}</div>
           <div className="text-sm text-slate-500 dark:text-slate-400">System Workspaces</div>
         </div>
       </div>
@@ -929,7 +929,7 @@ export default function WorkspacesPage() {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-emerald-500 to-green-500 rounded-xl hover:from-emerald-600 hover:to-green-600"
+                  className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-green-500 to-green-500 rounded-xl hover:from-green-600 hover:to-green-600"
                 >
                   Create Module
                 </button>

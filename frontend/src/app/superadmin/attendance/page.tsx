@@ -916,7 +916,7 @@ export default function AttendancePage() {
     <div className="relative min-h-screen">
       {/* Background */}
       <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(to_right,#e2e8f01f_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f01f_1px,transparent_1px)] bg-[size:28px_28px] dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.12)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.12)_1px,transparent_1px)]" />
-      <div className="pointer-events-none fixed inset-0 bg-gradient-to-br from-emerald-50/40 via-teal-50/35 to-transparent dark:from-slate-900/60 dark:via-slate-900/65 dark:to-slate-900/80" />
+      <div className="pointer-events-none fixed inset-0 bg-gradient-to-br from-green-50/40 via-green-50/35 to-transparent dark:from-slate-900/60 dark:via-slate-900/65 dark:to-slate-900/80" />
 
       <div className="relative z-10 mx-auto max-w-[1920px]">
         {/* Header */}
@@ -934,7 +934,7 @@ export default function AttendancePage() {
                 setSelectedDepartment(e.target.value);
                 setSelectedDesignation('');
               }}
-              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
             >
               <option value="">All Departments</option>
               {departments.map((dept) => (
@@ -949,7 +949,7 @@ export default function AttendancePage() {
               <select
                 value={selectedDesignation}
                 onChange={(e) => setSelectedDesignation(e.target.value)}
-                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
               >
                 <option value="">All Designations</option>
                 {designations.map((desig) => (
@@ -966,7 +966,7 @@ export default function AttendancePage() {
                 onClick={() => setViewMode('list')}
                 className={`rounded-md px-3 py-1.5 text-xs font-medium transition-all ${
                   viewMode === 'list'
-                    ? 'bg-gradient-to-r from-emerald-500 to-green-600 text-white shadow-sm'
+                    ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-sm'
                     : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-700'
                 }`}
               >
@@ -984,7 +984,7 @@ export default function AttendancePage() {
                 }}
                 className={`rounded-md px-3 py-1.5 text-xs font-medium transition-all ${
                   viewMode === 'calendar'
-                    ? 'bg-gradient-to-r from-emerald-500 to-green-600 text-white shadow-sm'
+                    ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-sm'
                     : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-700'
                 }`}
               >
@@ -1065,7 +1065,7 @@ export default function AttendancePage() {
             {/* Upload Excel Button */}
             <button
               onClick={() => setShowUploadDialog(true)}
-              className="rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-500/30 transition-all hover:from-emerald-600 hover:to-teal-600"
+              className="rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
             >
               <svg className="mr-2 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
@@ -1194,7 +1194,7 @@ export default function AttendancePage() {
                                       e.stopPropagation();
                                       handleViewPayslip(item.employee);
                                     }}
-                                    className="rounded-md bg-gradient-to-r from-green-500 to-emerald-600 px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:from-green-600 hover:to-emerald-700 hover:shadow-md"
+                                    className="rounded-md bg-gradient-to-r from-green-500 to-green-600 px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:from-green-600 hover:to-green-700 hover:shadow-md"
                                     title="View Payslip"
                                   >
                                     Payslip
@@ -1411,7 +1411,7 @@ export default function AttendancePage() {
                 <button
                   onClick={handleExcelUpload}
                   disabled={!uploadFile || uploading}
-                  className="flex-1 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-500/30 transition-all hover:from-emerald-600 hover:to-teal-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex-1 rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {uploading ? 'Uploading...' : 'Upload'}
                 </button>

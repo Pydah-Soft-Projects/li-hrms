@@ -1602,7 +1602,7 @@ export default function SettingsPage() {
                         <button
                           onClick={handleAddLeaveType}
                           disabled={saving || !newLeaveType.code || !newLeaveType.name}
-                          className="w-full rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="w-full rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           Add Leave Type
                         </button>
@@ -1845,7 +1845,7 @@ export default function SettingsPage() {
                 {leaveSubTab === 'odStatuses' && (
                   <div className="space-y-6">
                     {/* Add New OD Status */}
-                    <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-pink-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-pink-900/10">
+                    <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-red-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-red-900/10">
                       <label className="mb-3 block text-sm font-semibold text-slate-900 dark:text-slate-100">
                         Add New OD Status
                       </label>
@@ -1873,7 +1873,7 @@ export default function SettingsPage() {
                         <button
                           onClick={() => handleAddStatus('od')}
                           disabled={saving || !newStatus.code || !newStatus.name}
-                          className="rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-pink-500/30 transition-all hover:from-pink-600 hover:to-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="rounded-xl bg-gradient-to-r from-red-500 to-red-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-red-500/30 transition-all hover:from-red-600 hover:to-red-600 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           Add
                         </button>

@@ -88,7 +88,7 @@ interface Shift {
   payableShifts: number;
 }
 
-type TableType = 'present' | 'absent' | 'leaves' | 'od' | 'ot' | 'extraHours';
+type TableType = 'present' | 'absent' | 'leaves' | 'od' | 'ot' | 'extraHours' | 'shifts';
 
 export default function PayRegisterPage() {
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -478,6 +478,11 @@ export default function PayRegisterPage() {
         return 'bg-orange-100 dark:bg-orange-900/30';
       }
     }
+    if (tableType === 'shifts') {
+      if (record.shiftId !== null || record.shiftName !== null || record.firstHalf.shiftId !== null || record.secondHalf.shiftId !== null) {
+        return 'bg-indigo-100 dark:bg-indigo-900/30';
+      }
+    }
     return '';
   };
 
@@ -496,6 +501,8 @@ export default function PayRegisterPage() {
       case 'ot':
       case 'extraHours':
         return record.otHours > 0 || record.firstHalf.otHours > 0 || record.secondHalf.otHours > 0;
+      case 'shifts':
+        return record.shiftId !== null || record.shiftName !== null || record.firstHalf.shiftId !== null || record.secondHalf.shiftId !== null;
       default:
         return false;
     }
@@ -663,7 +670,7 @@ export default function PayRegisterPage() {
             <button
               onClick={handleCalculatePayrollForAll}
               disabled={bulkCalculating || exportingExcel}
-              className="px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {bulkCalculating ? 'Calculating...' : exportingExcel ? 'Preparing Excel...' : 'Calculate Payroll (Listed)'}
             </button>
@@ -760,6 +767,7 @@ export default function PayRegisterPage() {
               { id: 'od' as TableType, label: 'OD', color: 'blue' },
               { id: 'ot' as TableType, label: 'OT', color: 'orange' },
               { id: 'extraHours' as TableType, label: 'Extra Hours', color: 'purple' },
+              { id: 'shifts' as TableType, label: 'Shifts', color: 'indigo' },
             ].map((tab) => {
               // Count employees with data in this table type
               const count = payRegisters.filter(pr => {
@@ -776,6 +784,8 @@ export default function PayRegisterPage() {
                   case 'ot':
                   case 'extraHours':
                     return pr.dailyRecords.some(r => r.otHours > 0 || r.firstHalf.otHours > 0 || r.secondHalf.otHours > 0);
+                  case 'shifts':
+                    return pr.dailyRecords.some(r => r.shiftId !== null || r.shiftName !== null || r.firstHalf.shiftId !== null || r.secondHalf.shiftId !== null);
                   default:
                     return true;
                 }
@@ -864,13 +874,18 @@ export default function PayRegisterPage() {
                         Total Extra Hours
                       </th>
                     )}
+                    {activeTable === 'shifts' && (
+                      <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-indigo-50 dark:bg-indigo-900/20">
+                        Total Shifts
+                      </th>
+                    )}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                   {getFilteredPayRegisters().length === 0 ? (
                     <tr>
                       <td colSpan={daysArray.length + (activeTable === 'leaves' ? 4 : 1)} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
-                        No records found for {activeTable} table
+                        No records found for {activeTable === 'shifts' ? 'shifts' : activeTable} table
                       </td>
                     </tr>
                   ) : (
@@ -897,7 +912,7 @@ export default function PayRegisterPage() {
                                 <div className="flex gap-2">
                                   <button
                                     onClick={() => employee && handleViewPayslip(employee)}
-                                    className="rounded-md bg-gradient-to-r from-green-500 to-emerald-600 px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:from-green-600 hover:to-emerald-700 hover:shadow-md"
+                                    className="rounded-md bg-gradient-to-r from-green-500 to-green-600 px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:from-green-600 hover:to-green-700 hover:shadow-md"
                                     title="View Payslip"
                                   >
                                     Payslip
@@ -974,17 +989,38 @@ export default function PayRegisterPage() {
                               >
                                 {shouldShow && record ? (
                                   <div className="space-y-0.5">
-                                    <div className="font-semibold text-[9px]">{displayStatus}</div>
-                                    {record.isSplit && (
-                                      <div className="text-[8px] opacity-75">
-                                        {record.firstHalf.status.charAt(0).toUpperCase()}/{record.secondHalf.status.charAt(0).toUpperCase()}
-                                      </div>
-                                    )}
-                                    {record.otHours > 0 && (activeTable === 'ot' || activeTable === 'extraHours') && (
-                                      <div className="text-[8px] font-semibold text-blue-600 dark:text-blue-300">{record.otHours}h</div>
-                                    )}
-                                    {record.shiftName && (
-                                      <div className="text-[8px] opacity-75 truncate" title={record.shiftName}>{record.shiftName.substring(0, 3)}</div>
+                                    {activeTable === 'shifts' ? (
+                                      <>
+                                        {record.shiftName ? (
+                                          <div className="font-semibold text-[9px] text-indigo-700 dark:text-indigo-300" title={record.shiftName}>
+                                            {record.shiftName.length > 8 ? record.shiftName.substring(0, 8) + '...' : record.shiftName}
+                                          </div>
+                                        ) : (
+                                          <div className="font-semibold text-[9px] text-slate-500">-</div>
+                                        )}
+                                        {record.isSplit && (
+                                          <div className="text-[7px] opacity-75 text-slate-500">
+                                            {record.firstHalf.shiftId ? '1st' : ''}
+                                            {record.firstHalf.shiftId && record.secondHalf.shiftId ? '/' : ''}
+                                            {record.secondHalf.shiftId ? '2nd' : ''}
+                                          </div>
+                                        )}
+                                      </>
+                                    ) : (
+                                      <>
+                                        <div className="font-semibold text-[9px]">{displayStatus}</div>
+                                        {record.isSplit && (
+                                          <div className="text-[8px] opacity-75">
+                                            {record.firstHalf.status.charAt(0).toUpperCase()}/{record.secondHalf.status.charAt(0).toUpperCase()}
+                                          </div>
+                                        )}
+                                        {record.otHours > 0 && (activeTable === 'ot' || activeTable === 'extraHours') && (
+                                          <div className="text-[8px] font-semibold text-blue-600 dark:text-blue-300">{record.otHours}h</div>
+                                        )}
+                                        {record.shiftName && (
+                                          <div className="text-[8px] opacity-75 truncate" title={record.shiftName}>{record.shiftName.substring(0, 3)}</div>
+                                        )}
+                                      </>
                                     )}
                                     {record.isManuallyEdited && (
                                       <div className="text-[7px] text-indigo-600 dark:text-indigo-400" title="Manually Edited">✎</div>
@@ -1036,6 +1072,11 @@ export default function PayRegisterPage() {
                           {activeTable === 'extraHours' && (
                             <td className="border-r-0 border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700 dark:border-slate-700 dark:bg-purple-900/20 dark:text-purple-300">
                               {pr.totals.totalOTHours.toFixed(1)}
+                            </td>
+                          )}
+                          {activeTable === 'shifts' && (
+                            <td className="border-r-0 border-slate-200 bg-indigo-50 px-2 py-2 text-center text-[11px] font-bold text-indigo-700 dark:border-slate-700 dark:bg-indigo-900/20 dark:text-indigo-300">
+                              {pr.dailyRecords.filter(r => r.shiftId !== null || r.shiftName !== null || r.firstHalf.shiftId !== null || r.secondHalf.shiftId !== null).length}
                             </td>
                           )}
                         </tr>

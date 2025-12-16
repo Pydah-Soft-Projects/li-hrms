@@ -197,6 +197,17 @@ const employeeSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    // Employee left date - when employee left the company
+    leftDate: {
+      type: Date,
+      default: null,
+    },
+    // Reason for leaving (optional)
+    leftReason: {
+      type: String,
+      trim: true,
+      default: null,
+    },
   },
   {
     timestamps: {
@@ -212,6 +223,7 @@ employeeSchema.index({ employee_name: 1 });
 employeeSchema.index({ department_id: 1 });
 employeeSchema.index({ designation_id: 1 });
 employeeSchema.index({ is_active: 1 });
+employeeSchema.index({ leftDate: 1 });
 employeeSchema.index({ phone_number: 1 });
 employeeSchema.index({ email: 1 });
 
@@ -283,6 +295,42 @@ employeeSchema.methods.getPermanentFields = function () {
   const allFields = this.toObject({ virtuals: false });
   const { dynamicFields, _id, __v, ...permanentFields } = allFields;
   return permanentFields;
+};
+
+/**
+ * Static method to check if employee should be included for a given month
+ * @param {Date|String} leftDate - Employee's left date
+ * @param {String} month - Month in YYYY-MM format
+ * @returns {Boolean} - True if employee should be included for this month
+ * 
+ * Logic:
+ * - If no leftDate: Always include (employee is still active)
+ * - If leftDate is within the month: Include (they left during this month)
+ * - If leftDate is after the month: Include (they were active during this month)
+ * - If leftDate is before the month: Exclude (they left before this month started)
+ */
+employeeSchema.statics.shouldIncludeForMonth = function (leftDate, month) {
+  if (!leftDate) return true; // No left date, always include
+  
+  // Parse month to get year and month number
+  const [year, monthNum] = month.split('-').map(Number);
+  const monthStart = new Date(year, monthNum - 1, 1);
+  
+  // Convert leftDate to Date if it's a string
+  const leftDateObj = leftDate instanceof Date ? leftDate : new Date(leftDate);
+  
+  // Include if left date is on or after the start of this month
+  // (meaning they were active during this month or left during this month)
+  return leftDateObj >= monthStart;
+};
+
+/**
+ * Instance method to check if employee should be included for a given month
+ * @param {String} month - Month in YYYY-MM format
+ * @returns {Boolean} - True if employee should be included for this month
+ */
+employeeSchema.methods.shouldIncludeForMonth = function (month) {
+  return this.constructor.shouldIncludeForMonth(this.leftDate, month);
 };
 
 // Ensure virtuals are included in JSON output

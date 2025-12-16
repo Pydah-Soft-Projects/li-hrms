@@ -530,7 +530,7 @@ export default function AllowancesDeductionsPage() {
     <div className="relative min-h-screen">
       {/* Background Pattern */}
       <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(to_right,#e2e8f01f_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f01f_1px,transparent_1px)] bg-[size:28px_28px] dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.12)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.12)_1px,transparent_1px)]" />
-      <div className="pointer-events-none fixed inset-0 bg-gradient-to-br from-emerald-50/40 via-green-50/35 to-transparent dark:from-slate-900/60 dark:via-slate-900/65 dark:to-slate-900/80" />
+      <div className="pointer-events-none fixed inset-0 bg-gradient-to-br from-green-50/40 via-green-50/35 to-transparent dark:from-slate-900/60 dark:via-slate-900/65 dark:to-slate-900/80" />
 
       <div className="relative z-10 p-6 sm:p-8 lg:p-10">
         {/* Header Section */}
@@ -550,7 +550,7 @@ export default function AllowancesDeductionsPage() {
                 onClick={() => setActiveTab('all')}
                 className={`rounded-lg px-3 py-1.5 text-[10px] font-semibold transition-all ${
                   activeTab === 'all'
-                    ? 'bg-gradient-to-r from-emerald-500 to-green-600 text-white shadow-md'
+                    ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-md'
                     : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
                 }`}
               >
@@ -560,7 +560,7 @@ export default function AllowancesDeductionsPage() {
                 onClick={() => setActiveTab('allowances')}
                 className={`rounded-lg px-3 py-1.5 text-[10px] font-semibold transition-all ${
                   activeTab === 'allowances'
-                    ? 'bg-gradient-to-r from-emerald-500 to-green-600 text-white shadow-md'
+                    ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-md'
                     : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
                 }`}
               >
@@ -570,7 +570,7 @@ export default function AllowancesDeductionsPage() {
                 onClick={() => setActiveTab('deductions')}
                 className={`rounded-lg px-3 py-1.5 text-[10px] font-semibold transition-all ${
                   activeTab === 'deductions'
-                    ? 'bg-gradient-to-r from-emerald-500 to-green-600 text-white shadow-md'
+                    ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-md'
                     : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
                 }`}
               >
@@ -580,7 +580,7 @@ export default function AllowancesDeductionsPage() {
 
             <button
               onClick={handleCreate}
-              className="group relative inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-emerald-500/30 transition-all hover:from-emerald-600 hover:to-green-700 hover:shadow-xl hover:shadow-emerald-500/40 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2"
+              className="group relative inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-green-500 to-green-600 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-700 hover:shadow-xl hover:shadow-green-500/40 focus:outline-none focus:ring-2 focus:ring-green-400 focus:ring-offset-2"
             >
               <span className="text-sm">+</span>
               <span>Create New</span>
@@ -591,13 +591,13 @@ export default function AllowancesDeductionsPage() {
         {/* Items Grid (Card-based) */}
         {loading ? (
           <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white/95 py-12 shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
-            <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent"></div>
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-green-500 border-t-transparent"></div>
             <p className="mt-3 text-xs font-medium text-slate-600 dark:text-slate-400">Loading items...</p>
           </div>
         ) : filteredItems.length === 0 ? (
           <div className="rounded-2xl border border-slate-200 bg-white/95 p-8 text-center shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
-            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-emerald-100 to-green-100 dark:from-emerald-900/30 dark:to-green-900/30">
-              <svg className="h-6 w-6 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-green-100 to-green-100 dark:from-green-900/30 dark:to-green-900/30">
+              <svg className="h-6 w-6 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
             </div>
@@ -611,13 +611,13 @@ export default function AllowancesDeductionsPage() {
             {filteredItems.map((item) => (
               <div
                 key={item._id}
-                className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-lg shadow-emerald-100/40 transition-all hover:border-emerald-300 hover:shadow-xl hover:shadow-emerald-200/50 dark:border-slate-800 dark:bg-slate-950/95 dark:shadow-none dark:hover:border-slate-700"
+                className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-lg shadow-green-100/40 transition-all hover:border-green-300 hover:shadow-xl hover:shadow-green-200/50 dark:border-slate-800 dark:bg-slate-950/95 dark:shadow-none dark:hover:border-slate-700"
               >
                 {/* Gradient accent */}
                 <div className={`absolute top-0 left-0 h-1 w-full ${
                   item.category === 'allowance'
-                    ? 'bg-gradient-to-r from-emerald-500 via-green-500 to-teal-500'
-                    : 'bg-gradient-to-r from-red-500 via-rose-500 to-pink-500'
+                    ? 'bg-gradient-to-r from-green-500 via-green-500 to-green-500'
+                    : 'bg-gradient-to-r from-red-500 via-red-500 to-red-500'
                 }`}></div>
 
                 <div className="mb-3 flex items-start justify-between">
@@ -631,7 +631,7 @@ export default function AllowancesDeductionsPage() {
                     <span
                       className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                         item.category === 'allowance'
-                          ? 'bg-emerald-100 text-emerald-700 shadow-sm dark:bg-emerald-900/30 dark:text-emerald-400'
+                          ? 'bg-green-100 text-green-700 shadow-sm dark:bg-green-900/30 dark:text-green-400'
                           : 'bg-red-100 text-red-700 shadow-sm dark:bg-red-900/30 dark:text-red-400'
                       }`}
                     >
@@ -653,7 +653,7 @@ export default function AllowancesDeductionsPage() {
                   <div className="space-y-1">
                     {item.globalRule.type === 'fixed' ? (
                       <div className="flex items-center gap-1.5">
-                        <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400">
+                        <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400">
                           <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
@@ -665,7 +665,7 @@ export default function AllowancesDeductionsPage() {
                       </div>
                     ) : (
                       <div className="flex items-center gap-1.5">
-                        <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400">
+                        <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400">
                           <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                           </svg>
@@ -703,7 +703,7 @@ export default function AllowancesDeductionsPage() {
                         return (
                           <div
                             key={idx}
-                            className="rounded-lg border border-emerald-200 bg-gradient-to-r from-emerald-50 to-green-50 p-2 dark:border-emerald-800 dark:from-emerald-900/20 dark:to-green-900/20"
+                            className="rounded-lg border border-green-200 bg-gradient-to-r from-green-50 to-green-50 p-2 dark:border-green-800 dark:from-green-900/20 dark:to-green-900/20"
                           >
                             <div className="flex items-center justify-between">
                               <div className="flex-1 min-w-0">
@@ -735,7 +735,7 @@ export default function AllowancesDeductionsPage() {
                 <div className="flex flex-wrap gap-1.5 border-t border-slate-200 pt-3 dark:border-slate-800">
                   <button
                     onClick={() => handleEdit(item)}
-                    className="group flex-1 rounded-xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-green-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition-all hover:from-emerald-100 hover:to-green-100 hover:shadow-md dark:border-emerald-800 dark:from-emerald-900/20 dark:to-green-900/20 dark:text-emerald-300 dark:hover:from-emerald-900/30 dark:hover:to-green-900/30"
+                    className="group flex-1 rounded-xl border border-green-200 bg-gradient-to-r from-green-50 to-green-50 px-3 py-1.5 text-xs font-semibold text-green-700 transition-all hover:from-green-100 hover:to-green-100 hover:shadow-md dark:border-green-800 dark:from-green-900/20 dark:to-green-900/20 dark:text-green-300 dark:hover:from-green-900/30 dark:hover:to-green-900/30"
                   >
                     Edit
                   </button>
@@ -747,7 +747,7 @@ export default function AllowancesDeductionsPage() {
                   </button>
                   <button
                     onClick={() => handleDelete(item._id)}
-                    className="rounded-xl border border-red-200 bg-gradient-to-r from-red-50 to-pink-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition-all hover:from-red-100 hover:to-pink-100 hover:shadow-md dark:border-red-800 dark:from-red-900/20 dark:to-pink-900/20 dark:text-red-300 dark:hover:from-red-900/30 dark:hover:to-pink-900/30"
+                    className="rounded-xl border border-red-200 bg-gradient-to-r from-red-50 to-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition-all hover:from-red-100 hover:to-red-100 hover:shadow-md dark:border-red-800 dark:from-red-900/20 dark:to-red-900/20 dark:text-red-300 dark:hover:from-red-900/30 dark:hover:to-red-900/30"
                   >
                     Delete
                   </button>
@@ -770,7 +770,7 @@ export default function AllowancesDeductionsPage() {
               resetForm();
             }}
           />
-          <div className="relative z-50 w-full max-w-2xl rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-2xl shadow-emerald-500/10 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/95">
+          <div className="relative z-50 w-full max-w-2xl rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-2xl shadow-green-500/10 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/95">
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
@@ -805,7 +805,7 @@ export default function AllowancesDeductionsPage() {
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                   placeholder="e.g., House Rent Allowance, PF Contribution"
                 />
               </div>
@@ -819,7 +819,7 @@ export default function AllowancesDeductionsPage() {
                   <select
                     value={formData.category}
                     onChange={(e) => setFormData({ ...formData, category: e.target.value as 'allowance' | 'deduction' })}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                   >
                     <option value="allowance">Allowance</option>
                     <option value="deduction">Deduction</option>
@@ -834,7 +834,7 @@ export default function AllowancesDeductionsPage() {
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   rows={2}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                   placeholder="Optional description"
                 />
               </div>
@@ -855,7 +855,7 @@ export default function AllowancesDeductionsPage() {
                       percentage: newType === 'percentage' ? formData.percentage : null,
                     });
                   }}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                 >
                   <option value="fixed">Fixed Amount</option>
                   <option value="percentage">Percentage</option>
@@ -874,7 +874,7 @@ export default function AllowancesDeductionsPage() {
                     step="0.01"
                     value={formData.amount ?? ''}
                     onChange={(e) => setFormData({ ...formData, amount: e.target.value ? parseFloat(e.target.value) : null })}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     placeholder="e.g., 2000"
                   />
                 </div>
@@ -894,7 +894,7 @@ export default function AllowancesDeductionsPage() {
                       step="0.01"
                       value={formData.percentage ?? ''}
                       onChange={(e) => setFormData({ ...formData, percentage: e.target.value ? parseFloat(e.target.value) : null })}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                       placeholder="e.g., 12, 40"
                     />
                   </div>
@@ -906,7 +906,7 @@ export default function AllowancesDeductionsPage() {
                     <select
                       value={formData.percentageBase}
                       onChange={(e) => setFormData({ ...formData, percentageBase: e.target.value as 'basic' | 'gross' })}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     >
                       <option value="basic">Basic Salary</option>
                       <option value="gross">Gross Salary</option>
@@ -925,7 +925,7 @@ export default function AllowancesDeductionsPage() {
                     step="0.01"
                     value={formData.minAmount ?? ''}
                     onChange={(e) => setFormData({ ...formData, minAmount: e.target.value ? parseFloat(e.target.value) : null })}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     placeholder="Optional"
                   />
                 </div>
@@ -937,7 +937,7 @@ export default function AllowancesDeductionsPage() {
                     step="0.01"
                     value={formData.maxAmount ?? ''}
                     onChange={(e) => setFormData({ ...formData, maxAmount: e.target.value ? parseFloat(e.target.value) : null })}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     placeholder="Optional"
                   />
                 </div>
@@ -950,7 +950,7 @@ export default function AllowancesDeductionsPage() {
                     type="checkbox"
                     checked={formData.isActive}
                     onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
-                    className="h-3.5 w-3.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                    className="h-3.5 w-3.5 rounded border-slate-300 text-green-600 focus:ring-green-500"
                   />
                   <span className="text-xs font-medium text-slate-700 dark:text-slate-300">Active</span>
                 </label>
@@ -973,7 +973,7 @@ export default function AllowancesDeductionsPage() {
               <button
                 type="button"
                 onClick={handleSave}
-                className="flex-1 rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 px-3 py-2 text-xs font-semibold text-white shadow-lg shadow-emerald-500/30 transition-all hover:from-emerald-600 hover:to-green-700 hover:shadow-xl hover:shadow-emerald-500/40 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2"
+                className="flex-1 rounded-xl bg-gradient-to-r from-green-500 to-green-600 px-3 py-2 text-xs font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-700 hover:shadow-xl hover:shadow-green-500/40 focus:outline-none focus:ring-2 focus:ring-green-400 focus:ring-offset-2"
               >
                 {selectedItem ? 'Update' : 'Create'}
               </button>
@@ -993,14 +993,14 @@ export default function AllowancesDeductionsPage() {
               resetDeptRuleForm();
             }}
           />
-          <div className="relative z-50 w-full max-w-lg rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-2xl shadow-emerald-500/10 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/95">
+          <div className="relative z-50 w-full max-w-lg rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-2xl shadow-green-500/10 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/95">
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
                   {selectedDeptForRule ? 'Edit' : 'Add'} Department Override
                 </h2>
                 <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                  Override global rule for <span className="font-medium text-emerald-600 dark:text-emerald-400">{selectedItem.name}</span>
+                  Override global rule for <span className="font-medium text-green-600 dark:text-green-400">{selectedItem.name}</span>
                 </p>
               </div>
               <button
@@ -1027,7 +1027,7 @@ export default function AllowancesDeductionsPage() {
                   value={deptRuleForm.departmentId}
                   onChange={(e) => setDeptRuleForm({ ...deptRuleForm, departmentId: e.target.value })}
                   disabled={!!selectedDeptForRule}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:disabled:bg-slate-600"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:disabled:bg-slate-600"
                 >
                   <option value="">-- Select Department --</option>
                   {departments
@@ -1062,7 +1062,7 @@ export default function AllowancesDeductionsPage() {
                       percentage: newType === 'percentage' ? deptRuleForm.percentage : null,
                     });
                   }}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                 >
                   <option value="fixed">Fixed Amount</option>
                   <option value="percentage">Percentage</option>
@@ -1081,7 +1081,7 @@ export default function AllowancesDeductionsPage() {
                     step="0.01"
                     value={deptRuleForm.amount ?? ''}
                     onChange={(e) => setDeptRuleForm({ ...deptRuleForm, amount: e.target.value ? parseFloat(e.target.value) : null })}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     placeholder="e.g., 5000"
                   />
                 </div>
@@ -1101,7 +1101,7 @@ export default function AllowancesDeductionsPage() {
                       step="0.01"
                       value={deptRuleForm.percentage ?? ''}
                       onChange={(e) => setDeptRuleForm({ ...deptRuleForm, percentage: e.target.value ? parseFloat(e.target.value) : null })}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                       placeholder="e.g., 30"
                     />
                   </div>
@@ -1113,7 +1113,7 @@ export default function AllowancesDeductionsPage() {
                     <select
                       value={deptRuleForm.percentageBase}
                       onChange={(e) => setDeptRuleForm({ ...deptRuleForm, percentageBase: e.target.value as 'basic' | 'gross' })}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     >
                       <option value="basic">Basic Salary</option>
                       <option value="gross">Gross Salary</option>
@@ -1132,7 +1132,7 @@ export default function AllowancesDeductionsPage() {
                     step="0.01"
                     value={deptRuleForm.minAmount ?? ''}
                     onChange={(e) => setDeptRuleForm({ ...deptRuleForm, minAmount: e.target.value ? parseFloat(e.target.value) : null })}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     placeholder="Optional"
                   />
                 </div>
@@ -1144,7 +1144,7 @@ export default function AllowancesDeductionsPage() {
                     step="0.01"
                     value={deptRuleForm.maxAmount ?? ''}
                     onChange={(e) => setDeptRuleForm({ ...deptRuleForm, maxAmount: e.target.value ? parseFloat(e.target.value) : null })}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     placeholder="Optional"
                   />
                 </div>
@@ -1166,7 +1166,7 @@ export default function AllowancesDeductionsPage() {
               <button
                 type="button"
                 onClick={handleSaveDeptRule}
-                className="flex-1 rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 px-3 py-2 text-xs font-semibold text-white shadow-lg shadow-emerald-500/30 transition-all hover:from-emerald-600 hover:to-green-700 hover:shadow-xl hover:shadow-emerald-500/40 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2"
+                className="flex-1 rounded-xl bg-gradient-to-r from-green-500 to-green-600 px-3 py-2 text-xs font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-700 hover:shadow-xl hover:shadow-green-500/40 focus:outline-none focus:ring-2 focus:ring-green-400 focus:ring-offset-2"
               >
                 {selectedDeptForRule ? 'Update' : 'Add'} Override
               </button>

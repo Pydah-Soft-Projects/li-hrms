@@ -376,7 +376,21 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
     const [year, monthNum] = month.split('-').map(Number);
 
     // Get all employees (optionally filtered by department)
-    let employeeQuery = { is_active: true };
+    // Include employees who:
+    // 1. Are active (is_active: true AND no leftDate)
+    // 2. Left during this month (leftDate is within this month)
+    const monthStart = new Date(year, monthNum - 1, 1);
+    const monthEnd = new Date(year, monthNum, 0, 23, 59, 59, 999);
+    
+    let employeeQuery = {
+      $or: [
+        // Active employees (no left date)
+        { is_active: true, leftDate: null },
+        // Employees who left during this month
+        { leftDate: { $gte: monthStart, $lte: monthEnd } }
+      ]
+    };
+    
     if (departmentId) {
       console.log('[Pay Register Controller] Filtering employees by departmentId:', departmentId);
       
@@ -394,7 +408,7 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
     }
 
     const employees = await Employee.find(employeeQuery)
-      .select('_id employee_name emp_no department_id designation_id')
+      .select('_id employee_name emp_no department_id designation_id leftDate leftReason')
       .sort({ employee_name: 1 });
 
     console.log('[Pay Register Controller] Found employees:', {

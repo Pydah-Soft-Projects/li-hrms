@@ -43,6 +43,8 @@ interface Employee {
   bank_place?: string;
   ifsc_code?: string;
   is_active?: boolean;
+  leftDate?: string | null;
+  leftReason?: string | null;
   dynamicFields?: any;
   employeeAllowances?: any[];
   employeeDeductions?: any[];
@@ -165,6 +167,10 @@ export default function EmployeesPage() {
   const [applicationSearchTerm, setApplicationSearchTerm] = useState('');
   const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [userRole, setUserRole] = useState<string>('');
+  const [showLeftDateModal, setShowLeftDateModal] = useState(false);
+  const [selectedEmployeeForLeftDate, setSelectedEmployeeForLeftDate] = useState<Employee | null>(null);
+  const [leftDateForm, setLeftDateForm] = useState({ leftDate: '', leftReason: '' });
+  const [includeLeftEmployees, setIncludeLeftEmployees] = useState(false);
 
   // Allowance/Deduction defaults & overrides
   const [componentDefaults, setComponentDefaults] = useState<{ allowances: any[]; deductions: any[] }>({
@@ -528,7 +534,9 @@ export default function EmployeesPage() {
   const loadEmployees = async () => {
     try {
       setLoading(true);
-      const response = await api.getEmployees();
+      const response = await api.getEmployees({
+        ...(includeLeftEmployees ? { includeLeft: true } : {}),
+      });
       if (response.success) {
         // Ensure paidLeaves is always included and is a number
         const employeesData = (response.data || []).map((emp: any, index: number) => {
@@ -840,6 +848,68 @@ export default function EmployeesPage() {
     }
   };
 
+  const handleSetLeftDate = (employee: Employee) => {
+    setSelectedEmployeeForLeftDate(employee);
+    setLeftDateForm({
+      leftDate: employee.leftDate ? new Date(employee.leftDate).toISOString().split('T')[0] : '',
+      leftReason: employee.leftReason || '',
+    });
+    setShowLeftDateModal(true);
+  };
+
+  const handleSubmitLeftDate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedEmployeeForLeftDate) return;
+
+    if (!leftDateForm.leftDate) {
+      setError('Left date is required');
+      return;
+    }
+
+    try {
+      setError('');
+      setSuccess('');
+      const response = await api.setEmployeeLeftDate(
+        selectedEmployeeForLeftDate.emp_no,
+        leftDateForm.leftDate,
+        leftDateForm.leftReason || undefined
+      );
+
+      if (response.success) {
+        setSuccess('Employee left date set successfully!');
+        setShowLeftDateModal(false);
+        setSelectedEmployeeForLeftDate(null);
+        setLeftDateForm({ leftDate: '', leftReason: '' });
+        loadEmployees();
+      } else {
+        setError(response.message || 'Failed to set left date');
+      }
+    } catch (err: any) {
+      setError(err.message || 'An error occurred');
+      console.error(err);
+    }
+  };
+
+  const handleRemoveLeftDate = async (employee: Employee) => {
+    if (!confirm(`Are you sure you want to reactivate ${employee.employee_name}? This will remove their left date.`)) return;
+
+    try {
+      setError('');
+      setSuccess('');
+      const response = await api.removeEmployeeLeftDate(employee.emp_no);
+
+      if (response.success) {
+        setSuccess('Employee reactivated successfully!');
+        loadEmployees();
+      } else {
+        setError(response.message || 'Failed to reactivate employee');
+      }
+    } catch (err: any) {
+      setError(err.message || 'An error occurred');
+      console.error(err);
+    }
+  };
+
   const handleViewEmployee = (employee: Employee) => {
     // Debug: Log the employee data to see what we're receiving
     console.log('Viewing employee data:', employee);
@@ -861,11 +931,19 @@ export default function EmployeesPage() {
     setError('');
   };
 
-  const filteredEmployees = employees.filter(emp =>
-    emp.employee_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    emp.emp_no?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    emp.department?.name?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredEmployees = employees.filter(emp => {
+    // Filter by search term
+    const matchesSearch = 
+      emp.emp_no.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      emp.employee_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      emp.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      emp.phone_number?.includes(searchTerm);
+    
+    // Filter by left employees (if includeLeftEmployees is false, exclude those with leftDate)
+    const matchesLeftFilter = includeLeftEmployees || !emp.leftDate;
+    
+    return matchesSearch && matchesLeftFilter;
+  });
 
   const filteredApplications = applications.filter(app =>
     app.employee_name?.toLowerCase().includes(applicationSearchTerm.toLowerCase()) ||
@@ -1046,7 +1124,7 @@ export default function EmployeesPage() {
     <div className="relative min-h-screen">
       {/* Background */}
       <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(to_right,#e2e8f01f_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f01f_1px,transparent_1px)] bg-[size:28px_28px] dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.12)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.12)_1px,transparent_1px)]" />
-      <div className="pointer-events-none fixed inset-0 bg-gradient-to-br from-emerald-50/40 via-teal-50/35 to-transparent dark:from-slate-900/60 dark:via-slate-900/65 dark:to-slate-900/80" />
+      <div className="pointer-events-none fixed inset-0 bg-gradient-to-br from-green-50/40 via-green-50/35 to-transparent dark:from-slate-900/60 dark:via-slate-900/65 dark:to-slate-900/80" />
 
       <div className="relative z-10 mx-auto max-w-[1920px]">
         {/* Header */}
@@ -1054,7 +1132,7 @@ export default function EmployeesPage() {
           <div>
             <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Employee Management</h1>
             <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-              Manage employee records • Data source: <span className="font-medium text-emerald-600 dark:text-emerald-400">{dataSource.toUpperCase()}</span>
+              Manage employee records • Data source: <span className="font-medium text-green-600 dark:text-green-400">{dataSource.toUpperCase()}</span>
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
@@ -1079,7 +1157,7 @@ export default function EmployeesPage() {
             </button>
             <button
               onClick={openCreateDialog}
-              className="rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-500/30 transition-all hover:from-emerald-600 hover:to-teal-600"
+              className="rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
             >
               <svg className="mr-2 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -1107,7 +1185,7 @@ export default function EmployeesPage() {
             onClick={() => setActiveTab('employees')}
             className={`px-6 py-3 text-sm font-semibold transition-colors ${
               activeTab === 'employees'
-                ? 'border-b-2 border-emerald-500 text-emerald-600 dark:text-emerald-400'
+                ? 'border-b-2 border-green-500 text-green-600 dark:text-green-400'
                 : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
             }`}
           >
@@ -1117,7 +1195,7 @@ export default function EmployeesPage() {
             onClick={() => setActiveTab('applications')}
             className={`px-6 py-3 text-sm font-semibold transition-colors ${
               activeTab === 'applications'
-                ? 'border-b-2 border-emerald-500 text-emerald-600 dark:text-emerald-400'
+                ? 'border-b-2 border-green-500 text-green-600 dark:text-green-400'
                 : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
             }`}
           >
@@ -1139,7 +1217,7 @@ export default function EmployeesPage() {
                 {(userRole === 'hr' || userRole === 'super_admin' || userRole === 'sub_admin') && (
                   <button
                     onClick={openApplicationDialog}
-                    className="group relative inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-500/30 transition-all hover:from-emerald-600 hover:to-teal-600 hover:shadow-xl hover:shadow-emerald-500/40"
+                    className="group relative inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-green-500 to-green-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600 hover:shadow-xl hover:shadow-green-500/40"
                   >
                     <span className="text-lg">+</span>
                     <span>New Application</span>
@@ -1151,20 +1229,20 @@ export default function EmployeesPage() {
                 placeholder="Search applications..."
                 value={applicationSearchTerm}
                 onChange={(e) => setApplicationSearchTerm(e.target.value)}
-                className="w-full max-w-md rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                className="w-full max-w-md rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
               />
             </div>
 
             {/* Applications List */}
             {loadingApplications ? (
               <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm py-16 shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
-                <div className="h-10 w-10 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent"></div>
+                <div className="h-10 w-10 animate-spin rounded-full border-2 border-green-500 border-t-transparent"></div>
                 <p className="mt-4 text-sm font-medium text-slate-600 dark:text-slate-400">Loading applications...</p>
               </div>
             ) : filteredApplications.length === 0 ? (
               <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm p-12 text-center shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
-                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-emerald-100 to-teal-100 dark:from-emerald-900/30 dark:to-teal-900/30">
-                  <svg className="h-8 w-8 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-green-100 to-green-100 dark:from-green-900/30 dark:to-green-900/30">
+                  <svg className="h-8 w-8 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
                 </div>
@@ -1182,7 +1260,7 @@ export default function EmployeesPage() {
                     <div className="overflow-x-auto">
                       <table className="w-full">
                         <thead>
-                          <tr className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-emerald-50/30 dark:border-slate-700 dark:from-slate-900 dark:to-emerald-900/10">
+                          <tr className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-green-50/30 dark:border-slate-700 dark:from-slate-900 dark:to-green-900/10">
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Emp No</th>
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Name</th>
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Department</th>
@@ -1193,8 +1271,8 @@ export default function EmployeesPage() {
                         </thead>
                         <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                           {pendingApplications.map((app) => (
-                            <tr key={app._id} className="transition-colors hover:bg-emerald-50/30 dark:hover:bg-emerald-900/10">
-                              <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-emerald-600 dark:text-emerald-400">
+                            <tr key={app._id} className="transition-colors hover:bg-green-50/30 dark:hover:bg-green-900/10">
+                              <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-green-600 dark:text-green-400">
                                 {app.emp_no}
                               </td>
                               <td className="whitespace-nowrap px-6 py-4">
@@ -1216,7 +1294,7 @@ export default function EmployeesPage() {
                                 {(userRole === 'super_admin' || userRole === 'sub_admin') && (
                                   <button
                                     onClick={() => openApprovalDialog(app)}
-                                    className="rounded-lg px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 transition-all"
+                                    className="rounded-lg px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-green-500 to-green-500 hover:from-green-600 hover:to-green-600 transition-all"
                                   >
                                     Review
                                   </button>
@@ -1233,13 +1311,13 @@ export default function EmployeesPage() {
                 {/* Approved/Rejected Applications */}
                 {(approvedApplications.length > 0 || rejectedApplications.length > 0) && (
                   <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
-                    <div className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-emerald-50/30 px-6 py-4 dark:border-slate-700 dark:from-slate-900 dark:to-emerald-900/10">
+                    <div className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-green-50/30 px-6 py-4 dark:border-slate-700 dark:from-slate-900 dark:to-green-900/10">
                       <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Processed Applications</h3>
                     </div>
                     <div className="overflow-x-auto">
                       <table className="w-full">
                         <thead>
-                          <tr className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-emerald-50/30 dark:border-slate-700 dark:from-slate-900 dark:to-emerald-900/10">
+                          <tr className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-green-50/30 dark:border-slate-700 dark:from-slate-900 dark:to-green-900/10">
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Emp No</th>
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Name</th>
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Proposed Salary</th>
@@ -1250,8 +1328,8 @@ export default function EmployeesPage() {
                         </thead>
                         <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                           {[...approvedApplications, ...rejectedApplications].map((app) => (
-                            <tr key={app._id} className="transition-colors hover:bg-emerald-50/30 dark:hover:bg-emerald-900/10">
-                              <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-emerald-600 dark:text-emerald-400">
+                            <tr key={app._id} className="transition-colors hover:bg-green-50/30 dark:hover:bg-green-900/10">
+                              <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-green-600 dark:text-green-400">
                                 {app.emp_no}
                               </td>
                               <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-slate-900 dark:text-slate-100">
@@ -1290,27 +1368,41 @@ export default function EmployeesPage() {
         {/* Employees Tab */}
         {activeTab === 'employees' && (
           <>
-            {/* Search */}
-            <div className="mb-6">
-              <input
-                type="text"
-                placeholder="Search by name, employee no, or department..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full max-w-md rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-              />
+            {/* Employees Header with Search and Filter */}
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+              <div className="flex flex-1 items-center gap-3">
+                <input
+                  type="text"
+                  placeholder="Search employees..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="flex-1 min-w-[250px] rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                />
+                <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={includeLeftEmployees}
+                    onChange={(e) => {
+                      setIncludeLeftEmployees(e.target.checked);
+                      loadEmployees();
+                    }}
+                    className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500 dark:border-slate-600"
+                  />
+                  <span className="text-sm text-slate-700 dark:text-slate-300">Include Left Employees</span>
+                </label>
+              </div>
             </div>
 
             {/* Employee List */}
         {loading ? (
           <div className="flex flex-col items-center justify-center rounded-3xl border border-slate-200 bg-white/95 py-16 shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
-            <div className="h-10 w-10 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent"></div>
+            <div className="h-10 w-10 animate-spin rounded-full border-2 border-green-500 border-t-transparent"></div>
             <p className="mt-4 text-sm font-medium text-slate-600 dark:text-slate-400">Loading employees...</p>
           </div>
         ) : filteredEmployees.length === 0 ? (
           <div className="rounded-3xl border border-slate-200 bg-white/95 p-12 text-center shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-emerald-100 to-teal-100 dark:from-emerald-900/30 dark:to-teal-900/30">
-              <svg className="h-8 w-8 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-green-100 to-green-100 dark:from-green-900/30 dark:to-green-900/30">
+              <svg className="h-8 w-8 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
               </svg>
             </div>
@@ -1322,7 +1414,7 @@ export default function EmployeesPage() {
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-emerald-50/30 dark:border-slate-700 dark:from-slate-900 dark:to-emerald-900/10">
+                  <tr className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-green-50/30 dark:border-slate-700 dark:from-slate-900 dark:to-green-900/10">
                     <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Emp No</th>
                     <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Name</th>
                     <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Department</th>
@@ -1336,10 +1428,10 @@ export default function EmployeesPage() {
                   {filteredEmployees.map((employee) => (
                     <tr 
                       key={employee.emp_no} 
-                      className="transition-colors hover:bg-emerald-50/30 dark:hover:bg-emerald-900/10 cursor-pointer"
+                      className="transition-colors hover:bg-green-50/30 dark:hover:bg-green-900/10 cursor-pointer"
                       onClick={() => handleViewEmployee(employee)}
                     >
-                      <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-emerald-600 dark:text-emerald-400">
+                      <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-green-600 dark:text-green-400">
                         {employee.emp_no}
                       </td>
                       <td className="whitespace-nowrap px-6 py-4">
@@ -1358,13 +1450,20 @@ export default function EmployeesPage() {
                         {employee.phone_number || '-'}
                       </td>
                       <td className="whitespace-nowrap px-6 py-4">
-                        <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
-                          employee.is_active !== false
-                            ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                            : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                        }`}>
-                          {employee.is_active !== false ? 'Active' : 'Inactive'}
-                        </span>
+                        <div className="flex flex-col gap-1">
+                          <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
+                            employee.is_active !== false
+                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                              : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                          }`}>
+                            {employee.is_active !== false ? 'Active' : 'Inactive'}
+                          </span>
+                          {employee.leftDate && (
+                            <span className="inline-flex rounded-full px-2.5 py-1 text-xs font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+                              Left: {new Date(employee.leftDate).toLocaleDateString()}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="whitespace-nowrap px-6 py-4 text-right">
                         <button
@@ -1379,28 +1478,57 @@ export default function EmployeesPage() {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                           </svg>
                         </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeactivate(employee.emp_no, employee.is_active !== false);
-                          }}
-                          className={`rounded-lg p-2 transition-all ${
-                            employee.is_active !== false
-                              ? 'text-slate-400 hover:bg-orange-50 hover:text-orange-600 dark:hover:bg-orange-900/30 dark:hover:text-orange-400'
-                              : 'text-slate-400 hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/30 dark:hover:text-green-400'
-                          }`}
-                          title={employee.is_active !== false ? 'Deactivate' : 'Activate'}
-                        >
-                          {employee.is_active !== false ? (
-                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                          </svg>
-                          ) : (
+                        {employee.leftDate ? (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveLeftDate(employee);
+                            }}
+                            className="rounded-lg p-2 text-slate-400 transition-all hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/30 dark:hover:text-green-400"
+                            title="Reactivate Employee"
+                          >
                             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                             </svg>
-                          )}
-                        </button>
+                          </button>
+                        ) : (
+                          <>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSetLeftDate(employee);
+                              }}
+                              className="mr-2 rounded-lg p-2 text-slate-400 transition-all hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
+                              title="Set Left Date"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeactivate(employee.emp_no, employee.is_active !== false);
+                              }}
+                              className={`rounded-lg p-2 transition-all ${
+                                employee.is_active !== false
+                                  ? 'text-slate-400 hover:bg-orange-50 hover:text-orange-600 dark:hover:bg-orange-900/30 dark:hover:text-orange-400'
+                                  : 'text-slate-400 hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/30 dark:hover:text-green-400'
+                              }`}
+                              title={employee.is_active !== false ? 'Deactivate' : 'Activate'}
+                            >
+                              {employee.is_active !== false ? (
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                              </svg>
+                              ) : (
+                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                              )}
+                            </button>
+                          </>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -1480,14 +1608,14 @@ export default function EmployeesPage() {
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs text-emerald-700 dark:text-emerald-300">Total Allowances</p>
-                    <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">
+                    <p className="text-xs text-green-700 dark:text-green-300">Total Allowances</p>
+                    <p className="text-sm font-semibold text-green-700 dark:text-green-300">
                       ₹{applicationSalarySummary.totalAllowances.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs text-rose-700 dark:text-rose-300">Total Deductions</p>
-                    <p className="text-sm font-semibold text-rose-700 dark:text-rose-300">
+                    <p className="text-xs text-red-700 dark:text-red-300">Total Deductions</p>
+                    <p className="text-sm font-semibold text-red-700 dark:text-red-300">
                       ₹{applicationSalarySummary.totalDeductions.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                     </p>
                   </div>
@@ -1501,40 +1629,40 @@ export default function EmployeesPage() {
 
                 <div className="grid gap-4 md:grid-cols-2">
                   {/* Allowances */}
-                  <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-3 dark:border-emerald-900/40 dark:bg-emerald-900/20">
+                  <div className="rounded-xl border border-green-100 bg-green-50/70 p-3 dark:border-green-900/40 dark:bg-green-900/20">
                     <div className="mb-2 flex items-center justify-between">
-                      <h4 className="text-sm font-semibold text-emerald-800 dark:text-emerald-200">Allowances</h4>
-                      <span className="text-xs text-emerald-700 dark:text-emerald-300">
+                      <h4 className="text-sm font-semibold text-green-800 dark:text-green-200">Allowances</h4>
+                      <span className="text-xs text-green-700 dark:text-green-300">
                         {componentDefaults.allowances.length} items
                       </span>
                   </div>
                     <div className="space-y-2">
                       {componentDefaults.allowances.length === 0 && (
-                        <p className="text-xs text-emerald-700/70 dark:text-emerald-200/70">No allowances available.</p>
+                        <p className="text-xs text-green-700/70 dark:text-green-200/70">No allowances available.</p>
                       )}
                       {componentDefaults.allowances.map((item) => {
                         const key = getKey(item);
                         const current = overrideAllowances[key] ?? item.amount ?? 0;
                         return (
-                          <div key={key} className="rounded-lg border border-emerald-100 bg-white/70 px-3 py-2 text-xs dark:border-emerald-900/50 dark:bg-emerald-950/40">
+                          <div key={key} className="rounded-lg border border-green-100 bg-white/70 px-3 py-2 text-xs dark:border-green-900/50 dark:bg-green-950/40">
                             <div className="flex items-center justify-between gap-2">
                               <div className="flex-1">
-                                <div className="font-semibold text-emerald-900 dark:text-emerald-100">{item.name}</div>
-                                <div className="text-[11px] text-emerald-700 dark:text-emerald-300">
+                                <div className="font-semibold text-green-900 dark:text-green-100">{item.name}</div>
+                                <div className="text-[11px] text-green-700 dark:text-green-300">
                                   {item.type === 'percentage'
                                     ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
                                     : 'Fixed'}
                   </div>
                   </div>
                               <div className="flex items-center gap-1">
-                                <span className="text-[11px] text-emerald-700 dark:text-emerald-300">Override</span>
+                                <span className="text-[11px] text-green-700 dark:text-green-300">Override</span>
                     <input
                       type="number"
                                   min="0"
                                   step="0.01"
                                   value={current === null ? '' : current}
                                   onChange={(e) => handleOverrideChange('allowance', item, e.target.value)}
-                                  className="w-24 rounded border border-emerald-200 bg-white px-2 py-1 text-[11px] text-emerald-900 focus:border-emerald-400 focus:outline-none dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100"
+                                  className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100"
                     />
                   </div>
                   </div>
@@ -1545,40 +1673,40 @@ export default function EmployeesPage() {
               </div>
 
                   {/* Deductions */}
-                  <div className="rounded-xl border border-rose-100 bg-rose-50/70 p-3 dark:border-rose-900/40 dark:bg-rose-900/20">
+                  <div className="rounded-xl border border-red-100 bg-red-50/70 p-3 dark:border-red-900/40 dark:bg-red-900/20">
                     <div className="mb-2 flex items-center justify-between">
-                      <h4 className="text-sm font-semibold text-rose-800 dark:text-rose-200">Deductions</h4>
-                      <span className="text-xs text-rose-700 dark:text-rose-300">
+                      <h4 className="text-sm font-semibold text-red-800 dark:text-red-200">Deductions</h4>
+                      <span className="text-xs text-red-700 dark:text-red-300">
                         {componentDefaults.deductions.length} items
                       </span>
                   </div>
                     <div className="space-y-2">
                       {componentDefaults.deductions.length === 0 && (
-                        <p className="text-xs text-rose-700/70 dark:text-rose-200/70">No deductions available.</p>
+                        <p className="text-xs text-red-700/70 dark:text-red-200/70">No deductions available.</p>
                       )}
                       {componentDefaults.deductions.map((item) => {
                         const key = getKey(item);
                         const current = overrideDeductions[key] ?? item.amount ?? 0;
                         return (
-                          <div key={key} className="rounded-lg border border-rose-100 bg-white/70 px-3 py-2 text-xs dark:border-rose-900/50 dark:bg-rose-950/40">
+                          <div key={key} className="rounded-lg border border-red-100 bg-white/70 px-3 py-2 text-xs dark:border-red-900/50 dark:bg-red-950/40">
                             <div className="flex items-center justify-between gap-2">
                               <div className="flex-1">
-                                <div className="font-semibold text-rose-900 dark:text-rose-100">{item.name}</div>
-                                <div className="text-[11px] text-rose-700 dark:text-rose-300">
+                                <div className="font-semibold text-red-900 dark:text-red-100">{item.name}</div>
+                                <div className="text-[11px] text-red-700 dark:text-red-300">
                                   {item.type === 'percentage'
                                     ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
                                     : 'Fixed'}
                   </div>
                   </div>
                               <div className="flex items-center gap-1">
-                                <span className="text-[11px] text-rose-700 dark:text-rose-300">Override</span>
+                                <span className="text-[11px] text-red-700 dark:text-red-300">Override</span>
                     <input
                                   type="number"
                                   min="0"
                                   step="0.01"
                                   value={current === null ? '' : current}
                                   onChange={(e) => handleOverrideChange('deduction', item, e.target.value)}
-                                  className="w-24 rounded border border-rose-200 bg-white px-2 py-1 text-[11px] text-rose-900 focus:border-rose-400 focus:outline-none dark:border-rose-800 dark:bg-rose-950 dark:text-rose-100"
+                                  className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-red-950 dark:text-red-100"
                     />
                   </div>
                   </div>
@@ -1594,7 +1722,7 @@ export default function EmployeesPage() {
               <div className="flex gap-3 pt-2">
                 <button
                   type="submit"
-                  className="flex-1 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-500/30 transition-all hover:from-emerald-600 hover:to-teal-600"
+                  className="flex-1 rounded-2xl bg-gradient-to-r from-green-500 to-green-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
                 >
                   Submit Application
                 </button>
@@ -1674,8 +1802,8 @@ export default function EmployeesPage() {
               </div>
 
               {/* Salary Section - Key Feature */}
-              <div className="rounded-2xl border-2 border-emerald-200 bg-emerald-50/50 p-5 dark:border-emerald-800 dark:bg-emerald-900/20">
-                <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">Salary Approval</h3>
+              <div className="rounded-2xl border-2 border-green-200 bg-green-50/50 p-5 dark:border-green-800 dark:bg-green-900/20">
+                <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-green-700 dark:text-green-400">Salary Approval</h3>
                 <div className="space-y-4">
                   {/* Proposed Salary - Strikethrough if modified */}
                   <div>
@@ -1697,11 +1825,11 @@ export default function EmployeesPage() {
                       required
                       min="0"
                       step="0.01"
-                      className="w-full rounded-xl border-2 border-emerald-400 bg-white px-4 py-2.5 text-lg font-semibold transition-all focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-emerald-600 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border-2 border-green-400 bg-white px-4 py-2.5 text-lg font-semibold transition-all focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-500/20 dark:border-green-600 dark:bg-slate-900 dark:text-slate-100"
                       placeholder="Enter approved salary"
                     />
                     {approvalData.approvedSalary !== selectedApplication.proposedSalary && (
-                      <p className="mt-2 text-xs text-emerald-600 dark:text-emerald-400">
+                      <p className="mt-2 text-xs text-green-600 dark:text-green-400">
                         ✓ Salary modified from proposed amount
                       </p>
                     )}
@@ -1717,7 +1845,7 @@ export default function EmployeesPage() {
                       value={approvalData.doj || ''}
                       onChange={(e) => setApprovalData({ ...approvalData, doj: e.target.value })}
                       required
-                      className="w-full rounded-xl border-2 border-emerald-400 bg-white px-4 py-2.5 text-sm font-semibold transition-all focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-emerald-600 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border-2 border-green-400 bg-white px-4 py-2.5 text-sm font-semibold transition-all focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-500/20 dark:border-green-600 dark:bg-slate-900 dark:text-slate-100"
                     />
                     <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
                       Specify the employee's joining date
@@ -1748,14 +1876,14 @@ export default function EmployeesPage() {
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs text-emerald-700 dark:text-emerald-300">Total Allowances</p>
-                    <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">
+                    <p className="text-xs text-green-700 dark:text-green-300">Total Allowances</p>
+                    <p className="text-sm font-semibold text-green-700 dark:text-green-300">
                       ₹{approvalSalarySummary.totalAllowances.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs text-rose-700 dark:text-rose-300">Total Deductions</p>
-                    <p className="text-sm font-semibold text-rose-700 dark:text-rose-300">
+                    <p className="text-xs text-red-700 dark:text-red-300">Total Deductions</p>
+                    <p className="text-sm font-semibold text-red-700 dark:text-red-300">
                       ₹{approvalSalarySummary.totalDeductions.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                     </p>
                   </div>
@@ -1769,40 +1897,40 @@ export default function EmployeesPage() {
 
                 <div className="grid gap-4 md:grid-cols-2">
                   {/* Allowances */}
-                  <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-3 dark:border-emerald-900/40 dark:bg-emerald-900/20">
+                  <div className="rounded-xl border border-green-100 bg-green-50/70 p-3 dark:border-green-900/40 dark:bg-green-900/20">
                     <div className="mb-2 flex items-center justify-between">
-                      <h4 className="text-sm font-semibold text-emerald-800 dark:text-emerald-200">Allowances</h4>
-                      <span className="text-xs text-emerald-700 dark:text-emerald-300">
+                      <h4 className="text-sm font-semibold text-green-800 dark:text-green-200">Allowances</h4>
+                      <span className="text-xs text-green-700 dark:text-green-300">
                         {approvalComponentDefaults.allowances.length} items
                       </span>
                     </div>
                     <div className="space-y-2">
                       {approvalComponentDefaults.allowances.length === 0 && (
-                        <p className="text-xs text-emerald-700/70 dark:text-emerald-200/70">No allowances available.</p>
+                        <p className="text-xs text-green-700/70 dark:text-green-200/70">No allowances available.</p>
                       )}
                       {approvalComponentDefaults.allowances.map((item) => {
                         const key = getKey(item);
                         const current = approvalOverrideAllowances[key] ?? item.amount ?? 0;
                         return (
-                          <div key={key} className="rounded-lg border border-emerald-100 bg-white/70 px-3 py-2 text-xs dark:border-emerald-900/50 dark:bg-emerald-950/40">
+                          <div key={key} className="rounded-lg border border-green-100 bg-white/70 px-3 py-2 text-xs dark:border-green-900/50 dark:bg-green-950/40">
                             <div className="flex items-center justify-between gap-2">
                               <div className="flex-1">
-                                <div className="font-semibold text-emerald-900 dark:text-emerald-100">{item.name}</div>
-                                <div className="text-[11px] text-emerald-700 dark:text-emerald-300">
+                                <div className="font-semibold text-green-900 dark:text-green-100">{item.name}</div>
+                                <div className="text-[11px] text-green-700 dark:text-green-300">
                                   {item.type === 'percentage'
                                     ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
                                     : 'Fixed'}
                                 </div>
                               </div>
                               <div className="flex items-center gap-1">
-                                <span className="text-[11px] text-emerald-700 dark:text-emerald-300">Override</span>
+                                <span className="text-[11px] text-green-700 dark:text-green-300">Override</span>
                                 <input
                                   type="number"
                                   min="0"
                                   step="0.01"
                                   value={current === null ? '' : current}
                                   onChange={(e) => handleApprovalOverrideChange('allowance', item, e.target.value)}
-                                  className="w-24 rounded border border-emerald-200 bg-white px-2 py-1 text-[11px] text-emerald-900 focus:border-emerald-400 focus:outline-none dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100"
+                                  className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100"
                                 />
                               </div>
                             </div>
@@ -1813,40 +1941,40 @@ export default function EmployeesPage() {
                   </div>
 
                   {/* Deductions */}
-                  <div className="rounded-xl border border-rose-100 bg-rose-50/70 p-3 dark:border-rose-900/40 dark:bg-rose-900/20">
+                  <div className="rounded-xl border border-red-100 bg-red-50/70 p-3 dark:border-red-900/40 dark:bg-red-900/20">
                     <div className="mb-2 flex items-center justify-between">
-                      <h4 className="text-sm font-semibold text-rose-800 dark:text-rose-200">Deductions</h4>
-                      <span className="text-xs text-rose-700 dark:text-rose-300">
+                      <h4 className="text-sm font-semibold text-red-800 dark:text-red-200">Deductions</h4>
+                      <span className="text-xs text-red-700 dark:text-red-300">
                         {approvalComponentDefaults.deductions.length} items
                       </span>
                     </div>
                     <div className="space-y-2">
                       {approvalComponentDefaults.deductions.length === 0 && (
-                        <p className="text-xs text-rose-700/70 dark:text-rose-200/70">No deductions available.</p>
+                        <p className="text-xs text-red-700/70 dark:text-red-200/70">No deductions available.</p>
                       )}
                       {approvalComponentDefaults.deductions.map((item) => {
                         const key = getKey(item);
                         const current = approvalOverrideDeductions[key] ?? item.amount ?? 0;
                         return (
-                          <div key={key} className="rounded-lg border border-rose-100 bg-white/70 px-3 py-2 text-xs dark:border-rose-900/50 dark:bg-rose-950/40">
+                          <div key={key} className="rounded-lg border border-red-100 bg-white/70 px-3 py-2 text-xs dark:border-red-900/50 dark:bg-red-950/40">
                             <div className="flex items-center justify-between gap-2">
                               <div className="flex-1">
-                                <div className="font-semibold text-rose-900 dark:text-rose-100">{item.name}</div>
-                                <div className="text-[11px] text-rose-700 dark:text-rose-300">
+                                <div className="font-semibold text-red-900 dark:text-red-100">{item.name}</div>
+                                <div className="text-[11px] text-red-700 dark:text-red-300">
                                   {item.type === 'percentage'
                                     ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
                                     : 'Fixed'}
                                 </div>
                               </div>
                               <div className="flex items-center gap-1">
-                                <span className="text-[11px] text-rose-700 dark:text-rose-300">Override</span>
+                                <span className="text-[11px] text-red-700 dark:text-red-300">Override</span>
                                 <input
                                   type="number"
                                   min="0"
                                   step="0.01"
                                   value={current === null ? '' : current}
                                   onChange={(e) => handleApprovalOverrideChange('deduction', item, e.target.value)}
-                                  className="w-24 rounded border border-rose-200 bg-white px-2 py-1 text-[11px] text-rose-900 focus:border-rose-400 focus:outline-none dark:border-rose-800 dark:bg-rose-950 dark:text-rose-100"
+                                  className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-red-950 dark:text-red-100"
                                 />
                               </div>
                             </div>
@@ -1867,7 +1995,7 @@ export default function EmployeesPage() {
                   value={approvalData.comments}
                   onChange={(e) => setApprovalData({ ...approvalData, comments: e.target.value })}
                   rows={3}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 resize-none"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 resize-none"
                   placeholder="Add any comments for this approval..."
                 />
               </div>
@@ -1876,13 +2004,13 @@ export default function EmployeesPage() {
               <div className="flex gap-3 pt-2">
                 <button
                   onClick={handleApproveApplication}
-                  className="flex-1 rounded-2xl bg-gradient-to-r from-green-500 to-emerald-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-emerald-600"
+                  className="flex-1 rounded-2xl bg-gradient-to-r from-green-500 to-green-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
                 >
                   Approve & Create Employee
                 </button>
                 <button
                   onClick={handleRejectApplication}
-                  className="flex-1 rounded-2xl bg-gradient-to-r from-red-500 to-rose-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-red-500/30 transition-all hover:from-red-600 hover:to-rose-600"
+                  className="flex-1 rounded-2xl bg-gradient-to-r from-red-500 to-red-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-red-500/30 transition-all hover:from-red-600 hover:to-red-600"
                 >
                   Reject
                 </button>
@@ -2004,14 +2132,14 @@ export default function EmployeesPage() {
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs text-emerald-700 dark:text-emerald-300">Total Allowances</p>
-                    <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">
+                    <p className="text-xs text-green-700 dark:text-green-300">Total Allowances</p>
+                    <p className="text-sm font-semibold text-green-700 dark:text-green-300">
                       ₹{salarySummary.totalAllowances.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs text-rose-700 dark:text-rose-300">Total Deductions</p>
-                    <p className="text-sm font-semibold text-rose-700 dark:text-rose-300">
+                    <p className="text-xs text-red-700 dark:text-red-300">Total Deductions</p>
+                    <p className="text-sm font-semibold text-red-700 dark:text-red-300">
                       ₹{salarySummary.totalDeductions.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                     </p>
                   </div>
@@ -2031,40 +2159,40 @@ export default function EmployeesPage() {
 
                 <div className="grid gap-4 md:grid-cols-2">
                   {/* Allowances */}
-                  <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-3 dark:border-emerald-900/40 dark:bg-emerald-900/20">
+                  <div className="rounded-xl border border-green-100 bg-green-50/70 p-3 dark:border-green-900/40 dark:bg-green-900/20">
                     <div className="mb-2 flex items-center justify-between">
-                      <h4 className="text-sm font-semibold text-emerald-800 dark:text-emerald-200">Allowances</h4>
-                      <span className="text-xs text-emerald-700 dark:text-emerald-300">
+                      <h4 className="text-sm font-semibold text-green-800 dark:text-green-200">Allowances</h4>
+                      <span className="text-xs text-green-700 dark:text-green-300">
                         {componentDefaults.allowances.length} items
                       </span>
                   </div>
                     <div className="space-y-2">
                       {componentDefaults.allowances.length === 0 && (
-                        <p className="text-xs text-emerald-700/70 dark:text-emerald-200/70">No allowances available.</p>
+                        <p className="text-xs text-green-700/70 dark:text-green-200/70">No allowances available.</p>
                       )}
                       {componentDefaults.allowances.map((item) => {
                         const key = getKey(item);
                         const current = overrideAllowances[key] ?? item.amount ?? 0;
                         return (
-                          <div key={key} className="rounded-lg border border-emerald-100 bg-white/70 px-3 py-2 text-xs dark:border-emerald-900/50 dark:bg-emerald-950/40">
+                          <div key={key} className="rounded-lg border border-green-100 bg-white/70 px-3 py-2 text-xs dark:border-green-900/50 dark:bg-green-950/40">
                             <div className="flex items-center justify-between gap-2">
                               <div className="flex-1">
-                                <div className="font-semibold text-emerald-900 dark:text-emerald-100">{item.name}</div>
-                                <div className="text-[11px] text-emerald-700 dark:text-emerald-300">
+                                <div className="font-semibold text-green-900 dark:text-green-100">{item.name}</div>
+                                <div className="text-[11px] text-green-700 dark:text-green-300">
                                   {item.type === 'percentage'
                                     ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
                                     : 'Fixed'}
                   </div>
                   </div>
                               <div className="flex items-center gap-1">
-                                <span className="text-[11px] text-emerald-700 dark:text-emerald-300">Override</span>
+                                <span className="text-[11px] text-green-700 dark:text-green-300">Override</span>
                     <input 
                       type="number" 
                       min="0" 
                                   step="0.01"
                                   value={current === null ? '' : current}
                                   onChange={(e) => handleOverrideChange('allowance', item, e.target.value)}
-                                  className="w-24 rounded border border-emerald-200 bg-white px-2 py-1 text-[11px] text-emerald-900 focus:border-emerald-400 focus:outline-none dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100"
+                                  className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100"
                                 />
                   </div>
                   </div>
@@ -2075,40 +2203,40 @@ export default function EmployeesPage() {
               </div>
 
                   {/* Deductions */}
-                  <div className="rounded-xl border border-rose-100 bg-rose-50/70 p-3 dark:border-rose-900/40 dark:bg-rose-900/20">
+                  <div className="rounded-xl border border-red-100 bg-red-50/70 p-3 dark:border-red-900/40 dark:bg-red-900/20">
                     <div className="mb-2 flex items-center justify-between">
-                      <h4 className="text-sm font-semibold text-rose-800 dark:text-rose-200">Deductions</h4>
-                      <span className="text-xs text-rose-700 dark:text-rose-300">
+                      <h4 className="text-sm font-semibold text-red-800 dark:text-red-200">Deductions</h4>
+                      <span className="text-xs text-red-700 dark:text-red-300">
                         {componentDefaults.deductions.length} items
                       </span>
                   </div>
                     <div className="space-y-2">
                       {componentDefaults.deductions.length === 0 && (
-                        <p className="text-xs text-rose-700/70 dark:text-rose-200/70">No deductions available.</p>
+                        <p className="text-xs text-red-700/70 dark:text-red-200/70">No deductions available.</p>
                       )}
                       {componentDefaults.deductions.map((item) => {
                         const key = getKey(item);
                         const current = overrideDeductions[key] ?? item.amount ?? 0;
                         return (
-                          <div key={key} className="rounded-lg border border-rose-100 bg-white/70 px-3 py-2 text-xs dark:border-rose-900/50 dark:bg-rose-950/40">
+                          <div key={key} className="rounded-lg border border-red-100 bg-white/70 px-3 py-2 text-xs dark:border-red-900/50 dark:bg-red-950/40">
                             <div className="flex items-center justify-between gap-2">
                               <div className="flex-1">
-                                <div className="font-semibold text-rose-900 dark:text-rose-100">{item.name}</div>
-                                <div className="text-[11px] text-rose-700 dark:text-rose-300">
+                                <div className="font-semibold text-red-900 dark:text-red-100">{item.name}</div>
+                                <div className="text-[11px] text-red-700 dark:text-red-300">
                                   {item.type === 'percentage'
                                     ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
                                     : 'Fixed'}
                   </div>
                   </div>
                               <div className="flex items-center gap-1">
-                                <span className="text-[11px] text-rose-700 dark:text-rose-300">Override</span>
+                                <span className="text-[11px] text-red-700 dark:text-red-300">Override</span>
                     <input 
                       type="number" 
                       min="0" 
                                   step="0.01"
                                   value={current === null ? '' : current}
                                   onChange={(e) => handleOverrideChange('deduction', item, e.target.value)}
-                                  className="w-24 rounded border border-rose-200 bg-white px-2 py-1 text-[11px] text-rose-900 focus:border-rose-400 focus:outline-none dark:border-rose-800 dark:bg-rose-950 dark:text-rose-100"
+                                  className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-red-950 dark:text-red-100"
                                 />
                   </div>
                 </div>
@@ -2125,7 +2253,7 @@ export default function EmployeesPage() {
               <div className="flex gap-3 pt-2">
                 <button
                   type="submit"
-                  className="flex-1 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-500/30 transition-all hover:from-emerald-600 hover:to-teal-600"
+                  className="flex-1 rounded-2xl bg-gradient-to-r from-green-500 to-green-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
                 >
                   {editingEmployee ? 'Update Employee' : 'Create Employee'}
                 </button>
@@ -2542,6 +2670,44 @@ export default function EmployeesPage() {
                 )}
               </div>
 
+              {/* Left Date Information */}
+              {viewingEmployee.leftDate && (
+                <div className="rounded-2xl border border-orange-200 bg-orange-50/50 p-5 dark:border-orange-800 dark:bg-orange-900/20 mb-5">
+                  <h3 className="mb-4 text-lg font-semibold text-orange-900 dark:text-orange-100">Left Date Information</h3>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                      <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Left Date</label>
+                      <p className="mt-1 text-sm font-medium text-orange-900 dark:text-orange-100">
+                        {new Date(viewingEmployee.leftDate).toLocaleDateString('en-US', { 
+                          year: 'numeric', 
+                          month: 'long', 
+                          day: 'numeric' 
+                        })}
+                      </p>
+                    </div>
+                    {viewingEmployee.leftReason && (
+                      <div>
+                        <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Reason</label>
+                        <p className="mt-1 text-sm font-medium text-orange-900 dark:text-orange-100">
+                          {viewingEmployee.leftReason}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                  <div className="mt-4">
+                    <button
+                      onClick={() => {
+                        setShowViewDialog(false);
+                        handleRemoveLeftDate(viewingEmployee);
+                      }}
+                      className="rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
+                    >
+                      Reactivate Employee
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Leave Information */}
               <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
                 <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Leave Information</h3>
@@ -2679,6 +2845,101 @@ export default function EmployeesPage() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Left Date Modal */}
+      {showLeftDateModal && selectedEmployeeForLeftDate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowLeftDateModal(false)} />
+          <div className="relative z-50 w-full max-w-md rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950/95">
+            <div className="mb-6 flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
+                  Set Employee Left Date
+                </h2>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  {selectedEmployeeForLeftDate.employee_name} ({selectedEmployeeForLeftDate.emp_no})
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowLeftDateModal(false);
+                  setSelectedEmployeeForLeftDate(null);
+                  setLeftDateForm({ leftDate: '', leftReason: '' });
+                }}
+                className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {error && (
+              <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+                {error}
+              </div>
+            )}
+
+            {success && (
+              <div className="mb-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400">
+                {success}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmitLeftDate} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Left Date <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={leftDateForm.leftDate}
+                  onChange={(e) => setLeftDateForm({ ...leftDateForm, leftDate: e.target.value })}
+                  max={new Date().toISOString().split('T')[0]}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                />
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  The employee will be included in pay register for this month, but excluded from future months.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Reason for Leaving (Optional)
+                </label>
+                <textarea
+                  value={leftDateForm.leftReason}
+                  onChange={(e) => setLeftDateForm({ ...leftDateForm, leftReason: e.target.value })}
+                  rows={3}
+                  placeholder="Enter reason for leaving..."
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowLeftDateModal(false);
+                    setSelectedEmployeeForLeftDate(null);
+                    setLeftDateForm({ leftDate: '', leftReason: '' });
+                  }}
+                  className="rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-xl bg-gradient-to-r from-red-500 to-orange-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-red-500/30 transition-all hover:from-red-600 hover:to-orange-600"
+                >
+                  Set Left Date
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

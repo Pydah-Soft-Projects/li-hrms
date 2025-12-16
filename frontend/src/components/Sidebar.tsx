@@ -275,14 +275,14 @@ export default function Sidebar() {
         <div className={`px-4 py-4 border-b border-slate-200/60 ${isCollapsed ? 'flex justify-center' : ''}`}>
           {!isCollapsed && (
             <div className="flex items-center gap-2.5">
-              <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center shadow-sm">
+              <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center shadow-sm">
                 <span className="text-sm font-bold text-white">H</span>
               </div>
               <h2 className="text-base font-semibold text-slate-900">HRMS</h2>
             </div>
           )}
           {isCollapsed && (
-            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center shadow-sm">
+            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center shadow-sm">
               <span className="text-sm font-bold text-white">H</span>
             </div>
           )}
@@ -301,14 +301,14 @@ export default function Sidebar() {
                     href={item.href}
                     className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 ${
                       isActive
-                        ? 'bg-emerald-50 text-emerald-700 shadow-sm'
+                        ? 'bg-green-50 text-green-700 shadow-sm'
                         : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                     } ${isCollapsed ? 'justify-center' : ''}`}
                     title={isCollapsed ? item.label : undefined}
                   >
-                    <Icon className={`h-[18px] w-[18px] flex-shrink-0 ${isActive ? 'text-emerald-600' : 'text-slate-500'}`} />
+                    <Icon className={`h-[18px] w-[18px] flex-shrink-0 ${isActive ? 'text-green-600' : 'text-slate-500'}`} />
                     {!isCollapsed && (
-                      <span className={`text-sm font-medium ${isActive ? 'text-emerald-700' : 'text-slate-700'}`}>{item.label}</span>
+                      <span className={`text-sm font-medium ${isActive ? 'text-green-700' : 'text-slate-700'}`}>{item.label}</span>
                     )}
                   </Link>
                 </li>
@@ -324,14 +324,14 @@ export default function Sidebar() {
             href="/superadmin/profile"
             className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 ${
               pathname === '/superadmin/profile'
-                ? 'bg-emerald-50 text-emerald-700'
+                ? 'bg-green-50 text-green-700'
                 : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
             } ${isCollapsed ? 'justify-center' : ''}`}
             title={isCollapsed ? 'Profile' : undefined}
           >
             {!isCollapsed && user ? (
               <>
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center text-white font-semibold text-xs flex-shrink-0 shadow-sm">
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center text-white font-semibold text-xs flex-shrink-0 shadow-sm">
                   {user.name?.[0]?.toUpperCase() || 'U'}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -340,7 +340,7 @@ export default function Sidebar() {
                 </div>
               </>
             ) : (
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center text-white font-semibold text-xs shadow-sm">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center text-white font-semibold text-xs shadow-sm">
                 {user?.name?.[0]?.toUpperCase() || 'U'}
               </div>
             )}

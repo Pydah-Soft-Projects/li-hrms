@@ -354,7 +354,7 @@ export default function SuperAdminDashboard() {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
         </svg>
       ),
-      color: 'from-green-500 to-emerald-500',
+      color: 'from-green-500 to-green-500',
       bgColor: 'bg-green-50 dark:bg-green-900/20',
     },
     {
@@ -403,7 +403,7 @@ export default function SuperAdminDashboard() {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
         </svg>
       ),
-      color: 'from-purple-500 to-pink-500',
+      color: 'from-purple-500 to-red-500',
       bgColor: 'bg-purple-50 dark:bg-purple-900/20',
     },
     {
@@ -415,8 +415,8 @@ export default function SuperAdminDashboard() {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
         </svg>
       ),
-      color: 'from-rose-500 to-pink-500',
-      bgColor: 'bg-rose-50 dark:bg-rose-900/20',
+      color: 'from-red-500 to-red-500',
+      bgColor: 'bg-red-50 dark:bg-red-900/20',
     },
     {
       title: 'OD Distribution',
@@ -428,8 +428,8 @@ export default function SuperAdminDashboard() {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
         </svg>
       ),
-      color: 'from-teal-500 to-cyan-500',
-      bgColor: 'bg-teal-50 dark:bg-teal-900/20',
+      color: 'from-green-500 to-cyan-500',
+      bgColor: 'bg-green-50 dark:bg-green-900/20',
     },
     {
       title: 'Pending Approvals',
@@ -449,7 +449,7 @@ export default function SuperAdminDashboard() {
     <div className="relative min-h-screen">
       {/* Background */}
       <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(to_right,#e2e8f01f_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f01f_1px,transparent_1px)] bg-[size:28px_28px] dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.12)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.12)_1px,transparent_1px)]" />
-      <div className="pointer-events-none fixed inset-0 bg-gradient-to-br from-emerald-50/40 via-teal-50/35 to-transparent dark:from-slate-900/60 dark:via-slate-900/65 dark:to-slate-900/80" />
+      <div className="pointer-events-none fixed inset-0 bg-gradient-to-br from-green-50/40 via-green-50/35 to-transparent dark:from-slate-900/60 dark:via-slate-900/65 dark:to-slate-900/80" />
 
       <div className="relative z-10 mx-auto max-w-[1920px]">
         {/* Header */}
@@ -483,7 +483,7 @@ export default function SuperAdminDashboard() {
             {KPICards.map((card, index) => (
               <div
                 key={index}
-                className={`group relative overflow-hidden rounded-lg border border-slate-200 bg-white p-3 shadow-sm transition-all hover:shadow-md hover:border-emerald-200 dark:border-slate-700 dark:bg-slate-800 ${card.bgColor}`}
+                className={`group relative overflow-hidden rounded-lg border border-slate-200 bg-white p-3 shadow-sm transition-all hover:shadow-md hover:border-green-200 dark:border-slate-700 dark:bg-slate-800 ${card.bgColor}`}
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
@@ -517,14 +517,14 @@ export default function SuperAdminDashboard() {
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-                <div className="group relative overflow-hidden rounded-lg border border-slate-200 bg-white p-3 shadow-sm transition-all hover:shadow-md hover:border-emerald-200 dark:border-slate-700 dark:bg-slate-800 bg-green-50 dark:bg-green-900/20">
+                <div className="group relative overflow-hidden rounded-lg border border-slate-200 bg-white p-3 shadow-sm transition-all hover:shadow-md hover:border-green-200 dark:border-slate-700 dark:bg-slate-800 bg-green-50 dark:bg-green-900/20">
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
                       <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 truncate">Yesterday Present</p>
                       <p className="mt-1 text-xl font-bold text-slate-900 dark:text-white">{stats?.yesterdayPresent || 0}</p>
                       <p className="mt-0.5 text-[10px] text-slate-400 dark:text-slate-500 truncate">Present employees</p>
                     </div>
-                    <div className="ml-2 flex-shrink-0 rounded-lg bg-gradient-to-r from-green-500 to-emerald-500 p-1.5 text-white shadow-sm">
+                    <div className="ml-2 flex-shrink-0 rounded-lg bg-gradient-to-r from-green-500 to-green-500 p-1.5 text-white shadow-sm">
                       <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                       </svg>
@@ -539,7 +539,7 @@ export default function SuperAdminDashboard() {
                       <p className="mt-1 text-xl font-bold text-slate-900 dark:text-white">{stats?.yesterdayAbsent || 0}</p>
                       <p className="mt-0.5 text-[10px] text-slate-400 dark:text-slate-500 truncate">Absent employees</p>
                     </div>
-                    <div className="ml-2 flex-shrink-0 rounded-lg bg-gradient-to-r from-red-500 to-rose-500 p-1.5 text-white shadow-sm">
+                    <div className="ml-2 flex-shrink-0 rounded-lg bg-gradient-to-r from-red-500 to-red-500 p-1.5 text-white shadow-sm">
                       <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                       </svg>
@@ -682,8 +682,8 @@ export default function SuperAdminDashboard() {
                 <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Monthly Leaves</p>
                 <p className="mt-1 text-xl font-bold text-slate-900 dark:text-white">{stats?.monthlyLeaves || 0}</p>
               </div>
-              <div className="rounded-lg bg-teal-100 p-1.5 dark:bg-teal-900/20">
-                <svg className="h-4 w-4 text-teal-600 dark:text-teal-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="rounded-lg bg-green-100 p-1.5 dark:bg-green-900/20">
+                <svg className="h-4 w-4 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>

@@ -411,7 +411,7 @@ export default function LoansPage() {
           {canShowAdvanceButton && !canShowLoanButton && (
             <button
               onClick={() => openApplyDialog('salary_advance')}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 text-white font-semibold shadow-lg shadow-purple-500/30 hover:shadow-xl transition-all"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-500 to-red-500 text-white font-semibold shadow-lg shadow-purple-500/30 hover:shadow-xl transition-all"
             >
               <PlusIcon />
               Apply Salary Advance

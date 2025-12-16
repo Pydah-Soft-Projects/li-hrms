@@ -40,6 +40,8 @@ interface Employee {
   bank_place?: string;
   ifsc_code?: string;
   is_active?: boolean;
+  leftDate?: string | null;
+  leftReason?: string | null;
 }
 
 interface Department {
@@ -95,6 +97,8 @@ interface EmployeeApplication {
   bank_place?: string;
   ifsc_code?: string;
   is_active?: boolean;
+  leftDate?: string | null;
+  leftReason?: string | null;
 }
 
 const initialFormState: Partial<Employee> = {
@@ -151,6 +155,10 @@ export default function EmployeesPage() {
   const [applicationSearchTerm, setApplicationSearchTerm] = useState('');
   const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [userRole, setUserRole] = useState<string>('');
+  const [showLeftDateModal, setShowLeftDateModal] = useState(false);
+  const [selectedEmployeeForLeftDate, setSelectedEmployeeForLeftDate] = useState<Employee | null>(null);
+  const [leftDateForm, setLeftDateForm] = useState({ leftDate: '', leftReason: '' });
+  const [includeLeftEmployees, setIncludeLeftEmployees] = useState(false);
 
   useEffect(() => {
     const user = auth.getUser();
@@ -207,7 +215,9 @@ export default function EmployeesPage() {
   const loadEmployees = async () => {
     try {
       setLoading(true);
-      const response = await api.getEmployees();
+      const response = await api.getEmployees({
+        ...(includeLeftEmployees ? { includeLeft: true } : {}),
+      });
       if (response.success) {
         setEmployees(response.data || []);
         setDataSource(response.dataSource || 'mongodb');
@@ -346,11 +356,80 @@ export default function EmployeesPage() {
     setError('');
   };
 
-  const filteredEmployees = employees.filter(emp =>
-    emp.employee_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    emp.emp_no?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    emp.department?.name?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const handleSetLeftDate = (employee: Employee) => {
+    setSelectedEmployeeForLeftDate(employee);
+    setLeftDateForm({
+      leftDate: employee.leftDate ? new Date(employee.leftDate).toISOString().split('T')[0] : '',
+      leftReason: employee.leftReason || '',
+    });
+    setShowLeftDateModal(true);
+  };
+
+  const handleSubmitLeftDate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedEmployeeForLeftDate) return;
+
+    if (!leftDateForm.leftDate) {
+      setError('Left date is required');
+      return;
+    }
+
+    try {
+      setError('');
+      setSuccess('');
+      const response = await api.setEmployeeLeftDate(
+        selectedEmployeeForLeftDate.emp_no,
+        leftDateForm.leftDate,
+        leftDateForm.leftReason || undefined
+      );
+
+      if (response.success) {
+        setSuccess('Employee left date set successfully!');
+        setShowLeftDateModal(false);
+        setSelectedEmployeeForLeftDate(null);
+        setLeftDateForm({ leftDate: '', leftReason: '' });
+        loadEmployees();
+      } else {
+        setError(response.message || 'Failed to set left date');
+      }
+    } catch (err: any) {
+      setError(err.message || 'An error occurred');
+      console.error(err);
+    }
+  };
+
+  const handleRemoveLeftDate = async (employee: Employee) => {
+    if (!confirm(`Are you sure you want to reactivate ${employee.employee_name}? This will remove their left date.`)) return;
+
+    try {
+      setError('');
+      setSuccess('');
+      const response = await api.removeEmployeeLeftDate(employee.emp_no);
+
+      if (response.success) {
+        setSuccess('Employee reactivated successfully!');
+        loadEmployees();
+      } else {
+        setError(response.message || 'Failed to reactivate employee');
+      }
+    } catch (err: any) {
+      setError(err.message || 'An error occurred');
+      console.error(err);
+    }
+  };
+
+  const filteredEmployees = employees.filter(emp => {
+    // Filter by search term
+    const matchesSearch = 
+      emp.employee_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      emp.emp_no?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      emp.department?.name?.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    // Filter by left employees (if includeLeftEmployees is false, exclude those with leftDate)
+    const matchesLeftFilter = includeLeftEmployees || !emp.leftDate;
+    
+    return matchesSearch && matchesLeftFilter;
+  });
 
   const filteredApplications = applications.filter(app =>
     app.employee_name?.toLowerCase().includes(applicationSearchTerm.toLowerCase()) ||
@@ -496,7 +575,7 @@ export default function EmployeesPage() {
     <div className="relative min-h-screen">
       {/* Background */}
       <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(to_right,#e2e8f01f_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f01f_1px,transparent_1px)] bg-[size:28px_28px] dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.12)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.12)_1px,transparent_1px)]" />
-      <div className="pointer-events-none fixed inset-0 bg-gradient-to-br from-emerald-50/40 via-teal-50/35 to-transparent dark:from-slate-900/60 dark:via-slate-900/65 dark:to-slate-900/80" />
+      <div className="pointer-events-none fixed inset-0 bg-gradient-to-br from-green-50/40 via-green-50/35 to-transparent dark:from-slate-900/60 dark:via-slate-900/65 dark:to-slate-900/80" />
 
       <div className="relative z-10 mx-auto max-w-[1920px]">
         {/* Header */}
@@ -504,7 +583,7 @@ export default function EmployeesPage() {
           <div>
             <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Employee Management</h1>
             <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-              Manage employee records • Data source: <span className="font-medium text-emerald-600 dark:text-emerald-400">{dataSource.toUpperCase()}</span>
+              Manage employee records • Data source: <span className="font-medium text-green-600 dark:text-green-400">{dataSource.toUpperCase()}</span>
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
@@ -519,7 +598,7 @@ export default function EmployeesPage() {
             </button>
             <button
               onClick={openCreateDialog}
-              className="rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-500/30 transition-all hover:from-emerald-600 hover:to-teal-600"
+              className="rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
             >
               <svg className="mr-2 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -547,7 +626,7 @@ export default function EmployeesPage() {
             onClick={() => setActiveTab('employees')}
             className={`px-6 py-3 text-sm font-semibold transition-colors ${
               activeTab === 'employees'
-                ? 'border-b-2 border-emerald-500 text-emerald-600 dark:text-emerald-400'
+                ? 'border-b-2 border-green-500 text-green-600 dark:text-green-400'
                 : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
             }`}
           >
@@ -557,7 +636,7 @@ export default function EmployeesPage() {
             onClick={() => setActiveTab('applications')}
             className={`px-6 py-3 text-sm font-semibold transition-colors ${
               activeTab === 'applications'
-                ? 'border-b-2 border-emerald-500 text-emerald-600 dark:text-emerald-400'
+                ? 'border-b-2 border-green-500 text-green-600 dark:text-green-400'
                 : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
             }`}
           >
@@ -579,7 +658,7 @@ export default function EmployeesPage() {
                 {(userRole === 'hr' || userRole === 'super_admin' || userRole === 'sub_admin') && (
                   <button
                     onClick={openApplicationDialog}
-                    className="group relative inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-500/30 transition-all hover:from-emerald-600 hover:to-teal-600 hover:shadow-xl hover:shadow-emerald-500/40"
+                    className="group relative inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-green-500 to-green-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600 hover:shadow-xl hover:shadow-green-500/40"
                   >
                     <span className="text-lg">+</span>
                     <span>New Application</span>
@@ -591,20 +670,20 @@ export default function EmployeesPage() {
                 placeholder="Search applications..."
                 value={applicationSearchTerm}
                 onChange={(e) => setApplicationSearchTerm(e.target.value)}
-                className="w-full max-w-md rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                className="w-full max-w-md rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
               />
             </div>
 
             {/* Applications List */}
             {loadingApplications ? (
               <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm py-16 shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
-                <div className="h-10 w-10 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent"></div>
+                <div className="h-10 w-10 animate-spin rounded-full border-2 border-green-500 border-t-transparent"></div>
                 <p className="mt-4 text-sm font-medium text-slate-600 dark:text-slate-400">Loading applications...</p>
               </div>
             ) : filteredApplications.length === 0 ? (
               <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm p-12 text-center shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
-                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-emerald-100 to-teal-100 dark:from-emerald-900/30 dark:to-teal-900/30">
-                  <svg className="h-8 w-8 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-green-100 to-green-100 dark:from-green-900/30 dark:to-green-900/30">
+                  <svg className="h-8 w-8 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
                 </div>
@@ -622,7 +701,7 @@ export default function EmployeesPage() {
                     <div className="overflow-x-auto">
                       <table className="w-full">
                         <thead>
-                          <tr className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-emerald-50/30 dark:border-slate-700 dark:from-slate-900 dark:to-emerald-900/10">
+                          <tr className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-green-50/30 dark:border-slate-700 dark:from-slate-900 dark:to-green-900/10">
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Emp No</th>
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Name</th>
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Department</th>
@@ -633,8 +712,8 @@ export default function EmployeesPage() {
                         </thead>
                         <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                           {pendingApplications.map((app) => (
-                            <tr key={app._id} className="transition-colors hover:bg-emerald-50/30 dark:hover:bg-emerald-900/10">
-                              <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-emerald-600 dark:text-emerald-400">
+                            <tr key={app._id} className="transition-colors hover:bg-green-50/30 dark:hover:bg-green-900/10">
+                              <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-green-600 dark:text-green-400">
                                 {app.emp_no}
                               </td>
                               <td className="whitespace-nowrap px-6 py-4">
@@ -656,7 +735,7 @@ export default function EmployeesPage() {
                                 {(userRole === 'super_admin' || userRole === 'sub_admin') && (
                                   <button
                                     onClick={() => openApprovalDialog(app)}
-                                    className="rounded-lg px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 transition-all"
+                                    className="rounded-lg px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-green-500 to-green-500 hover:from-green-600 hover:to-green-600 transition-all"
                                   >
                                     Review
                                   </button>
@@ -673,13 +752,13 @@ export default function EmployeesPage() {
                 {/* Approved/Rejected Applications */}
                 {(approvedApplications.length > 0 || rejectedApplications.length > 0) && (
                   <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
-                    <div className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-emerald-50/30 px-6 py-4 dark:border-slate-700 dark:from-slate-900 dark:to-emerald-900/10">
+                    <div className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-green-50/30 px-6 py-4 dark:border-slate-700 dark:from-slate-900 dark:to-green-900/10">
                       <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Processed Applications</h3>
                     </div>
                     <div className="overflow-x-auto">
                       <table className="w-full">
                         <thead>
-                          <tr className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-emerald-50/30 dark:border-slate-700 dark:from-slate-900 dark:to-emerald-900/10">
+                          <tr className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-green-50/30 dark:border-slate-700 dark:from-slate-900 dark:to-green-900/10">
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Emp No</th>
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Name</th>
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Proposed Salary</th>
@@ -690,8 +769,8 @@ export default function EmployeesPage() {
                         </thead>
                         <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                           {[...approvedApplications, ...rejectedApplications].map((app) => (
-                            <tr key={app._id} className="transition-colors hover:bg-emerald-50/30 dark:hover:bg-emerald-900/10">
-                              <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-emerald-600 dark:text-emerald-400">
+                            <tr key={app._id} className="transition-colors hover:bg-green-50/30 dark:hover:bg-green-900/10">
+                              <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-green-600 dark:text-green-400">
                                 {app.emp_no}
                               </td>
                               <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-slate-900 dark:text-slate-100">
@@ -730,27 +809,39 @@ export default function EmployeesPage() {
         {/* Employees Tab */}
         {activeTab === 'employees' && (
           <>
-            {/* Search */}
-            <div className="mb-6">
+            {/* Search and Filter */}
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
               <input
                 type="text"
                 placeholder="Search by name, employee no, or department..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full max-w-md rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                className="flex-1 min-w-[250px] max-w-md rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
               />
+              <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeLeftEmployees}
+                  onChange={(e) => {
+                    setIncludeLeftEmployees(e.target.checked);
+                    loadEmployees();
+                  }}
+                  className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500 dark:border-slate-600"
+                />
+                <span className="text-sm text-slate-700 dark:text-slate-300">Include Left Employees</span>
+              </label>
             </div>
 
             {/* Employee List */}
         {loading ? (
           <div className="flex flex-col items-center justify-center rounded-3xl border border-slate-200 bg-white/95 py-16 shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
-            <div className="h-10 w-10 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent"></div>
+            <div className="h-10 w-10 animate-spin rounded-full border-2 border-green-500 border-t-transparent"></div>
             <p className="mt-4 text-sm font-medium text-slate-600 dark:text-slate-400">Loading employees...</p>
           </div>
         ) : filteredEmployees.length === 0 ? (
           <div className="rounded-3xl border border-slate-200 bg-white/95 p-12 text-center shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-emerald-100 to-teal-100 dark:from-emerald-900/30 dark:to-teal-900/30">
-              <svg className="h-8 w-8 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-green-100 to-green-100 dark:from-green-900/30 dark:to-green-900/30">
+              <svg className="h-8 w-8 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
               </svg>
             </div>
@@ -762,7 +853,7 @@ export default function EmployeesPage() {
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-emerald-50/30 dark:border-slate-700 dark:from-slate-900 dark:to-emerald-900/10">
+                  <tr className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-green-50/30 dark:border-slate-700 dark:from-slate-900 dark:to-green-900/10">
                     <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Emp No</th>
                     <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Name</th>
                     <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Department</th>
@@ -774,8 +865,8 @@ export default function EmployeesPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                   {filteredEmployees.map((employee) => (
-                    <tr key={employee.emp_no} className="transition-colors hover:bg-emerald-50/30 dark:hover:bg-emerald-900/10">
-                      <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-emerald-600 dark:text-emerald-400">
+                    <tr key={employee.emp_no} className="transition-colors hover:bg-green-50/30 dark:hover:bg-green-900/10">
+                      <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-green-600 dark:text-green-400">
                         {employee.emp_no}
                       </td>
                       <td className="whitespace-nowrap px-6 py-4">
@@ -794,13 +885,20 @@ export default function EmployeesPage() {
                         {employee.phone_number || '-'}
                       </td>
                       <td className="whitespace-nowrap px-6 py-4">
-                        <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
-                          employee.is_active !== false
-                            ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                            : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                        }`}>
-                          {employee.is_active !== false ? 'Active' : 'Inactive'}
-                        </span>
+                        <div className="flex flex-col gap-1">
+                          <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
+                            employee.is_active !== false
+                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                              : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                          }`}>
+                            {employee.is_active !== false ? 'Active' : 'Inactive'}
+                          </span>
+                          {employee.leftDate && (
+                            <span className="inline-flex rounded-full px-2.5 py-1 text-xs font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+                              Left: {new Date(employee.leftDate).toLocaleDateString()}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="whitespace-nowrap px-6 py-4 text-right">
                         <button
@@ -812,15 +910,38 @@ export default function EmployeesPage() {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                           </svg>
                         </button>
-                        <button
-                          onClick={() => handleDelete(employee.emp_no)}
-                          className="rounded-lg p-2 text-slate-400 transition-all hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
-                          title="Delete"
-                        >
-                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
+                        {employee.leftDate ? (
+                          <button
+                            onClick={() => handleRemoveLeftDate(employee)}
+                            className="rounded-lg p-2 text-slate-400 transition-all hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/30 dark:hover:text-green-400"
+                            title="Reactivate Employee"
+                          >
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                          </button>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => handleSetLeftDate(employee)}
+                              className="mr-2 rounded-lg p-2 text-slate-400 transition-all hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
+                              title="Set Left Date"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => handleDelete(employee.emp_no)}
+                              className="rounded-lg p-2 text-slate-400 transition-all hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
+                              title="Delete"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          </>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -889,7 +1010,7 @@ export default function EmployeesPage() {
                         }));
                       }}
                       required
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm uppercase transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm uppercase transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                       placeholder="E.g., EMP001"
                     />
                   </div>
@@ -903,7 +1024,7 @@ export default function EmployeesPage() {
                       value={applicationFormData.employee_name || ''}
                       onChange={handleApplicationInputChange}
                       required
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                       placeholder="Full Name"
                     />
                   </div>
@@ -913,7 +1034,7 @@ export default function EmployeesPage() {
                       name="department_id"
                       value={typeof applicationFormData.department_id === 'string' ? applicationFormData.department_id : (applicationFormData.department_id?._id || '')}
                       onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     >
                       <option value="">Select Department</option>
                       {departments.map((dept) => (
@@ -928,7 +1049,7 @@ export default function EmployeesPage() {
                       value={typeof applicationFormData.designation_id === 'string' ? applicationFormData.designation_id : (applicationFormData.designation_id?._id || '')}
                       onChange={handleApplicationInputChange}
                       disabled={!applicationFormData.department_id}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     >
                       <option value="">Select Designation</option>
                       {filteredApplicationDesignations.map((desig) => (
@@ -948,7 +1069,7 @@ export default function EmployeesPage() {
                       required
                       min="0"
                       step="0.01"
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                       placeholder="0.00"
                     />
                   </div>
@@ -966,7 +1087,7 @@ export default function EmployeesPage() {
                       name="dob"
                       value={applicationFormData.dob || ''}
                       onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     />
                   </div>
                   <div>
@@ -975,7 +1096,7 @@ export default function EmployeesPage() {
                       name="gender"
                       value={applicationFormData.gender || ''}
                       onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     >
                       <option value="">Select</option>
                       <option value="Male">Male</option>
@@ -989,7 +1110,7 @@ export default function EmployeesPage() {
                       name="marital_status"
                       value={applicationFormData.marital_status || ''}
                       onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     >
                       <option value="">Select</option>
                       <option value="Single">Single</option>
@@ -1004,7 +1125,7 @@ export default function EmployeesPage() {
                       name="blood_group"
                       value={applicationFormData.blood_group || ''}
                       onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     >
                       <option value="">Select</option>
                       {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(bg => (
@@ -1019,7 +1140,7 @@ export default function EmployeesPage() {
                       name="qualifications"
                       value={applicationFormData.qualifications || ''}
                       onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                       placeholder="E.g., B.Tech, MBA"
                     />
                   </div>
@@ -1030,7 +1151,7 @@ export default function EmployeesPage() {
                       name="experience"
                       value={applicationFormData.experience || ''}
                       onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     />
                   </div>
                   <div className="sm:col-span-2">
@@ -1040,7 +1161,7 @@ export default function EmployeesPage() {
                       name="address"
                       value={applicationFormData.address || ''}
                       onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     />
                   </div>
                   <div>
@@ -1050,7 +1171,7 @@ export default function EmployeesPage() {
                       name="location"
                       value={applicationFormData.location || ''}
                       onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     />
                   </div>
                   <div>
@@ -1061,7 +1182,7 @@ export default function EmployeesPage() {
                       value={applicationFormData.aadhar_number || ''}
                       onChange={handleApplicationInputChange}
                       maxLength={12}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     />
                   </div>
                 </div>
@@ -1078,7 +1199,7 @@ export default function EmployeesPage() {
                       name="phone_number"
                       value={applicationFormData.phone_number || ''}
                       onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     />
                   </div>
                   <div>
@@ -1088,7 +1209,7 @@ export default function EmployeesPage() {
                       name="alt_phone_number"
                       value={applicationFormData.alt_phone_number || ''}
                       onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     />
                   </div>
                   <div>
@@ -1098,7 +1219,7 @@ export default function EmployeesPage() {
                       name="email"
                       value={applicationFormData.email || ''}
                       onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     />
                   </div>
                   <div>
@@ -1108,7 +1229,7 @@ export default function EmployeesPage() {
                       name="pf_number"
                       value={applicationFormData.pf_number || ''}
                       onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     />
                   </div>
                   <div>
@@ -1118,7 +1239,7 @@ export default function EmployeesPage() {
                       name="esi_number"
                       value={applicationFormData.esi_number || ''}
                       onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     />
                   </div>
                 </div>
@@ -1135,7 +1256,7 @@ export default function EmployeesPage() {
                       name="bank_account_no"
                       value={applicationFormData.bank_account_no || ''}
                       onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     />
                   </div>
                   <div>
@@ -1145,7 +1266,7 @@ export default function EmployeesPage() {
                       name="bank_name"
                       value={applicationFormData.bank_name || ''}
                       onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     />
                   </div>
                   <div>
@@ -1155,7 +1276,7 @@ export default function EmployeesPage() {
                       name="bank_place"
                       value={applicationFormData.bank_place || ''}
                       onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     />
                   </div>
                   <div>
@@ -1171,7 +1292,7 @@ export default function EmployeesPage() {
                           ifsc_code: value,
                         }));
                       }}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm uppercase transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm uppercase transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     />
                   </div>
                 </div>
@@ -1181,7 +1302,7 @@ export default function EmployeesPage() {
               <div className="flex gap-3 pt-2">
                 <button
                   type="submit"
-                  className="flex-1 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-500/30 transition-all hover:from-emerald-600 hover:to-teal-600"
+                  className="flex-1 rounded-2xl bg-gradient-to-r from-green-500 to-green-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
                 >
                   Submit Application
                 </button>
@@ -1261,8 +1382,8 @@ export default function EmployeesPage() {
               </div>
 
               {/* Salary Section - Key Feature */}
-              <div className="rounded-2xl border-2 border-emerald-200 bg-emerald-50/50 p-5 dark:border-emerald-800 dark:bg-emerald-900/20">
-                <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">Salary Approval</h3>
+              <div className="rounded-2xl border-2 border-green-200 bg-green-50/50 p-5 dark:border-green-800 dark:bg-green-900/20">
+                <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-green-700 dark:text-green-400">Salary Approval</h3>
                 <div className="space-y-4">
                   {/* Proposed Salary - Strikethrough if modified */}
                   <div>
@@ -1284,11 +1405,11 @@ export default function EmployeesPage() {
                       required
                       min="0"
                       step="0.01"
-                      className="w-full rounded-xl border-2 border-emerald-400 bg-white px-4 py-2.5 text-lg font-semibold transition-all focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-emerald-600 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border-2 border-green-400 bg-white px-4 py-2.5 text-lg font-semibold transition-all focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-500/20 dark:border-green-600 dark:bg-slate-900 dark:text-slate-100"
                       placeholder="Enter approved salary"
                     />
                     {approvalData.approvedSalary !== selectedApplication.proposedSalary && (
-                      <p className="mt-2 text-xs text-emerald-600 dark:text-emerald-400">
+                      <p className="mt-2 text-xs text-green-600 dark:text-green-400">
                         ✓ Salary modified from proposed amount
                       </p>
                     )}
@@ -1304,7 +1425,7 @@ export default function EmployeesPage() {
                       value={approvalData.doj || ''}
                       onChange={(e) => setApprovalData({ ...approvalData, doj: e.target.value })}
                       required
-                      className="w-full rounded-xl border-2 border-emerald-400 bg-white px-4 py-2.5 text-sm font-semibold transition-all focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-emerald-600 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border-2 border-green-400 bg-white px-4 py-2.5 text-sm font-semibold transition-all focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-500/20 dark:border-green-600 dark:bg-slate-900 dark:text-slate-100"
                     />
                     <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
                       Specify the employee's joining date
@@ -1322,7 +1443,7 @@ export default function EmployeesPage() {
                   value={approvalData.comments}
                   onChange={(e) => setApprovalData({ ...approvalData, comments: e.target.value })}
                   rows={3}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 resize-none"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 resize-none"
                   placeholder="Add any comments for this approval..."
                 />
               </div>
@@ -1331,13 +1452,13 @@ export default function EmployeesPage() {
               <div className="flex gap-3 pt-2">
                 <button
                   onClick={handleApproveApplication}
-                  className="flex-1 rounded-2xl bg-gradient-to-r from-green-500 to-emerald-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-emerald-600"
+                  className="flex-1 rounded-2xl bg-gradient-to-r from-green-500 to-green-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
                 >
                   Approve & Create Employee
                 </button>
                 <button
                   onClick={handleRejectApplication}
-                  className="flex-1 rounded-2xl bg-gradient-to-r from-red-500 to-rose-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-red-500/30 transition-all hover:from-red-600 hover:to-rose-600"
+                  className="flex-1 rounded-2xl bg-gradient-to-r from-red-500 to-red-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-red-500/30 transition-all hover:from-red-600 hover:to-red-600"
                 >
                   Reject
                 </button>
@@ -1400,7 +1521,7 @@ export default function EmployeesPage() {
                       onChange={handleInputChange}
                       required
                       disabled={!!editingEmployee}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm uppercase transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm uppercase transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                       placeholder="E.g., EMP001"
                     />
                   </div>
@@ -1414,7 +1535,7 @@ export default function EmployeesPage() {
                       value={formData.employee_name || ''}
                       onChange={handleInputChange}
                       required
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                       placeholder="Full Name"
                     />
                   </div>
@@ -1424,7 +1545,7 @@ export default function EmployeesPage() {
                       name="department_id"
                       value={formData.department_id || ''}
                       onChange={handleInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     >
                       <option value="">Select Department</option>
                       {departments.map((dept) => (
@@ -1439,7 +1560,7 @@ export default function EmployeesPage() {
                       value={formData.designation_id || ''}
                       onChange={handleInputChange}
                       disabled={!formData.department_id}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     >
                       <option value="">Select Designation</option>
                       {filteredDesignations.map((desig) => (
@@ -1454,7 +1575,7 @@ export default function EmployeesPage() {
                       name="doj"
                       value={formData.doj || ''}
                       onChange={handleInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     />
                   </div>
                 </div>
@@ -1466,11 +1587,11 @@ export default function EmployeesPage() {
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                   <div>
                     <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Date of Birth</label>
-                    <input type="date" name="dob" value={formData.dob || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
+                    <input type="date" name="dob" value={formData.dob || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
                   </div>
                   <div>
                     <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Gender</label>
-                    <select name="gender" value={formData.gender || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+                    <select name="gender" value={formData.gender || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
                       <option value="">Select</option>
                       <option value="Male">Male</option>
                       <option value="Female">Female</option>
@@ -1479,7 +1600,7 @@ export default function EmployeesPage() {
                   </div>
                   <div>
                     <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Marital Status</label>
-                    <select name="marital_status" value={formData.marital_status || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+                    <select name="marital_status" value={formData.marital_status || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
                       <option value="">Select</option>
                       <option value="Single">Single</option>
                       <option value="Married">Married</option>
@@ -1489,7 +1610,7 @@ export default function EmployeesPage() {
                   </div>
                   <div>
                     <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Blood Group</label>
-                    <select name="blood_group" value={formData.blood_group || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+                    <select name="blood_group" value={formData.blood_group || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
                       <option value="">Select</option>
                       {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(bg => (
                         <option key={bg} value={bg}>{bg}</option>
@@ -1498,23 +1619,23 @@ export default function EmployeesPage() {
                   </div>
                   <div>
                     <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Qualifications</label>
-                    <input type="text" name="qualifications" value={formData.qualifications || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" placeholder="E.g., B.Tech, MBA" />
+                    <input type="text" name="qualifications" value={formData.qualifications || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" placeholder="E.g., B.Tech, MBA" />
                   </div>
                   <div>
                     <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Experience (Years)</label>
-                    <input type="number" name="experience" value={formData.experience || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
+                    <input type="number" name="experience" value={formData.experience || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
                   </div>
                   <div className="sm:col-span-2">
                     <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Address</label>
-                    <input type="text" name="address" value={formData.address || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
+                    <input type="text" name="address" value={formData.address || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
                   </div>
                   <div>
                     <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Location</label>
-                    <input type="text" name="location" value={formData.location || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
+                    <input type="text" name="location" value={formData.location || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
                   </div>
                   <div>
                     <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Aadhar Number</label>
-                    <input type="text" name="aadhar_number" value={formData.aadhar_number || ''} onChange={handleInputChange} maxLength={12} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
+                    <input type="text" name="aadhar_number" value={formData.aadhar_number || ''} onChange={handleInputChange} maxLength={12} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
                   </div>
                 </div>
               </div>
@@ -1525,27 +1646,27 @@ export default function EmployeesPage() {
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                   <div>
                     <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Phone Number</label>
-                    <input type="text" name="phone_number" value={formData.phone_number || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
+                    <input type="text" name="phone_number" value={formData.phone_number || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
                   </div>
                   <div>
                     <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Alt. Phone</label>
-                    <input type="text" name="alt_phone_number" value={formData.alt_phone_number || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
+                    <input type="text" name="alt_phone_number" value={formData.alt_phone_number || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
                   </div>
                   <div>
                     <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Email</label>
-                    <input type="email" name="email" value={formData.email || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
+                    <input type="email" name="email" value={formData.email || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
                   </div>
                   <div>
                     <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Gross Salary</label>
-                    <input type="number" name="gross_salary" value={formData.gross_salary || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
+                    <input type="number" name="gross_salary" value={formData.gross_salary || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
                   </div>
                   <div>
                     <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">PF Number</label>
-                    <input type="text" name="pf_number" value={formData.pf_number || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
+                    <input type="text" name="pf_number" value={formData.pf_number || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
                   </div>
                   <div>
                     <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">ESI Number</label>
-                    <input type="text" name="esi_number" value={formData.esi_number || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
+                    <input type="text" name="esi_number" value={formData.esi_number || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
                   </div>
                 </div>
               </div>
@@ -1556,19 +1677,19 @@ export default function EmployeesPage() {
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                   <div>
                     <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Bank A/C No</label>
-                    <input type="text" name="bank_account_no" value={formData.bank_account_no || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
+                    <input type="text" name="bank_account_no" value={formData.bank_account_no || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
                   </div>
                   <div>
                     <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Bank Name</label>
-                    <input type="text" name="bank_name" value={formData.bank_name || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
+                    <input type="text" name="bank_name" value={formData.bank_name || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
                   </div>
                   <div>
                     <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Bank Place</label>
-                    <input type="text" name="bank_place" value={formData.bank_place || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
+                    <input type="text" name="bank_place" value={formData.bank_place || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
                   </div>
                   <div>
                     <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">IFSC Code</label>
-                    <input type="text" name="ifsc_code" value={formData.ifsc_code || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm uppercase transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
+                    <input type="text" name="ifsc_code" value={formData.ifsc_code || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm uppercase transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
                   </div>
                 </div>
               </div>
@@ -1580,7 +1701,7 @@ export default function EmployeesPage() {
                   id="is_active"
                   checked={formData.is_active !== false}
                   onChange={(e) => setFormData(prev => ({ ...prev, is_active: e.target.checked }))}
-                  className="h-4 w-4 rounded text-emerald-600 focus:ring-emerald-500"
+                  className="h-4 w-4 rounded text-green-600 focus:ring-green-500"
                 />
                 <label htmlFor="is_active" className="text-sm font-medium text-slate-700 dark:text-slate-300">
                   Active Employee
@@ -1591,7 +1712,7 @@ export default function EmployeesPage() {
               <div className="flex gap-3 pt-2">
                 <button
                   type="submit"
-                  className="flex-1 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-500/30 transition-all hover:from-emerald-600 hover:to-teal-600"
+                  className="flex-1 rounded-2xl bg-gradient-to-r from-green-500 to-green-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
                 >
                   {editingEmployee ? 'Update Employee' : 'Create Employee'}
                 </button>
@@ -1693,6 +1814,101 @@ export default function EmployeesPage() {
           }}
           onClose={() => setShowBulkUpload(false)}
         />
+      )}
+
+      {/* Left Date Modal */}
+      {showLeftDateModal && selectedEmployeeForLeftDate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowLeftDateModal(false)} />
+          <div className="relative z-50 w-full max-w-md rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950/95">
+            <div className="mb-6 flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
+                  Set Employee Left Date
+                </h2>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  {selectedEmployeeForLeftDate.employee_name} ({selectedEmployeeForLeftDate.emp_no})
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowLeftDateModal(false);
+                  setSelectedEmployeeForLeftDate(null);
+                  setLeftDateForm({ leftDate: '', leftReason: '' });
+                }}
+                className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {error && (
+              <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+                {error}
+              </div>
+            )}
+
+            {success && (
+              <div className="mb-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400">
+                {success}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmitLeftDate} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Left Date <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={leftDateForm.leftDate}
+                  onChange={(e) => setLeftDateForm({ ...leftDateForm, leftDate: e.target.value })}
+                  max={new Date().toISOString().split('T')[0]}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                />
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  The employee will be included in pay register for this month, but excluded from future months.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Reason for Leaving (Optional)
+                </label>
+                <textarea
+                  value={leftDateForm.leftReason}
+                  onChange={(e) => setLeftDateForm({ ...leftDateForm, leftReason: e.target.value })}
+                  rows={3}
+                  placeholder="Enter reason for leaving..."
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowLeftDateModal(false);
+                    setSelectedEmployeeForLeftDate(null);
+                    setLeftDateForm({ leftDate: '', leftReason: '' });
+                  }}
+                  className="rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-xl bg-gradient-to-r from-red-500 to-orange-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-red-500/30 transition-all hover:from-red-600 hover:to-orange-600"
+                >
+                  Set Left Date
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

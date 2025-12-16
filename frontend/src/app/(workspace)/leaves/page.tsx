@@ -1153,7 +1153,7 @@ export default function LeavesPage() {
             return (
               <button
                 onClick={() => openApplyDialog('od')}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 text-white font-semibold shadow-lg shadow-purple-500/30 hover:shadow-xl transition-all"
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-500 to-red-500 text-white font-semibold shadow-lg shadow-purple-500/30 hover:shadow-xl transition-all"
               >
                 <PlusIcon />
                 Apply OD
@@ -1515,11 +1515,11 @@ export default function LeavesPage() {
                               ? 'cursor-pointer hover:scale-105 border-blue-400 bg-blue-50 dark:bg-blue-900/30'
                               : 'border-gray-200 dark:border-slate-700'
                           } ${
-                            isToday ? 'ring-2 ring-emerald-500 ring-offset-2' : ''
+                            isToday ? 'ring-2 ring-green-500 ring-offset-2' : ''
                           }`}
                         >
                           <div className="flex flex-col h-full">
-                            <div className={`text-sm font-semibold mb-1 ${isToday ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-900 dark:text-white'}`}>
+                            <div className={`text-sm font-semibold mb-1 ${isToday ? 'text-green-600 dark:text-green-400' : 'text-gray-900 dark:text-white'}`}>
                               {day}
                             </div>
                             {leave && (
@@ -1550,7 +1550,7 @@ export default function LeavesPage() {
                       <span className="text-gray-600 dark:text-gray-400">Leave Day</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <div className="w-4 h-4 rounded border-2 border-emerald-500 ring-2 ring-emerald-500 ring-offset-2"></div>
+                      <div className="w-4 h-4 rounded border-2 border-green-500 ring-2 ring-green-500 ring-offset-2"></div>
                       <span className="text-gray-600 dark:text-gray-400">Today</span>
                     </div>
                   </div>
@@ -2242,7 +2242,7 @@ export default function LeavesPage() {
                   className={`flex-1 px-4 py-2.5 text-sm font-semibold text-white rounded-xl ${
                     applyType === 'leave'
                       ? 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600'
-                      : 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600'
+                      : 'bg-gradient-to-r from-purple-500 to-red-500 hover:from-purple-600 hover:to-red-600'
                   }`}
                 >
                   Apply {applyType === 'leave' ? 'Leave' : 'OD'}
@@ -2261,7 +2261,7 @@ export default function LeavesPage() {
             <div className={`px-6 py-4 border-b border-slate-200 dark:border-slate-700 ${
               detailType === 'leave' 
                 ? 'bg-gradient-to-r from-blue-500 to-indigo-500' 
-                : 'bg-gradient-to-r from-purple-500 to-pink-500'
+                : 'bg-gradient-to-r from-purple-500 to-red-500'
             }`}>
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold text-white flex items-center gap-2">
