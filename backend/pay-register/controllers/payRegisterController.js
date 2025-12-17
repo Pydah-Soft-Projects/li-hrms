@@ -1,5 +1,6 @@
 const PayRegisterSummary = require('../model/PayRegisterSummary');
 const Employee = require('../../employees/model/Employee');
+const PayrollBatch = require('../../payroll/model/PayrollBatch');
 const { populatePayRegisterFromSources } = require('../services/autoPopulationService');
 const { calculateTotals } = require('../services/totalsCalculationService');
 const { updateDailyRecord } = require('../services/dailyRecordUpdateService');
@@ -381,7 +382,7 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
     // 2. Left during this month (leftDate is within this month)
     const monthStart = new Date(year, monthNum - 1, 1);
     const monthEnd = new Date(year, monthNum, 0, 23, 59, 59, 999);
-    
+
     let employeeQuery = {
       $or: [
         // Active employees (no left date)
@@ -390,20 +391,20 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
         { leftDate: { $gte: monthStart, $lte: monthEnd } }
       ]
     };
-    
+
     if (departmentId) {
       console.log('[Pay Register Controller] Filtering employees by departmentId:', departmentId);
-      
+
       // Convert departmentId to ObjectId if it's a valid ObjectId string
       let deptObjectId;
       try {
-        deptObjectId = mongoose.Types.ObjectId.isValid(departmentId) 
-          ? new mongoose.Types.ObjectId(departmentId) 
+        deptObjectId = mongoose.Types.ObjectId.isValid(departmentId)
+          ? new mongoose.Types.ObjectId(departmentId)
           : departmentId;
       } catch (err) {
         deptObjectId = departmentId;
       }
-      
+
       employeeQuery.department_id = deptObjectId;
     }
 
@@ -430,6 +431,15 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
     }
 
     // Get or create pay register for each employee
+    const PayrollRecord = require('../../payroll/model/PayrollRecord');
+    const payrollRecords = await PayrollRecord.find({
+      employeeId: { $in: employees.map(e => e._id) },
+      month: month
+    }).select('employeeId _id');
+
+    const payrollMap = new Map();
+    payrollRecords.forEach(pr => payrollMap.set(pr.employeeId.toString(), pr._id));
+
     const payRegisters = [];
     for (const employee of employees) {
       try {
@@ -451,7 +461,7 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
         // If not found, create it
         if (!payRegister) {
           console.log(`[Pay Register Controller] Creating pay register for employee ${employee.emp_no}`);
-          
+
           const dailyRecords = await populatePayRegisterFromSources(
             employee._id,
             employee.emp_no,
@@ -491,6 +501,7 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
           status: payRegister.status,
           totals: payRegister.totals,
           lastEditedAt: payRegister.lastEditedAt,
+          payrollId: payrollMap.get(employee._id.toString()) || null,
         };
 
         payRegisters.push(payRegisterData);

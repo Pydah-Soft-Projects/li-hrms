@@ -147,6 +147,10 @@ async function buildPayslipData(employeeId, month) {
       totalEMI: payrollRecord.loanAdvance.totalEMI,
       advanceDeduction: payrollRecord.loanAdvance.advanceDeduction,
     },
+    arrears: {
+      arrearsAmount: payrollRecord.arrearsAmount || 0,
+      arrearsSettlements: payrollRecord.arrearsSettlements || [],
+    },
     netSalary: payrollRecord.netSalary,
     totalPayableShifts: payrollRecord.totalPayableShifts,
     paidDays: payrollRecord.totalPayableShifts,
@@ -179,6 +183,7 @@ function buildPayslipExcelRows(payslip) {
       Incentive: payslip.earnings.incentive,
       OTPay: payslip.earnings.otPay,
       TotalAllowances: payslip.earnings.totalAllowances,
+      Arrears: payslip.arrears?.arrearsAmount || 0, // Add arrears column before gross salary
       GrossSalary: payslip.earnings.grossSalary,
       AttendanceDeduction: payslip.deductions.attendanceDeduction,
       PermissionDeduction: payslip.deductions.permissionDeduction,
@@ -221,8 +226,13 @@ exports.calculatePayroll = async (req, res) => {
     // Strategy: default = new engine. legacy = new engine but using all related data (attendance summary cross-check).
     const useLegacy = req.query.strategy === 'legacy';
     const calcFn = payrollCalculationService.calculatePayrollNew;
+
+    // Extract arrears from request body (if provided)
+    const arrears = req.body.arrears || [];
+
     const result = await calcFn(employeeId, month, req.user._id, {
       source: useLegacy ? 'all' : 'payregister',
+      arrearsSettlements: arrears, // Pass arrears to calculation service
     });
 
     // If export is requested, return Excel immediately
@@ -243,10 +253,18 @@ exports.calculatePayroll = async (req, res) => {
       return res.send(buf);
     }
 
+    // Convert mongoose ref to object if needed to merge properties
+    const responseData = result.payrollRecord.toObject ? result.payrollRecord.toObject() : result.payrollRecord;
+
+    if (result.batchId) {
+      responseData.batchId = result.batchId;
+      responseData.payrollBatchId = result.batchId; // Also set standard field
+    }
+
     res.status(200).json({
       success: true,
       message: 'Payroll calculated successfully',
-      data: result.payrollRecord,
+      data: responseData,
     });
   } catch (error) {
     console.error('Error calculating payroll:', error);
@@ -254,6 +272,8 @@ exports.calculatePayroll = async (req, res) => {
       success: false,
       message: error.message || 'Error calculating payroll',
       error: error.message,
+      code: error.code,
+      batchId: error.batchId
     });
   }
 };

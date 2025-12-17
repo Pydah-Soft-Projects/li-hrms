@@ -10,6 +10,10 @@ const otPayService = require('./otPayService');
 const allowanceService = require('./allowanceService');
 const deductionService = require('./deductionService');
 const loanAdvanceService = require('./loanAdvanceService');
+const ArrearsIntegrationService = require('./arrearsIntegrationService');
+const ArrearsPayrollIntegrationService = require('../../arrears/services/arrearsPayrollIntegrationService');
+const PayrollBatchService = require('./payrollBatchService');
+const PayrollBatch = require('../model/PayrollBatch');
 const {
   getIncludeMissingFlag,
   mergeWithOverrides,
@@ -85,7 +89,7 @@ async function calculatePayroll(employeeId, month, userId) {
     });
 
     let attendanceSummary;
-    
+
     if (payRegisterSummary) {
       // Use PayRegisterSummary as source of truth
       console.log('Using PayRegisterSummary as source of truth');
@@ -121,7 +125,19 @@ async function calculatePayroll(employeeId, month, userId) {
     }
 
     const department = await Department.findById(departmentId);
-    
+
+    // BATCH VALIDATION: Check if payroll batch is locked
+    const existingBatch = await PayrollBatch.findOne({ department: departmentId, month });
+    if (existingBatch && ['approved', 'freeze', 'complete'].includes(existingBatch.status)) {
+      // Check for permission
+      if (!existingBatch.hasValidRecalculationPermission()) {
+        const error = new Error(`Payroll for ${month} is ${existingBatch.status}. Recalculation requires permission.`);
+        error.code = 'BATCH_LOCKED';
+        error.batchId = existingBatch._id;
+        throw error;
+      }
+    }
+
     // Get paid leaves: Check employee first, then department
     // If employee has paidLeaves set (not null/undefined and > 0), use it
     // Otherwise, use department paidLeaves
@@ -140,7 +156,7 @@ async function calculatePayroll(employeeId, month, userId) {
     const totalLeaves = attendanceSummary.totalLeaves || 0;
     const remainingPaidLeaves = Math.max(0, paidLeaves - totalLeaves);
     const adjustedPayableShifts = (attendanceSummary.totalPayableShifts || 0) + remainingPaidLeaves;
-    
+
     console.log('\n--- Paid Leaves Calculation ---');
     console.log(`Total Paid Leaves Available: ${paidLeaves}`);
     console.log(`Total Leaves Taken: ${totalLeaves}`);
@@ -161,11 +177,11 @@ async function calculatePayroll(employeeId, month, userId) {
     console.log(`Department: ${departmentId}`);
     console.log(`Total Payable Shifts: ${modifiedAttendanceSummary.totalPayableShifts}`);
     console.log(`Total Days in Month: ${modifiedAttendanceSummary.totalDaysInMonth}`);
-    
+
     console.log('\n--- Step 2: Basic Pay Calculation ---');
     const basicPayResult = basicPayService.calculateBasicPay(employee, modifiedAttendanceSummary);
     console.log('Basic Pay Result:', JSON.stringify(basicPayResult, null, 2));
-    
+
     // Ensure all basicPayResult values are numbers
     if (!basicPayResult || typeof basicPayResult.basicPay !== 'number') {
       throw new Error('Invalid basic pay calculation result');
@@ -179,7 +195,7 @@ async function calculatePayroll(employeeId, month, userId) {
       departmentId.toString()
     );
     console.log('OT Pay Result:', JSON.stringify(otPayResult, null, 2));
-    
+
     // Ensure all otPayResult values are numbers
     if (!otPayResult || typeof otPayResult.otPay !== 'number') {
       throw new Error('Invalid OT pay calculation result');
@@ -222,29 +238,29 @@ async function calculatePayroll(employeeId, month, userId) {
     // Merge allowances and apply employee overrides
     const allAllowances = [...allowances, ...allowancesWithGrossBase];
     const includeMissing = await getIncludeMissingFlag(departmentId);
-    
+
     // Accept employee overrides even if category was missing/old; normalize to 'allowance'
     const allowanceOverrides = normalizeOverrides(employee.employeeAllowances || [], 'allowance').filter(
       (a) => a.category === 'allowance'
     );
-    
+
     console.log(`\n--- Employee Allowance Overrides: ${allowanceOverrides.length} items ---`);
     allowanceOverrides.forEach((ov, idx) => {
       console.log(`  [${idx + 1}] ${ov.name} (masterId: ${ov.masterId}, amount: ${ov.amount})`);
     });
-    
+
     console.log(`\n--- Base Allowances (Dept/Global): ${allAllowances.length} items ---`);
     allAllowances.forEach((base, idx) => {
       console.log(`  [${idx + 1}] ${base.name} (masterId: ${base.masterId}, amount: ${base.amount})`);
     });
-    
+
     const mergedAllowances = mergeWithOverrides(allAllowances, allowanceOverrides, includeMissing);
-    
+
     console.log(`\n--- Merged Allowances (After Override): ${mergedAllowances.length} items (includeMissing: ${includeMissing}) ---`);
     mergedAllowances.forEach((merged, idx) => {
       console.log(`  [${idx + 1}] ${merged.name} (masterId: ${merged.masterId}, amount: ${merged.amount}, isOverride: ${merged.isEmployeeOverride || false})`);
     });
-    
+
     const totalAllowances = allowanceService.calculateTotalAllowances(mergedAllowances);
     console.log(`Total Allowances: ${totalAllowances}`);
 
@@ -261,7 +277,7 @@ async function calculatePayroll(employeeId, month, userId) {
     console.log(`Employee: ${employee.emp_no} | Month: ${month}`);
     console.log(`Per Day Basic Pay: ${basicPayResult.perDayBasicPay}`);
     console.log(`Basic Pay: ${basicPayResult.basicPay}`);
-    
+
     // 7a. Attendance Deduction
     console.log('\n--- 7a. Attendance Deduction ---');
     const attendanceDeductionResult = await deductionService.calculateAttendanceDeduction(
@@ -328,7 +344,7 @@ async function calculatePayroll(employeeId, month, userId) {
     // 7d. Other Deductions (NEW APPROACH: Get all once, separate by type, apply correctly)
     console.log('\n--- 7d. Other Deductions Calculation ---');
     console.log('Getting all active deductions and calculating by type...');
-    
+
     // Get ALL deductions at once - the function now handles separation internally
     // Fixed deductions are calculated immediately
     // Percentage-basic deductions use basicPay
@@ -338,15 +354,15 @@ async function calculatePayroll(employeeId, month, userId) {
       basicPayResult.basicPay,
       grossSalary // Pass gross salary for percentage-gross deductions
     );
-    
+
     console.log(`\nTotal Other Deductions Found: ${allOtherDeductions.length} items`);
     console.log('Breakdown by type:');
-    
+
     // Separate and log by type
     const fixedDeds = allOtherDeductions.filter(d => d.type === 'fixed');
     const percentageBasicDeds = allOtherDeductions.filter(d => d.type === 'percentage' && d.base === 'basic');
     const percentageGrossDeds = allOtherDeductions.filter(d => d.type === 'percentage' && d.base === 'gross');
-    
+
     console.log(`\n  Fixed Deductions: ${fixedDeds.length} items`);
     if (fixedDeds.length > 0) {
       fixedDeds.forEach((ded, idx) => {
@@ -355,7 +371,7 @@ async function calculatePayroll(employeeId, month, userId) {
     } else {
       console.log('    (None)');
     }
-    
+
     console.log(`\n  Percentage Deductions (Basic Base): ${percentageBasicDeds.length} items`);
     if (percentageBasicDeds.length > 0) {
       percentageBasicDeds.forEach((ded, idx) => {
@@ -364,7 +380,7 @@ async function calculatePayroll(employeeId, month, userId) {
     } else {
       console.log('    (None)');
     }
-    
+
     console.log(`\n  Percentage Deductions (Gross Base): ${percentageGrossDeds.length} items`);
     if (percentageGrossDeds.length > 0) {
       percentageGrossDeds.forEach((ded, idx) => {
@@ -373,34 +389,34 @@ async function calculatePayroll(employeeId, month, userId) {
     } else {
       console.log('    (None)');
     }
-    
+
     // Accept employee overrides even if category was missing/old; normalize to 'deduction'
     const deductionOverrides = normalizeOverrides(employee.employeeDeductions || [], 'deduction').filter(
       (d) => d.category === 'deduction'
     );
-    
+
     console.log(`\n--- Employee Deduction Overrides: ${deductionOverrides.length} items ---`);
     deductionOverrides.forEach((ov, idx) => {
       console.log(`  [${idx + 1}] ${ov.name} (masterId: ${ov.masterId}, amount: ${ov.amount})`);
     });
-    
+
     console.log(`\n--- Base Deductions (Dept/Global): ${allOtherDeductions.length} items ---`);
     allOtherDeductions.forEach((base, idx) => {
       console.log(`  [${idx + 1}] ${base.name} (masterId: ${base.masterId}, amount: ${base.amount})`);
     });
-    
+
     const mergedDeductions = mergeWithOverrides(allOtherDeductions, deductionOverrides, includeMissing);
-    
+
     console.log(`\n--- Merged Deductions (After Override): ${mergedDeductions.length} items (includeMissing: ${includeMissing}) ---`);
     mergedDeductions.forEach((merged, idx) => {
       console.log(`  [${idx + 1}] ${merged.name} (masterId: ${merged.masterId}, amount: ${merged.amount}, isOverride: ${merged.isEmployeeOverride || false})`);
     });
-    
+
     const totalOtherDeductions = deductionService.calculateTotalOtherDeductions(mergedDeductions);
     console.log(`\n✓ Total Other Deductions: ₹${totalOtherDeductions}`);
     console.log(`  (Fixed: ₹${deductionService.calculateTotalOtherDeductions(fixedDeds)}, ` +
-                `Percentage-Basic: ₹${deductionService.calculateTotalOtherDeductions(percentageBasicDeds)}, ` +
-                `Percentage-Gross: ₹${deductionService.calculateTotalOtherDeductions(percentageGrossDeds)})`);
+      `Percentage-Basic: ₹${deductionService.calculateTotalOtherDeductions(percentageBasicDeds)}, ` +
+      `Percentage-Gross: ₹${deductionService.calculateTotalOtherDeductions(percentageGrossDeds)})`);
 
     // Total Deductions
     const totalDeductions =
@@ -408,7 +424,7 @@ async function calculatePayroll(employeeId, month, userId) {
       permissionDeductionResult.permissionDeduction +
       leaveDeductionResult.leaveDeduction +
       totalOtherDeductions;
-    
+
     console.log('\n--- DEDUCTIONS SUMMARY ---');
     console.log(`Attendance Deduction: ${attendanceDeductionResult.attendanceDeduction}`);
     console.log(`Permission Deduction: ${permissionDeductionResult.permissionDeduction}`);
@@ -520,14 +536,14 @@ async function calculatePayroll(employeeId, month, userId) {
     // FINAL SOLUTION: Use set() method with dot notation for EACH field
     // This is the ONLY reliable way Mongoose recognizes nested required fields
     // Direct property assignment doesn't work for nested schemas with required fields
-    
+
     // Set top-level required fields using set()
     payrollRecord.set('totalPayableShifts', Number(adjustedPayableShifts) || 0);
     payrollRecord.set('netSalary', Number(finalNetSalary) || 0);
     payrollRecord.set('payableAmountBeforeAdvance', Number(finalPayableAmountBeforeAdvance) || 0);
     payrollRecord.set('status', 'calculated');
     payrollRecord.set('attendanceSummaryId', attendanceSummary._id);
-    
+
     // Set earnings fields using set() with dot notation - REQUIRED for nested schemas
     payrollRecord.set('earnings.basicPay', Number(finalBasicPay) || 0);
     payrollRecord.set('earnings.perDayBasicPay', Number(finalPerDayBasicPay) || 0);
@@ -539,7 +555,7 @@ async function calculatePayroll(employeeId, month, userId) {
     payrollRecord.set('earnings.totalAllowances', Number(finalTotalAllowances) || 0);
     payrollRecord.set('earnings.allowances', Array.isArray(mergedAllowances) ? mergedAllowances : []);
     payrollRecord.set('earnings.grossSalary', Number(finalGrossSalary) || 0);
-    
+
     // Set deductions fields using set() with dot notation
     payrollRecord.set('deductions.attendanceDeduction', Number(finalAttendanceDeduction) || 0);
     payrollRecord.set('deductions.attendanceDeductionBreakdown', attendanceDeductionResult.breakdown || {
@@ -568,13 +584,13 @@ async function calculatePayroll(employeeId, month, userId) {
     payrollRecord.set('deductions.totalOtherDeductions', Number(finalTotalOtherDeductions) || 0);
     payrollRecord.set('deductions.otherDeductions', Array.isArray(mergedDeductions) ? mergedDeductions : []);
     payrollRecord.set('deductions.totalDeductions', Number(finalTotalDeductions) || 0);
-    
+
     // Set loan/advance fields using set() with dot notation
     payrollRecord.set('loanAdvance.totalEMI', Number(finalTotalEMI) || 0);
     payrollRecord.set('loanAdvance.emiBreakdown', Array.isArray(emiResult.emiBreakdown) ? emiResult.emiBreakdown : []);
     payrollRecord.set('loanAdvance.advanceDeduction', Number(finalAdvanceDeduction) || 0);
     payrollRecord.set('loanAdvance.advanceBreakdown', Array.isArray(advanceResult.advanceBreakdown) ? advanceResult.advanceBreakdown : []);
-    
+
     // Set calculation metadata
     payrollRecord.set('calculationMetadata', {
       calculatedAt: new Date(),
@@ -620,10 +636,65 @@ async function calculatePayroll(employeeId, month, userId) {
     console.log(`    totalEMI: ${payrollRecord.get('loanAdvance.totalEMI')}`);
     console.log(`    advanceDeduction: ${payrollRecord.get('loanAdvance.advanceDeduction')}`);
 
+    // Step 13.5: Arrears Integration (Auto-Include Pending Arrears)
+    let arrearsSettlements = [];
+    try {
+      const pendingArrears = await ArrearsPayrollIntegrationService.getPendingArrearsForPayroll(employeeId);
+      if (pendingArrears && pendingArrears.length > 0) {
+        console.log(`\n--- Found ${pendingArrears.length} pending arrears. Auto-including in payroll... ---`);
+        arrearsSettlements = pendingArrears.map(ar => ({
+          arrearId: ar.id,
+          amount: ar.remainingAmount
+        }));
+
+        await ArrearsIntegrationService.addArrearsToPayroll(
+          payrollRecord,
+          arrearsSettlements,
+          employeeId
+        );
+
+        const addedArrearsAmount = payrollRecord.arrearsAmount || 0;
+        const newGrossSalary = finalGrossSalary + addedArrearsAmount;
+        const newPayableAmountBeforeAdvance = newGrossSalary - finalTotalDeductions - finalTotalEMI;
+        const newNetSalary = Math.max(0, newPayableAmountBeforeAdvance - finalAdvanceDeduction);
+
+        payrollRecord.set('earnings.grossSalary', Number(newGrossSalary) || 0);
+        payrollRecord.set('payableAmountBeforeAdvance', Number(newPayableAmountBeforeAdvance) || 0);
+        payrollRecord.set('netSalary', Number(newNetSalary) || 0);
+
+        // Mark modified
+        payrollRecord.markModified('earnings');
+        payrollRecord.markModified('netSalary');
+
+        console.log(`  Arrears Added: ${addedArrearsAmount}`);
+        console.log(`  Updated Gross: ${newGrossSalary}`);
+        console.log(`  Updated Net: ${newNetSalary}`);
+      }
+    } catch (arrErr) {
+      console.error('Error auto-processing arrears:', arrErr);
+    }
+
     // Save the document
     console.log('\nSaving payroll record to database...');
     await payrollRecord.save();
     console.log(`✓ Payroll record saved successfully! ID: ${payrollRecord._id}`);
+
+    // Process Arrears Settlements (After Save)
+    if (arrearsSettlements && arrearsSettlements.length > 0) {
+      try {
+        console.log('\n--- Processing Arrears Settlement Records ---');
+        await ArrearsIntegrationService.processArrearsSettlements(
+          employeeId,
+          month,
+          arrearsSettlements,
+          userId,
+          payrollRecord._id.toString()
+        );
+        console.log('✓ Arrears settlements processed successfully');
+      } catch (settlementError) {
+        console.error('Error processing arrears settlements:', settlementError);
+      }
+    }
 
     // Step 14: Create Transaction Logs
     await createTransactionLogs(payrollRecord._id, employeeId, employee.emp_no, month, userId, {
@@ -655,8 +726,14 @@ async function calculatePayroll(employeeId, month, userId) {
 
 /**
  * New payroll calculation flow (non-destructive; used when strategy=new)
+ * @param {String} employeeId - Employee ID
+ * @param {String} month - Month in YYYY-MM format
+ * @param {String} userId - User ID who triggered the calculation
+ * @param {Object} options - Options object
+ * @param {String} options.source - Data source ('payregister' or 'all')
+ * @param {Array} options.arrearsSettlements - Array of arrears settlements {id, amount}
  */
-async function calculatePayrollNew(employeeId, month, userId, options = { source: 'payregister' }) {
+async function calculatePayrollNew(employeeId, month, userId, options = { source: 'payregister', arrearsSettlements: [] }) {
   try {
     const employee = await Employee.findById(employeeId).populate('department_id designation_id');
     if (!employee) throw new Error('Employee not found');
@@ -705,6 +782,18 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
 
     const departmentId = employee.department_id?._id || employee.department_id;
     if (!departmentId) throw new Error('Employee department not found');
+
+    // BATCH VALIDATION: Check if payroll batch is locked
+    const existingBatch = await PayrollBatch.findOne({ department: departmentId, month });
+    if (existingBatch && ['approved', 'freeze', 'complete'].includes(existingBatch.status)) {
+      // Check for permission
+      if (!existingBatch.hasValidRecalculationPermission()) {
+        const error = new Error(`Payroll for ${month} is ${existingBatch.status}. Recalculation requires permission.`);
+        error.code = 'BATCH_LOCKED';
+        error.batchId = existingBatch._id;
+        throw error;
+      }
+    }
 
     const monthDays = attendanceSummary.totalDaysInMonth;
     const holidays = attendanceSummary.holidays || 0;
@@ -852,11 +941,11 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
       'earnings.allowances',
       Array.isArray(allowanceBreakdown)
         ? allowanceBreakdown.map((a) => ({
-            name: a.name,
-            amount: a.amount,
-            type: a.type || 'fixed',
-            base: a.base === 'basic' ? 'basic' : 'gross',
-          }))
+          name: a.name,
+          amount: a.amount,
+          type: a.type || 'fixed',
+          base: a.base === 'basic' ? 'basic' : 'gross',
+        }))
         : []
     );
     payrollRecord.set('earnings.grossSalary', Number(grossAmountSalary) || 0);
@@ -873,11 +962,11 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
       'deductions.otherDeductions',
       Array.isArray(deductionBreakdown)
         ? deductionBreakdown.map((d) => ({
-            name: d.name,
-            amount: d.amount,
-            type: d.type || 'fixed',
-            base: d.base === 'basic' ? 'basic' : d.base === 'gross' ? 'gross' : 'fixed',
-          }))
+          name: d.name,
+          amount: d.amount,
+          type: d.type || 'fixed',
+          base: d.base === 'basic' ? 'basic' : d.base === 'gross' ? 'gross' : 'fixed',
+        }))
         : []
     );
     payrollRecord.set('deductions.totalDeductions', Number(totalDeductions) || 0);
@@ -890,9 +979,113 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     payrollRecord.markModified('deductions');
     payrollRecord.markModified('loanAdvance');
 
+    // Process arrears
+    let arrearsSettlements = options.arrearsSettlements;
+    // Auto-fetch if not provided OR if empty array provided (default from frontend)
+    if (!arrearsSettlements || arrearsSettlements.length === 0) {
+      try {
+        const pendingArrears = await ArrearsPayrollIntegrationService.getPendingArrearsForPayroll(employeeId);
+        if (pendingArrears && pendingArrears.length > 0) {
+          arrearsSettlements = pendingArrears.map(ar => ({
+            arrearId: ar.id,
+            amount: ar.remainingAmount
+          }));
+        }
+      } catch (e) {
+        console.error("Error auto-fetching pending arrears in calculatePayrollNew", e);
+      }
+    }
+    arrearsSettlements = arrearsSettlements || [];
+    if (arrearsSettlements && arrearsSettlements.length > 0) {
+      console.log(`\n--- Processing Arrears Settlements: ${arrearsSettlements.length} items ---`);
+      try {
+        // Add arrears to payroll earnings
+        await ArrearsIntegrationService.addArrearsToPayroll(
+          payrollRecord,
+          arrearsSettlements,
+          employeeId
+        );
+
+        console.log('✓ Arrears added to payroll successfully');
+        console.log(`  Arrears Amount: ₹${payrollRecord.arrearsAmount || 0}`);
+
+        // Update gross salary to include arrears
+        const arrearsAmount = payrollRecord.arrearsAmount || 0;
+        const newGrossSalary = grossAmountSalary + arrearsAmount;
+
+        // Recalculate net salary with arrears
+        const netSalaryWithArrears = Math.max(0, newGrossSalary - totalDeductions);
+
+        // Update payroll record with new values
+        payrollRecord.set('earnings.grossSalary', Number(newGrossSalary) || 0);
+        payrollRecord.set('netSalary', Number(netSalaryWithArrears) || 0);
+        payrollRecord.markModified('earnings');
+        payrollRecord.markModified('netSalary');
+
+        console.log(`  Original Gross Salary: ₹${grossAmountSalary}`);
+        console.log(`  Arrears Amount: ₹${arrearsAmount}`);
+        console.log(`  Updated Gross Salary (with arrears): ₹${newGrossSalary}`);
+        console.log(`  Updated Net Salary (with arrears): ₹${netSalaryWithArrears}`);
+      } catch (arrearsError) {
+        console.error('Error processing arrears:', arrearsError);
+        // Don't fail the entire payroll calculation if arrears processing fails
+        // Just log the error and continue
+      }
+    }
+
     await payrollRecord.save();
 
-    return { success: true, payrollRecord };
+    // Process arrears settlements after payroll is saved
+    if (arrearsSettlements && arrearsSettlements.length > 0) {
+      try {
+        console.log('\n--- Processing Arrears Settlement Records ---');
+        await ArrearsIntegrationService.processArrearsSettlements(
+          employeeId,
+          month,
+          arrearsSettlements,
+          userId,
+          payrollRecord._id.toString()
+        );
+        console.log('✓ Arrears settlements processed successfully');
+      } catch (settlementError) {
+        console.error('Error processing arrears settlements:', settlementError);
+        // Log but don't fail - payroll is already saved
+      }
+    }
+
+    let batchId = null;
+    // Update Payroll Batch
+    try {
+      if (employee && employee.department_id) {
+        // console.log(`\n--- Updating Payroll Batch for Department: ${employee.department_id} ---`); // Optional logging
+        let batch = await PayrollBatch.findOne({
+          department: employee.department_id,
+          month: month
+        });
+
+        if (!batch) {
+          console.log('Batch does not exist, creating new batch...');
+          // Create batch if not exists
+          batch = await PayrollBatchService.createBatch(
+            employee.department_id,
+            month,
+            userId
+          );
+        }
+
+        // Add payroll to batch
+        if (batch) {
+          await PayrollBatchService.addPayrollToBatch(batch._id, payrollRecord._id);
+          batchId = batch._id;
+          // console.log(`✓ Added payroll record to batch: ${batch.batchNumber}`);
+        }
+      }
+    } catch (batchError) {
+      console.error('Error updating payroll batch:', batchError);
+      // Don't fail the calculation, just log error
+    }
+
+    return { success: true, payrollRecord, batchId };
   } catch (error) {
     console.error('Error calculating payroll (new flow):', error);
     throw error;

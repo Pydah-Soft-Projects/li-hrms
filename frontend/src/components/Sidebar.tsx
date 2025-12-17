@@ -147,6 +147,13 @@ const AllowancesDeductionsIcon = ({ className, ...props }: IconProps) => (
   </svg>
 );
 
+const ArrearsIcon = ({ className, ...props }: IconProps) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+    <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+    <circle cx="12" cy="12" r="1" />
+  </svg>
+);
+
 const ReportsIcon = ({ className, ...props }: IconProps) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -194,6 +201,15 @@ const LogoutIcon = ({ className, ...props }: IconProps) => (
   </svg>
 );
 
+
+
+const PaymentsIcon = ({ className, ...props }: IconProps) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+    <rect x="2" y="5" width="20" height="14" rx="2" />
+    <line x1="2" y1="10" x2="22" y2="10" />
+  </svg>
+);
+
 export type NavItem = {
   href: string;
   label: string;
@@ -215,7 +231,9 @@ const navItems: NavItem[] = [
   { href: '/superadmin/workspaces', label: 'Workspaces', icon: WorkspacesIcon },
   { href: '/superadmin/users', label: 'Users', icon: UsersIcon },
   { href: '/superadmin/reports', label: 'Reports', icon: ReportsIcon },
+  { href: '/superadmin/payments', label: 'Payments', icon: PaymentsIcon },
   { href: '/superadmin/pay-register', label: 'Pay Register', icon: PayRegisterIcon },
+  { href: '/superadmin/arrears', label: 'Arrears', icon: ArrearsIcon },
   { href: '/superadmin/settings', label: 'Settings', icon: SettingsIcon },
   { href: '/superadmin/settings/departmental', label: 'Departmental Settings', icon: DepartmentSettingsIcon },
   { href: '/superadmin/allowances-deductions', label: 'Allowances & Deductions', icon: AllowancesDeductionsIcon },
@@ -252,9 +270,8 @@ export default function Sidebar() {
 
   return (
     <aside
-      className={`fixed top-0 left-0 h-screen bg-white border-r border-slate-200/60 transition-all duration-300 ease-in-out z-40 ${
-        isCollapsed ? 'w-[72px]' : 'w-[260px]'
-      }`}
+      className={`fixed top-0 left-0 h-screen bg-white border-r border-slate-200/60 transition-all duration-300 ease-in-out z-40 ${isCollapsed ? 'w-[72px]' : 'w-[260px]'
+        }`}
     >
       {/* Collapse/Expand Button */}
       <button
@@ -299,11 +316,10 @@ export default function Sidebar() {
                 <li key={item.href}>
                   <Link
                     href={item.href}
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 ${
-                      isActive
-                        ? 'bg-green-50 text-green-700 shadow-sm'
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                    } ${isCollapsed ? 'justify-center' : ''}`}
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 ${isActive
+                      ? 'bg-green-50 text-green-700 shadow-sm'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                      } ${isCollapsed ? 'justify-center' : ''}`}
                     title={isCollapsed ? item.label : undefined}
                   >
                     <Icon className={`h-[18px] w-[18px] flex-shrink-0 ${isActive ? 'text-green-600' : 'text-slate-500'}`} />
@@ -322,11 +338,10 @@ export default function Sidebar() {
           {/* Profile Link */}
           <Link
             href="/superadmin/profile"
-            className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 ${
-              pathname === '/superadmin/profile'
-                ? 'bg-green-50 text-green-700'
-                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-            } ${isCollapsed ? 'justify-center' : ''}`}
+            className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 ${pathname === '/superadmin/profile'
+              ? 'bg-green-50 text-green-700'
+              : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+              } ${isCollapsed ? 'justify-center' : ''}`}
             title={isCollapsed ? 'Profile' : undefined}
           >
             {!isCollapsed && user ? (
@@ -349,9 +364,8 @@ export default function Sidebar() {
           {/* Logout Button */}
           <button
             onClick={handleLogout}
-            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 text-slate-600 hover:bg-red-50 hover:text-red-600 ${
-              isCollapsed ? 'justify-center' : ''
-            }`}
+            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 text-slate-600 hover:bg-red-50 hover:text-red-600 ${isCollapsed ? 'justify-center' : ''
+              }`}
             title={isCollapsed ? 'Logout' : undefined}
           >
             <LogoutIcon className="h-[18px] w-[18px] flex-shrink-0" />

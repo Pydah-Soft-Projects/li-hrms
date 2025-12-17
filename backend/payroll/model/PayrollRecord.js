@@ -321,6 +321,12 @@ const payrollRecordSchema = new mongoose.Schema(
       ref: 'MonthlyAttendanceSummary',
     },
 
+    // Reference to payroll batch
+    payrollBatchId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'PayrollBatch',
+    },
+
     // Additional metadata
     notes: {
       type: String,
@@ -386,7 +392,7 @@ payrollRecordSchema.statics.getOrCreate = async function (employeeId, emp_no, ye
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
   const monthName = `${monthNames[monthNumber - 1]} ${year}`;
-  
+
   // Get total days in month
   const totalDaysInMonth = new Date(year, monthNumber, 0).getDate();
 

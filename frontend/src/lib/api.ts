@@ -46,6 +46,77 @@ export interface Workspace {
   };
 }
 
+export type PayrollBatchStatus = 'pending' | 'approved' | 'freeze' | 'complete';
+
+export interface RecalculationHistory {
+  _id: string;
+  recalculatedAt: string;
+  recalculatedBy: {
+    _id: string;
+    name: string;
+    email: string;
+  };
+  reason: string;
+  previousSnapshot: any;
+  changes: any[];
+}
+
+export interface PayrollBatch {
+  id: string;
+  _id: string;
+  batchNumber: string;
+  department: {
+    _id: string;
+    name: string;
+    code: string;
+  };
+  month: string;
+  year: number;
+  monthNumber: number;
+
+  employeePayrolls: any[]; // Can be IDs or populated objects
+  totalEmployees: number;
+
+  totalGrossSalary: number;
+  totalDeductions: number;
+  totalNetSalary: number;
+  totalArrears: number;
+
+  status: PayrollBatchStatus;
+  statusHistory: {
+    status: PayrollBatchStatus;
+    changedBy: any;
+    changedAt: string;
+    reason: string;
+  }[];
+
+  recalculationPermission?: {
+    granted: boolean;
+    grantedBy?: any;
+    grantedAt?: string;
+    expiresAt?: string;
+    reason?: string;
+    requestedBy?: any;
+    requestedAt?: string;
+  };
+
+  recalculationHistory: RecalculationHistory[];
+
+  validationStatus?: {
+    allEmployeesCalculated: boolean;
+    missingEmployees: string[];
+    lastValidatedAt: string;
+  };
+
+  createdBy: any;
+  approvedBy?: any;
+  createdAt: string;
+  updatedAt: string;
+
+  // Virtuals
+  monthName?: string;
+}
+
 export interface ApiResponse<T> {
   success: boolean;
   message?: string;
@@ -99,7 +170,7 @@ export async function apiRequest<T>(
   try {
     const url = `${API_BASE_URL}${endpoint}`;
     console.log(`[API Request] ${options.method || 'GET'} ${url}`, options.body ? JSON.parse(options.body as string) : '');
-    
+
     const response = await fetch(url, {
       ...options,
       headers,
@@ -124,11 +195,11 @@ export async function apiRequest<T>(
     console.error(`[API Error] ${options.method || 'GET'} ${API_BASE_URL}${endpoint}`, error);
     const errorMessage = error instanceof Error ? error.message : 'Network error occurred';
     const isNetworkError = errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError');
-    
+
     return {
       success: false,
-      message: isNetworkError 
-        ? 'Unable to connect to server. Please check your network connection and ensure the backend is running.' 
+      message: isNetworkError
+        ? 'Unable to connect to server. Please check your network connection and ensure the backend is running.'
         : errorMessage,
       error: errorMessage,
     };
@@ -898,6 +969,50 @@ export const api = {
   },
 
   // ==========================================
+  // ARREARS MANAGEMENT
+  // ==========================================
+
+  // Get arrears for payroll inclusion
+  getArrearsForPayroll: async (filters: { employeeId?: string; month?: number; year?: number }) => {
+    const params = new URLSearchParams();
+    if (filters.employeeId) params.append('employeeId', filters.employeeId);
+    if (filters.month) params.append('month', filters.month.toString());
+    if (filters.year) params.append('year', filters.year.toString());
+
+    return apiRequest<{ data: any[]; count: number }>(`/arrears/for-payroll?${params.toString()}`);
+  },
+
+  // Update arrears settlement status
+  updateArrearsSettlement: async (id: string, data: { amount: number; payrollId?: string; month: number; year: number }) => {
+    return apiRequest(`/arrears/${id}/settlement`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+  },
+
+  // Generic POST method
+  post: async <T = any>(url: string, data: any): Promise<ApiResponse<T>> => {
+    const response = await fetch(`${API_BASE_URL}${url}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(await getAuthHeader())
+      },
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Request failed');
+    }
+
+    return response.json();
+  },
+
+  // ==========================================
   // LEAVE MANAGEMENT
   // ==========================================
 
@@ -1461,18 +1576,18 @@ export const api = {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const formData = new FormData();
     formData.append('file', file);
-    
+
     const headers: Record<string, string> = {};
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
-    
+
     const response = await fetch(`${API_BASE_URL}/attendance/upload`, {
       method: 'POST',
       headers,
       body: formData,
     });
-    
+
     const data = await response.json();
     if (!response.ok) {
       throw new Error(data.message || 'Upload failed');
@@ -1852,7 +1967,7 @@ export const api = {
   getOTSettings: async () => {
     const payPerHour = await apiRequest<any>('/settings/ot_pay_per_hour', { method: 'GET' });
     const minHours = await apiRequest<any>('/settings/ot_min_hours', { method: 'GET' });
-    
+
     return {
       success: true,
       data: {
@@ -1872,7 +1987,7 @@ export const api = {
         category: 'overtime',
       }),
     });
-    
+
     const minHours = await apiRequest<any>('/settings', {
       method: 'POST',
       body: JSON.stringify({
@@ -1882,7 +1997,7 @@ export const api = {
         category: 'overtime',
       }),
     });
-    
+
     return {
       success: payPerHour.success && minHours.success,
       message: payPerHour.success && minHours.success ? 'OT settings saved successfully' : 'Failed to save OT settings',
@@ -1890,11 +2005,11 @@ export const api = {
   },
 
   // Payroll
-  calculatePayroll: async (employeeId: string, month: string, query: string = '') => {
+  calculatePayroll: async (employeeId: string, month: string, query: string = '', arrears?: Array<{ id: string, amount: number, employeeId?: string }>) => {
     const path = `/payroll/calculate${query || ''}`;
     return apiRequest<any>(path, {
       method: 'POST',
-      body: JSON.stringify({ employeeId, month }),
+      body: JSON.stringify({ employeeId, month, arrears: arrears || [] }),
     });
   },
 
@@ -1945,6 +2060,81 @@ export const api = {
     return apiRequest<any>(`/payroll${query ? `?${query}` : ''}`, { method: 'GET' });
   },
 
+
+  getPayRegisterSummary: async (params?: { month?: string; filter_department?: string; filter_status?: string }) => {
+    const queryParams = new URLSearchParams();
+    if (params?.month) queryParams.append('month', params.month);
+    if (params?.filter_department) queryParams.append('filter_department', params.filter_department);
+    if (params?.filter_status) queryParams.append('filter_status', params.filter_status);
+    const query = queryParams.toString();
+    return apiRequest<any>(`/pay-register/summary${query ? `?${query}` : ''}`, { method: 'GET' });
+  },
+
+  // Payroll Batch API
+  getPayrollBatches: async (params?: { month?: string; departmentId?: string; status?: string; page?: number; limit?: number }) => {
+    const queryParams = new URLSearchParams();
+    if (params?.month) queryParams.append('month', params.month);
+    if (params?.departmentId) queryParams.append('departmentId', params.departmentId);
+    if (params?.status) queryParams.append('status', params.status);
+    if (params?.page) queryParams.append('page', params.page.toString());
+    if (params?.limit) queryParams.append('limit', params.limit.toString());
+    const query = queryParams.toString();
+    return apiRequest<any>(`/payroll-batch${query ? `?${query}` : ''}`, { method: 'GET' });
+  },
+
+  getPayrollBatch: async (id: string) => {
+    return apiRequest<any>(`/payroll-batch/${id}`, { method: 'GET' });
+  },
+
+  calculatePayrollBatch: async (data: { departmentId?: string; month: string; calculateAll?: boolean }) => {
+    return apiRequest<any>(`/payroll-batch/calculate`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  approveBatch: async (id: string, reason?: string) => {
+    return apiRequest<any>(`/payroll-batch/${id}/approve`, {
+      method: 'PUT',
+      body: JSON.stringify({ reason }),
+    });
+  },
+
+  freezeBatch: async (id: string, reason?: string) => {
+    return apiRequest<any>(`/payroll-batch/${id}/freeze`, {
+      method: 'PUT',
+      body: JSON.stringify({ reason }),
+    });
+  },
+
+  completeBatch: async (id: string, reason?: string) => {
+    return apiRequest<any>(`/payroll-batch/${id}/complete`, {
+      method: 'PUT',
+      body: JSON.stringify({ reason }),
+    });
+  },
+
+  requestRecalculation: async (id: string, reason: string) => {
+    return apiRequest<any>(`/payroll-batch/${id}/request-recalculation`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  },
+
+  grantRecalculation: async (id: string, reason: string = 'Granted via UI', expiryHours: number = 24) => {
+    return apiRequest<any>(`/payroll-batch/${id}/grant-recalculation`, {
+      method: 'POST',
+      body: JSON.stringify({ reason, expiryHours }),
+    });
+  },
+
+  bulkApproveBatches: async (batchIds: string[], reason?: string) => {
+    return apiRequest<any>(`/payroll-batch/bulk-approve`, {
+      method: 'POST',
+      body: JSON.stringify({ batchIds, reason }),
+    });
+  },
+
   approvePayroll: async (payrollRecordId: string, comments?: string) => {
     return apiRequest<any>(`/payroll/${payrollRecordId}/approve`, {
       method: 'PUT',
@@ -1954,6 +2144,7 @@ export const api = {
 
   processPayroll: async (payrollRecordId: string) => {
     return apiRequest<any>(`/payroll/${payrollRecordId}/process`, {
+
       method: 'PUT',
     });
   },
@@ -2020,6 +2211,86 @@ export const api = {
     if (status) query.append('status', status);
     return apiRequest<any>(`/pay-register/employees/${month}${query.toString() ? `?${query.toString()}` : ''}`, {
       method: 'GET',
+    });
+  },
+
+  // Arrears APIs - Get all arrears
+  getArrears: async (filters?: { status?: string; employeeId?: string; department?: string; page?: number; limit?: number }) => {
+    const params = new URLSearchParams();
+    if (filters?.status) params.append('status', filters.status);
+    if (filters?.employeeId) params.append('employeeId', filters.employeeId);
+    if (filters?.department) params.append('department', filters.department);
+    if (filters?.page) params.append('page', String(filters.page));
+    if (filters?.limit) params.append('limit', String(filters.limit));
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return apiRequest<any>(`/arrears${query}`, { method: 'GET' });
+  },
+
+  // Get single arrears
+  getArrearsById: async (id: string) => {
+    return apiRequest<any>(`/arrears/${id}`, { method: 'GET' });
+  },
+
+  // Create arrears
+  createArrears: async (data: any) => {
+    return apiRequest<any>('/arrears', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Update arrears
+  updateArrears: async (id: string, data: any) => {
+    return apiRequest<any>(`/arrears/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Get pending arrears for employee
+  getPendingArrears: async (employeeId: string) => {
+    return apiRequest<any>(`/arrears/employee/${employeeId}/pending`, { method: 'GET' });
+  },
+
+  // Get pending arrears approvals
+  getPendingArrearsApprovals: async () => {
+    return apiRequest<any>('/arrears/pending-approvals', { method: 'GET' });
+  },
+
+  // Process arrears action (approve/reject/forward)
+  processArrearsAction: async (id: string, action: 'approve' | 'reject' | 'forward', comments?: string) => {
+    return apiRequest<any>(`/arrears/${id}/action`, {
+      method: 'PUT',
+      body: JSON.stringify({ action, comments }),
+    });
+  },
+
+  // Revoke arrears approval
+  revokeArrearsApproval: async (id: string, reason?: string) => {
+    return apiRequest<any>(`/arrears/${id}/revoke`, {
+      method: 'PUT',
+      body: JSON.stringify({ reason }),
+    });
+  },
+
+  // Get arrears statistics
+  getArrearsStats: async () => {
+    return apiRequest<any>('/arrears/stats/summary', { method: 'GET' });
+  },
+
+  // Edit arrears details (at any approval level)
+  editArrears: async (id: string, data: { startMonth?: string; endMonth?: string; monthlyAmount?: number; totalAmount?: number; reason?: string }) => {
+    return apiRequest<any>(`/arrears/${id}/edit`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Transition arrears to next approval level (SuperAdmin)
+  transitionArrears: async (id: string, nextStatus: string, data?: { startMonth?: string; endMonth?: string; monthlyAmount?: number; totalAmount?: number; reason?: string; comments?: string }) => {
+    return apiRequest<any>(`/arrears/${id}/transition`, {
+      method: 'PUT',
+      body: JSON.stringify({ nextStatus, ...data }),
     });
   },
 };

@@ -110,6 +110,14 @@ app.use('/api/payroll', payrollRoutes);
 const payRegisterRoutes = require('./pay-register/index.js');
 app.use('/api/pay-register', payRegisterRoutes);
 
+// Arrears routes
+const arrearsRoutes = require('./arrears/index.js');
+app.use('/api/arrears', arrearsRoutes);
+
+// PayrollBatch routes
+const payrollBatchRoutes = require('./payroll/routes/payrollBatchRoutes.js');
+app.use('/api/payroll-batch', payrollBatchRoutes);
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({
@@ -155,8 +163,12 @@ const startServer = async () => {
       console.log(`   - Leaves & OD: /api/leaves`);
       console.log(`   - Loans: /api/loans`);
       console.log(`   - Attendance: /api/attendance`);
+      console.log(`   - Overtime: /api/ot`);
+      console.log(`   - Permissions: /api/permissions`);
+      console.log(`   - Allowances & Deductions: /api/allowances-deductions`);
       console.log(`   - Payroll: /api/payroll`);
       console.log(`   - Pay Register: /api/pay-register`);
+      console.log(`   - Arrears: /api/arrears`);
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error.message);
