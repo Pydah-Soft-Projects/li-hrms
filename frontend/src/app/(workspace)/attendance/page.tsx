@@ -108,6 +108,9 @@ interface Designation {
   department: string;
 }
 
+// Table types borrowed from Pay Register for the 'basic' attendance table
+type TableType = 'present' | 'absent' | 'leaves' | 'od' | 'ot' | 'extraHours' | 'shifts';
+
 export default function AttendancePage() {
   const [viewMode, setViewMode] = useState<'calendar' | 'list' | 'complete'>('list'); // Default to list view
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -141,6 +144,9 @@ export default function AttendancePage() {
   const [selectedDepartment, setSelectedDepartment] = useState<string>('');
   const [selectedDesignation, setSelectedDesignation] = useState<string>('');
   const [filteredMonthlyData, setFilteredMonthlyData] = useState<MonthlyAttendanceData[]>([]);
+  // New: attendance table display mode and active basic tab (inspired from pay-register)
+  const [attendanceTableMode, setAttendanceTableMode] = useState<'complete' | 'basic' | TableType>('complete');
+  
   
   // OutTime dialog state
   const [showOutTimeDialog, setShowOutTimeDialog] = useState(false);
@@ -890,6 +896,55 @@ export default function AttendancePage() {
     return '';
   };
 
+    // Helpers for 'basic' table mode (inspired from pay-register)
+    const shouldShowInTable = (record: AttendanceRecord | null, tableType: TableType): boolean => {
+      if (!record) return false;
+      switch (tableType) {
+        case 'present':
+          return record.status === 'PRESENT' || record.status === 'PARTIAL';
+        case 'absent':
+          return record.status === 'ABSENT';
+        case 'leaves':
+          return record.status === 'LEAVE' || !!record.hasLeave;
+        case 'od':
+          return record.status === 'OD' || !!record.hasOD;
+        case 'ot':
+          return (record.otHours || 0) > 0;
+        case 'extraHours':
+          return (record.extraHours || 0) > 0;
+        case 'shifts':
+          return !!record.shiftId;
+        default:
+          return false;
+      }
+    };
+
+    const getCellBackgroundColorForTable = (record: AttendanceRecord | null, tableType: TableType): string => {
+      if (!record) return '';
+      switch (tableType) {
+        case 'present':
+          return (record.status === 'PRESENT' || record.status === 'PARTIAL') ? 'bg-green-100 dark:bg-green-900/30' : '';
+        case 'absent':
+          return record.status === 'ABSENT' ? 'bg-red-100 dark:bg-red-900/30' : '';
+        case 'leaves':
+          return (record.status === 'LEAVE' || record.hasLeave) ? 'bg-orange-100 dark:bg-orange-900/30' : '';
+        case 'od':
+          return (record.status === 'OD' || record.hasOD) ? 'bg-blue-100 dark:bg-blue-900/30' : '';
+        case 'ot':
+        case 'extraHours':
+          return ((record.otHours || 0) > 0 || (record.extraHours || 0) > 0) ? 'bg-orange-100 dark:bg-orange-900/30' : '';
+        case 'shifts':
+          return (record.shiftId) ? 'bg-indigo-100 dark:bg-indigo-900/30' : '';
+        default:
+          return '';
+      }
+    };
+
+    const countEmployeesForTable = (tableType: TableType) =>
+      filteredMonthlyData.filter((item) => {
+        return Object.keys(item.dailyAttendance).some((date) => shouldShowInTable(item.dailyAttendance[date] || null, tableType));
+      }).length;
+
   const formatTime = (time: string | null, showDateIfDifferent?: boolean, recordDate?: string) => {
     if (!time) return '-';
     try {
@@ -1093,6 +1148,26 @@ export default function AttendancePage() {
               </svg>
               Upload Excel
             </button>
+
+            {/* Table Mode Selector (Complete / Basic / Types) */}
+            <div className="ml-2">
+              <label className="block text-[10px] text-slate-500 dark:text-slate-400 mb-1">Table Mode</label>
+              <select
+                value={attendanceTableMode}
+                onChange={(e) => setAttendanceTableMode(e.target.value as any)}
+                className="rounded-md border border-slate-200 px-2 py-1 text-sm bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+              >
+                <option value="complete">Complete</option>
+                <option value="basic">Basic (Present + Absent)</option>
+                <option value="present">Present {`(${countEmployeesForTable('present')})`}</option>
+                <option value="absent">Absent {`(${countEmployeesForTable('absent')})`}</option>
+                <option value="leaves">Leaves {`(${countEmployeesForTable('leaves')})`}</option>
+                <option value="od">OD {`(${countEmployeesForTable('od')})`}</option>
+                <option value="ot">OT {`(${countEmployeesForTable('ot')})`}</option>
+                <option value="extraHours">Extra Hours {`(${countEmployeesForTable('extraHours')})`}</option>
+                <option value="shifts">Shifts {`(${countEmployeesForTable('shifts')})`}</option>
+              </select>
+            </div>
           </div>
         </div>
 
@@ -1112,6 +1187,7 @@ export default function AttendancePage() {
         {/* List View */}
         {viewMode === 'list' && (
           <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
+
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse text-xs">
                   <thead>
@@ -1235,7 +1311,7 @@ export default function AttendancePage() {
                               const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
                               const record = item.dailyAttendance[dateStr] || null;
                               const shiftName = record?.shiftId && typeof record.shiftId === 'object' ? record.shiftId.name : '-';
-                              
+
                               // Determine display status - check for leave/OD even if no attendance record
                               let displayStatus = 'A';
                               if (record) {
@@ -1245,19 +1321,29 @@ export default function AttendancePage() {
                                 else if (record.status === 'OD' || record.hasOD) displayStatus = 'OD';
                                 else displayStatus = 'A';
                               }
-                              
+
+                              // Determine whether this cell matches the current table mode selection
+                              const matchesMode = (() => {
+                                if (attendanceTableMode === 'complete') return true;
+                                if (attendanceTableMode === 'basic') {
+                                  return shouldShowInTable(record, 'present') || shouldShowInTable(record, 'absent');
+                                }
+                                // attendanceTableMode may be a TableType string
+                                return shouldShowInTable(record, attendanceTableMode as TableType);
+                              })();
+
                               // Check if there's any data to display (attendance, leave, or OD)
                               const hasData = record && (record.status || record.hasLeave || record.hasOD);
-                              
+
                               return (
                                 <td
                                   key={day}
-                                  onClick={() => hasData && handleDateClick(item.employee, dateStr)}
+                                  onClick={() => matchesMode && hasData && handleDateClick(item.employee, dateStr)}
                                   className={`border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700 ${
-                                    hasData ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : ''
-                                  } ${getStatusColor(record)} ${getCellBackgroundColor(record)}`}
+                                    matchesMode && hasData ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : ''
+                                  } ${getStatusColor(record)} ${attendanceTableMode !== 'complete' && attendanceTableMode !== 'basic' ? getCellBackgroundColorForTable(record, attendanceTableMode as TableType) : getCellBackgroundColor(record)}`}
                                 >
-                                  {hasData ? (
+                                  {matchesMode && hasData ? (
                                     <div className="space-y-0.5">
                                       <div className="font-semibold text-[9px]">{displayStatus}</div>
                                       {shiftName !== '-' && record?.shiftId && (

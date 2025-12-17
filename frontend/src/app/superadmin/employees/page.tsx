@@ -443,12 +443,15 @@ export default function EmployeesPage() {
     if (user) {
       setUserRole(user.role);
     }
-    loadEmployees();
     loadDepartments();
     if (activeTab === 'applications') {
       loadApplications();
     }
   }, []);
+
+  useEffect(() => {
+    loadEmployees();
+  }, [includeLeftEmployees]);
 
   useEffect(() => {
     if (activeTab === 'applications') {
@@ -512,18 +515,18 @@ export default function EmployeesPage() {
 
   useEffect(() => {
     if (applicationFormData.department_id) {
-      const deptId = typeof applicationFormData.department_id === 'string' 
-        ? applicationFormData.department_id 
+      const deptId = typeof applicationFormData.department_id === 'string'
+        ? applicationFormData.department_id
         : applicationFormData.department_id._id;
       const filtered = designations.filter(d => d.department === deptId);
       setFilteredApplicationDesignations(filtered);
       // Reset designation if it doesn't belong to selected department
       if (applicationFormData.designation_id) {
-        const desigId = typeof applicationFormData.designation_id === 'string' 
-          ? applicationFormData.designation_id 
+        const desigId = typeof applicationFormData.designation_id === 'string'
+          ? applicationFormData.designation_id
           : applicationFormData.designation_id._id;
         if (!filtered.find(d => d._id === desigId)) {
-        setApplicationFormData(prev => ({ ...prev, designation_id: '' }));
+          setApplicationFormData(prev => ({ ...prev, designation_id: '' }));
         }
       }
     } else {
@@ -543,9 +546,9 @@ export default function EmployeesPage() {
           const paidLeaves = emp.paidLeaves !== undefined && emp.paidLeaves !== null ? Number(emp.paidLeaves) : 0;
           // Debug: Log first employee to check paidLeaves and reporting_to
           if (index === 0) {
-            console.log('Loading employee:', { 
-              emp_no: emp.emp_no, 
-              paidLeaves, 
+            console.log('Loading employee:', {
+              emp_no: emp.emp_no,
+              paidLeaves,
               original: emp.paidLeaves,
               reporting_to: emp.reporting_to,
               dynamicFields: emp.dynamicFields,
@@ -615,23 +618,23 @@ export default function EmployeesPage() {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target;
-    const processedValue = type === 'number' 
-        ? (value === '' ? (name === 'paidLeaves' || name === 'allottedLeaves' ? 0 : undefined) : Number(value))
+    const processedValue = type === 'number'
+      ? (value === '' ? (name === 'paidLeaves' || name === 'allottedLeaves' ? 0 : undefined) : Number(value))
       : value;
-    
+
     setFormData(prev => {
       const updated: any = {
-      ...prev,
+        ...prev,
         [name]: processedValue,
       };
-      
+
       // Sync gross_salary and proposedSalary so calculations work with either field
       if (name === 'gross_salary') {
         updated.proposedSalary = processedValue as number;
       } else if (name === 'proposedSalary') {
         updated.gross_salary = processedValue as number;
       }
-      
+
       return updated;
     });
   };
@@ -673,7 +676,7 @@ export default function EmployeesPage() {
         ctcSalary: salarySummary.ctcSalary,
         calculatedSalary: salarySummary.netSalary,
       };
-      
+
       let response;
       if (editingEmployee) {
         response = await api.updateEmployee(editingEmployee.emp_no, submitData);
@@ -705,7 +708,7 @@ export default function EmployeesPage() {
 
   const handleEdit = (employee: Employee) => {
     setEditingEmployee(employee);
-    
+
     // Extract paidLeaves - check multiple possible locations
     let paidLeavesValue = 0;
     if (employee.paidLeaves !== undefined && employee.paidLeaves !== null) {
@@ -718,7 +721,7 @@ export default function EmployeesPage() {
         paidLeavesValue = Number(rawEmployee.paidLeaves);
       }
     }
-    
+
     // Extract allottedLeaves - check multiple possible locations
     let allottedLeavesValue = 0;
     if (employee.allottedLeaves !== undefined && employee.allottedLeaves !== null) {
@@ -731,7 +734,7 @@ export default function EmployeesPage() {
         allottedLeavesValue = Number(rawEmployee.allottedLeaves);
       }
     }
-    
+
     // Get qualifications - check if it's an array (new format) or string (old format)
     let qualificationsValue: any[] = [];
     if (employee.qualifications) {
@@ -748,10 +751,10 @@ export default function EmployeesPage() {
         qualificationsValue = employee.dynamicFields.qualifications;
       }
     }
-    
+
     // Merge dynamicFields into formData
     const dynamicFieldsData = employee.dynamicFields || {};
-    
+
     // Handle reporting_to field - extract user IDs from populated objects or use existing IDs
     let reportingToValue: string[] = [];
     const reportingToField = (employee as any).reporting_to || (employee as any).reporting_to_ || dynamicFieldsData.reporting_to || dynamicFieldsData.reporting_to_;
@@ -765,10 +768,10 @@ export default function EmployeesPage() {
         return String(item);
       }).filter(Boolean);
     }
-    
+
     // Map gross_salary to proposedSalary for the form (form uses proposedSalary field)
     const salaryValue = employee.gross_salary || dynamicFieldsData.proposedSalary || 0;
-    
+
     // Create form data object - merge all fields including dynamicFields
     const newFormData: any = {
       ...employee,
@@ -791,10 +794,10 @@ export default function EmployeesPage() {
       reporting_to: reportingToValue,
       reporting_to_: reportingToValue,
     };
-    
+
     setFormData(newFormData);
     setShowDialog(true);
-    
+
     // Pre-populate override state from existing employee overrides
     if (Array.isArray(employee.employeeAllowances) && employee.employeeAllowances.length > 0) {
       const allowanceOverrides: Record<string, number | null> = {};
@@ -806,7 +809,7 @@ export default function EmployeesPage() {
       });
       setOverrideAllowances(allowanceOverrides);
     }
-    
+
     if (Array.isArray(employee.employeeDeductions) && employee.employeeDeductions.length > 0) {
       const deductionOverrides: Record<string, number | null> = {};
       employee.employeeDeductions.forEach((deduction: any) => {
@@ -817,7 +820,7 @@ export default function EmployeesPage() {
       });
       setOverrideDeductions(deductionOverrides);
     }
-    
+
     // Trigger fetch of component defaults after a brief delay to ensure formData is set
     // This ensures recalculation happens when editing
     // Use preserveOverrides: true to keep the overrides we just set
@@ -933,15 +936,15 @@ export default function EmployeesPage() {
 
   const filteredEmployees = employees.filter(emp => {
     // Filter by search term
-    const matchesSearch = 
+    const matchesSearch =
       emp.emp_no.toLowerCase().includes(searchTerm.toLowerCase()) ||
       emp.employee_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       emp.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       emp.phone_number?.includes(searchTerm);
-    
+
     // Filter by left employees (if includeLeftEmployees is false, exclude those with leftDate)
     const matchesLeftFilter = includeLeftEmployees || !emp.leftDate;
-    
+
     return matchesSearch && matchesLeftFilter;
   });
 
@@ -1003,8 +1006,8 @@ export default function EmployeesPage() {
         if ((response as any).errors) {
           setFormErrors((response as any).errors);
           setError('Please fix the errors below');
-      } else {
-        setError(response.message || 'Failed to create application');
+        } else {
+          setError(response.message || 'Failed to create application');
         }
       }
     } catch (err) {
@@ -1183,21 +1186,19 @@ export default function EmployeesPage() {
         <div className="mb-6 flex gap-2 border-b border-slate-200 dark:border-slate-700">
           <button
             onClick={() => setActiveTab('employees')}
-            className={`px-6 py-3 text-sm font-semibold transition-colors ${
-              activeTab === 'employees'
-                ? 'border-b-2 border-green-500 text-green-600 dark:text-green-400'
-                : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-            }`}
+            className={`px-6 py-3 text-sm font-semibold transition-colors ${activeTab === 'employees'
+              ? 'border-b-2 border-green-500 text-green-600 dark:text-green-400'
+              : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+              }`}
           >
             Employees
           </button>
           <button
             onClick={() => setActiveTab('applications')}
-            className={`px-6 py-3 text-sm font-semibold transition-colors ${
-              activeTab === 'applications'
-                ? 'border-b-2 border-green-500 text-green-600 dark:text-green-400'
-                : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-            }`}
+            className={`px-6 py-3 text-sm font-semibold transition-colors ${activeTab === 'applications'
+              ? 'border-b-2 border-green-500 text-green-600 dark:text-green-400'
+              : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+              }`}
           >
             Applications
             {pendingApplications.length > 0 && (
@@ -1342,11 +1343,10 @@ export default function EmployeesPage() {
                                 {app.approvedSalary ? `₹${app.approvedSalary.toLocaleString()}` : '-'}
                               </td>
                               <td className="whitespace-nowrap px-6 py-4">
-                                <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
-                                  app.status === 'approved'
-                                    ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                                    : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                                }`}>
+                                <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${app.status === 'approved'
+                                  ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                  : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                  }`}>
                                   {app.status}
                                 </span>
                               </td>
@@ -1384,7 +1384,6 @@ export default function EmployeesPage() {
                     checked={includeLeftEmployees}
                     onChange={(e) => {
                       setIncludeLeftEmployees(e.target.checked);
-                      loadEmployees();
                     }}
                     className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500 dark:border-slate-600"
                   />
@@ -1394,154 +1393,152 @@ export default function EmployeesPage() {
             </div>
 
             {/* Employee List */}
-        {loading ? (
-          <div className="flex flex-col items-center justify-center rounded-3xl border border-slate-200 bg-white/95 py-16 shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
-            <div className="h-10 w-10 animate-spin rounded-full border-2 border-green-500 border-t-transparent"></div>
-            <p className="mt-4 text-sm font-medium text-slate-600 dark:text-slate-400">Loading employees...</p>
-          </div>
-        ) : filteredEmployees.length === 0 ? (
-          <div className="rounded-3xl border border-slate-200 bg-white/95 p-12 text-center shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-green-100 to-green-100 dark:from-green-900/30 dark:to-green-900/30">
-              <svg className="h-8 w-8 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-              </svg>
-            </div>
-            <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">No employees found</p>
-            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Add your first employee to get started</p>
-          </div>
-        ) : (
-          <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white/95 shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-green-50/30 dark:border-slate-700 dark:from-slate-900 dark:to-green-900/10">
-                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Emp No</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Name</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Department</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Designation</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Phone</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Status</th>
-                    <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                  {filteredEmployees.map((employee) => (
-                    <tr 
-                      key={employee.emp_no} 
-                      className="transition-colors hover:bg-green-50/30 dark:hover:bg-green-900/10 cursor-pointer"
-                      onClick={() => handleViewEmployee(employee)}
-                    >
-                      <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-green-600 dark:text-green-400">
-                        {employee.emp_no}
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-4">
-                        <div className="text-sm font-medium text-slate-900 dark:text-slate-100">{employee.employee_name}</div>
-                        {employee.email && (
-                          <div className="text-xs text-slate-500 dark:text-slate-400">{employee.email}</div>
-                        )}
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
-                        {employee.department?.name || '-'}
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
-                        {employee.designation?.name || '-'}
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
-                        {employee.phone_number || '-'}
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-4">
-                        <div className="flex flex-col gap-1">
-                          <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
-                            employee.is_active !== false
-                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                              : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                          }`}>
-                            {employee.is_active !== false ? 'Active' : 'Inactive'}
-                          </span>
-                          {employee.leftDate && (
-                            <span className="inline-flex rounded-full px-2.5 py-1 text-xs font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
-                              Left: {new Date(employee.leftDate).toLocaleDateString()}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-4 text-right">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleEdit(employee);
-                          }}
-                          className="mr-2 rounded-lg p-2 text-slate-400 transition-all hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/30 dark:hover:text-blue-400"
-                          title="Edit"
+            {loading ? (
+              <div className="flex flex-col items-center justify-center rounded-3xl border border-slate-200 bg-white/95 py-16 shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
+                <div className="h-10 w-10 animate-spin rounded-full border-2 border-green-500 border-t-transparent"></div>
+                <p className="mt-4 text-sm font-medium text-slate-600 dark:text-slate-400">Loading employees...</p>
+              </div>
+            ) : filteredEmployees.length === 0 ? (
+              <div className="rounded-3xl border border-slate-200 bg-white/95 p-12 text-center shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
+                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-green-100 to-green-100 dark:from-green-900/30 dark:to-green-900/30">
+                  <svg className="h-8 w-8 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                  </svg>
+                </div>
+                <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">No employees found</p>
+                <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Add your first employee to get started</p>
+              </div>
+            ) : (
+              <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white/95 shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-green-50/30 dark:border-slate-700 dark:from-slate-900 dark:to-green-900/10">
+                        <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Emp No</th>
+                        <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Name</th>
+                        <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Department</th>
+                        <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Designation</th>
+                        <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Phone</th>
+                        <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Status</th>
+                        <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                      {filteredEmployees.map((employee) => (
+                        <tr
+                          key={employee.emp_no}
+                          className="transition-colors hover:bg-green-50/30 dark:hover:bg-green-900/10 cursor-pointer"
+                          onClick={() => handleViewEmployee(employee)}
                         >
-                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                          </svg>
-                        </button>
-                        {employee.leftDate ? (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleRemoveLeftDate(employee);
-                            }}
-                            className="rounded-lg p-2 text-slate-400 transition-all hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/30 dark:hover:text-green-400"
-                            title="Reactivate Employee"
-                          >
-                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                          </button>
-                        ) : (
-                          <>
+                          <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-green-600 dark:text-green-400">
+                            {employee.emp_no}
+                          </td>
+                          <td className="whitespace-nowrap px-6 py-4">
+                            <div className="text-sm font-medium text-slate-900 dark:text-slate-100">{employee.employee_name}</div>
+                            {employee.email && (
+                              <div className="text-xs text-slate-500 dark:text-slate-400">{employee.email}</div>
+                            )}
+                          </td>
+                          <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
+                            {employee.department?.name || '-'}
+                          </td>
+                          <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
+                            {employee.designation?.name || '-'}
+                          </td>
+                          <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
+                            {employee.phone_number || '-'}
+                          </td>
+                          <td className="whitespace-nowrap px-6 py-4">
+                            <div className="flex flex-col gap-1">
+                              <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${employee.is_active !== false
+                                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                                }`}>
+                                {employee.is_active !== false ? 'Active' : 'Inactive'}
+                              </span>
+                              {employee.leftDate && (
+                                <span className="inline-flex rounded-full px-2.5 py-1 text-xs font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+                                  Left: {new Date(employee.leftDate).toLocaleDateString()}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="whitespace-nowrap px-6 py-4 text-right">
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleSetLeftDate(employee);
+                                handleEdit(employee);
                               }}
-                              className="mr-2 rounded-lg p-2 text-slate-400 transition-all hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
-                              title="Set Left Date"
+                              className="mr-2 rounded-lg p-2 text-slate-400 transition-all hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/30 dark:hover:text-blue-400"
+                              title="Edit"
                             >
                               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                               </svg>
                             </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeactivate(employee.emp_no, employee.is_active !== false);
-                              }}
-                              className={`rounded-lg p-2 transition-all ${
-                                employee.is_active !== false
-                                  ? 'text-slate-400 hover:bg-orange-50 hover:text-orange-600 dark:hover:bg-orange-900/30 dark:hover:text-orange-400'
-                                  : 'text-slate-400 hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/30 dark:hover:text-green-400'
-                              }`}
-                              title={employee.is_active !== false ? 'Deactivate' : 'Activate'}
-                            >
-                              {employee.is_active !== false ? (
-                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                              </svg>
-                              ) : (
+                            {employee.leftDate ? (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRemoveLeftDate(employee);
+                                }}
+                                className="rounded-lg p-2 text-slate-400 transition-all hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/30 dark:hover:text-green-400"
+                                title="Reactivate Employee"
+                              >
                                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                                 </svg>
-                              )}
-                            </button>
-                          </>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="border-t border-slate-200 bg-slate-50/50 px-6 py-3 dark:border-slate-700 dark:bg-slate-900/50">
-              <p className="text-sm text-slate-600 dark:text-slate-400">
-                Showing <span className="font-medium">{filteredEmployees.length}</span> of <span className="font-medium">{employees.length}</span> employees
-              </p>
-            </div>
-          </div>
-        )}
+                              </button>
+                            ) : (
+                              <>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSetLeftDate(employee);
+                                  }}
+                                  className="mr-2 rounded-lg p-2 text-slate-400 transition-all hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
+                                  title="Set Left Date"
+                                >
+                                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                                  </svg>
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeactivate(employee.emp_no, employee.is_active !== false);
+                                  }}
+                                  className={`rounded-lg p-2 transition-all ${employee.is_active !== false
+                                    ? 'text-slate-400 hover:bg-orange-50 hover:text-orange-600 dark:hover:bg-orange-900/30 dark:hover:text-orange-400'
+                                    : 'text-slate-400 hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/30 dark:hover:text-green-400'
+                                    }`}
+                                  title={employee.is_active !== false ? 'Deactivate' : 'Activate'}
+                                >
+                                  {employee.is_active !== false ? (
+                                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                                    </svg>
+                                  ) : (
+                                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                  )}
+                                </button>
+                              </>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="border-t border-slate-200 bg-slate-50/50 px-6 py-3 dark:border-slate-700 dark:bg-slate-900/50">
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
+                    Showing <span className="font-medium">{filteredEmployees.length}</span> of <span className="font-medium">{employees.length}</span> employees
+                  </p>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -1597,7 +1594,7 @@ export default function EmployeesPage() {
                   {loadingComponents && (
                     <div className="text-xs text-slate-500 dark:text-slate-400">Loading components...</div>
                   )}
-                  </div>
+                </div>
 
                 {/* Salary summary */}
                 <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60 md:grid-cols-4">
@@ -1624,8 +1621,8 @@ export default function EmployeesPage() {
                     <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                       ₹{applicationSalarySummary.netSalary.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                     </p>
+                  </div>
                 </div>
-              </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
                   {/* Allowances */}
@@ -1635,7 +1632,7 @@ export default function EmployeesPage() {
                       <span className="text-xs text-green-700 dark:text-green-300">
                         {componentDefaults.allowances.length} items
                       </span>
-                  </div>
+                    </div>
                     <div className="space-y-2">
                       {componentDefaults.allowances.length === 0 && (
                         <p className="text-xs text-green-700/70 dark:text-green-200/70">No allowances available.</p>
@@ -1652,25 +1649,25 @@ export default function EmployeesPage() {
                                   {item.type === 'percentage'
                                     ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
                                     : 'Fixed'}
-                  </div>
-                  </div>
+                                </div>
+                              </div>
                               <div className="flex items-center gap-1">
                                 <span className="text-[11px] text-green-700 dark:text-green-300">Override</span>
-                    <input
-                      type="number"
+                                <input
+                                  type="number"
                                   min="0"
                                   step="0.01"
                                   value={current === null ? '' : current}
                                   onChange={(e) => handleOverrideChange('allowance', item, e.target.value)}
                                   className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100"
-                    />
-                  </div>
-                  </div>
-                  </div>
+                                />
+                              </div>
+                            </div>
+                          </div>
                         );
                       })}
-                </div>
-              </div>
+                    </div>
+                  </div>
 
                   {/* Deductions */}
                   <div className="rounded-xl border border-red-100 bg-red-50/70 p-3 dark:border-red-900/40 dark:bg-red-900/20">
@@ -1679,7 +1676,7 @@ export default function EmployeesPage() {
                       <span className="text-xs text-red-700 dark:text-red-300">
                         {componentDefaults.deductions.length} items
                       </span>
-                  </div>
+                    </div>
                     <div className="space-y-2">
                       {componentDefaults.deductions.length === 0 && (
                         <p className="text-xs text-red-700/70 dark:text-red-200/70">No deductions available.</p>
@@ -1696,24 +1693,24 @@ export default function EmployeesPage() {
                                   {item.type === 'percentage'
                                     ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
                                     : 'Fixed'}
-                  </div>
-                  </div>
+                                </div>
+                              </div>
                               <div className="flex items-center gap-1">
                                 <span className="text-[11px] text-red-700 dark:text-red-300">Override</span>
-                    <input
+                                <input
                                   type="number"
                                   min="0"
                                   step="0.01"
                                   value={current === null ? '' : current}
                                   onChange={(e) => handleOverrideChange('deduction', item, e.target.value)}
                                   className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-red-950 dark:text-red-100"
-                    />
-                  </div>
-                  </div>
-                </div>
+                                />
+                              </div>
+                            </div>
+                          </div>
                         );
                       })}
-              </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2106,8 +2103,8 @@ export default function EmployeesPage() {
                       Yearly total for without_pay/LOP leaves (for balance tracking)
                     </p>
                   </div>
-                  </div>
-                  </div>
+                </div>
+              </div>
 
               {/* Allowances & Deductions Overrides + Salary Summary */}
               <div className="space-y-4 rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
@@ -2121,7 +2118,7 @@ export default function EmployeesPage() {
                   {loadingComponents && (
                     <div className="text-xs text-slate-500 dark:text-slate-400">Loading components...</div>
                   )}
-              </div>
+                </div>
 
                 {/* Salary summary */}
                 <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
@@ -2154,8 +2151,8 @@ export default function EmployeesPage() {
                     <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                       ₹{salarySummary.netSalary.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                     </p>
+                  </div>
                 </div>
-              </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
                   {/* Allowances */}
@@ -2165,7 +2162,7 @@ export default function EmployeesPage() {
                       <span className="text-xs text-green-700 dark:text-green-300">
                         {componentDefaults.allowances.length} items
                       </span>
-                  </div>
+                    </div>
                     <div className="space-y-2">
                       {componentDefaults.allowances.length === 0 && (
                         <p className="text-xs text-green-700/70 dark:text-green-200/70">No allowances available.</p>
@@ -2182,25 +2179,25 @@ export default function EmployeesPage() {
                                   {item.type === 'percentage'
                                     ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
                                     : 'Fixed'}
-                  </div>
-                  </div>
+                                </div>
+                              </div>
                               <div className="flex items-center gap-1">
                                 <span className="text-[11px] text-green-700 dark:text-green-300">Override</span>
-                    <input 
-                      type="number" 
-                      min="0" 
+                                <input
+                                  type="number"
+                                  min="0"
                                   step="0.01"
                                   value={current === null ? '' : current}
                                   onChange={(e) => handleOverrideChange('allowance', item, e.target.value)}
                                   className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100"
                                 />
-                  </div>
-                  </div>
-                  </div>
+                              </div>
+                            </div>
+                          </div>
                         );
                       })}
-                </div>
-              </div>
+                    </div>
+                  </div>
 
                   {/* Deductions */}
                   <div className="rounded-xl border border-red-100 bg-red-50/70 p-3 dark:border-red-900/40 dark:bg-red-900/20">
@@ -2209,7 +2206,7 @@ export default function EmployeesPage() {
                       <span className="text-xs text-red-700 dark:text-red-300">
                         {componentDefaults.deductions.length} items
                       </span>
-                  </div>
+                    </div>
                     <div className="space-y-2">
                       {componentDefaults.deductions.length === 0 && (
                         <p className="text-xs text-red-700/70 dark:text-red-200/70">No deductions available.</p>
@@ -2226,25 +2223,25 @@ export default function EmployeesPage() {
                                   {item.type === 'percentage'
                                     ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
                                     : 'Fixed'}
-                  </div>
-                  </div>
+                                </div>
+                              </div>
                               <div className="flex items-center gap-1">
                                 <span className="text-[11px] text-red-700 dark:text-red-300">Override</span>
-                    <input 
-                      type="number" 
-                      min="0" 
+                                <input
+                                  type="number"
+                                  min="0"
                                   step="0.01"
                                   value={current === null ? '' : current}
                                   onChange={(e) => handleOverrideChange('deduction', item, e.target.value)}
                                   className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-red-950 dark:text-red-100"
                                 />
-                  </div>
-                </div>
-              </div>
+                              </div>
+                            </div>
+                          </div>
                         );
                       })}
-                </div>
-              </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -2300,7 +2297,7 @@ export default function EmployeesPage() {
               try {
                 // Map department and designation names to IDs
                 const deptId = departments.find(d => d.name.toLowerCase() === (row.department_name as string)?.toLowerCase())?._id;
-                const desigId = designations.find(d => 
+                const desigId = designations.find(d =>
                   d.name.toLowerCase() === (row.designation_name as string)?.toLowerCase() &&
                   d.department === deptId
                 )?._id;
@@ -2395,7 +2392,7 @@ export default function EmployeesPage() {
             <div className="space-y-6">
               {/* Status Badge */}
               <div className="flex items-center gap-2">
-                <span className={viewingEmployee.is_active !== false 
+                <span className={viewingEmployee.is_active !== false
                   ? 'inline-flex rounded-full px-3 py-1 text-sm font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
                   : 'inline-flex rounded-full px-3 py-1 text-sm font-medium bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}>
                   {viewingEmployee.is_active !== false ? 'Active' : 'Inactive'}
@@ -2498,7 +2495,7 @@ export default function EmployeesPage() {
                       {(() => {
                         const quals = viewingEmployee.qualifications;
                         if (!quals) return <p className="text-sm font-medium text-slate-900 dark:text-slate-100">-</p>;
-                        
+
                         // Handle array of objects (new format)
                         if (Array.isArray(quals) && quals.length > 0) {
                           return (
@@ -2531,12 +2528,12 @@ export default function EmployeesPage() {
                             </div>
                           );
                         }
-                        
+
                         // Handle string (old format)
                         if (typeof quals === 'string') {
                           return <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{quals}</p>;
                         }
-                        
+
                         // Fallback
                         return <p className="text-sm font-medium text-slate-900 dark:text-slate-100">-</p>;
                       })()}
@@ -2594,7 +2591,7 @@ export default function EmployeesPage() {
               {/* Allowances & Deductions - Always show this section */}
               <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
                 <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Allowances & Deductions</h3>
-                
+
                 {/* Allowances */}
                 {viewingEmployee.employeeAllowances && viewingEmployee.employeeAllowances.length > 0 ? (
                   <div className="mb-6">
@@ -2605,7 +2602,7 @@ export default function EmployeesPage() {
                           <div className="flex-1">
                             <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{allowance.name || '-'}</p>
                             <p className="text-xs text-slate-500 dark:text-slate-400">
-                              {allowance.type === 'percentage' 
+                              {allowance.type === 'percentage'
                                 ? `${allowance.percentage}% of ${allowance.percentageBase || 'basic'}`
                                 : 'Fixed Amount'}
                               {allowance.isOverride && (
@@ -2616,8 +2613,8 @@ export default function EmployeesPage() {
                             </p>
                           </div>
                           <p className="text-sm font-semibold text-green-700 dark:text-green-400">
-                            {allowance.amount !== null && allowance.amount !== undefined 
-                              ? `₹${Number(allowance.amount).toLocaleString()}` 
+                            {allowance.amount !== null && allowance.amount !== undefined
+                              ? `₹${Number(allowance.amount).toLocaleString()}`
                               : '-'}
                           </p>
                         </div>
@@ -2642,7 +2639,7 @@ export default function EmployeesPage() {
                           <div className="flex-1">
                             <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{deduction.name || '-'}</p>
                             <p className="text-xs text-slate-500 dark:text-slate-400">
-                              {deduction.type === 'percentage' 
+                              {deduction.type === 'percentage'
                                 ? `${deduction.percentage}% of ${deduction.percentageBase || 'basic'}`
                                 : 'Fixed Amount'}
                               {deduction.isOverride && (
@@ -2653,8 +2650,8 @@ export default function EmployeesPage() {
                             </p>
                           </div>
                           <p className="text-sm font-semibold text-red-700 dark:text-red-400">
-                            {deduction.amount !== null && deduction.amount !== undefined 
-                              ? `₹${Number(deduction.amount).toLocaleString()}` 
+                            {deduction.amount !== null && deduction.amount !== undefined
+                              ? `₹${Number(deduction.amount).toLocaleString()}`
                               : '-'}
                           </p>
                         </div>
@@ -2678,10 +2675,10 @@ export default function EmployeesPage() {
                     <div>
                       <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Left Date</label>
                       <p className="mt-1 text-sm font-medium text-orange-900 dark:text-orange-100">
-                        {new Date(viewingEmployee.leftDate).toLocaleDateString('en-US', { 
-                          year: 'numeric', 
-                          month: 'long', 
-                          day: 'numeric' 
+                        {new Date(viewingEmployee.leftDate).toLocaleDateString('en-US', {
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric'
                         })}
                       </p>
                     </div>
@@ -2715,7 +2712,7 @@ export default function EmployeesPage() {
                   <div>
                     <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Monthly Paid Leaves</label>
                     <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                      {viewingEmployee.paidLeaves !== undefined && viewingEmployee.paidLeaves !== null 
+                      {viewingEmployee.paidLeaves !== undefined && viewingEmployee.paidLeaves !== null
                         ? `${viewingEmployee.paidLeaves} days/month`
                         : '0 days/month'}
                     </p>
@@ -2726,7 +2723,7 @@ export default function EmployeesPage() {
                   <div>
                     <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Yearly Allotted Leaves</label>
                     <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                      {viewingEmployee.allottedLeaves !== undefined && viewingEmployee.allottedLeaves !== null 
+                      {viewingEmployee.allottedLeaves !== undefined && viewingEmployee.allottedLeaves !== null
                         ? `${viewingEmployee.allottedLeaves} days/year`
                         : '0 days/year'}
                     </p>
@@ -2760,14 +2757,14 @@ export default function EmployeesPage() {
                   {(() => {
                     const reportingTo = (viewingEmployee as any).reporting_to || (viewingEmployee as any).reporting_to_ || viewingEmployee.dynamicFields?.reporting_to || viewingEmployee.dynamicFields?.reporting_to_;
                     console.log('Displaying reporting_to:', reportingTo);
-                    
+
                     if (!reportingTo || !Array.isArray(reportingTo) || reportingTo.length === 0) {
                       return <p className="text-sm text-slate-500 dark:text-slate-400">No reporting managers assigned</p>;
                     }
-                    
+
                     const isPopulated = reportingTo[0] && typeof reportingTo[0] === 'object' && reportingTo[0].name;
                     console.log('Is populated:', isPopulated, 'First item:', reportingTo[0]);
-                    
+
                     return (
                       <div className="space-y-2">
                         {isPopulated ? (
@@ -2817,7 +2814,7 @@ export default function EmployeesPage() {
                         const underscoreRegex = new RegExp('_', 'g');
                         const wordBoundaryRegex = new RegExp('\\b\\w', 'g');
                         const displayKey = key.replace(underscoreRegex, ' ').replace(wordBoundaryRegex, (l: string) => l.toUpperCase());
-                        
+
                         let displayValue: string = '';
                         if (Array.isArray(value)) {
                           displayValue = value.length > 0 ? JSON.stringify(value) : '-';
@@ -2826,12 +2823,12 @@ export default function EmployeesPage() {
                         } else {
                           displayValue = String(value);
                         }
-                        
+
                         const isComplexType = Array.isArray(value) || typeof value === 'object';
                         const colSpanClass = isComplexType ? 'sm:col-span-2 lg:col-span-3' : '';
                         const whitespaceClass = isComplexType ? 'whitespace-pre-wrap' : '';
                         const paragraphClassName = 'mt-1 text-sm font-medium text-slate-900 dark:text-slate-100 ' + whitespaceClass;
-                        
+
                         return (
                           <div key={key} className={colSpanClass}>
                             <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{displayKey}</label>

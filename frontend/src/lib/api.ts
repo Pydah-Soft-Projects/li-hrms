@@ -1,4 +1,4 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://192.168.3.198:5000/api';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
 
 // Workspace types - defined first as they're used in ApiResponse
 export interface WorkspaceModule {
@@ -99,7 +99,7 @@ export async function apiRequest<T>(
   try {
     const url = `${API_BASE_URL}${endpoint}`;
     console.log(`[API Request] ${options.method || 'GET'} ${url}`, options.body ? JSON.parse(options.body as string) : '');
-    
+
     const response = await fetch(url, {
       ...options,
       headers,
@@ -124,11 +124,11 @@ export async function apiRequest<T>(
     console.error(`[API Error] ${options.method || 'GET'} ${API_BASE_URL}${endpoint}`, error);
     const errorMessage = error instanceof Error ? error.message : 'Network error occurred';
     const isNetworkError = errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError');
-    
+
     return {
       success: false,
-      message: isNetworkError 
-        ? 'Unable to connect to server. Please check your network connection and ensure the backend is running.' 
+      message: isNetworkError
+        ? 'Unable to connect to server. Please check your network connection and ensure the backend is running.'
         : errorMessage,
       error: errorMessage,
     };
@@ -624,6 +624,7 @@ export const api = {
     if (filters?.designation_id) params.append('designation_id', filters.designation_id);
     if (filters?.includeLeft !== undefined) params.append('includeLeft', String(filters.includeLeft));
     const query = params.toString() ? `?${params.toString()}` : '';
+    console.log(query);
     return apiRequest<any>(`/employees${query}`, { method: 'GET' });
   },
 
@@ -649,7 +650,7 @@ export const api = {
   setEmployeeLeftDate: async (empNo: string, leftDate: string, leftReason?: string) => {
     return apiRequest<any>(`/employees/${empNo}/left-date`, {
       method: 'PUT',
-      body: JSON.stringify({ leftDate, leftReason }),
+      body: JSON.stringify({ leftDate, leftReason, is_active: false }),
     });
   },
 
@@ -1461,18 +1462,18 @@ export const api = {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const formData = new FormData();
     formData.append('file', file);
-    
+
     const headers: Record<string, string> = {};
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
-    
+
     const response = await fetch(`${API_BASE_URL}/attendance/upload`, {
       method: 'POST',
       headers,
       body: formData,
     });
-    
+
     const data = await response.json();
     if (!response.ok) {
       throw new Error(data.message || 'Upload failed');
@@ -1852,7 +1853,7 @@ export const api = {
   getOTSettings: async () => {
     const payPerHour = await apiRequest<any>('/settings/ot_pay_per_hour', { method: 'GET' });
     const minHours = await apiRequest<any>('/settings/ot_min_hours', { method: 'GET' });
-    
+
     return {
       success: true,
       data: {
@@ -1872,7 +1873,7 @@ export const api = {
         category: 'overtime',
       }),
     });
-    
+
     const minHours = await apiRequest<any>('/settings', {
       method: 'POST',
       body: JSON.stringify({
@@ -1882,7 +1883,7 @@ export const api = {
         category: 'overtime',
       }),
     });
-    
+
     return {
       success: payPerHour.success && minHours.success,
       message: payPerHour.success && minHours.success ? 'OT settings saved successfully' : 'Failed to save OT settings',

@@ -98,7 +98,7 @@ const populateUsersInDynamicFields = async (dynamicFields) => {
   // Check if reporting_to or reporting_to_ exists and is an array of ObjectIds
   // Handle both field names (reporting_to and reporting_to_)
   const reportingToField = populated.reporting_to || populated.reporting_to_;
-  
+
   if (reportingToField && Array.isArray(reportingToField) && reportingToField.length > 0) {
     try {
       const fieldName = populated.reporting_to ? 'reporting_to' : 'reporting_to_';
@@ -106,7 +106,7 @@ const populateUsersInDynamicFields = async (dynamicFields) => {
       // Check if already populated (has user objects with name property)
       const isAlreadyPopulated = reportingToField[0] && typeof reportingToField[0] === 'object' && reportingToField[0].name;
       console.log('Is already populated:', isAlreadyPopulated);
-      
+
       if (!isAlreadyPopulated) {
         // Filter valid ObjectIds and convert to strings
         const userIds = [];
@@ -170,23 +170,23 @@ const populateUsersInDynamicFields = async (dynamicFields) => {
               } else {
                 idStr = String(id);
               }
-              
+
               // Try to find user by string ID
               const user = userMap.get(idStr);
               if (user) {
                 return user;
               }
-              
+
               // Try to find by ObjectId if id is an object
               if (typeof id === 'object' && id._id) {
                 const userById = userMap.get(id._id);
                 if (userById) return userById;
               }
-              
+
               // If not found, return original ID
               return id;
             });
-            
+
             console.log(`Populated ${users.length} of ${userIds.length} users for ${fieldName} field`);
             console.log(`Populated ${fieldName}:`, JSON.stringify(populated[fieldName]));
           } else {
@@ -216,16 +216,16 @@ const populateUsersInDynamicFields = async (dynamicFields) => {
  */
 const transformEmployeeForResponse = async (employee, populateUsers = true) => {
   if (!employee) return null;
-  
+
   const plainObj = toPlainObject(employee);
   const { dynamicFields, ...permanentFields } = plainObj;
-  
+
   // Populate users in dynamicFields if needed
   let populatedDynamicFields = dynamicFields || {};
   if (populateUsers && dynamicFields) {
     populatedDynamicFields = await populateUsersInDynamicFields(dynamicFields);
   }
-  
+
   // Merge dynamicFields into root level for easy access
   // Also keep dynamicFields separate for reference
   const merged = {
@@ -233,7 +233,7 @@ const transformEmployeeForResponse = async (employee, populateUsers = true) => {
     ...populatedDynamicFields,
     dynamicFields: populatedDynamicFields,
   };
-  
+
   // Normalize reporting_to_ to reporting_to (handle field name inconsistency)
   if (merged.reporting_to_ && !merged.reporting_to) {
     merged.reporting_to = merged.reporting_to_;
@@ -243,7 +243,7 @@ const transformEmployeeForResponse = async (employee, populateUsers = true) => {
     merged.dynamicFields.reporting_to = merged.dynamicFields.reporting_to_;
     delete merged.dynamicFields.reporting_to_;
   }
-  
+
   // Also populate reporting_to if it exists at root level (from previous merge)
   const rootReportingTo = merged.reporting_to;
   if (populateUsers && rootReportingTo && Array.isArray(rootReportingTo) && rootReportingTo.length > 0) {
@@ -258,7 +258,7 @@ const transformEmployeeForResponse = async (employee, populateUsers = true) => {
       }
     }
   }
-  
+
   return merged;
 };
 
@@ -281,11 +281,14 @@ exports.getAllEmployees = async (req, res) => {
     if (is_active !== undefined) filters.is_active = is_active === 'true';
     if (department_id) filters.department_id = department_id;
     if (designation_id) filters.designation_id = designation_id;
-    
+
     // By default, exclude employees who have left (unless includeLeft=true)
     // Only include employees with no leftDate (active) or includeLeft is true
     if (includeLeft !== 'true') {
       filters.leftDate = null; // Only show employees who haven't left
+    } else {
+      // If includeLeft is true, ignore is_active filter to ensure we show ALL employees
+      delete filters.is_active;
     }
 
     // Fetch based on data source setting
@@ -469,20 +472,20 @@ exports.createEmployee = async (req, res) => {
     const normalizeOverrides = (list) =>
       Array.isArray(list)
         ? list
-            .filter((item) => item && (item.masterId || item.name))
-            .map((item) => ({
-              masterId: item.masterId || null,
-              code: item.code || null,
-              name: item.name || '',
-              category: item.category || null,
-              type: item.type || null,
-              amount: item.amount ?? item.overrideAmount ?? null,
-              percentage: item.percentage ?? null,
-              percentageBase: item.percentageBase ?? null,
-              minAmount: item.minAmount ?? null,
-              maxAmount: item.maxAmount ?? null,
-              isOverride: true,
-            }))
+          .filter((item) => item && (item.masterId || item.name))
+          .map((item) => ({
+            masterId: item.masterId || null,
+            code: item.code || null,
+            name: item.name || '',
+            category: item.category || null,
+            type: item.type || null,
+            amount: item.amount ?? item.overrideAmount ?? null,
+            percentage: item.percentage ?? null,
+            percentageBase: item.percentageBase ?? null,
+            minAmount: item.minAmount ?? null,
+            maxAmount: item.maxAmount ?? null,
+            isOverride: true,
+          }))
         : [];
     const employeeAllowances = normalizeOverrides(employeeData.employeeAllowances);
     const employeeDeductions = normalizeOverrides(employeeData.employeeDeductions);
@@ -598,7 +601,7 @@ exports.updateEmployee = async (req, res) => {
       employeeData.paidLeaves !== undefined ||
       employeeData.allottedLeaves !== undefined
     );
-    
+
     // Only validate if dynamicFields are being updated (not for simple permanent field updates)
     if (hasDynamicFieldsUpdate && !hasOnlyPermanentFieldsUpdate) {
       const settings = await EmployeeApplicationFormSettings.getActiveSettings();
@@ -608,7 +611,7 @@ exports.updateEmployee = async (req, res) => {
           ...existingEmployee.toObject(),
           ...employeeData,
         };
-        
+
         const validation = await validateFormData(mergedData, settings);
         if (!validation.isValid) {
           console.error('Validation errors:', validation.errors);
@@ -629,20 +632,20 @@ exports.updateEmployee = async (req, res) => {
     const normalizeOverrides = (list) =>
       Array.isArray(list)
         ? list
-            .filter((item) => item && (item.masterId || item.name))
-            .map((item) => ({
-              masterId: item.masterId || null,
-              code: item.code || null,
-              name: item.name || '',
-              category: item.category || null,
-              type: item.type || null,
-              amount: item.amount ?? item.overrideAmount ?? null,
-              percentage: item.percentage ?? null,
-              percentageBase: item.percentageBase ?? null,
-              minAmount: item.minAmount ?? null,
-              maxAmount: item.maxAmount ?? null,
-              isOverride: true,
-            }))
+          .filter((item) => item && (item.masterId || item.name))
+          .map((item) => ({
+            masterId: item.masterId || null,
+            code: item.code || null,
+            name: item.name || '',
+            category: item.category || null,
+            type: item.type || null,
+            amount: item.amount ?? item.overrideAmount ?? null,
+            percentage: item.percentage ?? null,
+            percentageBase: item.percentageBase ?? null,
+            minAmount: item.minAmount ?? null,
+            maxAmount: item.maxAmount ?? null,
+            isOverride: true,
+          }))
         : [];
     const employeeAllowances = normalizeOverrides(employeeData.employeeAllowances);
     const employeeDeductions = normalizeOverrides(employeeData.employeeDeductions);
@@ -671,7 +674,7 @@ exports.updateEmployee = async (req, res) => {
       if (employeeData.allottedLeaves !== undefined && employeeData.allottedLeaves !== null) {
         updateData.allottedLeaves = Number(employeeData.allottedLeaves);
       }
-      
+
       await Employee.findOneAndUpdate(
         { emp_no: empNo },
         updateData,
@@ -700,15 +703,15 @@ exports.updateEmployee = async (req, res) => {
     const updatedEmployeeDoc = await Employee.findOne({ emp_no: empNo })
       .populate('department_id', 'name code')
       .populate('designation_id', 'name code');
-    
+
     // Transform employee with user population
     const updatedEmployee = await transformEmployeeForResponse(updatedEmployeeDoc, true);
     if (updatedEmployee) {
-      updatedEmployee.paidLeaves = updatedEmployee.paidLeaves !== undefined && updatedEmployee.paidLeaves !== null 
-        ? Number(updatedEmployee.paidLeaves) 
+      updatedEmployee.paidLeaves = updatedEmployee.paidLeaves !== undefined && updatedEmployee.paidLeaves !== null
+        ? Number(updatedEmployee.paidLeaves)
         : 0;
-      updatedEmployee.allottedLeaves = updatedEmployee.allottedLeaves !== undefined && updatedEmployee.allottedLeaves !== null 
-        ? Number(updatedEmployee.allottedLeaves) 
+      updatedEmployee.allottedLeaves = updatedEmployee.allottedLeaves !== undefined && updatedEmployee.allottedLeaves !== null
+        ? Number(updatedEmployee.allottedLeaves)
         : 0;
     }
 
