@@ -22,13 +22,62 @@ const {
 } = require('./allowanceDeductionResolverService');
 const Settings = require('../../settings/model/Settings');
 
-// Normalize employee override payloads so missing category/amount fields don't block usage
-const normalizeOverrides = (list, fallbackCategory) =>
-  (list || []).map((ov) => ({
-    ...ov,
-    category: ov.category || fallbackCategory,
-    amount: ov.amount ?? ov.overrideAmount ?? 0,
-  }));
+/**
+ * Normalize employee override payloads to ensure consistent structure
+ * @param {Array} list - Array of override objects
+ * @param {string} fallbackCategory - Default category if not specified
+ * @returns {Array} Normalized array of overrides
+ */
+const normalizeOverrides = (list, fallbackCategory) => {
+  if (!Array.isArray(list)) {
+    console.warn(`[Payroll] Expected array for overrides, got:`, typeof list);
+    return [];
+  }
+
+  return list
+    .filter(ov => {
+      // Skip null/undefined items
+      if (!ov) return false;
+      
+      // Ensure we have either masterId or name
+      if (!ov.masterId && !ov.name) {
+        console.warn('[Payroll] Override missing both masterId and name, skipping:', ov);
+        return false;
+      }
+      
+      return true;
+    })
+    .map((ov) => {
+      // Create a clean copy of the override
+      const override = { ...ov };
+      
+      // Ensure category is set
+      override.category = override.category || fallbackCategory;
+      
+      // Handle amount/overrideAmount normalization
+      if (override.amount === undefined || override.amount === null) {
+        override.amount = (override.overrideAmount !== undefined && override.overrideAmount !== null) 
+          ? override.overrideAmount 
+          : 0;
+      }
+      
+      // Ensure amount is a valid number
+      if (typeof override.amount === 'string') {
+        override.amount = parseFloat(override.amount) || 0;
+      } else if (typeof override.amount !== 'number') {
+        override.amount = 0;
+      }
+      
+      // Clean up any undefined values
+      Object.keys(override).forEach(key => {
+        if (override[key] === undefined) {
+          delete override[key];
+        }
+      });
+      
+      return override;
+    });
+};
 
 /**
  * Main Payroll Calculation Service
@@ -795,15 +844,13 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
       }
     }
 
+    // ===== NEW ROBUST CALCULATION LOGIC =====
+    console.log('\n========== PAYROLL CALCULATION START ==========');
+    
+    // Step 1: Get attendance data
     const monthDays = attendanceSummary.totalDaysInMonth;
     const holidays = attendanceSummary.holidays || 0;
     const weeklyOffs = attendanceSummary.weeklyOffs || 0;
-    const workingDays = monthDays - holidays - weeklyOffs;
-    if (workingDays <= 0) throw new Error('Working days computed as zero or negative');
-
-    const basicPay = employee.gross_salary;
-    const perDaySalary = basicPay / workingDays;
-
     const presentDays = attendanceSummary.totalPresentDays || 0;
     const paidLeaveDays =
       attendanceSummary.paidLeaves !== undefined
@@ -817,70 +864,203 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
       attendanceSummary.totalODs !== undefined
         ? attendanceSummary.totalODs
         : 0;
-
-    const earnedSalary = perDaySalary * presentDays;
-    const paidLeaveSalary = perDaySalary * paidLeaveDays;
-    const odSalary = perDaySalary * odDays;
-
     const payableShifts = attendanceSummary.totalPayableShifts || 0;
-    let incentiveDays = payableShifts - presentDays - paidLeaveDays - odDays;
-    if (incentiveDays < 0) incentiveDays = 0;
-    const incentiveAmount = perDaySalary * incentiveDays;
 
+    console.log('Attendance Data:');
+    console.log(`  Month Days: ${monthDays}`);
+    console.log(`  Present Days: ${presentDays}`);
+    console.log(`  Paid Leave Days: ${paidLeaveDays}`);
+    console.log(`  OD Days: ${odDays}`);
+    console.log(`  Weekly Offs: ${weeklyOffs}`);
+    console.log(`  Holidays: ${holidays}`);
+    console.log(`  Payable Shifts: ${payableShifts}`);
+
+    // Step 2: Calculate Absent Days
+    // Formula: Absent Days = Month Days - Present - Week Offs - Holidays - Paid Leaves - OD
+    const absentDays = Math.max(0, monthDays - presentDays - weeklyOffs - holidays - paidLeaveDays - odDays);
+    console.log(`  Absent Days (Calculated): ${absentDays}`);
+
+    // Step 3: Validate Days Formula
+    // Formula: Month Days MUST EQUAL Present + Week Offs + Paid Leaves + OD + Absents + Holidays
+    const calculatedTotal = presentDays + weeklyOffs + paidLeaveDays + odDays + absentDays + holidays;
+    console.log(`\nDays Validation:`);
+    console.log(`  Calculated Total: ${calculatedTotal}`);
+    console.log(`  Month Days: ${monthDays}`);
+    
+    if (calculatedTotal !== monthDays) {
+      console.warn(`⚠️  WARNING: Days mismatch! ${calculatedTotal} vs ${monthDays}`);
+      console.warn(`  Breakdown: ${presentDays} + ${weeklyOffs} + ${paidLeaveDays} + ${odDays} + ${absentDays} + ${holidays} = ${calculatedTotal}`);
+    } else {
+      console.log(`✓ Days validation passed: ${calculatedTotal} = ${monthDays}`);
+    }
+
+    // Step 4: Calculate Extra Days
+    // Formula: Extra Days = Payable Shifts - (Present Days + OD Days)
+    const extraDays = Math.max(0, payableShifts - presentDays - odDays);
+    console.log(`\nExtra Days Calculation:`);
+    console.log(`  Extra Days = ${payableShifts} - (${presentDays} + ${odDays}) = ${extraDays}`);
+
+    // Step 5: Calculate Total Paid Days
+    // Formula: Total Paid Days = Present + Week Offs + Paid Leave + Extra + OD
+    // Note: Week offs inclusion can be made configurable per department if needed
+    const includeWeekOffsInPaid = true; // Make this configurable if needed
+    const totalPaidDays = presentDays + 
+                          (includeWeekOffsInPaid ? weeklyOffs : 0) + 
+                          paidLeaveDays + 
+                          extraDays + 
+                          odDays;
+    console.log(`\nTotal Paid Days Calculation:`);
+    console.log(`  Total Paid Days = ${presentDays} + ${weeklyOffs} + ${paidLeaveDays} + ${extraDays} + ${odDays} = ${totalPaidDays}`);
+
+    // Step 6: Calculate Working Days and Per Day Salary
+    const workingDays = monthDays - holidays - weeklyOffs;
+    if (workingDays <= 0) throw new Error('Working days computed as zero or negative');
+    
+    const basicPay = employee.gross_salary;
+    const perDaySalary = basicPay / workingDays;
+    console.log(`\nSalary Calculation:`);
+    console.log(`  Basic Pay: ₹${basicPay}`);
+    console.log(`  Working Days: ${workingDays}`);
+    console.log(`  Per Day Salary: ₹${perDaySalary.toFixed(2)}`);
+
+    // Step 7: Calculate Earned Salary (NEW FORMULA)
+    // Formula: Earned Salary = Total Paid Days × Per Day Salary
+    const earnedSalary = totalPaidDays * perDaySalary;
+    console.log(`  Earned Salary = ${totalPaidDays} × ₹${perDaySalary.toFixed(2)} = ₹${earnedSalary.toFixed(2)}`);
+
+    // Step 8: Calculate OT Pay
     const otPayResult = await otPayService.calculateOTPay(
       attendanceSummary.totalOTHours || 0,
       departmentId.toString()
     );
     const otPay = otPayResult.otPay || 0;
     const otHours = attendanceSummary.totalOTHours || 0;
+    const otDays = attendanceSummary.totalOTDays || 0;
     const otRatePerHour = otPayResult.otPayPerHour || 0;
+    console.log(`\nOT Calculation:`);
+    console.log(`  OT Hours: ${otHours}`);
+    console.log(`  OT Days: ${otDays}`);
+    console.log(`  OT Pay: ₹${otPay.toFixed(2)}`);
 
-    let grossAmountSalary = earnedSalary + paidLeaveSalary + odSalary + incentiveAmount + otPay;
+    // Step 9: Initial Gross Salary (before allowances)
+    let grossAmountSalary = earnedSalary + otPay;
+    console.log(`\nInitial Gross Salary (before allowances): ₹${grossAmountSalary.toFixed(2)}`);
+    console.log('========================================\n');
 
-    // Allowances
+    // Get includeMissing setting (whether to include non-overridden base items)
     const includeMissing = await getIncludeMissingFlag(departmentId);
+    
+    // Log the setting for debugging
+    console.log(`[Payroll] Include missing allowances/deductions: ${includeMissing}`);
+    console.log(`[Payroll] Employee ID: ${employee._id}, Department: ${departmentId}`);
+
+    // Get base allowances and deductions for the department
     const { allowances: baseAllowances, deductions: baseDeductions } = await buildBaseComponents(
       departmentId,
       basicPay
     );
-    const normalizedEmployeeAllowances = normalizeOverrides(employee.employeeAllowances, 'allowance');
-    const resolvedAllowances = mergeWithOverrides(baseAllowances, normalizedEmployeeAllowances, includeMissing);
 
+    // Log base components for debugging
+    console.log(`[Payroll] Base allowances: ${baseAllowances.length}, Base deductions: ${baseDeductions.length}`);
+
+    // Normalize employee overrides
+    const normalizedEmployeeAllowances = normalizeOverrides(employee.employeeAllowances || [], 'allowance');
+    const normalizedEmployeeDeductions = normalizeOverrides(employee.employeeDeductions || [], 'deduction');
+
+    // Log employee overrides for debugging
+    console.log(`[Payroll] Employee allowance overrides: ${normalizedEmployeeAllowances.length}`);
+    console.log(`[Payroll] Employee deduction overrides: ${normalizedEmployeeDeductions.length}`);
+
+    // Merge with overrides
+    const resolvedAllowances = mergeWithOverrides(
+      baseAllowances,
+      normalizedEmployeeAllowances,
+      includeMissing
+    );
+
+    // Prepare attendance data for proration
+    const attendanceData = {
+      presentDays,
+      paidLeaveDays,
+      odDays,
+      monthDays
+    };
+
+    // Process allowances
     let totalAllowances = 0;
-    const allowanceBreakdown = resolvedAllowances.map((allowance) => {
-      const baseAmount = allowance.base === 'BASIC_PAY' ? earnedSalary : grossAmountSalary;
-      const amount = allowanceService.calculateAllowanceAmount(allowance, baseAmount);
-      totalAllowances += amount;
-      return {
-        name: allowance.name,
-        code: allowance.code || allowance.name,
-        amount,
-        base: allowance.base === 'BASIC_PAY' ? 'basic' : 'gross',
-        type: allowance.type || 'fixed',
-        source: allowance.source || 'default',
-      };
-    });
+    const allowanceBreakdown = resolvedAllowances
+      .filter(allowance => allowance && allowance.name) // Filter out invalid entries
+      .map((allowance) => {
+        try {
+          const baseAmount = allowance.base === 'BASIC_PAY' ? earnedSalary : grossAmountSalary;
+          const amount = allowanceService.calculateAllowanceAmount(allowance, baseAmount, grossAmountSalary, attendanceData);
+          
+          if (isNaN(amount)) {
+            console.error(`[Payroll] Invalid allowance amount for ${allowance.name}:`, allowance);
+            return null;
+          }
+          
+          totalAllowances += amount;
+          
+          return {
+            name: allowance.name,
+            code: allowance.code || allowance.name.replace(/\s+/g, '_').toUpperCase(),
+            amount,
+            base: allowance.base === 'BASIC_PAY' ? 'basic' : 'gross',
+            type: allowance.type || 'fixed',
+            source: allowance.source || (allowance.isEmployeeOverride ? 'employee_override' : 'default'),
+            isEmployeeOverride: !!allowance.isEmployeeOverride,
+            basedOnPresentDays: !!allowance.basedOnPresentDays
+          };
+        } catch (error) {
+          console.error(`[Payroll] Error processing allowance ${allowance?.name}:`, error);
+          return null;
+        }
+      })
+      .filter(Boolean); // Remove any null entries from failed processing
 
+    // Update gross amount with total allowances
     grossAmountSalary += totalAllowances;
 
-    // Deductions
-    const normalizedEmployeeDeductions = normalizeOverrides(employee.employeeDeductions, 'deduction');
-    const resolvedDeductions = mergeWithOverrides(baseDeductions, normalizedEmployeeDeductions, includeMissing);
+    // Merge deductions with overrides
+    const resolvedDeductions = mergeWithOverrides(
+      baseDeductions,
+      normalizedEmployeeDeductions,
+      includeMissing
+    );
 
+    // Process deductions
     let totalDeductions = 0;
-    const deductionBreakdown = resolvedDeductions.map((deduction) => {
-      const baseAmount = deduction.base === 'BASIC_PAY' ? earnedSalary : grossAmountSalary;
-      const amount = deductionService.calculateDeductionAmount(deduction, baseAmount);
-      totalDeductions += amount;
-      return {
-        name: deduction.name,
-        code: deduction.code || deduction.name,
-        amount,
-        base: deduction.base === 'BASIC_PAY' ? 'basic' : 'gross',
-        type: deduction.type || 'fixed',
-        source: deduction.source || 'default',
-      };
-    });
+    const deductionBreakdown = resolvedDeductions
+      .filter(deduction => deduction && deduction.name) // Filter out invalid entries
+      .map((deduction) => {
+        try {
+          const baseAmount = deduction.base === 'BASIC_PAY' ? earnedSalary : grossAmountSalary;
+          const amount = deductionService.calculateDeductionAmount(deduction, baseAmount, grossAmountSalary, attendanceData);
+          
+          if (isNaN(amount)) {
+            console.error(`[Payroll] Invalid deduction amount for ${deduction.name}:`, deduction);
+            return null;
+          }
+          
+          totalDeductions += amount;
+          
+          return {
+            name: deduction.name,
+            code: deduction.code || deduction.name.replace(/\s+/g, '_').toUpperCase(),
+            amount,
+            base: deduction.base === 'BASIC_PAY' ? 'basic' : 'gross',
+            type: deduction.type || 'fixed',
+            source: deduction.source || (deduction.isEmployeeOverride ? 'employee_override' : 'default'),
+            isEmployeeOverride: !!deduction.isEmployeeOverride,
+            basedOnPresentDays: !!deduction.basedOnPresentDays
+          };
+        } catch (error) {
+          console.error(`[Payroll] Error processing deduction ${deduction?.name}:`, error);
+          return null;
+        }
+      })
+      .filter(Boolean); // Remove any null entries from failed processing
 
     // Absent deduction
     let absentDeductionAmount = 0;
@@ -928,11 +1108,29 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     payrollRecord.set('payableAmountBeforeAdvance', Number(grossAmountSalary) || 0);
     payrollRecord.set('status', 'calculated');
 
+    // ===== ATTENDANCE BREAKDOWN (NEW) =====
+    console.log('\nSaving attendance breakdown to payroll record...');
+    payrollRecord.set('attendance.totalDaysInMonth', Number(monthDays) || 0);
+    payrollRecord.set('attendance.presentDays', Number(presentDays) || 0);
+    payrollRecord.set('attendance.paidLeaveDays', Number(paidLeaveDays) || 0);
+    payrollRecord.set('attendance.odDays', Number(odDays) || 0);
+    payrollRecord.set('attendance.weeklyOffs', Number(weeklyOffs) || 0);
+    payrollRecord.set('attendance.holidays', Number(holidays) || 0);
+    payrollRecord.set('attendance.absentDays', Number(absentDays) || 0);
+    payrollRecord.set('attendance.payableShifts', Number(payableShifts) || 0);
+    payrollRecord.set('attendance.extraDays', Number(extraDays) || 0);
+    payrollRecord.set('attendance.totalPaidDays', Number(totalPaidDays) || 0);
+    payrollRecord.set('attendance.otHours', Number(otHours) || 0);
+    payrollRecord.set('attendance.otDays', Number(otDays) || 0);
+    payrollRecord.set('attendance.earnedSalary', Number(earnedSalary) || 0);
+    payrollRecord.markModified('attendance');
+    console.log('✓ Attendance breakdown saved');
+
     // Earnings
     payrollRecord.set('earnings.basicPay', Number(basicPay) || 0);
     payrollRecord.set('earnings.perDayBasicPay', Number(perDaySalary) || 0);
-    payrollRecord.set('earnings.payableAmount', Number(earnedSalary + paidLeaveSalary + odSalary) || 0);
-    payrollRecord.set('earnings.incentive', Number(incentiveAmount) || 0);
+    payrollRecord.set('earnings.payableAmount', Number(earnedSalary) || 0);
+    payrollRecord.set('earnings.incentive', Number(extraDays * perDaySalary) || 0); // Incentive from extra days
     payrollRecord.set('earnings.otPay', Number(otPay) || 0);
     payrollRecord.set('earnings.otHours', Number(otHours) || 0);
     payrollRecord.set('earnings.otRatePerHour', Number(otRatePerHour) || 0);

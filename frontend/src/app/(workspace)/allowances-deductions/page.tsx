@@ -17,6 +17,7 @@ interface GlobalRule {
   percentageBase?: 'basic' | 'gross' | null;
   minAmount?: number | null;
   maxAmount?: number | null;
+  basedOnPresentDays?: boolean;
 }
 
 interface DepartmentRule {
@@ -27,6 +28,7 @@ interface DepartmentRule {
   percentageBase?: 'basic' | 'gross' | null;
   minAmount?: number | null;
   maxAmount?: number | null;
+  basedOnPresentDays?: boolean;
 }
 
 interface AllowanceDeduction {
@@ -65,6 +67,7 @@ export default function AllowancesDeductionsPage() {
     percentageBase: 'basic' as 'basic' | 'gross',
     minAmount: null as number | null,
     maxAmount: null as number | null,
+    basedOnPresentDays: false,
     isActive: true,
   });
 
@@ -77,6 +80,7 @@ export default function AllowancesDeductionsPage() {
     percentageBase: 'basic' as 'basic' | 'gross',
     minAmount: null as number | null,
     maxAmount: null as number | null,
+    basedOnPresentDays: false,
   });
 
   useEffect(() => {
@@ -142,6 +146,7 @@ export default function AllowancesDeductionsPage() {
       percentageBase: item.globalRule.percentageBase || 'basic',
       minAmount: item.globalRule.minAmount ?? null,
       maxAmount: item.globalRule.maxAmount ?? null,
+      basedOnPresentDays: item.globalRule.basedOnPresentDays ?? false,
       isActive: item.isActive,
     });
     setShowEditDialog(true);
@@ -170,6 +175,7 @@ export default function AllowancesDeductionsPage() {
         percentageBase: rule.percentageBase || 'basic',
         minAmount: rule.minAmount ?? null,
         maxAmount: rule.maxAmount ?? null,
+        basedOnPresentDays: rule.basedOnPresentDays ?? false,
       });
       setShowDeptRuleDialog(true);
     }
@@ -186,6 +192,7 @@ export default function AllowancesDeductionsPage() {
       percentageBase: 'basic',
       minAmount: null,
       maxAmount: null,
+      basedOnPresentDays: false,
       isActive: true,
     });
   };
@@ -260,6 +267,7 @@ export default function AllowancesDeductionsPage() {
         percentageBase: formData.type === 'percentage' ? formData.percentageBase : null,
         minAmount: formData.minAmount,
         maxAmount: formData.maxAmount,
+        basedOnPresentDays: formData.type === 'fixed' ? formData.basedOnPresentDays : false,
       };
 
       // Convert GlobalRule to API format (null -> undefined for amount/percentage)
@@ -270,6 +278,7 @@ export default function AllowancesDeductionsPage() {
         percentageBase: globalRule.percentageBase ?? undefined,
         minAmount: globalRule.minAmount ?? undefined,
         maxAmount: globalRule.maxAmount ?? undefined,
+        basedOnPresentDays: globalRule.basedOnPresentDays,
       };
 
       if (selectedItem) {
@@ -398,6 +407,7 @@ export default function AllowancesDeductionsPage() {
         percentageBase: deptRuleForm.type === 'percentage' ? (deptRuleForm.percentageBase ?? undefined) : undefined,
         minAmount: deptRuleForm.minAmount ?? undefined,
         maxAmount: deptRuleForm.maxAmount ?? undefined,
+        basedOnPresentDays: deptRuleForm.type === 'fixed' ? deptRuleForm.basedOnPresentDays : false,
       });
 
       if (response.success) {
@@ -864,20 +874,42 @@ export default function AllowancesDeductionsPage() {
 
               {/* Fixed Amount */}
               {formData.type === 'fixed' && (
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
-                    Amount (₹) <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={formData.amount ?? ''}
-                    onChange={(e) => setFormData({ ...formData, amount: e.target.value ? parseFloat(e.target.value) : null })}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    placeholder="e.g., 2000"
-                  />
-                </div>
+                <>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                      Amount (₹) <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={formData.amount ?? ''}
+                      onChange={(e) => setFormData({ ...formData, amount: e.target.value ? parseFloat(e.target.value) : null })}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      placeholder="e.g., 2000"
+                    />
+                  </div>
+                  
+                  {/* Based on Present Days */}
+                  <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-3 dark:border-blue-800 dark:bg-blue-900/20">
+                    <label className="flex items-start gap-2.5">
+                      <input
+                        type="checkbox"
+                        checked={formData.basedOnPresentDays}
+                        onChange={(e) => setFormData({ ...formData, basedOnPresentDays: e.target.checked })}
+                        className="mt-0.5 h-4 w-4 rounded border-blue-300 text-blue-600 focus:ring-blue-500 dark:border-blue-700"
+                      />
+                      <div className="flex-1">
+                        <span className="block text-xs font-semibold text-blue-900 dark:text-blue-100">
+                          Prorate based on present days
+                        </span>
+                        <span className="mt-0.5 block text-[10px] leading-relaxed text-blue-700 dark:text-blue-300">
+                          When enabled, this amount will be calculated based on employee attendance (Present + Paid Leave + OD days). Example: ₹3000/30 days × 25 days = ₹2500
+                        </span>
+                      </div>
+                    </label>
+                  </div>
+                </>
               )}
 
               {/* Percentage Fields */}
@@ -1071,20 +1103,42 @@ export default function AllowancesDeductionsPage() {
 
               {/* Fixed Amount */}
               {deptRuleForm.type === 'fixed' && (
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
-                    Amount (₹) <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={deptRuleForm.amount ?? ''}
-                    onChange={(e) => setDeptRuleForm({ ...deptRuleForm, amount: e.target.value ? parseFloat(e.target.value) : null })}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    placeholder="e.g., 5000"
-                  />
-                </div>
+                <>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                      Amount (₹) <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={deptRuleForm.amount ?? ''}
+                      onChange={(e) => setDeptRuleForm({ ...deptRuleForm, amount: e.target.value ? parseFloat(e.target.value) : null })}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      placeholder="e.g., 5000"
+                    />
+                  </div>
+                  
+                  {/* Based on Present Days */}
+                  <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-3 dark:border-blue-800 dark:bg-blue-900/20">
+                    <label className="flex items-start gap-2.5">
+                      <input
+                        type="checkbox"
+                        checked={deptRuleForm.basedOnPresentDays}
+                        onChange={(e) => setDeptRuleForm({ ...deptRuleForm, basedOnPresentDays: e.target.checked })}
+                        className="mt-0.5 h-4 w-4 rounded border-blue-300 text-blue-600 focus:ring-blue-500 dark:border-blue-700"
+                      />
+                      <div className="flex-1">
+                        <span className="block text-xs font-semibold text-blue-900 dark:text-blue-100">
+                          Prorate based on present days
+                        </span>
+                        <span className="mt-0.5 block text-[10px] leading-relaxed text-blue-700 dark:text-blue-300">
+                          When enabled, this amount will be calculated based on employee attendance (Present + Paid Leave + OD days). Example: ₹3000/30 days × 25 days = ₹2500
+                        </span>
+                      </div>
+                    </label>
+                  </div>
+                </>
               )}
 
               {/* Percentage Fields */}

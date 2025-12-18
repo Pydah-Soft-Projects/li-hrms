@@ -83,104 +83,108 @@ async function getAbsentDeductionSettings(departmentId) {
 
 /**
  * Merge a base list with employee overrides.
- * - Overrides replace matching base items (by masterId or name).
- * - If includeMissing=false, skip base items not overridden.
- * - When includeMissing=true, only add base items that are NOT overridden by employee.
+ * - When includeMissing is true (default): Includes all base items, with employee overrides taking precedence
+ * - When includeMissing is false: Only includes items that have employee overrides
+ * - Employee overrides can match base items by either masterId or name (case-insensitive)
+ * - Preserves all properties from base items while applying override values
  */
-function mergeWithOverrides(baseList, overrides, includeMissing) {
+function mergeWithOverrides(baseList = [], overrides = [], includeMissing = true) {
+  // If no overrides, return base list or empty array based on includeMissing
   if (!overrides || overrides.length === 0) {
-    return includeMissing ? baseList : [];
+    return includeMissing ? [...baseList] : [];
   }
 
-  const result = [];
+  // Create maps for quick lookup of base items by ID and name
+  const baseMap = new Map();
+  const baseNameMap = new Map();
   
-  // Create a map of base items for quick lookup
-  // Use both masterId and name as keys to handle all matching scenarios
-  const baseMapById = new Map();
-  const baseMapByName = new Map();
+  // Track which base items have been overridden
+  const overriddenBaseItems = new Set();
   
-  baseList.forEach((item) => {
-    // Normalize masterId to string for comparison
+  // Index base items
+  baseList.forEach((item, index) => {
     const masterIdKey = item.masterId ? item.masterId.toString() : null;
-    // Normalize name: lowercase, trim whitespace
     const nameKey = item.name ? item.name.trim().toLowerCase() : null;
     
     if (masterIdKey) {
-      baseMapById.set(masterIdKey, item);
+      baseMap.set(`id_${masterIdKey}`, { ...item, _index: index });
     }
     if (nameKey) {
-      baseMapByName.set(nameKey, item);
+      baseNameMap.set(`name_${nameKey}`, { ...item, _index: index });
     }
   });
 
-  // Track which base items have been matched/overridden
-  const matchedBaseKeys = new Set();
+  const result = [];
+  const processedBaseIndices = new Set();
+  const overrideIds = new Set();
 
-  // Process employee overrides first
-  overrides.forEach((ov) => {
-    // Normalize override masterId and name
-    const ovMasterIdKey = ov.masterId ? ov.masterId.toString() : null;
-    const ovNameKey = ov.name ? ov.name.trim().toLowerCase() : null;
+  // Process overrides first
+  overrides.forEach(override => {
+    if (!override) return;
     
-    // Try to find matching base item by masterId first, then by name
+    const ovMasterIdKey = override.masterId ? `id_${override.masterId.toString()}` : null;
+    const ovNameKey = override.name ? `name_${override.name.trim().toLowerCase()}` : null;
+    
+    // Find matching base item
     let baseItem = null;
-    let matchedKey = null;
+    let baseItemIndex = -1;
     
-    if (ovMasterIdKey && baseMapById.has(ovMasterIdKey)) {
-      baseItem = baseMapById.get(ovMasterIdKey);
-      matchedKey = ovMasterIdKey;
-    } else if (ovNameKey && baseMapByName.has(ovNameKey)) {
-      baseItem = baseMapByName.get(ovNameKey);
-      // Use the masterId from base item if available, otherwise use name
-      matchedKey = baseItem.masterId ? baseItem.masterId.toString() : ovNameKey;
+    // Try to find by masterId first
+    if (ovMasterIdKey && baseMap.has(ovMasterIdKey)) {
+      const match = baseMap.get(ovMasterIdKey);
+      baseItem = match;
+      baseItemIndex = match._index;
+    } 
+    // Then try by name if no match by ID
+    else if (ovNameKey && baseNameMap.has(ovNameKey)) {
+      const match = baseNameMap.get(ovNameKey);
+      baseItem = match;
+      baseItemIndex = match._index;
     }
     
-    // Mark this base item as matched
-    if (matchedKey) {
-      matchedBaseKeys.add(matchedKey);
-      // Also mark by name if different
-      if (baseItem && baseItem.name) {
-        const baseNameKey = baseItem.name.trim().toLowerCase();
-        if (baseNameKey !== matchedKey) {
-          matchedBaseKeys.add(baseNameKey);
-        }
-      }
+    // Mark base item as overridden if found
+    if (baseItemIndex >= 0) {
+      overriddenBaseItems.add(baseItemIndex);
     }
     
-    // Use override amount (can be null for explicit override to 0)
-    const overrideAmount = ov.amount !== undefined && ov.amount !== null ? ov.amount : (ov.overrideAmount !== undefined && ov.overrideAmount !== null ? ov.overrideAmount : 0);
+    // Create merged item
+    const merged = {
+      ...(baseItem || {}), // Start with base item properties if exists
+      ...override,         // Apply override properties
+      amount: override.amount !== undefined ? override.amount : 
+             (override.overrideAmount !== undefined ? override.overrideAmount : 
+             (baseItem ? baseItem.amount : 0)),
+      isEmployeeOverride: true
+    };
     
-    // Create merged item: use base item structure but with override amount
-    const merged = baseItem
-      ? {
-          ...baseItem,
-          amount: overrideAmount,
-          isEmployeeOverride: true,
-          masterId: ovMasterIdKey || baseItem.masterId,
-        }
-      : {
-          ...ov,
-          amount: overrideAmount,
-          isEmployeeOverride: true,
-          masterId: ovMasterIdKey,
-        };
+    // Ensure we have required fields
+    if (!merged.masterId && baseItem?.masterId) {
+      merged.masterId = baseItem.masterId;
+    }
+    if (!merged.name && baseItem?.name) {
+      merged.name = baseItem.name;
+    }
     
-    result.push(merged);
+    // Track this override to avoid duplicates
+    const overrideKey = merged.masterId ? `id_${merged.masterId}` : `name_${merged.name?.toLowerCase()}`;
+    if (!overrideIds.has(overrideKey)) {
+      result.push(merged);
+      overrideIds.add(overrideKey);
+    }
   });
 
-  // If includeMissing is true, add base items that were NOT overridden
+  // Add non-overridden base items if includeMissing is true
   if (includeMissing) {
-    baseList.forEach((item) => {
-      const masterIdKey = item.masterId ? item.masterId.toString() : null;
-      const nameKey = item.name ? item.name.trim().toLowerCase() : null;
-      
-      // Check if this base item was already matched/overridden
-      const isMatched = (masterIdKey && matchedBaseKeys.has(masterIdKey)) || 
-                        (nameKey && matchedBaseKeys.has(nameKey));
-      
-      if (!isMatched) {
-        // This base item is missing from employee overrides, add it
-        result.push(item);
+    baseList.forEach((item, index) => {
+      if (!overriddenBaseItems.has(index)) {
+        // Only add if not already in result (to prevent duplicates)
+        const itemKey = item.masterId ? `id_${item.masterId}` : `name_${item.name?.toLowerCase()}`;
+        if (!overrideIds.has(itemKey)) {
+          result.push({
+            ...item,
+            isEmployeeOverride: false
+          });
+        }
       }
     });
   }

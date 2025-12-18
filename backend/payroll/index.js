@@ -18,6 +18,9 @@ router.get('/payslip/:employeeId/:month', payrollController.getPayslip);
 // Get payroll records
 router.get('/', payrollController.getPayrollRecords);
 
+// Get single payroll record by ID
+router.get('/record/:id', payrollController.getPayrollRecordById);
+
 // Get payroll transactions
 router.get('/:payrollRecordId/transactions', payrollController.getPayrollTransactions);
 

@@ -65,6 +65,89 @@ const payrollRecordSchema = new mongoose.Schema(
       min: 0,
     },
 
+    // ATTENDANCE BREAKDOWN (NEW - Enhanced tracking)
+    attendance: {
+      // Total days in the month
+      totalDaysInMonth: {
+        type: Number,
+        default: 0,
+        min: 28,
+        max: 31,
+      },
+      // Present days (actual working days)
+      presentDays: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      // Paid leave days
+      paidLeaveDays: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      // On Duty days
+      odDays: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      // Weekly offs in the month
+      weeklyOffs: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      // Holidays in the month
+      holidays: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      // Absent days (calculated)
+      absentDays: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      // Payable shifts
+      payableShifts: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      // Extra days = Payable Shifts - (Present + OD)
+      extraDays: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      // Total paid days = Present + WeekOffs + PaidLeave + Extra + OD
+      totalPaidDays: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      // OT hours
+      otHours: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      // OT days
+      otDays: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      // Earned salary (Total Paid Days × Per Day Salary)
+      earnedSalary: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+    },
+
     // EARNINGS BREAKDOWN
     earnings: {
       // Fixed basic pay from employee profile

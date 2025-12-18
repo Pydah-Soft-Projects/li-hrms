@@ -179,6 +179,8 @@ export default function EmployeesPage() {
   });
   const [overrideAllowances, setOverrideAllowances] = useState<Record<string, number | null>>({});
   const [overrideDeductions, setOverrideDeductions] = useState<Record<string, number | null>>({});
+  const [overrideAllowancesBasedOnPresentDays, setOverrideAllowancesBasedOnPresentDays] = useState<Record<string, boolean>>({});
+  const [overrideDeductionsBasedOnPresentDays, setOverrideDeductionsBasedOnPresentDays] = useState<Record<string, boolean>>({});
   const [loadingComponents, setLoadingComponents] = useState(false);
   const [salarySummary, setSalarySummary] = useState({
     totalAllowances: 0,
@@ -199,6 +201,8 @@ export default function EmployeesPage() {
   });
   const [approvalOverrideAllowances, setApprovalOverrideAllowances] = useState<Record<string, number | null>>({});
   const [approvalOverrideDeductions, setApprovalOverrideDeductions] = useState<Record<string, number | null>>({});
+  const [approvalOverrideAllowancesBasedOnPresentDays, setApprovalOverrideAllowancesBasedOnPresentDays] = useState<Record<string, boolean>>({});
+  const [approvalOverrideDeductionsBasedOnPresentDays, setApprovalOverrideDeductionsBasedOnPresentDays] = useState<Record<string, boolean>>({});
   const [approvalLoadingComponents, setApprovalLoadingComponents] = useState(false);
   const [approvalSalarySummary, setApprovalSalarySummary] = useState({
     totalAllowances: 0,
@@ -208,24 +212,32 @@ export default function EmployeesPage() {
   });
 
   // Build override payload: only include rows user changed (matched by masterId or name)
-  const buildOverridePayload = (defaults: any[], overrides: Record<string, number | null>, categoryFallback: 'allowance' | 'deduction') => {
+  const buildOverridePayload = (
+    defaults: any[], 
+    overrides: Record<string, number | null>, 
+    basedOnPresentDaysMap: Record<string, boolean>,
+    categoryFallback: 'allowance' | 'deduction'
+  ) => {
     return defaults
       .map((item) => {
         const key = item.masterId ? item.masterId.toString() : (item.name || '').toLowerCase();
         if (Object.prototype.hasOwnProperty.call(overrides, key)) {
           const amt = overrides[key];
+          const itemType = item.type || (item.base ? 'percentage' : 'fixed');
+          const basedOnPresentDays = itemType === 'fixed' ? (basedOnPresentDaysMap[key] ?? item.basedOnPresentDays ?? false) : false;
           return {
             masterId: item.masterId || null,
             code: item.code || null,
             name: item.name || '',
             category: item.category || categoryFallback,
-            type: item.type || (item.base ? 'percentage' : 'fixed'),
+            type: itemType,
             amount: amt === null || amt === undefined ? null : Number(amt),
             overrideAmount: amt === null || amt === undefined ? null : Number(amt),
             percentage: item.type === 'percentage' ? (item.percentage ?? null) : null,
             percentageBase: item.base || item.percentageBase || null,
             minAmount: item.minAmount ?? null,
             maxAmount: item.maxAmount ?? null,
+            basedOnPresentDays: basedOnPresentDays,
           };
         }
         return null;
@@ -245,6 +257,8 @@ export default function EmployeesPage() {
         // Prefill overrides map from existing employee data if editing, or preserve current overrides if preserveOverrides is true
         const newOverrideAllowances: Record<string, number | null> = preserveOverrides ? { ...overrideAllowances } : {};
         const newOverrideDeductions: Record<string, number | null> = preserveOverrides ? { ...overrideDeductions } : {};
+        const newOverrideAllowancesBasedOnPresentDays: Record<string, boolean> = preserveOverrides ? { ...overrideAllowancesBasedOnPresentDays } : {};
+        const newOverrideDeductionsBasedOnPresentDays: Record<string, boolean> = preserveOverrides ? { ...overrideDeductionsBasedOnPresentDays } : {};
 
         // If preserveOverrides is true, we keep the existing overrides (set in handleEdit)
         // If preserveOverrides is false, we load from editingEmployee if available
@@ -253,6 +267,7 @@ export default function EmployeesPage() {
             const key = ov.masterId ? ov.masterId.toString() : (ov.name || '').toLowerCase();
             if (key && (ov.amount !== null && ov.amount !== undefined)) {
               newOverrideAllowances[key] = Number(ov.amount);
+              newOverrideAllowancesBasedOnPresentDays[key] = ov.basedOnPresentDays ?? false;
             }
           });
         }
@@ -261,6 +276,7 @@ export default function EmployeesPage() {
             const key = ov.masterId ? ov.masterId.toString() : (ov.name || '').toLowerCase();
             if (key && (ov.amount !== null && ov.amount !== undefined)) {
               newOverrideDeductions[key] = Number(ov.amount);
+              newOverrideDeductionsBasedOnPresentDays[key] = ov.basedOnPresentDays ?? false;
             }
           });
         }
@@ -268,6 +284,8 @@ export default function EmployeesPage() {
         setComponentDefaults({ allowances, deductions });
         setOverrideAllowances(newOverrideAllowances);
         setOverrideDeductions(newOverrideDeductions);
+        setOverrideAllowancesBasedOnPresentDays(newOverrideAllowancesBasedOnPresentDays);
+        setOverrideDeductionsBasedOnPresentDays(newOverrideDeductionsBasedOnPresentDays);
       } else {
         if (!preserveOverrides) {
           setComponentDefaults({ allowances: [], deductions: [] });
@@ -298,23 +316,29 @@ export default function EmployeesPage() {
 
         const prefAllow: Record<string, number | null> = {};
         const prefDed: Record<string, number | null> = {};
+        const prefAllowBasedOnPresentDays: Record<string, boolean> = {};
+        const prefDedBasedOnPresentDays: Record<string, boolean> = {};
 
         if (selectedApplication?.employeeAllowances) {
           selectedApplication.employeeAllowances.forEach((ov: any) => {
             const key = ov.masterId ? ov.masterId.toString() : (ov.name || '').toLowerCase();
             prefAllow[key] = ov.amount ?? ov.overrideAmount ?? null;
+            prefAllowBasedOnPresentDays[key] = ov.basedOnPresentDays ?? false;
           });
         }
         if (selectedApplication?.employeeDeductions) {
           selectedApplication.employeeDeductions.forEach((ov: any) => {
             const key = ov.masterId ? ov.masterId.toString() : (ov.name || '').toLowerCase();
             prefDed[key] = ov.amount ?? ov.overrideAmount ?? null;
+            prefDedBasedOnPresentDays[key] = ov.basedOnPresentDays ?? false;
           });
         }
 
         setApprovalComponentDefaults({ allowances, deductions });
         setApprovalOverrideAllowances(prefAllow);
         setApprovalOverrideDeductions(prefDed);
+        setApprovalOverrideAllowancesBasedOnPresentDays(prefAllowBasedOnPresentDays);
+        setApprovalOverrideDeductionsBasedOnPresentDays(prefDedBasedOnPresentDays);
       } else {
         setApprovalComponentDefaults({ allowances: [], deductions: [] });
         setApprovalOverrideAllowances({});
@@ -666,8 +690,8 @@ export default function EmployeesPage() {
       // Ensure paidLeaves is always sent (even if 0)
       const submitData = {
         ...formData,
-        employeeAllowances: buildOverridePayload(componentDefaults.allowances, overrideAllowances, 'allowance'),
-        employeeDeductions: buildOverridePayload(componentDefaults.deductions, overrideDeductions, 'deduction'),
+        employeeAllowances: buildOverridePayload(componentDefaults.allowances, overrideAllowances, overrideAllowancesBasedOnPresentDays, 'allowance'),
+        employeeDeductions: buildOverridePayload(componentDefaults.deductions, overrideDeductions, overrideDeductionsBasedOnPresentDays, 'deduction'),
         paidLeaves: formData.paidLeaves !== null && formData.paidLeaves !== undefined ? formData.paidLeaves : 0,
         allottedLeaves: formData.allottedLeaves !== null && formData.allottedLeaves !== undefined ? formData.allottedLeaves : 0,
         ctcSalary: salarySummary.ctcSalary,
@@ -986,8 +1010,8 @@ export default function EmployeesPage() {
         ...cleanedData,
         proposedSalary: applicationFormData.proposedSalary,
         qualifications: qualificationsPayload,
-        employeeAllowances: buildOverridePayload(componentDefaults.allowances, overrideAllowances, 'allowance'),
-        employeeDeductions: buildOverridePayload(componentDefaults.deductions, overrideDeductions, 'deduction'),
+        employeeAllowances: buildOverridePayload(componentDefaults.allowances, overrideAllowances, overrideAllowancesBasedOnPresentDays, 'allowance'),
+        employeeDeductions: buildOverridePayload(componentDefaults.deductions, overrideDeductions, overrideDeductionsBasedOnPresentDays, 'deduction'),
         ctcSalary: applicationSalarySummary.ctcSalary,
         calculatedSalary: applicationSalarySummary.netSalary,
       });
@@ -1034,8 +1058,8 @@ export default function EmployeesPage() {
         approvedSalary: approvalData.approvedSalary,
         doj: approvalData.doj || undefined,
         comments: approvalData.comments,
-        employeeAllowances: buildOverridePayload(approvalComponentDefaults.allowances, approvalOverrideAllowances, 'allowance'),
-        employeeDeductions: buildOverridePayload(approvalComponentDefaults.deductions, approvalOverrideDeductions, 'deduction'),
+        employeeAllowances: buildOverridePayload(approvalComponentDefaults.allowances, approvalOverrideAllowances, approvalOverrideAllowancesBasedOnPresentDays, 'allowance'),
+        employeeDeductions: buildOverridePayload(approvalComponentDefaults.deductions, approvalOverrideDeductions, approvalOverrideDeductionsBasedOnPresentDays, 'deduction'),
         ctcSalary: approvalSalarySummary.ctcSalary,
         calculatedSalary: approvalSalarySummary.netSalary,
       });
@@ -1643,6 +1667,8 @@ export default function EmployeesPage() {
                       {componentDefaults.allowances.map((item) => {
                         const key = getKey(item);
                         const current = overrideAllowances[key] ?? item.amount ?? 0;
+                        const isFixed = item.type === 'fixed';
+                        const basedOnPresentDays = overrideAllowancesBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
                         return (
                           <div key={key} className="rounded-lg border border-green-100 bg-white/70 px-3 py-2 text-xs dark:border-green-900/50 dark:bg-green-950/40">
                             <div className="flex items-center justify-between gap-2">
@@ -1666,6 +1692,26 @@ export default function EmployeesPage() {
                     />
                   </div>
                   </div>
+                            {isFixed && (
+                              <div className="mt-2 pt-2 border-t border-green-100 dark:border-green-900/50">
+                                <label className="flex items-start gap-1.5 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={basedOnPresentDays}
+                                    onChange={(e) => {
+                                      setOverrideAllowancesBasedOnPresentDays({
+                                        ...overrideAllowancesBasedOnPresentDays,
+                                        [key]: e.target.checked
+                                      });
+                                    }}
+                                    className="mt-0.5 h-3 w-3 rounded border-green-300 text-green-600 focus:ring-green-500 dark:border-green-700"
+                                  />
+                                  <span className="text-[10px] leading-tight text-green-700 dark:text-green-300">
+                                    Prorate based on present days
+                                  </span>
+                                </label>
+                              </div>
+                            )}
                   </div>
                         );
                       })}
@@ -1687,6 +1733,8 @@ export default function EmployeesPage() {
                       {componentDefaults.deductions.map((item) => {
                         const key = getKey(item);
                         const current = overrideDeductions[key] ?? item.amount ?? 0;
+                        const isFixed = item.type === 'fixed';
+                        const basedOnPresentDays = overrideDeductionsBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
                         return (
                           <div key={key} className="rounded-lg border border-red-100 bg-white/70 px-3 py-2 text-xs dark:border-red-900/50 dark:bg-red-950/40">
                             <div className="flex items-center justify-between gap-2">
@@ -1710,6 +1758,26 @@ export default function EmployeesPage() {
                     />
                   </div>
                   </div>
+                            {isFixed && (
+                              <div className="mt-2 pt-2 border-t border-red-100 dark:border-red-900/50">
+                                <label className="flex items-start gap-1.5 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={basedOnPresentDays}
+                                    onChange={(e) => {
+                                      setOverrideDeductionsBasedOnPresentDays({
+                                        ...overrideDeductionsBasedOnPresentDays,
+                                        [key]: e.target.checked
+                                      });
+                                    }}
+                                    className="mt-0.5 h-3 w-3 rounded border-red-300 text-red-600 focus:ring-red-500 dark:border-red-700"
+                                  />
+                                  <span className="text-[10px] leading-tight text-red-700 dark:text-red-300">
+                                    Prorate based on present days
+                                  </span>
+                                </label>
+                              </div>
+                            )}
                 </div>
                         );
                       })}
@@ -1911,6 +1979,8 @@ export default function EmployeesPage() {
                       {approvalComponentDefaults.allowances.map((item) => {
                         const key = getKey(item);
                         const current = approvalOverrideAllowances[key] ?? item.amount ?? 0;
+                        const isFixed = item.type === 'fixed';
+                        const basedOnPresentDays = approvalOverrideAllowancesBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
                         return (
                           <div key={key} className="rounded-lg border border-green-100 bg-white/70 px-3 py-2 text-xs dark:border-green-900/50 dark:bg-green-950/40">
                             <div className="flex items-center justify-between gap-2">
@@ -1934,6 +2004,26 @@ export default function EmployeesPage() {
                                 />
                               </div>
                             </div>
+                            {isFixed && (
+                              <div className="mt-2 pt-2 border-t border-green-100 dark:border-green-900/50">
+                                <label className="flex items-start gap-1.5 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={basedOnPresentDays}
+                                    onChange={(e) => {
+                                      setApprovalOverrideAllowancesBasedOnPresentDays({
+                                        ...approvalOverrideAllowancesBasedOnPresentDays,
+                                        [key]: e.target.checked
+                                      });
+                                    }}
+                                    className="mt-0.5 h-3 w-3 rounded border-green-300 text-green-600 focus:ring-green-500 dark:border-green-700"
+                                  />
+                                  <span className="text-[10px] leading-tight text-green-700 dark:text-green-300">
+                                    Prorate based on present days
+                                  </span>
+                                </label>
+                              </div>
+                            )}
                           </div>
                         );
                       })}
@@ -1955,6 +2045,8 @@ export default function EmployeesPage() {
                       {approvalComponentDefaults.deductions.map((item) => {
                         const key = getKey(item);
                         const current = approvalOverrideDeductions[key] ?? item.amount ?? 0;
+                        const isFixed = item.type === 'fixed';
+                        const basedOnPresentDays = approvalOverrideDeductionsBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
                         return (
                           <div key={key} className="rounded-lg border border-red-100 bg-white/70 px-3 py-2 text-xs dark:border-red-900/50 dark:bg-red-950/40">
                             <div className="flex items-center justify-between gap-2">
@@ -1978,6 +2070,26 @@ export default function EmployeesPage() {
                                 />
                               </div>
                             </div>
+                            {isFixed && (
+                              <div className="mt-2 pt-2 border-t border-red-100 dark:border-red-900/50">
+                                <label className="flex items-start gap-1.5 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={basedOnPresentDays}
+                                    onChange={(e) => {
+                                      setApprovalOverrideDeductionsBasedOnPresentDays({
+                                        ...approvalOverrideDeductionsBasedOnPresentDays,
+                                        [key]: e.target.checked
+                                      });
+                                    }}
+                                    className="mt-0.5 h-3 w-3 rounded border-red-300 text-red-600 focus:ring-red-500 dark:border-red-700"
+                                  />
+                                  <span className="text-[10px] leading-tight text-red-700 dark:text-red-300">
+                                    Prorate based on present days
+                                  </span>
+                                </label>
+                              </div>
+                            )}
                           </div>
                         );
                       })}

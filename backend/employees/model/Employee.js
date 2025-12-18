@@ -156,6 +156,7 @@ const employeeSchema = new mongoose.Schema(
           percentageBase: { type: String, enum: ['basic', 'gross', null], default: null },
           minAmount: { type: Number, default: null },
           maxAmount: { type: Number, default: null },
+          basedOnPresentDays: { type: Boolean, default: false }, // prorate based on present days (only for fixed type)
           isOverride: { type: Boolean, default: true },
         },
       ],
@@ -174,6 +175,7 @@ const employeeSchema = new mongoose.Schema(
           percentageBase: { type: String, enum: ['basic', 'gross', null], default: null },
           minAmount: { type: Number, default: null },
           maxAmount: { type: Number, default: null },
+          basedOnPresentDays: { type: Boolean, default: false }, // prorate based on present days (only for fixed type)
           isOverride: { type: Boolean, default: true },
         },
       ],

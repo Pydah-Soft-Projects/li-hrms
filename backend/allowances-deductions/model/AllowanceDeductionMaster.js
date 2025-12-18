@@ -65,6 +65,11 @@ const allowanceDeductionMasterSchema = new mongoose.Schema(
         default: null,
         min: 0,
       },
+      // Prorate based on present days (only for fixed type)
+      basedOnPresentDays: {
+        type: Boolean,
+        default: false,
+      },
     },
 
     // Department-Specific Overrides
@@ -109,6 +114,11 @@ const allowanceDeductionMasterSchema = new mongoose.Schema(
           type: Number,
           default: null,
           min: 0,
+        },
+        // Prorate based on present days (only for fixed type)
+        basedOnPresentDays: {
+          type: Boolean,
+          default: false,
         },
       },
     ],

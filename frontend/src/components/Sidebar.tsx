@@ -175,6 +175,15 @@ const PayRegisterIcon = ({ className, ...props }: IconProps) => (
   </svg>
 );
 
+const PayslipsIcon = ({ className, ...props }: IconProps) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+    <polyline points="14 2 14 8 20 8" />
+    <path d="M12 18v-6" />
+    <path d="M9 15l3 3 3-3" />
+  </svg>
+);
+
 const ProfileIcon = ({ className, ...props }: IconProps) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
@@ -233,6 +242,7 @@ const navItems: NavItem[] = [
   { href: '/superadmin/reports', label: 'Reports', icon: ReportsIcon },
   { href: '/superadmin/payments', label: 'Payments', icon: PaymentsIcon },
   { href: '/superadmin/pay-register', label: 'Pay Register', icon: PayRegisterIcon },
+  { href: '/superadmin/payslips', label: 'Payslips', icon: PayslipsIcon },
   { href: '/superadmin/arrears', label: 'Arrears', icon: ArrearsIcon },
   { href: '/superadmin/settings', label: 'Settings', icon: SettingsIcon },
   { href: '/superadmin/settings/departmental', label: 'Departmental Settings', icon: DepartmentSettingsIcon },

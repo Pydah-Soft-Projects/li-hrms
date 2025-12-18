@@ -482,6 +482,7 @@ function getResolvedDeductionRule(deductionMaster, departmentId) {
         percentageBase: deptRule.percentageBase,
         minAmount: deptRule.minAmount,
         maxAmount: deptRule.maxAmount,
+        basedOnPresentDays: deptRule.basedOnPresentDays || false,
       };
     }
   }
@@ -495,6 +496,7 @@ function getResolvedDeductionRule(deductionMaster, departmentId) {
       percentageBase: deductionMaster.globalRule.percentageBase,
       minAmount: deductionMaster.globalRule.minAmount,
       maxAmount: deductionMaster.globalRule.maxAmount,
+      basedOnPresentDays: deductionMaster.globalRule.basedOnPresentDays || false,
     };
   }
 
@@ -506,9 +508,10 @@ function getResolvedDeductionRule(deductionMaster, departmentId) {
  * @param {Object} rule - Resolved rule
  * @param {Number} basicPay - Basic pay
  * @param {Number} grossSalary - Gross salary (for percentage base = 'gross')
+ * @param {Object} attendanceData - Attendance data for proration { presentDays, paidLeaveDays, odDays, monthDays }
  * @returns {Number} Deduction amount
  */
-function calculateDeductionAmount(rule, basicPay, grossSalary = null) {
+function calculateDeductionAmount(rule, basicPay, grossSalary = null, attendanceData = null) {
   if (!rule) {
     return 0;
   }
@@ -517,6 +520,18 @@ function calculateDeductionAmount(rule, basicPay, grossSalary = null) {
 
   if (rule.type === 'fixed') {
     amount = rule.amount || 0;
+    
+    // Prorate based on present days if enabled
+    if (rule.basedOnPresentDays && attendanceData) {
+      const { presentDays = 0, paidLeaveDays = 0, odDays = 0, monthDays = 30 } = attendanceData;
+      const totalPaidDays = presentDays + paidLeaveDays + odDays;
+      
+      if (monthDays > 0) {
+        const perDayAmount = amount / monthDays;
+        amount = perDayAmount * totalPaidDays;
+        console.log(`[Deduction] Prorated ${rule.name || 'deduction'}: ${rule.amount} / ${monthDays} * ${totalPaidDays} = ${amount}`);
+      }
+    }
   } else if (rule.type === 'percentage') {
     const base = rule.percentageBase === 'gross' && grossSalary ? grossSalary : basicPay;
     amount = (base * (rule.percentage || 0)) / 100;

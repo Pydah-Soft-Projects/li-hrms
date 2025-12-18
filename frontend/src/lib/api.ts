@@ -2060,6 +2060,10 @@ export const api = {
     return apiRequest<any>(`/payroll${query ? `?${query}` : ''}`, { method: 'GET' });
   },
 
+  getPayrollById: async (payrollId: string) => {
+    return apiRequest<any>(`/payroll/record/${payrollId}`, { method: 'GET' });
+  },
+
 
   getPayRegisterSummary: async (params?: { month?: string; filter_department?: string; filter_status?: string }) => {
     const queryParams = new URLSearchParams();

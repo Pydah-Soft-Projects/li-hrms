@@ -114,14 +114,23 @@ async function buildPayslipData(employeeId, month) {
       esi_number: employee?.esi_number || '',
     },
     attendance: {
-      monthDays,
-      workingDays: null, // not stored; can be derived if holidays/weekoffs available
-      presentDays,
-      paidLeaveDays,
-      odDays,
-      incentiveDays,
-      payableShifts,
-      otHours,
+      // Use new attendance breakdown if available, fallback to old fields
+      totalDaysInMonth: payrollRecord.attendance?.totalDaysInMonth || monthDays,
+      monthDays: payrollRecord.attendance?.totalDaysInMonth || monthDays,
+      presentDays: payrollRecord.attendance?.presentDays || presentDays,
+      paidLeaveDays: payrollRecord.attendance?.paidLeaveDays || paidLeaveDays,
+      odDays: payrollRecord.attendance?.odDays || odDays,
+      weeklyOffs: payrollRecord.attendance?.weeklyOffs || 0,
+      holidays: payrollRecord.attendance?.holidays || 0,
+      absentDays: payrollRecord.attendance?.absentDays || 0,
+      payableShifts: payrollRecord.attendance?.payableShifts || payableShifts,
+      extraDays: payrollRecord.attendance?.extraDays || 0,
+      totalPaidDays: payrollRecord.attendance?.totalPaidDays || 0,
+      otHours: payrollRecord.attendance?.otHours || otHours,
+      otDays: payrollRecord.attendance?.otDays || 0,
+      earnedSalary: payrollRecord.attendance?.earnedSalary || earnedSalary,
+      incentiveDays: incentiveDays, // Keep for backward compatibility
+      workingDays: null, // Can be derived if needed
     },
     earnings: {
       basicPay: payrollRecord.earnings.basicPay,
@@ -160,48 +169,199 @@ async function buildPayslipData(employeeId, month) {
   return { payrollRecord, payslip };
 }
 
+/**
+ * Build Excel row with normalized columns (all employees have same columns)
+ * @param {Object} payslip - Payslip data
+ * @param {Set} allAllowanceNames - All unique allowance names across all employees
+ * @param {Set} allDeductionNames - All unique deduction names across all employees
+ * @param {Number} serialNo - Serial number for S.No column
+ */
+function buildPayslipExcelRowsNormalized(payslip, allAllowanceNames, allDeductionNames, serialNo) {
+  const row = {
+    'S.No': serialNo,
+    'Employee Code': payslip.employee.emp_no || '',
+    'Name': payslip.employee.name || '',
+    'Designation': payslip.employee.designation || '',
+    'Department': payslip.employee.department || '',
+    'Division': '',
+    'BASIC': payslip.earnings.basicPay || 0,
+  };
+
+  // Create a map of employee's allowances for quick lookup
+  const employeeAllowances = {};
+  if (Array.isArray(payslip.earnings.allowances)) {
+    payslip.earnings.allowances.forEach(allowance => {
+      employeeAllowances[allowance.name] = allowance.amount || 0;
+    });
+  }
+
+  // Add ALL allowance columns (with 0 if employee doesn't have it)
+  allAllowanceNames.forEach(allowanceName => {
+    row[allowanceName] = employeeAllowances[allowanceName] || 0;
+  });
+
+  row['TOTAL GROSS SALARY'] = payslip.earnings.grossSalary || 0;
+
+  // Attendance
+  row['Month Days'] = payslip.attendance?.monthDays || payslip.attendance?.totalDaysInMonth || 0;
+  row['Present Days'] = payslip.attendance?.presentDays || 0;
+  row['Week Offs'] = payslip.attendance?.weeklyOffs || 0;
+  row['Paid Leaves'] = payslip.attendance?.paidLeaveDays || 0;
+  row['OD Days'] = payslip.attendance?.odDays || 0;
+  row['Absents'] = payslip.attendance?.absentDays || 0;
+  row['LOP\'s'] = 0;
+  row['Payable Shifts'] = payslip.attendance?.payableShifts || 0;
+  row['Extra Days'] = payslip.attendance?.extraDays || 0;
+  row['Total Paid Days'] = payslip.attendance?.totalPaidDays || 0;
+
+  // Net earnings
+  row['Net Basic'] = payslip.attendance?.earnedSalary || payslip.earnings.earnedSalary || 0;
+
+  // Add ALL net allowance columns (with 0 if employee doesn't have it)
+  allAllowanceNames.forEach(allowanceName => {
+    row[`Net ${allowanceName}`] = employeeAllowances[allowanceName] || 0;
+  });
+
+  row['Total Earnings'] = (payslip.attendance?.earnedSalary || 0) + (payslip.earnings.totalAllowances || 0);
+
+  // Create a map of employee's deductions for quick lookup
+  const employeeDeductions = {};
+  if (Array.isArray(payslip.deductions?.otherDeductions)) {
+    payslip.deductions.otherDeductions.forEach(deduction => {
+      employeeDeductions[deduction.name] = deduction.amount || 0;
+    });
+  }
+
+  // Add ALL deduction columns (with 0 if employee doesn't have it)
+  allDeductionNames.forEach(deductionName => {
+    row[deductionName] = employeeDeductions[deductionName] || 0;
+  });
+
+  row['Fines'] = 0;
+  row['Salary Advance'] = payslip.loanAdvance?.advanceDeduction || 0;
+  row['Total Deductions'] = payslip.deductions?.totalDeductions || 0;
+
+  // OT & Incentives
+  row['OT Days'] = payslip.attendance?.otDays || 0;
+  row['OT Hours'] = payslip.attendance?.otHours || 0;
+  row['OT Amount'] = payslip.earnings?.otPay || 0;
+  row['Incentives'] = payslip.earnings?.incentive || 0;
+  row['Other Amount'] = 0;
+  row['Total Other Earnings'] = (payslip.earnings?.otPay || 0) + (payslip.earnings?.incentive || 0);
+
+  // Arrears
+  row['Arrears'] = payslip.arrears?.arrearsAmount || 0;
+
+  // Final
+  row['NET SALARY'] = payslip.netSalary || 0;
+  row['Round Off'] = 0;
+  row['FINAL SALARY'] = Math.round(payslip.netSalary || 0);
+
+  return row;
+}
+
+/**
+ * Build Excel row for single payslip (backward compatibility)
+ */
 function buildPayslipExcelRows(payslip) {
-  return [
-    {
-      Month: payslip.month,
-      Employee: payslip.employee.name,
-      EmpNo: payslip.employee.emp_no,
-      Department: payslip.employee.department,
-      Designation: payslip.employee.designation,
-      MonthDays: payslip.attendance.monthDays,
-      PresentDays: payslip.attendance.presentDays,
-      PaidLeaveDays: payslip.attendance.paidLeaveDays,
-      ODDays: payslip.attendance.odDays,
-      IncentiveDays: payslip.attendance.incentiveDays,
-      PayableShifts: payslip.attendance.payableShifts,
-      OTHours: payslip.attendance.otHours,
-      BasicPay: payslip.earnings.basicPay,
-      PerDay: payslip.earnings.perDay,
-      EarnedSalary: payslip.earnings.earnedSalary,
-      PaidLeaveSalary: payslip.earnings.paidLeaveSalary,
-      ODSalary: payslip.earnings.odSalary,
-      Incentive: payslip.earnings.incentive,
-      OTPay: payslip.earnings.otPay,
-      TotalAllowances: payslip.earnings.totalAllowances,
-      Arrears: payslip.arrears?.arrearsAmount || 0, // Add arrears column before gross salary
-      GrossSalary: payslip.earnings.grossSalary,
-      AttendanceDeduction: payslip.deductions.attendanceDeduction,
-      PermissionDeduction: payslip.deductions.permissionDeduction,
-      LeaveDeduction: payslip.deductions.leaveDeduction,
-      OtherDeductions: payslip.deductions.totalOtherDeductions,
-      TotalDeductions: payslip.deductions.totalDeductions,
-      EMI: payslip.loanAdvance.totalEMI,
-      AdvanceDeduction: payslip.loanAdvance.advanceDeduction,
-      NetSalary: payslip.netSalary,
-      Status: payslip.status,
-      AllowancesBreakdown: Array.isArray(payslip.earnings.allowances)
-        ? JSON.stringify(payslip.earnings.allowances)
-        : '',
-      OtherDeductionsBreakdown: Array.isArray(payslip.deductions.otherDeductions)
-        ? JSON.stringify(payslip.deductions.otherDeductions)
-        : '',
-    },
-  ];
+  // For single payslip export, collect allowances/deductions from that payslip only
+  const allAllowanceNames = new Set();
+  const allDeductionNames = new Set();
+
+  if (Array.isArray(payslip.earnings?.allowances)) {
+    payslip.earnings.allowances.forEach(a => allAllowanceNames.add(a.name));
+  }
+  if (Array.isArray(payslip.deductions?.otherDeductions)) {
+    payslip.deductions.otherDeductions.forEach(d => allDeductionNames.add(d.name));
+  }
+
+  return [buildPayslipExcelRowsNormalized(payslip, allAllowanceNames, allDeductionNames, 1)];
+}
+
+// OLD FUNCTION (kept for reference, not used)
+function buildPayslipExcelRowsOld(payslip) {
+  // Build row with dynamic allowances and deductions
+  const row = {
+    // Employee Information
+    'S.No': '', // Will be added during loop
+    'Employee Code': payslip.employee.emp_no || '',
+    'Name': payslip.employee.name || '',
+    'Designation': payslip.employee.designation || '',
+    'Department': payslip.employee.department || '',
+    'Division': '', // Add if available in future
+    
+    // Basic Salary
+    'BASIC': payslip.earnings.basicPay || 0,
+  };
+
+  // ===== DYNAMIC ALLOWANCES (Gross) =====
+  // Add each allowance as a separate column (e.g., "DA", "HRA", "CONV", etc.)
+  if (Array.isArray(payslip.earnings.allowances)) {
+    payslip.earnings.allowances.forEach(allowance => {
+      const columnName = allowance.name || 'Unknown Allowance';
+      row[columnName] = allowance.amount || 0;
+    });
+  }
+
+  // Total Gross Salary
+  row['TOTAL GROSS SALARY'] = payslip.earnings.grossSalary || 0;
+
+  // ===== ATTENDANCE BREAKDOWN =====
+  row['Month Days'] = payslip.attendance?.monthDays || payslip.attendance?.totalDaysInMonth || 0;
+  row['Present Days'] = payslip.attendance?.presentDays || 0;
+  row['Week Offs'] = payslip.attendance?.weeklyOffs || 0;
+  row['Paid Leaves'] = payslip.attendance?.paidLeaveDays || 0;
+  row['OD Days'] = payslip.attendance?.odDays || 0;
+  row['Absents'] = payslip.attendance?.absentDays || 0;
+  row['LOP\'s'] = 0; // Loss of Pay - can be calculated if needed
+  row['Payable Shifts'] = payslip.attendance?.payableShifts || 0;
+  row['Extra Days'] = payslip.attendance?.extraDays || 0;
+  row['Total Paid Days'] = payslip.attendance?.totalPaidDays || 0;
+
+  // ===== NET EARNINGS (Based on Attendance) =====
+  row['Net Basic'] = payslip.attendance?.earnedSalary || payslip.earnings.earnedSalary || 0;
+  
+  // Add Net Allowances (same as gross allowances in most cases, but can be prorated)
+  if (Array.isArray(payslip.earnings.allowances)) {
+    payslip.earnings.allowances.forEach(allowance => {
+      const netColumnName = `Net ${allowance.name}`;
+      row[netColumnName] = allowance.amount || 0;
+    });
+  }
+
+  row['Total Earnings'] = (payslip.attendance?.earnedSalary || 0) + (payslip.earnings.totalAllowances || 0);
+
+  // ===== DYNAMIC DEDUCTIONS =====
+  // Add each deduction as a separate column (e.g., "PF", "ESI", "Prof.Tax", etc.)
+  if (Array.isArray(payslip.deductions?.otherDeductions)) {
+    payslip.deductions.otherDeductions.forEach(deduction => {
+      const columnName = deduction.name || 'Unknown Deduction';
+      row[columnName] = deduction.amount || 0;
+    });
+  }
+
+  // Other standard deductions
+  row['Fines'] = 0; // Add if available
+  row['Salary Advance'] = payslip.loanAdvance?.advanceDeduction || 0;
+  row['Total Deductions'] = payslip.deductions?.totalDeductions || 0;
+
+  // ===== OT & INCENTIVES =====
+  row['OT Days'] = payslip.attendance?.otDays || 0;
+  row['OT Hours'] = payslip.attendance?.otHours || 0;
+  row['OT Amount'] = payslip.earnings?.otPay || 0;
+  row['Incentives'] = payslip.earnings?.incentive || 0;
+  row['Other Amount'] = 0; // Add if available
+  row['Total Other Earnings'] = (payslip.earnings?.otPay || 0) + (payslip.earnings?.incentive || 0);
+
+  // ===== ARREARS =====
+  row['Arrears'] = payslip.arrears?.arrearsAmount || 0;
+
+  // ===== FINAL SALARY =====
+  row['NET SALARY'] = payslip.netSalary || 0;
+  row['Round Off'] = 0; // Add rounding logic if needed
+  row['FINAL SALARY'] = Math.round(payslip.netSalary || 0);
+
+  return [row];
 }
 
 exports.calculatePayroll = async (req, res) => {
@@ -318,22 +478,49 @@ exports.exportPayrollExcel = async (req, res) => {
       });
     }
 
-    const rows = [];
+    // Step 1: Build all payslips
+    const payslips = [];
     for (const pr of payrollRecords) {
       try {
         const { payslip } = await buildPayslipData(pr.employeeId, pr.month);
-        rows.push(...buildPayslipExcelRows(payslip));
+        payslips.push(payslip);
       } catch (err) {
         console.error('Error building payslip for export:', err);
       }
     }
 
-    if (rows.length === 0) {
+    if (payslips.length === 0) {
       return res.status(404).json({
         success: false,
         message: 'No payslip data available to export.',
       });
     }
+
+    // Step 2: Collect ALL unique allowances and deductions across all employees
+    const allAllowanceNames = new Set();
+    const allDeductionNames = new Set();
+
+    payslips.forEach(payslip => {
+      if (Array.isArray(payslip.earnings?.allowances)) {
+        payslip.earnings.allowances.forEach(allowance => {
+          if (allowance.name) allAllowanceNames.add(allowance.name);
+        });
+      }
+      if (Array.isArray(payslip.deductions?.otherDeductions)) {
+        payslip.deductions.otherDeductions.forEach(deduction => {
+          if (deduction.name) allDeductionNames.add(deduction.name);
+        });
+      }
+    });
+
+    console.log(`\n📊 Excel Export: Found ${allAllowanceNames.size} unique allowances and ${allDeductionNames.size} unique deductions`);
+    console.log(`Allowances: ${Array.from(allAllowanceNames).join(', ')}`);
+    console.log(`Deductions: ${Array.from(allDeductionNames).join(', ')}\n`);
+
+    // Step 3: Build rows with normalized columns (all employees have same columns)
+    const rows = payslips.map((payslip, index) => 
+      buildPayslipExcelRowsNormalized(payslip, allAllowanceNames, allDeductionNames, index + 1)
+    );
 
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.json_to_sheet(rows);
@@ -352,6 +539,50 @@ exports.exportPayrollExcel = async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message || 'Error exporting payroll',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * @desc    Get payroll record by ID
+ * @route   GET /api/payroll/record/:id
+ * @access  Private
+ */
+exports.getPayrollRecordById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const payrollRecord = await PayrollRecord.findById(id)
+      .populate({
+        path: 'employeeId',
+        select: 'employee_name emp_no location bank_account_no pf_number esi_number uan_number pan_number',
+        populate: [
+          { path: 'department_id', select: 'name' },
+          { path: 'designation_id', select: 'name' }
+        ]
+      })
+      .populate('attendanceSummaryId')
+      .populate('calculatedBy', 'name email')
+      .populate('approvedBy', 'name email')
+      .populate('processedBy', 'name email');
+
+    if (!payrollRecord) {
+      return res.status(404).json({
+        success: false,
+        message: 'Payroll record not found',
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: payrollRecord,
+    });
+  } catch (error) {
+    console.error('Error fetching payroll record by ID:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error fetching payroll record',
       error: error.message,
     });
   }
