@@ -4,6 +4,7 @@
  */
 
 const AttendanceRawLog = require('../model/AttendanceRawLog');
+const AttendanceDaily = require('../model/AttendanceDaily');
 const Employee = require('../../employees/model/Employee');
 const Shift = require('../../shifts/model/Shift');
 const Leave = require('../../leaves/model/Leave');
