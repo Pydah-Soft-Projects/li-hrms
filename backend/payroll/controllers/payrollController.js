@@ -289,7 +289,7 @@ function buildPayslipExcelRowsOld(payslip) {
     'Designation': payslip.employee.designation || '',
     'Department': payslip.employee.department || '',
     'Division': '', // Add if available in future
-    
+
     // Basic Salary
     'BASIC': payslip.earnings.basicPay || 0,
   };
@@ -320,7 +320,7 @@ function buildPayslipExcelRowsOld(payslip) {
 
   // ===== NET EARNINGS (Based on Attendance) =====
   row['Net Basic'] = payslip.attendance?.earnedSalary || payslip.earnings.earnedSalary || 0;
-  
+
   // Add Net Allowances (same as gross allowances in most cases, but can be prorated)
   if (Array.isArray(payslip.earnings.allowances)) {
     payslip.earnings.allowances.forEach(allowance => {
@@ -518,7 +518,7 @@ exports.exportPayrollExcel = async (req, res) => {
     console.log(`Deductions: ${Array.from(allDeductionNames).join(', ')}\n`);
 
     // Step 3: Build rows with normalized columns (all employees have same columns)
-    const rows = payslips.map((payslip, index) => 
+    const rows = payslips.map((payslip, index) =>
       buildPayslipExcelRowsNormalized(payslip, allAllowanceNames, allDeductionNames, index + 1)
     );
 
@@ -552,22 +552,24 @@ exports.exportPayrollExcel = async (req, res) => {
 exports.getPayrollRecordById = async (req, res) => {
   try {
     const { id } = req.params;
+    console.log(`[GET /payroll/record/${id}] Fetching payroll record...`);
 
     const payrollRecord = await PayrollRecord.findById(id)
       .populate({
         path: 'employeeId',
-        select: 'employee_name emp_no location bank_account_no pf_number esi_number uan_number pan_number',
+        select: 'employee_name emp_no department_id designation_id location bank_account_no pf_number esi_number uan_number pan_number',
         populate: [
           { path: 'department_id', select: 'name' },
           { path: 'designation_id', select: 'name' }
         ]
       })
       .populate('attendanceSummaryId')
-      .populate('calculatedBy', 'name email')
+      .populate('calculationMetadata.calculatedBy', 'name email')
       .populate('approvedBy', 'name email')
       .populate('processedBy', 'name email');
 
     if (!payrollRecord) {
+      console.warn(`[GET /payroll/record/${id}] Payroll record NOT FOUND in database`);
       return res.status(404).json({
         success: false,
         message: 'Payroll record not found',
@@ -608,9 +610,16 @@ exports.getPayrollRecord = async (req, res) => {
       employeeId,
       month,
     })
-      .populate('employeeId', 'employee_name emp_no department_id designation_id')
+      .populate({
+        path: 'employeeId',
+        select: 'employee_name emp_no department_id designation_id location bank_account_no pf_number esi_number',
+        populate: [
+          { path: 'department_id', select: 'name' },
+          { path: 'designation_id', select: 'name' }
+        ]
+      })
       .populate('attendanceSummaryId')
-      .populate('calculatedBy', 'name email')
+      .populate('calculationMetadata.calculatedBy', 'name email')
       .populate('approvedBy', 'name email')
       .populate('processedBy', 'name email');
 
@@ -680,7 +689,14 @@ exports.getPayrollRecords = async (req, res) => {
     }
 
     const payrollRecords = await PayrollRecord.find(query)
-      .populate('employeeId', 'employee_name emp_no department_id designation_id')
+      .populate({
+        path: 'employeeId',
+        select: 'employee_name emp_no department_id designation_id location bank_account_no pf_number esi_number',
+        populate: [
+          { path: 'department_id', select: 'name' },
+          { path: 'designation_id', select: 'name' }
+        ]
+      })
       .sort({ month: -1, emp_no: 1 })
       .limit(1000); // Limit to prevent large queries
 
@@ -935,7 +951,14 @@ exports.getPayrollTransactionsWithAnalytics = async (req, res) => {
 
     // Get all payroll records for the month
     const payrollRecords = await PayrollRecord.find(payrollQuery)
-      .populate('employeeId', 'employee_name emp_no department_id designation_id')
+      .populate({
+        path: 'employeeId',
+        select: 'employee_name emp_no department_id designation_id pf_number esi_number',
+        populate: [
+          { path: 'department_id', select: 'name' },
+          { path: 'designation_id', select: 'name' }
+        ]
+      })
       .select('_id employeeId emp_no month');
 
     const payrollRecordIds = payrollRecords.map((record) => record._id);

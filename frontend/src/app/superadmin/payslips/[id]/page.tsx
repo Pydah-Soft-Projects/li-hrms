@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 
 interface PayrollRecord {
   _id: string;
@@ -67,6 +67,7 @@ interface PayrollRecord {
   netSalary: number;
   status: string;
   arrearsAmount?: number;
+  roundOff?: number;
 }
 
 export default function PayslipDetailPage() {
@@ -77,6 +78,7 @@ export default function PayslipDetailPage() {
   const [loading, setLoading] = useState(true);
   const [payroll, setPayroll] = useState<PayrollRecord | null>(null);
   const [generatingPDF, setGeneratingPDF] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (payrollId) {
@@ -86,16 +88,22 @@ export default function PayslipDetailPage() {
 
   const fetchPayrollDetail = async () => {
     setLoading(true);
+    setError(null);
     try {
+      console.log('Fetching payroll with ID:', payrollId);
       const response = await api.getPayrollById(payrollId);
+      console.log('Fetch Response:', response);
       if (response.success) {
         setPayroll(response.data);
       } else {
-        toast.error('Failed to fetch payslip details');
+        console.warn('Payslip not found or API error:', response.message);
+        setError(response.message || 'Payslip not found');
+        toast.error('Failed to fetch payslip details: ' + (response.message || 'Not found'));
       }
-    } catch (error: any) {
-      console.error('Error fetching payslip:', error);
-      toast.error(error.message || 'Failed to fetch payslip details');
+    } catch (err: any) {
+      console.error('Error fetching payslip:', err);
+      setError(err.message || 'Network error occurred');
+      toast.error(err.message || 'Failed to fetch payslip details');
     } finally {
       setLoading(false);
     }
@@ -139,9 +147,12 @@ export default function PayslipDetailPage() {
       doc.setFontSize(10);
       doc.setFont('helvetica', 'normal');
 
+      const getDept = (dept: any) => typeof dept === 'object' ? dept.name : (dept || 'N/A');
+      const getDesig = (desig: any) => typeof desig === 'object' ? desig.name : (desig || 'N/A');
+
       const employeeInfo = [
         ['Employee Code:', employee.emp_no, 'Name:', employee.employee_name],
-        ['Department:', employee.department_id.name, 'Designation:', employee.designation_id.name],
+        ['Department:', getDept(employee.department_id), 'Designation:', getDesig(employee.designation_id)],
         ['Location:', employee.location || 'N/A', 'Bank Account:', employee.bank_account_no || 'N/A'],
         ['PF Number:', employee.pf_number || 'N/A', 'ESI Number:', employee.esi_number || 'N/A'],
         ['UAN Number:', employee.uan_number || 'N/A', 'PAN Number:', employee.pan_number || 'N/A'],
@@ -183,7 +194,8 @@ export default function PayslipDetailPage() {
         ['OT Days', payroll.attendance?.otDays || 0],
       ];
 
-      (doc as any).autoTable({
+      // Corrected autoTable call for attendanceData
+      autoTable(doc, {
         startY: yPos,
         head: [['Attendance Type', 'Count']],
         body: attendanceData,
@@ -196,6 +208,13 @@ export default function PayslipDetailPage() {
         },
         margin: { left: 14, right: pageWidth / 2 + 5 }
       });
+
+      // "PRIVATE & CONFIDENTIAL" text - placed after the main header but before employee info
+      doc.setTextColor(41, 128, 185);
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.text('PRIVATE & CONFIDENTIAL', pageWidth / 2, 40, { align: 'center' });
+      doc.setTextColor(0, 0, 0); // Reset color
 
       // ===== SALARY BREAKDOWN =====
       yPos = (doc as any).lastAutoTable.finalY + 10;
@@ -217,7 +236,7 @@ export default function PayslipDetailPage() {
         ['Arrears', `₹ ${(payroll.arrearsAmount || 0).toFixed(2)}`],
       ];
 
-      (doc as any).autoTable({
+      autoTable(doc, {
         startY: yPos,
         head: [['EARNINGS', 'Amount']],
         body: earningsData,
@@ -243,7 +262,7 @@ export default function PayslipDetailPage() {
         ['Advance Deduction', `₹ ${payroll.loanAdvance.advanceDeduction.toFixed(2)}`],
       ];
 
-      (doc as any).autoTable({
+      autoTable(doc, {
         startY: yPos,
         head: [['DEDUCTIONS', 'Amount']],
         body: deductionsData,
@@ -261,7 +280,16 @@ export default function PayslipDetailPage() {
 
       // ===== NET SALARY =====
       const finalY = Math.max((doc as any).lastAutoTable.finalY, yPos + 100);
-      yPos = finalY + 15;
+      yPos = finalY + 5;
+
+      // Round Off display in PDF
+      if (payroll.roundOff !== undefined && payroll.roundOff !== 0) {
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.text('Round Off:', 14, yPos);
+        doc.text(`₹ ${payroll.roundOff.toFixed(2)}`, pageWidth - 14, yPos, { align: 'right' });
+        yPos += 8;
+      }
 
       doc.setFillColor(41, 128, 185);
       doc.rect(10, yPos - 8, pageWidth - 20, 18, 'F');
@@ -305,13 +333,17 @@ export default function PayslipDetailPage() {
   if (!payroll) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-slate-600 dark:text-slate-300 mb-4">Payslip not found</p>
+        <div className="text-center bg-white dark:bg-slate-800 p-8 rounded-xl shadow-xl max-w-md w-full mx-4">
+          <div className="text-red-500 text-6xl mb-4">⚠️</div>
+          <h1 className="text-2xl font-bold text-slate-800 dark:text-white mb-2">Payslip Not Found</h1>
+          <p className="text-slate-600 dark:text-slate-300 mb-6">
+            {error || "The requested payslip record could not be found or you don't have permission to view it."}
+          </p>
           <button
             onClick={() => router.push('/superadmin/payslips')}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-lg font-medium"
           >
-            Back to Payslips
+            Back to Payslips List
           </button>
         </div>
       </div>
@@ -384,11 +416,15 @@ export default function PayslipDetailPage() {
             </div>
             <div className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-700">
               <span className="font-semibold text-slate-600 dark:text-slate-400">Department:</span>
-              <span className="text-slate-800 dark:text-white">{employee.department_id.name}</span>
+              <span className="text-slate-800 dark:text-white">
+                {typeof employee.department_id === 'object' ? employee.department_id.name : (employee.department_id || 'N/A')}
+              </span>
             </div>
             <div className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-700">
               <span className="font-semibold text-slate-600 dark:text-slate-400">Designation:</span>
-              <span className="text-slate-800 dark:text-white">{employee.designation_id.name}</span>
+              <span className="text-slate-800 dark:text-white">
+                {typeof employee.designation_id === 'object' ? employee.designation_id.name : (employee.designation_id || 'N/A')}
+              </span>
             </div>
             <div className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-700">
               <span className="font-semibold text-slate-600 dark:text-slate-400">Location:</span>
@@ -442,7 +478,7 @@ export default function PayslipDetailPage() {
         {/* Salary Breakdown */}
         <div className="bg-white dark:bg-slate-800 p-6 border border-slate-200 dark:border-slate-700">
           <h2 className="text-xl font-bold text-slate-800 dark:text-white mb-4">Salary Breakdown</h2>
-          
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Earnings */}
             <div>
@@ -544,20 +580,27 @@ export default function PayslipDetailPage() {
 
         {/* Net Salary */}
         <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-b-xl p-6 shadow-lg">
-          <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-bold">NET SALARY (Take Home)</h2>
-            <p className="text-4xl font-bold">₹{payroll.netSalary.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+          <div className="space-y-2">
+            {payroll.roundOff !== undefined && payroll.roundOff !== 0 && (
+              <div className="flex items-center justify-between text-blue-100 text-sm">
+                <span>Round Off</span>
+                <span>₹{payroll.roundOff.toFixed(2)}</span>
+              </div>
+            )}
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-bold">NET SALARY (Take Home)</h2>
+              <p className="text-4xl font-bold">₹{payroll.netSalary.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+            </div>
           </div>
           <p className="text-blue-100 text-sm mt-2">This is a computer-generated payslip</p>
         </div>
 
         {/* Status Badge */}
         <div className="mt-6 text-center">
-          <span className={`inline-block px-6 py-2 rounded-full text-sm font-semibold ${
-            payroll.status === 'processed' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+          <span className={`inline-block px-6 py-2 rounded-full text-sm font-semibold ${payroll.status === 'processed' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
             payroll.status === 'approved' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
-            'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
-          }`}>
+              'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
+            }`}>
             Status: {payroll.status.toUpperCase()}
           </span>
         </div>

@@ -38,43 +38,43 @@ const normalizeOverrides = (list, fallbackCategory) => {
     .filter(ov => {
       // Skip null/undefined items
       if (!ov) return false;
-      
+
       // Ensure we have either masterId or name
       if (!ov.masterId && !ov.name) {
         console.warn('[Payroll] Override missing both masterId and name, skipping:', ov);
         return false;
       }
-      
+
       return true;
     })
     .map((ov) => {
       // Create a clean copy of the override
       const override = { ...ov };
-      
+
       // Ensure category is set
       override.category = override.category || fallbackCategory;
-      
+
       // Handle amount/overrideAmount normalization
       if (override.amount === undefined || override.amount === null) {
-        override.amount = (override.overrideAmount !== undefined && override.overrideAmount !== null) 
-          ? override.overrideAmount 
+        override.amount = (override.overrideAmount !== undefined && override.overrideAmount !== null)
+          ? override.overrideAmount
           : 0;
       }
-      
+
       // Ensure amount is a valid number
       if (typeof override.amount === 'string') {
         override.amount = parseFloat(override.amount) || 0;
       } else if (typeof override.amount !== 'number') {
         override.amount = 0;
       }
-      
+
       // Clean up any undefined values
       Object.keys(override).forEach(key => {
         if (override[key] === undefined) {
           delete override[key];
         }
       });
-      
+
       return override;
     });
 };
@@ -723,6 +723,21 @@ async function calculatePayroll(employeeId, month, userId) {
       console.error('Error auto-processing arrears:', arrErr);
     }
 
+    // Step 12.8: Final Net Salary Round-Off
+    const exactNetSalary = payrollRecord.get('netSalary') || 0;
+    const roundedNetSalary = Math.ceil(exactNetSalary);
+    const roundOffValue = Number((roundedNetSalary - exactNetSalary).toFixed(2));
+
+    payrollRecord.set('netSalary', roundedNetSalary);
+    payrollRecord.set('roundOff', roundOffValue);
+    payrollRecord.markModified('netSalary');
+    payrollRecord.markModified('roundOff');
+
+    console.log(`\nFinal Round-Off Applied:`);
+    console.log(`  Exact Net: ${exactNetSalary}`);
+    console.log(`  Rounded Net: ${roundedNetSalary}`);
+    console.log(`  Round-off Value: ${roundOffValue}`);
+
     // Save the document
     console.log('\nSaving payroll record to database...');
     await payrollRecord.save();
@@ -846,7 +861,7 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
 
     // ===== NEW ROBUST CALCULATION LOGIC =====
     console.log('\n========== PAYROLL CALCULATION START ==========');
-    
+
     // Step 1: Get attendance data
     const monthDays = attendanceSummary.totalDaysInMonth;
     const holidays = attendanceSummary.holidays || 0;
@@ -877,7 +892,7 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
 
     // Step 2: Calculate Absent Days
     // Formula: Absent Days = Month Days - Present - Week Offs - Holidays - Paid Leaves - OD
-    const absentDays = Math.max(0, monthDays - presentDays - weeklyOffs - holidays - paidLeaveDays - odDays);
+    let absentDays = Math.max(0, monthDays - presentDays - weeklyOffs - holidays - paidLeaveDays - odDays);
     console.log(`  Absent Days (Calculated): ${absentDays}`);
 
     // Step 3: Validate Days Formula
@@ -886,7 +901,7 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     console.log(`\nDays Validation:`);
     console.log(`  Calculated Total: ${calculatedTotal}`);
     console.log(`  Month Days: ${monthDays}`);
-    
+
     if (calculatedTotal !== monthDays) {
       console.warn(`⚠️  WARNING: Days mismatch! ${calculatedTotal} vs ${monthDays}`);
       console.warn(`  Breakdown: ${presentDays} + ${weeklyOffs} + ${paidLeaveDays} + ${odDays} + ${absentDays} + ${holidays} = ${calculatedTotal}`);
@@ -904,18 +919,18 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     // Formula: Total Paid Days = Present + Week Offs + Paid Leave + Extra + OD
     // Note: Week offs inclusion can be made configurable per department if needed
     const includeWeekOffsInPaid = true; // Make this configurable if needed
-    const totalPaidDays = presentDays + 
-                          (includeWeekOffsInPaid ? weeklyOffs : 0) + 
-                          paidLeaveDays + 
-                          extraDays + 
-                          odDays;
+    const totalPaidDays = presentDays +
+      (includeWeekOffsInPaid ? weeklyOffs : 0) +
+      paidLeaveDays +
+      extraDays +
+      odDays;
     console.log(`\nTotal Paid Days Calculation:`);
     console.log(`  Total Paid Days = ${presentDays} + ${weeklyOffs} + ${paidLeaveDays} + ${extraDays} + ${odDays} = ${totalPaidDays}`);
 
     // Step 6: Calculate Working Days and Per Day Salary
     const workingDays = monthDays - holidays - weeklyOffs;
     if (workingDays <= 0) throw new Error('Working days computed as zero or negative');
-    
+
     const basicPay = employee.gross_salary;
     const perDaySalary = basicPay / workingDays;
     console.log(`\nSalary Calculation:`);
@@ -949,7 +964,7 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
 
     // Get includeMissing setting (whether to include non-overridden base items)
     const includeMissing = await getIncludeMissingFlag(departmentId);
-    
+
     // Log the setting for debugging
     console.log(`[Payroll] Include missing allowances/deductions: ${includeMissing}`);
     console.log(`[Payroll] Employee ID: ${employee._id}, Department: ${departmentId}`);
@@ -994,14 +1009,14 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
         try {
           const baseAmount = allowance.base === 'BASIC_PAY' ? earnedSalary : grossAmountSalary;
           const amount = allowanceService.calculateAllowanceAmount(allowance, baseAmount, grossAmountSalary, attendanceData);
-          
+
           if (isNaN(amount)) {
             console.error(`[Payroll] Invalid allowance amount for ${allowance.name}:`, allowance);
             return null;
           }
-          
+
           totalAllowances += amount;
-          
+
           return {
             name: allowance.name,
             code: allowance.code || allowance.name.replace(/\s+/g, '_').toUpperCase(),
@@ -1037,14 +1052,14 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
         try {
           const baseAmount = deduction.base === 'BASIC_PAY' ? earnedSalary : grossAmountSalary;
           const amount = deductionService.calculateDeductionAmount(deduction, baseAmount, grossAmountSalary, attendanceData);
-          
+
           if (isNaN(amount)) {
             console.error(`[Payroll] Invalid deduction amount for ${deduction.name}:`, deduction);
             return null;
           }
-          
+
           totalDeductions += amount;
-          
+
           return {
             name: deduction.name,
             code: deduction.code || deduction.name.replace(/\s+/g, '_').toUpperCase(),
@@ -1064,7 +1079,7 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
 
     // Absent deduction
     let absentDeductionAmount = 0;
-    let absentDays = workingDays - presentDays - totalLeaveDays - odDays;
+    absentDays = workingDays - presentDays - totalLeaveDays - odDays;
     if (absentDays < 0) absentDays = 0;
     const absentSettings = await getAbsentDeductionSettings(departmentId);
     if (absentSettings.enableAbsentDeduction) {
@@ -1230,6 +1245,21 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
         // Just log the error and continue
       }
     }
+
+    // Final Net Salary Round-Off
+    const exactNetValue = payrollRecord.get('netSalary') || 0;
+    const roundedNetValue = Math.ceil(exactNetValue);
+    const roundOffAmt = Number((roundedNetValue - exactNetValue).toFixed(2));
+
+    payrollRecord.set('netSalary', roundedNetValue);
+    payrollRecord.set('roundOff', roundOffAmt);
+    payrollRecord.markModified('netSalary');
+    payrollRecord.markModified('roundOff');
+
+    console.log(`\nFinal Round-Off Applied (New Flow):`);
+    console.log(`  Exact Net: ${exactNetValue}`);
+    console.log(`  Rounded Net: ${roundedNetValue}`);
+    console.log(`  Round-off Value: ${roundOffAmt}`);
 
     await payrollRecord.save();
 

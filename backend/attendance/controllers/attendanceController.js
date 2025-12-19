@@ -3,7 +3,6 @@
  * Handles attendance data retrieval and display
  */
 
-const AttendanceDaily = require('../model/AttendanceDaily');
 const AttendanceRawLog = require('../model/AttendanceRawLog');
 const Employee = require('../../employees/model/Employee');
 const Shift = require('../../shifts/model/Shift');
@@ -48,7 +47,7 @@ exports.getAttendanceCalendar = async (req, res) => {
 
     // Get employee to fetch leaves and ODs
     const employee = await Employee.findOne({ emp_no: employeeNumber.toUpperCase(), is_active: { $ne: false } });
-    
+
     // Fetch attendance records for the month
     const records = await AttendanceDaily.find({
       employeeNumber: employeeNumber.toUpperCase(),
@@ -94,7 +93,7 @@ exports.getAttendanceCalendar = async (req, res) => {
       const leaveEnd = new Date(leave.toDate);
       leaveStart.setHours(0, 0, 0, 0);
       leaveEnd.setHours(23, 59, 59, 999);
-      
+
       let currentDate = new Date(leaveStart);
       let dayCounter = 1;
       while (currentDate <= leaveEnd) {
@@ -113,7 +112,7 @@ exports.getAttendanceCalendar = async (req, res) => {
             approvedBy = leave.approvals.hod.approvedBy;
             approvedAt = leave.approvals.hod.approvedAt;
           }
-          
+
           leaveMap[dateStr] = {
             leaveId: leave._id,
             leaveType: leave.leaveType,
@@ -143,7 +142,7 @@ exports.getAttendanceCalendar = async (req, res) => {
       const odEnd = new Date(od.toDate);
       odStart.setHours(0, 0, 0, 0);
       odEnd.setHours(23, 59, 59, 999);
-      
+
       let currentDate = new Date(odStart);
       let dayCounter = 1;
       while (currentDate <= odEnd) {
@@ -162,7 +161,7 @@ exports.getAttendanceCalendar = async (req, res) => {
             approvedBy = od.approvals.hod.approvedBy;
             approvedAt = od.approvals.hod.approvedAt;
           }
-          
+
           odMap[dateStr] = {
             odId: od._id,
             odType: od.odType,
@@ -202,7 +201,7 @@ exports.getAttendanceCalendar = async (req, res) => {
       const odIsHourBased = odInfo?.odType_extended === 'hours';
       const odIsHalfDay = odInfo?.odType_extended === 'half_day' || odInfo?.isHalfDay;
       const isConflict = (hasLeave || (hasOD && !odIsHourBased && !odIsHalfDay)) && hasAttendance;
-      
+
       attendanceMap[record.date] = {
         date: record.date,
         inTime: record.inTime,
@@ -532,7 +531,7 @@ exports.getMonthlyAttendance = async (req, res) => {
       // Reset time to avoid timezone issues
       leaveStart.setHours(0, 0, 0, 0);
       leaveEnd.setHours(23, 59, 59, 999);
-      
+
       // Iterate through all dates in the leave range
       let currentDate = new Date(leaveStart);
       while (currentDate <= leaveEnd) {
@@ -562,7 +561,7 @@ exports.getMonthlyAttendance = async (req, res) => {
       // Reset time to avoid timezone issues
       odStart.setHours(0, 0, 0, 0);
       odEnd.setHours(23, 59, 59, 999);
-      
+
       // Iterate through all dates in the OD range
       let currentDate = new Date(odStart);
       let dayCounter = 1;
@@ -582,7 +581,7 @@ exports.getMonthlyAttendance = async (req, res) => {
             approvedBy = od.approvals.hod.approvedBy;
             approvedAt = od.approvals.hod.approvedAt;
           }
-          
+
           odMapByEmployee[empNo][dateStr] = {
             odId: od._id,
             odType: od.odType,
@@ -625,13 +624,13 @@ exports.getMonthlyAttendance = async (req, res) => {
     // This ensures real-time accuracy by cross-checking with actual leave/OD records
     const summaryMap = {};
     const summaryDataMap = {}; // Store full summary data for response
-    
+
     // Recalculate summaries for all employees in parallel to ensure accuracy
     const summaryPromises = employees.map(async (emp) => {
       try {
         // Always recalculate to ensure it's up to date with latest leaves/ODs
         const summary = await calculateMonthlySummary(emp._id, emp.emp_no, parseInt(year), parseInt(month));
-        
+
         // Verify the summary by cross-checking with actual leave/OD counts
         // Count leaves manually for verification
         let verifiedLeaveDays = 0;
@@ -644,7 +643,7 @@ exports.getMonthlyAttendance = async (req, res) => {
           const leaveEnd = new Date(leave.toDate);
           leaveStart.setHours(0, 0, 0, 0);
           leaveEnd.setHours(23, 59, 59, 999);
-          
+
           let currentDate = new Date(leaveStart);
           while (currentDate <= leaveEnd) {
             const currentYear = currentDate.getFullYear();
@@ -655,7 +654,7 @@ exports.getMonthlyAttendance = async (req, res) => {
             currentDate.setDate(currentDate.getDate() + 1);
           }
         }
-        
+
         // Count ODs manually for verification
         // IMPORTANT: Exclude hour-based ODs (they don't count as days)
         let verifiedODDays = 0;
@@ -668,12 +667,12 @@ exports.getMonthlyAttendance = async (req, res) => {
           if (od.odType_extended === 'hours') {
             continue;
           }
-          
+
           const odStart = new Date(od.fromDate);
           const odEnd = new Date(od.toDate);
           odStart.setHours(0, 0, 0, 0);
           odEnd.setHours(23, 59, 59, 999);
-          
+
           let currentDate = new Date(odStart);
           while (currentDate <= odEnd) {
             const currentYear = currentDate.getFullYear();
@@ -684,11 +683,11 @@ exports.getMonthlyAttendance = async (req, res) => {
             currentDate.setDate(currentDate.getDate() + 1);
           }
         }
-        
+
         // If verification shows different numbers, recalculate
         const verifiedLeaves = Math.round(verifiedLeaveDays * 10) / 10;
         const verifiedODs = Math.round(verifiedODDays * 10) / 10;
-        
+
         if (Math.abs(summary.totalLeaves - verifiedLeaves) > 0.1 || Math.abs(summary.totalODs - verifiedODs) > 0.1) {
           console.log(`Summary mismatch for ${emp.emp_no}: Recalculating...`);
           // Recalculate with verified counts
@@ -710,9 +709,9 @@ exports.getMonthlyAttendance = async (req, res) => {
           summary.totalPayableShifts = Math.round(totalPayableShifts * 100) / 100;
           await summary.save();
         }
-        
-        return { 
-          emp_no: emp.emp_no, 
+
+        return {
+          emp_no: emp.emp_no,
           payableShifts: summary.totalPayableShifts,
           summary: summary
         };
@@ -721,7 +720,7 @@ exports.getMonthlyAttendance = async (req, res) => {
         return { emp_no: emp.emp_no, payableShifts: 0, summary: null };
       }
     });
-    
+
     const summaryResults = await Promise.all(summaryPromises);
     summaryResults.forEach(result => {
       summaryMap[result.emp_no] = result.payableShifts;
@@ -733,7 +732,7 @@ exports.getMonthlyAttendance = async (req, res) => {
     // Build response with employees and their daily attendance
     const employeesWithAttendance = employees.map(emp => {
       const dailyAttendance = {};
-      
+
       // Create entries for all days of the month
       for (let day = 1; day <= daysInMonth; day++) {
         const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
@@ -747,7 +746,7 @@ exports.getMonthlyAttendance = async (req, res) => {
         const odIsHourBased = odInfo?.odType_extended === 'hours';
         const odIsHalfDay = odInfo?.odType_extended === 'half_day' || odInfo?.isHalfDay;
         const isConflict = (hasLeave || (hasOD && !odIsHourBased && !odIsHalfDay)) && hasAttendance;
-        
+
         dailyAttendance[dateStr] = record ? {
           date: record.date,
           status: record.status,
@@ -766,7 +765,7 @@ exports.getMonthlyAttendance = async (req, res) => {
           hasLeave: hasLeave,
           leaveInfo: leaveInfo,
           hasOD: hasOD,
-        odInfo: odInfo,
+          odInfo: odInfo,
           isConflict: isConflict,
         } : {
           date: dateStr,
@@ -774,7 +773,7 @@ exports.getMonthlyAttendance = async (req, res) => {
           hasLeave: hasLeave,
           leaveInfo: leaveInfo,
           hasOD: hasOD,
-        odInfo: odInfo,
+          odInfo: odInfo,
           isConflict: false,
         };
       }
@@ -829,6 +828,9 @@ exports.updateOutTime = async (req, res) => {
     const { employeeNumber, date } = req.params;
     const { outTime } = req.body;
 
+    const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
+    const { detectAndAssignShift } = require('../../shifts/services/shiftDetectionService');
+
     if (!outTime) {
       return res.status(400).json({
         success: false,
@@ -837,6 +839,7 @@ exports.updateOutTime = async (req, res) => {
     }
 
     // Get attendance record
+    const AttendanceDaily = require('../model/AttendanceDaily');
     const attendanceRecord = await AttendanceDaily.findOne({
       employeeNumber: employeeNumber.toUpperCase(),
       date: date,
@@ -872,15 +875,18 @@ exports.updateOutTime = async (req, res) => {
     const inTimeOnly = attendanceRecord.inTime.getHours() * 60 + attendanceRecord.inTime.getMinutes();
     const outTimeDateStr = outTimeDate.toDateString();
     const inTimeDateStr = attendanceRecord.inTime.toDateString();
-    
+
     // Get shift to check if it's overnight
     let isOvernightShift = false;
-    if (attendanceRecord.shiftId && typeof attendanceRecord.shiftId === 'object') {
+    if (attendanceRecord.shiftId &&
+      typeof attendanceRecord.shiftId === 'object' &&
+      attendanceRecord.shiftId.startTime &&
+      attendanceRecord.shiftId.endTime) {
       const [shiftStartHour] = attendanceRecord.shiftId.startTime.split(':').map(Number);
       const [shiftEndHour] = attendanceRecord.shiftId.endTime.split(':').map(Number);
       isOvernightShift = shiftStartHour >= 20 || (shiftEndHour < shiftStartHour);
     }
-    
+
     // If shift is overnight or out-time is earlier than in-time and on same date, it's next day
     if (isOvernightShift || (outTimeOnly < inTimeOnly && outTimeDateStr === inTimeDateStr)) {
       // For overnight shifts, out-time on the next day is expected
@@ -898,7 +904,6 @@ exports.updateOutTime = async (req, res) => {
     attendanceRecord.status = attendanceRecord.status === 'PARTIAL' ? 'PRESENT' : attendanceRecord.status;
 
     // Re-run shift detection with new outTime
-    const { detectAndAssignShift } = require('../../shifts/services/shiftDetectionService');
     const detectionResult = await detectAndAssignShift(
       employeeNumber.toUpperCase(),
       date,
@@ -913,6 +918,13 @@ exports.updateOutTime = async (req, res) => {
       attendanceRecord.isLateIn = detectionResult.isLateIn || false;
       attendanceRecord.isEarlyOut = detectionResult.isEarlyOut || false;
       attendanceRecord.expectedHours = detectionResult.expectedHours;
+
+      // Update roster tracking if rosterRecordId exists
+      if (detectionResult.rosterRecordId) {
+        await PreScheduledShift.findByIdAndUpdate(detectionResult.rosterRecordId, {
+          attendanceDailyId: attendanceRecord._id
+        });
+      }
     }
 
     // Check and resolve ConfusedShift if exists
@@ -935,15 +947,15 @@ exports.updateOutTime = async (req, res) => {
     // If out-time is on next day (for overnight shifts), ensure it's stored with correct date
     // The attendance record date should remain as the shift date (in-time date)
     // But out-time can be on the next day
-    
+
     await attendanceRecord.save();
 
     // If this is an overnight shift and out-time is on next day, ensure next day doesn't have duplicate
-    if (attendanceRecord.shiftId && typeof attendanceRecord.shiftId === 'object') {
+    if (attendanceRecord.shiftId && typeof attendanceRecord.shiftId === 'object' && attendanceRecord.shiftId.startTime) {
       const shift = attendanceRecord.shiftId;
       const [shiftStartHour] = shift.startTime.split(':').map(Number);
       const isOvernight = shiftStartHour >= 20;
-      
+
       if (isOvernight && attendanceRecord.outTime) {
         const outDateStr = formatDate(attendanceRecord.outTime);
         if (outDateStr !== date) {
@@ -952,7 +964,7 @@ exports.updateOutTime = async (req, res) => {
             employeeNumber: employeeNumber.toUpperCase(),
             date: outDateStr,
           });
-          
+
           // If next day has only out-time (no in-time), it's likely a duplicate - remove it
           if (nextDayRecord && !nextDayRecord.inTime && nextDayRecord.outTime) {
             // Check if it's the same out-time
@@ -973,7 +985,7 @@ exports.updateOutTime = async (req, res) => {
     // Recalculate monthly summary for both current and next day (if overnight)
     const { recalculateOnAttendanceUpdate } = require('../services/summaryCalculationService');
     await recalculateOnAttendanceUpdate(employeeNumber.toUpperCase(), date);
-    
+
     // If out-time is on next day, also recalculate next day's summary
     if (attendanceRecord.outTime) {
       const outDateStr = formatDate(attendanceRecord.outTime);
@@ -1022,6 +1034,7 @@ exports.assignShift = async (req, res) => {
     }
 
     // Get attendance record
+    const AttendanceDaily = require('../model/AttendanceDaily');
     const attendanceRecord = await AttendanceDaily.findOne({
       employeeNumber: employeeNumber.toUpperCase(),
       date: date,
@@ -1070,8 +1083,8 @@ exports.assignShift = async (req, res) => {
     const { calculateLateIn, calculateEarlyOut } = require('../../shifts/services/shiftDetectionService');
     // Pass the date parameter for proper overnight shift handling
     const lateInMinutes = calculateLateIn(attendanceRecord.inTime, shift.startTime, shift.gracePeriod || 15, date);
-    const earlyOutMinutes = attendanceRecord.outTime 
-      ? calculateEarlyOut(attendanceRecord.outTime, shift.endTime, shift.startTime, date) 
+    const earlyOutMinutes = attendanceRecord.outTime
+      ? calculateEarlyOut(attendanceRecord.outTime, shift.endTime, shift.startTime, date)
       : null;
 
     // Update attendance record
@@ -1083,6 +1096,21 @@ exports.assignShift = async (req, res) => {
     attendanceRecord.expectedHours = shift.duration;
 
     await attendanceRecord.save();
+
+    // Update roster tracking for manual assignment
+    const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
+    const rosterRecord = await PreScheduledShift.findOne({
+      employeeNumber: employeeNumber.toUpperCase(),
+      date: date
+    });
+
+    if (rosterRecord) {
+      const isDeviation = rosterRecord.shiftId && rosterRecord.shiftId.toString() !== shiftId.toString();
+      rosterRecord.actualShiftId = shiftId;
+      rosterRecord.isDeviation = !!isDeviation;
+      rosterRecord.attendanceDailyId = attendanceRecord._id;
+      await rosterRecord.save();
+    }
 
     // Detect extra hours if out-time exists
     if (attendanceRecord.outTime) {

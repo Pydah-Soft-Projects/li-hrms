@@ -7,6 +7,7 @@
 const AttendanceRawLog = require('../model/AttendanceRawLog');
 const AttendanceDaily = require('../model/AttendanceDaily');
 const AttendanceSettings = require('../model/AttendanceSettings');
+const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
 const { fetchAttendanceLogsFromMSSQL } = require('../config/attendanceMSSQLHelper');
 const { detectAndAssignShift } = require('../../shifts/services/shiftDetectionService');
 const { detectExtraHours } = require('./extraHoursService');
@@ -71,20 +72,20 @@ const processAndAggregateLogs = async (rawLogs, previousDayLinking = false) => {
 
     // Fetch all logs for employees involved (to get complete picture across days)
     const employeeNumbers = [...new Set(rawLogs.map(log => log.employeeNumber.toUpperCase()))];
-    
+
     for (const empNo of employeeNumbers) {
       // Get all logs for this employee from database (chronologically sorted)
       // We need a date range - use the dates from rawLogs
       const dates = [...new Set(rawLogs.filter(l => l.employeeNumber.toUpperCase() === empNo).map(l => formatDate(l.timestamp)))];
       const minDate = dates.sort()[0];
       const maxDate = dates.sort()[dates.length - 1];
-      
+
       // Extend range by 1 day on each side to catch overnight shifts
       const minDateObj = new Date(minDate);
       minDateObj.setDate(minDateObj.getDate() - 1);
       const maxDateObj = new Date(maxDate);
       maxDateObj.setDate(maxDateObj.getDate() + 1);
-      
+
       const allLogs = await AttendanceRawLog.find({
         employeeNumber: empNo,
         date: {
@@ -240,6 +241,13 @@ const processAndAggregateLogs = async (rawLogs, previousDayLinking = false) => {
               { upsert: true, new: true }
             );
 
+            // Update roster tracking with attendance record link
+            if (dailyRecord && shiftAssignment && shiftAssignment.rosterRecordId) {
+              await PreScheduledShift.findByIdAndUpdate(shiftAssignment.rosterRecordId, {
+                attendanceDailyId: dailyRecord._id
+              });
+            }
+
             // Mark OUT log as used
             if (outIndex >= 0) {
               usedOutLogs.add(outIndex);
@@ -378,7 +386,7 @@ const syncAttendanceFromMSSQL = async (fromDate = null, toDate = null) => {
         $set: {
           'syncSettings.lastSyncAt': new Date(),
           'syncSettings.lastSyncStatus': stats.errors.length > 0 ? 'failed' : 'success',
-          'syncSettings.lastSyncMessage': stats.errors.length > 0 
+          'syncSettings.lastSyncMessage': stats.errors.length > 0
             ? `Sync completed with ${stats.errors.length} errors`
             : `Successfully synced ${stats.rawLogsInserted} logs`,
         },
