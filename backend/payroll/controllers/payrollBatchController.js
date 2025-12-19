@@ -141,7 +141,11 @@ exports.getBatchEmployeePayrolls = async (req, res) => {
                 path: 'employeePayrolls',
                 populate: {
                     path: 'employeeId',
-                    select: 'emp_no employee_name department_id designation_id'
+                    select: 'emp_no employee_name department_id designation_id location bank_account_no pf_number esi_number',
+                    populate: [
+                        { path: 'department_id', select: 'name' },
+                        { path: 'designation_id', select: 'name' }
+                    ]
                 }
             });
 

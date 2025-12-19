@@ -246,8 +246,9 @@ exports.getRoster = async (req, res) => {
     }
 
     const schedules = await PreScheduledShift.find(query)
-      .select('employeeNumber shiftId date status notes')
-      .populate('shiftId', 'name code startTime endTime duration');
+      .select('employeeNumber shiftId actualShiftId isDeviation attendanceDailyId date status notes')
+      .populate('shiftId', 'name code startTime endTime duration')
+      .populate('actualShiftId', 'name code startTime endTime duration');
 
     const meta = await RosterMeta.findOne({ month });
 
@@ -263,12 +264,16 @@ exports.getRoster = async (req, res) => {
             // Legacy data: if shiftId is null and no status, check notes
             status = (s.notes && s.notes.includes('Week Off')) ? 'WO' : undefined;
           }
-          
+
           return {
             employeeNumber: s.employeeNumber,
             date: s.date,
             shiftId: s.shiftId?._id || null,
             shift: s.shiftId || null,
+            actualShiftId: s.actualShiftId?._id || null,
+            actualShift: s.actualShiftId || null,
+            isDeviation: s.isDeviation || false,
+            attendanceDailyId: s.attendanceDailyId || null,
             status: status || undefined, // Return 'WO' if status is 'WO', otherwise undefined
           };
         }),
@@ -346,7 +351,7 @@ exports.saveRoster = async (req, res) => {
         console.warn(`[Entry ${index}] Skipping: date outside month range:`, day);
         return;
       }
-      
+
       // Validate: must have either shiftId or status='WO'
       if (!e.shiftId && e.status !== 'WO') {
         skippedCount++;
@@ -360,7 +365,7 @@ exports.saveRoster = async (req, res) => {
         date: day,
         scheduledBy: req.user._id,
       };
-      
+
       // Handle week off
       if (e.status === 'WO') {
         entry.shiftId = null;
@@ -392,10 +397,10 @@ exports.saveRoster = async (req, res) => {
         entry.notes = null;
         console.log(`[Entry ${index}] Regular shift ${e.shiftId} for ${empNo} on ${day}`);
       }
-      
+
       bulk.push(entry);
     });
-    
+
     console.log(`[Save Roster] Processed ${entries.length} entries: ${bulk.length} valid, ${skippedCount} skipped`);
 
     let savedCount = 0;
@@ -405,13 +410,13 @@ exports.saveRoster = async (req, res) => {
     if (bulk.length > 0) {
       console.log(`[Save Roster] Preparing to save ${bulk.length} entries for month ${month}`);
       console.log(`[Save Roster] Sample entries:`, JSON.stringify(bulk.slice(0, 3), null, 2));
-      
+
       // Try saving individually to get detailed error messages
       let saved = 0;
       let failed = 0;
       let duplicateCount = 0;
       const errors = [];
-      
+
       for (let i = 0; i < bulk.length; i++) {
         const entry = bulk[i];
         try {
@@ -420,7 +425,7 @@ exports.saveRoster = async (req, res) => {
           if (entry.shiftId && typeof entry.shiftId === 'string') {
             entry.shiftId = new mongoose.Types.ObjectId(entry.shiftId);
           }
-          
+
           // Create document instance and save (this works better with validation hooks)
           const doc = new PreScheduledShift(entry);
           await doc.save();
@@ -449,12 +454,12 @@ exports.saveRoster = async (req, res) => {
           }
         }
       }
-      
+
       console.log(`[Save Roster] Final result: ${saved} saved, ${failed} failed, ${duplicateCount} duplicates`);
       if (errors.length > 0) {
         console.error(`[Save Roster] First 5 errors:`, errors.slice(0, 5));
       }
-      
+
       // Store counts for response
       savedCount = saved;
       failedCount = failed;

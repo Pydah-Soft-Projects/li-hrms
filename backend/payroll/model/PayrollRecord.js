@@ -369,6 +369,12 @@ const payrollRecordSchema = new mongoose.Schema(
       min: 0,
     },
 
+    // Round off adjustment (difference between exact and rounded net salary)
+    roundOff: {
+      type: Number,
+      default: 0,
+    },
+
     // Payable amount before advance
     payableAmountBeforeAdvance: {
       type: Number,

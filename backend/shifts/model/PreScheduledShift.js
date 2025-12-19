@@ -42,6 +42,21 @@ const preScheduledShiftSchema = new mongoose.Schema(
       trim: true,
       default: null,
     },
+    // ACTUAL ATTENDANCE TRACKING (Shift Discipline)
+    actualShiftId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Shift',
+      default: null,
+    },
+    isDeviation: {
+      type: Boolean,
+      default: false,
+    },
+    attendanceDailyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'AttendanceDaily',
+      default: null,
+    },
   },
   {
     timestamps: true,
@@ -54,11 +69,11 @@ preScheduledShiftSchema.index({ employeeNumber: 1, date: 1 }, { unique: true });
 
 // Validation: Either shiftId or status must be present
 // Using async pre('save') hook without next callback
-preScheduledShiftSchema.pre('save', async function() {
+preScheduledShiftSchema.pre('save', async function () {
   // Allow if shiftId exists (regular shift) OR status is 'WO' (week off)
   const hasShiftId = this.shiftId != null && this.shiftId.toString().trim() !== '';
   const hasWeekOffStatus = this.status === 'WO';
-  
+
   if (!hasShiftId && !hasWeekOffStatus) {
     console.error('[Model Validation] Invalid entry:', {
       employeeNumber: this.employeeNumber,
