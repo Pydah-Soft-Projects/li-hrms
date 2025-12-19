@@ -206,6 +206,7 @@ export default function AllowancesDeductionsPage() {
       percentageBase: 'basic',
       minAmount: null,
       maxAmount: null,
+      basedOnPresentDays: false,
     });
   };
 

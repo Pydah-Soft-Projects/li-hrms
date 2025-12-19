@@ -319,6 +319,7 @@ export default function ArrearsPage() {
         open={detailDialogOpen}
         onClose={() => setDetailDialogOpen(false)}
         arrearsId={selectedArrearsId}
+        onUpdate={loadData}
       />
 
       {formOpen && (

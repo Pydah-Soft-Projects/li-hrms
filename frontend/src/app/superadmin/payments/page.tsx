@@ -91,7 +91,10 @@ export default function PaymentsPage() {
             const response = await api.getPayrollBatches(params);
             if (response.success && Array.isArray(response.data)) {
                 setBatches(response.data);
-                setTotalPages(response.pages || 1);
+                // Calculate total pages based on count and items per page (default 10)
+                const itemsPerPage = params.limit || 10;
+                const totalItems = response.count || response.data.length;
+                setTotalPages(Math.ceil(totalItems / itemsPerPage) || 1);
             } else {
                 setBatches([]);
                 toast.error("Failed to load payroll batches");

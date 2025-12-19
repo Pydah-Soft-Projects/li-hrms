@@ -64,4 +64,10 @@ export const auth = {
     const user = auth.getUser();
     return user?.role === 'super_admin';
   },
+
+  // Get authentication headers for API requests
+  getAuthHeader: async (): Promise<Record<string, string>> => {
+    const token = auth.getToken();
+    return token ? { 'Authorization': `Bearer ${token}` } : {};
+  },
 };

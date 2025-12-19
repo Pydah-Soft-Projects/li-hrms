@@ -1,3 +1,5 @@
+import { auth } from './auth';
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
 
 // Workspace types - defined first as they're used in ApiResponse
@@ -999,7 +1001,7 @@ export const api = {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(await getAuthHeader())
+        ...(await auth.getAuthHeader())
       },
       body: JSON.stringify(data),
     });
@@ -1942,6 +1944,7 @@ export const api = {
     percentageBase?: 'basic' | 'gross';
     minAmount?: number | null;
     maxAmount?: number | null;
+    basedOnPresentDays?: boolean;
   }) => {
     return apiRequest<any>(`/allowances-deductions/${id}/department-rule`, {
       method: 'PUT',
