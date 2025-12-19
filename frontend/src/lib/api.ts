@@ -2010,9 +2010,21 @@ export const api = {
   // Payroll
   calculatePayroll: async (employeeId: string, month: string, query: string = '', arrears?: Array<{ id: string, amount: number, employeeId?: string }>) => {
     const path = `/payroll/calculate${query || ''}`;
+    
+    // Format arrears to use arrearId instead of id
+    const formattedArrears = arrears?.map(arrear => ({
+      arrearId: arrear.id,
+      amount: arrear.amount,
+      employeeId: arrear.employeeId
+    })) || [];
+
     return apiRequest<any>(path, {
       method: 'POST',
-      body: JSON.stringify({ employeeId, month, arrears: arrears || [] }),
+      body: JSON.stringify({ 
+        employeeId, 
+        month, 
+        arrears: formattedArrears 
+      }),
     });
   },
 

@@ -69,14 +69,16 @@ class ArrearsIntegrationService {
         payrollRecord.earnings.allowances = [];
       }
 
-      // Add arrears as a special allowance
+      // Add arrears as a fixed allowance
       payrollRecord.earnings.allowances.push({
         name: arrearsComponent.name,
-        type: arrearsComponent.type,
-        category: arrearsComponent.category,
+        type: 'fixed', // Changed from arrearsComponent.type to 'fixed' to match schema
         amount: arrearsComponent.amount,
         description: arrearsComponent.description,
-        details: arrearsComponent.details
+        // Add details as a custom field to store arrears information
+        details: arrearsComponent.details,
+        // Add a flag to identify this as an arrears allowance
+        isArrears: true
       });
 
       // Update total allowances
