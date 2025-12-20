@@ -27,6 +27,9 @@ router.get('/:payrollRecordId/transactions', payrollController.getPayrollTransac
 // Get payroll transactions with analytics for a month
 router.get('/transactions/analytics', payrollController.getPayrollTransactionsWithAnalytics);
 
+// Get attendance data for a range of months (NEW)
+router.get('/attendance-range', payrollController.getAttendanceDataRange);
+
 // Export payroll payslips as Excel
 router.get(
   '/export',

@@ -68,12 +68,12 @@ function calculateAllowanceAmount(rule, basicPay, grossSalary = null, attendance
 
   if (rule.type === 'fixed') {
     amount = rule.amount || 0;
-    
+
     // Prorate based on present days if enabled
     if (rule.basedOnPresentDays && attendanceData) {
       const { presentDays = 0, paidLeaveDays = 0, odDays = 0, monthDays = 30 } = attendanceData;
       const totalPaidDays = presentDays + paidLeaveDays + odDays;
-      
+
       if (monthDays > 0) {
         const perDayAmount = amount / monthDays;
         amount = perDayAmount * totalPaidDays;
@@ -104,7 +104,7 @@ function calculateAllowanceAmount(rule, basicPay, grossSalary = null, attendance
  * @param {Boolean} useGrossBase - Whether to use gross salary as base for percentage
  * @returns {Array} Array of allowance objects
  */
-async function calculateAllowances(departmentId, basicPay, grossSalary = null, useGrossBase = false) {
+async function calculateAllowances(departmentId, basicPay, grossSalary = null, useGrossBase = false, attendanceData = null) {
   try {
     // Fetch all active allowances
     const allowanceMasters = await AllowanceDeductionMaster.find({
@@ -131,7 +131,7 @@ async function calculateAllowances(departmentId, basicPay, grossSalary = null, u
         continue;
       }
 
-      const amount = calculateAllowanceAmount(rule, basicPay, grossSalary);
+      const amount = calculateAllowanceAmount(rule, basicPay, grossSalary, attendanceData);
 
       if (amount > 0) {
         allowances.push({

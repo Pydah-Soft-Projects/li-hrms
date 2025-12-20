@@ -55,6 +55,29 @@ const statusHistorySchema = new mongoose.Schema({
   comments: String
 }, { _id: false });
 
+const calculationBreakdownSchema = new mongoose.Schema({
+  month: {
+    type: String, // YYYY-MM
+    required: true
+  },
+  monthlyAmount: {
+    type: Number,
+    required: true
+  },
+  totalDays: {
+    type: Number,
+    required: true
+  },
+  paidDays: {
+    type: Number,
+    required: true
+  },
+  proratedAmount: {
+    type: Number,
+    required: true
+  }
+}, { _id: false });
+
 const arrearsRequestSchema = new mongoose.Schema(
   {
     employee: {
@@ -97,6 +120,7 @@ const arrearsRequestSchema = new mongoose.Schema(
       default: 'draft',
       index: true
     },
+    calculationBreakdown: [calculationBreakdownSchema],
     hodApproval: {
       approved: {
         type: Boolean,
@@ -155,12 +179,12 @@ const arrearsRequestSchema = new mongoose.Schema(
 );
 
 // Virtual for total settled amount
-arrearsRequestSchema.virtual('settledAmount').get(function() {
+arrearsRequestSchema.virtual('settledAmount').get(function () {
   return this.settlementHistory.reduce((sum, s) => sum + s.amount, 0);
 });
 
 // Virtual for display status
-arrearsRequestSchema.virtual('displayStatus').get(function() {
+arrearsRequestSchema.virtual('displayStatus').get(function () {
   if (this.status === 'approved' && this.remainingAmount > 0 && this.remainingAmount < this.totalAmount) {
     return 'partially_settled';
   }
@@ -174,7 +198,7 @@ arrearsRequestSchema.index({ 'settlementHistory.payrollId': 1 });
 arrearsRequestSchema.index({ createdAt: -1 });
 
 // Pre-save hook to update remaining amount
-arrearsRequestSchema.pre('save', async function() {
+arrearsRequestSchema.pre('save', async function () {
   if (this.isNew) {
     this.remainingAmount = this.totalAmount;
   }

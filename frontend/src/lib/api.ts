@@ -2010,7 +2010,7 @@ export const api = {
   // Payroll
   calculatePayroll: async (employeeId: string, month: string, query: string = '', arrears?: Array<{ id: string, amount: number, employeeId?: string }>) => {
     const path = `/payroll/calculate${query || ''}`;
-    
+
     // Format arrears to use arrearId instead of id
     const formattedArrears = arrears?.map(arrear => ({
       arrearId: arrear.id,
@@ -2020,10 +2020,10 @@ export const api = {
 
     return apiRequest<any>(path, {
       method: 'POST',
-      body: JSON.stringify({ 
-        employeeId, 
-        month, 
-        arrears: formattedArrears 
+      body: JSON.stringify({
+        employeeId,
+        month,
+        arrears: formattedArrears
       }),
     });
   },
@@ -2231,6 +2231,15 @@ export const api = {
     return apiRequest<any>(`/pay-register/employees/${month}${query.toString() ? `?${query.toString()}` : ''}`, {
       method: 'GET',
     });
+  },
+
+  // Get attendance data for a range of months (NEW)
+  getAttendanceDataRange: async (employeeId: string, startMonth: string, endMonth: string) => {
+    const query = new URLSearchParams();
+    query.append('employeeId', employeeId);
+    query.append('startMonth', startMonth);
+    query.append('endMonth', endMonth);
+    return apiRequest<any>(`/payroll/attendance-range?${query.toString()}`, { method: 'GET' });
   },
 
   // Arrears APIs - Get all arrears

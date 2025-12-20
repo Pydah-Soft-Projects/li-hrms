@@ -45,25 +45,25 @@ exports.createApplication = async (req, res) => {
       }
     } else {
       // Fallback to basic validation if settings not found
-    if (!applicationData.emp_no) {
-      return res.status(400).json({
-        success: false,
-        message: 'Employee number (emp_no) is required',
-      });
-    }
+      if (!applicationData.emp_no) {
+        return res.status(400).json({
+          success: false,
+          message: 'Employee number (emp_no) is required',
+        });
+      }
 
-    if (!applicationData.employee_name) {
-      return res.status(400).json({
-        success: false,
-        message: 'Employee name is required',
-      });
-    }
+      if (!applicationData.employee_name) {
+        return res.status(400).json({
+          success: false,
+          message: 'Employee name is required',
+        });
+      }
 
-    if (!applicationData.proposedSalary) {
-      return res.status(400).json({
-        success: false,
-        message: 'Proposed salary is required',
-      });
+      if (!applicationData.proposedSalary) {
+        return res.status(400).json({
+          success: false,
+          message: 'Proposed salary is required',
+        });
       }
     }
 
@@ -116,20 +116,21 @@ exports.createApplication = async (req, res) => {
     const normalizeOverrides = (list) =>
       Array.isArray(list)
         ? list
-            .filter((item) => item && (item.masterId || item.name))
-            .map((item) => ({
-              masterId: item.masterId || null,
-              code: item.code || null,
-              name: item.name || '',
-              category: item.category || null,
-              type: item.type || null,
-              amount: item.amount ?? item.overrideAmount ?? null,
-              percentage: item.percentage ?? null,
-              percentageBase: item.percentageBase ?? null,
-              minAmount: item.minAmount ?? null,
-              maxAmount: item.maxAmount ?? null,
-              isOverride: true,
-            }))
+          .filter((item) => item && (item.masterId || item.name))
+          .map((item) => ({
+            masterId: item.masterId || null,
+            code: item.code || null,
+            name: item.name || '',
+            category: item.category || null,
+            type: item.type || null,
+            amount: item.amount ?? item.overrideAmount ?? null,
+            percentage: item.percentage ?? null,
+            percentageBase: item.percentageBase ?? null,
+            minAmount: item.minAmount ?? null,
+            maxAmount: item.maxAmount ?? null,
+            basedOnPresentDays: item.basedOnPresentDays ?? false,
+            isOverride: true,
+          }))
         : [];
     const employeeAllowances = normalizeOverrides(applicationData.employeeAllowances);
     const employeeDeductions = normalizeOverrides(applicationData.employeeDeductions);
@@ -309,26 +310,27 @@ exports.approveApplication = async (req, res) => {
     const normalizeOverrides = (list) =>
       Array.isArray(list)
         ? list
-            .filter((item) => item && (item.masterId || item.name))
-            .map((item) => ({
-              masterId: item.masterId || null,
-              code: item.code || null,
-              name: item.name || '',
-              category: item.category || null,
-              type: item.type || null,
-              amount: item.amount ?? item.overrideAmount ?? null,
-              percentage: item.percentage ?? null,
-              percentageBase: item.percentageBase ?? null,
-              minAmount: item.minAmount ?? null,
-              maxAmount: item.maxAmount ?? null,
-              isOverride: true,
-            }))
+          .filter((item) => item && (item.masterId || item.name))
+          .map((item) => ({
+            masterId: item.masterId || null,
+            code: item.code || null,
+            name: item.name || '',
+            category: item.category || null,
+            type: item.type || null,
+            amount: item.amount ?? item.overrideAmount ?? null,
+            percentage: item.percentage ?? null,
+            percentageBase: item.percentageBase ?? null,
+            minAmount: item.minAmount ?? null,
+            maxAmount: item.maxAmount ?? null,
+            basedOnPresentDays: item.basedOnPresentDays ?? false,
+            isOverride: true,
+          }))
         : [];
 
     // Use provided overrides from request (from approval dialog) or fall back to application
     let finalEmployeeAllowances = employeeAllowances ? normalizeOverrides(employeeAllowances) : (application.employeeAllowances || []);
     let finalEmployeeDeductions = employeeDeductions ? normalizeOverrides(employeeDeductions) : (application.employeeDeductions || []);
-    
+
     // Use provided calculated salaries from request (from approval dialog) or calculate them
     let finalCtcSalary = ctcSalary !== undefined && ctcSalary !== null ? ctcSalary : null;
     let finalCalculatedSalary = calculatedSalary !== undefined && calculatedSalary !== null ? calculatedSalary : null;
