@@ -842,10 +842,10 @@ export const api = {
   },
 
   // Qualifications management
-  updateQualificationsConfig: async (isEnabled: boolean) => {
+  updateQualificationsConfig: async (config: { isEnabled?: boolean; enableCertificateUpload?: boolean }) => {
     return apiRequest<any>('/employee-applications/form-settings/qualifications', {
       method: 'PUT',
-      body: JSON.stringify({ isEnabled }),
+      body: JSON.stringify(config),
     });
   },
   addQualificationsField: async (data: {

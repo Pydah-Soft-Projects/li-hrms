@@ -98,6 +98,10 @@ app.use('/api/ot', otRoutes);
 const permissionRoutes = require('./permissions/index.js');
 app.use('/api/permissions', permissionRoutes);
 
+// Upload routes (S3 file uploads)
+const uploadRoutes = require('./shared/routes/uploadRoutes');
+app.use('/api/upload', uploadRoutes);
+
 // Allowances & Deductions routes
 const allowanceDeductionRoutes = require('./allowances-deductions/index.js');
 app.use('/api/allowances-deductions', allowanceDeductionRoutes);

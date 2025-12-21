@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const employeeController = require('./controllers/employeeController');
 const { protect, authorize } = require('../authentication/middleware/authMiddleware');
+const { roleBasedFilter } = require('../shared/middleware/roleBasedFilter');
 
 // All routes are protected
 router.use(protect);
@@ -15,8 +16,8 @@ router.get('/components/defaults', employeeController.getAllowanceDeductionDefau
 // Get employee count
 router.get('/count', employeeController.getEmployeeCount);
 
-// Get all employees
-router.get('/', employeeController.getAllEmployees);
+// Get all employees (with role-based filtering)
+router.get('/', roleBasedFilter('employees'), employeeController.getAllEmployees);
 
 // Get single employee
 router.get('/:empNo', employeeController.getEmployee);
