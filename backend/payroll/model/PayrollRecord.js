@@ -389,6 +389,18 @@ const payrollRecordSchema = new mongoose.Schema(
       default: 'calculated',
     },
 
+    // Visibility / Release status
+    isReleased: {
+      type: Boolean,
+      default: false,
+    },
+
+    // Download tracking
+    downloadCount: {
+      type: Number,
+      default: 0,
+    },
+
     // Approval details
     approvedBy: {
       type: mongoose.Schema.Types.ObjectId,
@@ -496,6 +508,7 @@ payrollRecordSchema.statics.getOrCreate = async function (employeeId, emp_no, ye
       year,
       monthNumber,
       totalDaysInMonth,
+      attendance: { totalDaysInMonth },
       status: 'draft',
     });
   } else {

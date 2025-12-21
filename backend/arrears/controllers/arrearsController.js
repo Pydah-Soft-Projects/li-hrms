@@ -282,17 +282,16 @@ exports.cancelArrears = async (req, res) => {
 // @access  Private
 exports.getMyArrears = async (req, res) => {
   try {
-    const User = require('../../users/model/User');
-    const user = await User.findById(req.user._id || req.user.userId || req.user.id);
+    const employeeId = req.user.employeeId;
 
-    if (!user || !user.employeeId) {
+    if (!employeeId) {
       return res.status(400).json({
         success: false,
         message: 'Employee record not found for user'
       });
     }
 
-    const arrears = await ArrearsRequest.find({ employee: user.employeeId })
+    const arrears = await ArrearsRequest.find({ employee: employeeId })
       .sort({ createdAt: -1 })
       .populate('employee', 'emp_no name');
 
@@ -363,15 +362,7 @@ exports.getPendingApprovals = async (req, res) => {
 exports.editArrears = async (req, res) => {
   try {
     const { startMonth, endMonth, monthlyAmount, totalAmount, reason } = req.body;
-    const User = require('../../users/model/User');
-    const user = await User.findById(req.user._id || req.user.userId || req.user.id);
-
-    if (!user) {
-      return res.status(400).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
+    const user = req.user;
 
     // Only SuperAdmin can edit
     if (!['super_admin', 'sub_admin'].includes(user.role) && !user.roles?.some(r => ['super_admin', 'sub_admin'].includes(r))) {
@@ -508,15 +499,7 @@ exports.updateArrears = async (req, res) => {
 exports.transitionArrears = async (req, res) => {
   try {
     const { nextStatus, startMonth, endMonth, monthlyAmount, totalAmount, reason, comments } = req.body;
-    const User = require('../../users/model/User');
-    const user = await User.findById(req.user._id || req.user.userId || req.user.id);
-
-    if (!user) {
-      return res.status(400).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
+    const user = req.user;
 
     // Only SuperAdmin can transition
     if (!['super_admin', 'sub_admin'].includes(user.role) && !user.roles?.some(r => ['super_admin', 'sub_admin'].includes(r))) {

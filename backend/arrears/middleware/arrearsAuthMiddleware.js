@@ -7,17 +7,8 @@ const ArrearsRequest = require('../model/ArrearsRequest');
  */
 exports.canCreateArrears = async (req, res, next) => {
   try {
-    const user = await User.findById(req.user.id);
-
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
-
     const allowedRoles = ['super_admin', 'sub_admin', 'hr'];
-    if (!allowedRoles.includes(user.role) && !user.roles?.some(r => allowedRoles.includes(r))) {
+    if (!allowedRoles.includes(req.user.role) && !req.user.roles?.some(r => allowedRoles.includes(r))) {
       return res.status(403).json({
         success: false,
         message: 'You do not have permission to create arrears'
@@ -39,17 +30,8 @@ exports.canCreateArrears = async (req, res, next) => {
  */
 exports.canHodApprove = async (req, res, next) => {
   try {
-    const user = await User.findById(req.user.id);
-
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
-
     const allowedRoles = ['super_admin', 'sub_admin', 'hod'];
-    if (!allowedRoles.includes(user.role) && !user.roles?.some(r => allowedRoles.includes(r))) {
+    if (!allowedRoles.includes(req.user.role) && !req.user.roles?.some(r => allowedRoles.includes(r))) {
       return res.status(403).json({
         success: false,
         message: 'You do not have permission to approve arrears at HOD level'
@@ -71,17 +53,8 @@ exports.canHodApprove = async (req, res, next) => {
  */
 exports.canHrApprove = async (req, res, next) => {
   try {
-    const user = await User.findById(req.user.id);
-
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
-
     const allowedRoles = ['super_admin', 'sub_admin', 'hr'];
-    if (!allowedRoles.includes(user.role) && !user.roles?.some(r => allowedRoles.includes(r))) {
+    if (!allowedRoles.includes(req.user.role) && !req.user.roles?.some(r => allowedRoles.includes(r))) {
       return res.status(403).json({
         success: false,
         message: 'You do not have permission to approve arrears at HR level'
@@ -103,17 +76,8 @@ exports.canHrApprove = async (req, res, next) => {
  */
 exports.canAdminApprove = async (req, res, next) => {
   try {
-    const user = await User.findById(req.user.id);
-
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
-
     const allowedRoles = ['super_admin', 'sub_admin'];
-    if (!allowedRoles.includes(user.role) && !user.roles?.some(r => allowedRoles.includes(r))) {
+    if (!allowedRoles.includes(req.user.role) && !req.user.roles?.some(r => allowedRoles.includes(r))) {
       return res.status(403).json({
         success: false,
         message: 'You do not have permission to approve arrears at Admin level'
@@ -136,35 +100,9 @@ exports.canAdminApprove = async (req, res, next) => {
 exports.canEditArrears = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const user = await User.findById(req.user.id);
-
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
-
-    const arrears = await ArrearsRequest.findById(id);
-
-    if (!arrears) {
-      return res.status(404).json({
-        success: false,
-        message: 'Arrears not found'
-      });
-    }
-
-    // Only draft arrears can be edited
-    if (arrears.status !== 'draft') {
-      return res.status(403).json({
-        success: false,
-        message: 'Only draft arrears can be edited'
-      });
-    }
-
     // Only creator or admin can edit
-    const isCreator = arrears.createdBy.toString() === user._id.toString();
-    const isAdmin = ['super_admin', 'sub_admin'].includes(user.role) || user.roles?.some(r => ['super_admin', 'sub_admin'].includes(r));
+    const isCreator = arrears.createdBy.toString() === req.user._id.toString();
+    const isAdmin = ['super_admin', 'sub_admin'].includes(req.user.role) || req.user.roles?.some(r => ['super_admin', 'sub_admin'].includes(r));
 
     if (!isCreator && !isAdmin) {
       return res.status(403).json({
@@ -189,35 +127,9 @@ exports.canEditArrears = async (req, res, next) => {
 exports.canDeleteArrears = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const user = await User.findById(req.user.id);
-
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
-
-    const arrears = await ArrearsRequest.findById(id);
-
-    if (!arrears) {
-      return res.status(404).json({
-        success: false,
-        message: 'Arrears not found'
-      });
-    }
-
-    // Only draft arrears can be deleted
-    if (arrears.status !== 'draft') {
-      return res.status(403).json({
-        success: false,
-        message: 'Only draft arrears can be deleted'
-      });
-    }
-
     // Only creator or admin can delete
-    const isCreator = arrears.createdBy.toString() === user._id.toString();
-    const isAdmin = ['super_admin', 'sub_admin'].includes(user.role) || user.roles?.some(r => ['super_admin', 'sub_admin'].includes(r));
+    const isCreator = arrears.createdBy.toString() === req.user._id.toString();
+    const isAdmin = ['super_admin', 'sub_admin'].includes(req.user.role) || req.user.roles?.some(r => ['super_admin', 'sub_admin'].includes(r));
 
     if (!isCreator && !isAdmin) {
       return res.status(403).json({

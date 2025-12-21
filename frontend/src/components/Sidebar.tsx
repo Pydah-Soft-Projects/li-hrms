@@ -223,30 +223,29 @@ export type NavItem = {
   href: string;
   label: string;
   icon: React.ComponentType<IconProps>;
+  category: string;
 };
 
 const navItems: NavItem[] = [
-  { href: '/superadmin/dashboard', label: 'Dashboard', icon: DashboardIcon },
-  { href: '/superadmin/employees', label: 'Employees', icon: EmployeesIcon },
-  { href: '/superadmin/employees/form-settings', label: 'Form Settings', icon: FormSettingsIcon },
-  { href: '/superadmin/attendance', label: 'Attendance', icon: AttendanceIcon },
-  { href: '/superadmin/ot-permissions', label: 'OT & Permissions', icon: OTPermissionIcon },
-  { href: '/superadmin/confused-shifts', label: 'Confused Shifts', icon: ConfusedShiftIcon },
-  { href: '/superadmin/shift-roster', label: 'Shift Roster', icon: ClockIcon },
-  { href: '/superadmin/leaves', label: 'Leave & OD', icon: LeaveIcon },
-  { href: '/superadmin/loans', label: 'Loan & Salary Advance', icon: LoanIcon },
-  { href: '/superadmin/shifts', label: 'Shifts', icon: ClockIcon },
-  { href: '/superadmin/departments', label: 'Departments', icon: BuildingIcon },
-  { href: '/superadmin/workspaces', label: 'Workspaces', icon: WorkspacesIcon },
-  { href: '/superadmin/users', label: 'Users', icon: UsersIcon },
-  { href: '/superadmin/reports', label: 'Reports', icon: ReportsIcon },
-  { href: '/superadmin/payments', label: 'Payments', icon: PaymentsIcon },
-  { href: '/superadmin/pay-register', label: 'Pay Register', icon: PayRegisterIcon },
-  { href: '/superadmin/payslips', label: 'Payslips', icon: PayslipsIcon },
-  { href: '/superadmin/arrears', label: 'Arrears', icon: ArrearsIcon },
-  { href: '/superadmin/settings', label: 'Settings', icon: SettingsIcon },
-  { href: '/superadmin/settings/departmental', label: 'Departmental Settings', icon: DepartmentSettingsIcon },
-  { href: '/superadmin/allowances-deductions', label: 'Allowances & Deductions', icon: AllowancesDeductionsIcon },
+  { href: '/superadmin/dashboard', label: 'Dashboard', icon: DashboardIcon, category: 'Main' },
+  { href: '/superadmin/employees', label: 'Employees', icon: EmployeesIcon, category: 'Employee Management' },
+  { href: '/superadmin/employees/form-settings', label: 'Form Settings', icon: FormSettingsIcon, category: 'Employee Management' },
+  { href: '/superadmin/attendance', label: 'Attendance', icon: AttendanceIcon, category: 'Time & Attendance' },
+  { href: '/superadmin/ot-permissions', label: 'OT & Permissions', icon: OTPermissionIcon, category: 'Time & Attendance' },
+  { href: '/superadmin/confused-shifts', label: 'Confused Shifts', icon: ConfusedShiftIcon, category: 'Time & Attendance' },
+  { href: '/superadmin/shift-roster', label: 'Shift Roster', icon: ClockIcon, category: 'Time & Attendance' },
+  { href: '/superadmin/leaves', label: 'Leave & OD', icon: LeaveIcon, category: 'Time & Attendance' },
+  { href: '/superadmin/shifts', label: 'Shifts', icon: ClockIcon, category: 'Time & Attendance' },
+  { href: '/superadmin/departments', label: 'Departments', icon: BuildingIcon, category: 'Organization' },
+  { href: '/superadmin/settings/departmental', label: 'Departmental Settings', icon: DepartmentSettingsIcon, category: 'Organization' },
+  { href: '/superadmin/users', label: 'Users', icon: UsersIcon, category: 'Administration' },
+  { href: '/superadmin/reports', label: 'Reports', icon: ReportsIcon, category: 'Administration' },
+  { href: '/superadmin/payments', label: 'Payments', icon: PaymentsIcon, category: 'Finance & Payroll' },
+  { href: '/superadmin/pay-register', label: 'Pay Register', icon: PayRegisterIcon, category: 'Finance & Payroll' },
+  { href: '/superadmin/payslips', label: 'Payslips', icon: PayslipsIcon, category: 'Finance & Payroll' },
+  { href: '/superadmin/arrears', label: 'Arrears', icon: ArrearsIcon, category: 'Finance & Payroll' },
+  { href: '/superadmin/allowances-deductions', label: 'Allowances & Deductions', icon: AllowancesDeductionsIcon, category: 'Finance & Payroll' },
+  { href: '/superadmin/settings', label: 'General Settings', icon: SettingsIcon, category: 'Settings' },
 ];
 
 export default function Sidebar() {
@@ -316,31 +315,45 @@ export default function Sidebar() {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto py-3 px-2">
-          <ul className="space-y-0.5">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = pathname === item.href;
+        <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-4">
+          {Array.from(new Set(navItems.map(i => i.category))).map(category => {
+            const categoryItems = navItems.filter(i => i.category === category);
+            const showHeader = categoryItems.length > 1;
 
-              return (
-                <li key={item.href}>
-                  <Link
-                    href={item.href}
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 ${isActive
-                      ? 'bg-green-50 text-green-700 shadow-sm'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                      } ${isCollapsed ? 'justify-center' : ''}`}
-                    title={isCollapsed ? item.label : undefined}
-                  >
-                    <Icon className={`h-[18px] w-[18px] flex-shrink-0 ${isActive ? 'text-green-600' : 'text-slate-500'}`} />
-                    {!isCollapsed && (
-                      <span className={`text-sm font-medium ${isActive ? 'text-green-700' : 'text-slate-700'}`}>{item.label}</span>
-                    )}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
+            return (
+              <div key={category} className="space-y-1">
+                {!isCollapsed && showHeader && (
+                  <h3 className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                    {category}
+                  </h3>
+                )}
+                <ul className="space-y-0.5">
+                  {categoryItems.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = pathname === item.href;
+
+                    return (
+                      <li key={item.href}>
+                        <Link
+                          href={item.href}
+                          className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 ${isActive
+                            ? 'bg-green-50 text-green-700 shadow-sm'
+                            : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                            } ${isCollapsed ? 'justify-center' : ''}`}
+                          title={isCollapsed ? item.label : undefined}
+                        >
+                          <Icon className={`h-[18px] w-[18px] flex-shrink-0 ${isActive ? 'text-green-600' : 'text-slate-500'}`} />
+                          {!isCollapsed && (
+                            <span className={`text-sm font-medium ${isActive ? 'text-green-700' : 'text-slate-700'}`}>{item.label}</span>
+                          )}
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            );
+          })}
         </nav>
 
         {/* User Section & Logout */}

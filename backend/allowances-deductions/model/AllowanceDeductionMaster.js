@@ -138,103 +138,89 @@ const allowanceDeductionMasterSchema = new mongoose.Schema(
 );
 
 // Validation: Global Rule
-allowanceDeductionMasterSchema.pre('validate', function (next) {
-  // Ensure next is a function
-  if (typeof next !== 'function') {
-    return;
-  }
-
+allowanceDeductionMasterSchema.pre('validate', async function () {
   // Skip validation if globalRule is not set (will be validated in controller)
   if (!this.globalRule || !this.globalRule.type) {
-    return next();
+    return;
   }
 
   const globalRule = this.globalRule;
 
   if (globalRule.type === 'fixed') {
     if (globalRule.amount === null || globalRule.amount === undefined) {
-      return next(new Error('Amount is required when type is fixed'));
+      throw new Error('Amount is required when type is fixed');
     }
     if (globalRule.percentage !== null && globalRule.percentage !== undefined) {
-      return next(new Error('Percentage should be null when type is fixed'));
+      throw new Error('Percentage should be null when type is fixed');
     }
     if (globalRule.percentageBase !== null && globalRule.percentageBase !== undefined) {
-      return next(new Error('Percentage base should be null when type is fixed'));
+      throw new Error('Percentage base should be null when type is fixed');
     }
   } else if (globalRule.type === 'percentage') {
     if (globalRule.percentage === null || globalRule.percentage === undefined) {
-      return next(new Error('Percentage is required when type is percentage'));
+      throw new Error('Percentage is required when type is percentage');
     }
     if (!globalRule.percentageBase) {
-      return next(new Error('Percentage base is required when type is percentage'));
+      throw new Error('Percentage base is required when type is percentage');
     }
     if (globalRule.amount !== null && globalRule.amount !== undefined) {
-      return next(new Error('Amount should be null when type is percentage'));
+      throw new Error('Amount should be null when type is percentage');
     }
   }
 
   // Validate min/max
   if (globalRule.minAmount !== null && globalRule.maxAmount !== null) {
     if (globalRule.minAmount > globalRule.maxAmount) {
-      return next(new Error('Min amount cannot be greater than max amount'));
+      throw new Error('Min amount cannot be greater than max amount');
     }
   }
-
-  return next();
 });
 
 // Validation: Department Rules
-allowanceDeductionMasterSchema.pre('validate', function (next) {
-  // Ensure next is a function
-  if (typeof next !== 'function') {
-    return;
-  }
-
+allowanceDeductionMasterSchema.pre('validate', async function () {
   // Skip if no department rules
   if (!this.departmentRules || this.departmentRules.length === 0) {
-    return next();
+    return;
   }
 
   // Check for duplicate department IDs
   const departmentIds = this.departmentRules.map((rule) => rule.departmentId.toString());
   const uniqueIds = [...new Set(departmentIds)];
   if (departmentIds.length !== uniqueIds.length) {
-    return next(new Error('Duplicate department IDs found in department rules'));
+    throw new Error('Duplicate department IDs found in department rules');
   }
 
   // Validate each department rule
   for (const rule of this.departmentRules) {
     if (rule.type === 'fixed') {
       if (rule.amount === null || rule.amount === undefined) {
-        return next(new Error(`Amount is required for department rule when type is fixed`));
+        throw new Error(`Amount is required for department rule when type is fixed`);
       }
       if (rule.percentage !== null && rule.percentage !== undefined) {
-        return next(new Error(`Percentage should be null for department rule when type is fixed`));
+        throw new Error(`Percentage should be null for department rule when type is fixed`);
       }
       if (rule.percentageBase !== null && rule.percentageBase !== undefined) {
-        return next(new Error(`Percentage base should be null for department rule when type is fixed`));
+        throw new Error(`Percentage base should be null for department rule when type is fixed`);
       }
     } else if (rule.type === 'percentage') {
       if (rule.percentage === null || rule.percentage === undefined) {
-        return next(new Error(`Percentage is required for department rule when type is percentage`));
+        throw new Error(`Percentage is required for department rule when type is percentage`);
       }
       if (!rule.percentageBase) {
-        return next(new Error(`Percentage base is required for department rule when type is percentage`));
+        throw new Error(`Percentage base is required for department rule when type is percentage`);
       }
       if (rule.amount !== null && rule.amount !== undefined) {
-        return next(new Error(`Amount should be null for department rule when type is percentage`));
+        throw new Error(`Amount should be null for department rule when type is percentage`);
       }
     }
 
     // Validate min/max
     if (rule.minAmount !== null && rule.maxAmount !== null) {
       if (rule.minAmount > rule.maxAmount) {
-        return next(new Error(`Min amount cannot be greater than max amount for department rule`));
+        throw new Error(`Min amount cannot be greater than max amount for department rule`);
       }
     }
   }
-
-  return next();
 });
 
 // Indexes

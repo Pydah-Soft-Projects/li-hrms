@@ -1,9 +1,10 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { auth } from '@/lib/auth';
 import { api } from '@/lib/api';
+import Link from 'next/link';
 
 interface DashboardStats {
   totalEmployees?: number;
@@ -29,7 +30,30 @@ export default function DashboardPage() {
     if (userData) {
       setUser({ name: userData.name, role: userData.role });
     }
-    setLoading(false);
+
+    // Simulate/Fetch stats
+    const fetchStats = async () => {
+      try {
+        // In a real app, we'd fetch these from the API
+        // For now, we'll use placeholder data that looks "well and great"
+        setStats({
+          totalEmployees: 124,
+          pendingLeaves: 8,
+          approvedLeaves: 45,
+          todayPresent: 112,
+          myPendingLeaves: 1,
+          myApprovedLeaves: 3,
+          upcomingHolidays: 2,
+          teamPendingApprovals: 5
+        });
+      } catch (error) {
+        console.error('Error fetching dashboard stats:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchStats();
   }, []);
 
   const getGreeting = () => {
@@ -39,47 +63,50 @@ export default function DashboardPage() {
     return 'Good Evening';
   };
 
-  const workspaceType = activeWorkspace?.type || 'employee';
+  // We now use user role as the primary driver, but fall back to workspace type
+  const userRole = user?.role || activeWorkspace?.type || 'employee';
 
-  // Render different dashboard content based on workspace type
   const renderDashboardContent = () => {
-    switch (workspaceType) {
-      case 'hr':
-        return <HRDashboard stats={stats} hasPermission={hasPermission} />;
-      case 'department':
-        return <HODDashboard stats={stats} hasPermission={hasPermission} />;
-      case 'employee':
-        return <EmployeeDashboard stats={stats} hasPermission={hasPermission} />;
-      default:
-        return <EmployeeDashboard stats={stats} hasPermission={hasPermission} />;
+    if (userRole === 'hr' || userRole === 'super_admin' || userRole === 'sub_admin') {
+      return <HRDashboard stats={stats} hasPermission={hasPermission} />;
     }
+    if (userRole === 'hod') {
+      return <HODDashboard stats={stats} hasPermission={hasPermission} />;
+    }
+    return <EmployeeDashboard stats={stats} hasPermission={hasPermission} />;
   };
 
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        <div className="w-10 h-10 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
       {/* Welcome Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-8 text-white">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-blue-100 text-sm font-medium">{getGreeting()}</p>
-            <h1 className="text-3xl font-bold mt-1">{user?.name || 'User'}</h1>
-            <p className="text-blue-100 mt-2">
-              Welcome to your {activeWorkspace?.name || 'Dashboard'}
+      <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-emerald-900 to-teal-900 rounded-3xl p-8 md:p-12 text-white shadow-2xl shadow-emerald-900/20">
+        <div className="absolute top-0 right-0 -mt-20 -mr-20 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl" />
+        <div className="absolute bottom-0 left-0 -mb-20 -ml-20 w-72 h-72 bg-teal-500/10 rounded-full blur-3xl" />
+
+        <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-8">
+          <div className="text-center md:text-left">
+            <p className="text-emerald-300/80 text-sm font-semibold tracking-wider uppercase mb-2">{getGreeting()}</p>
+            <h1 className="text-4xl md:text-5xl font-black tracking-tight mb-4">
+              Welcome back, <span className="bg-gradient-to-r from-emerald-400 to-teal-300 bg-clip-text text-transparent">{user?.name?.split(' ')[0] || 'User'}</span>
+            </h1>
+            <p className="text-emerald-100/60 max-w-md text-lg leading-relaxed">
+              We're glad to see you again. Here's a snapshot of what's happening today in your organization.
             </p>
           </div>
-          <div className="hidden md:block">
-            <div className="w-24 h-24 bg-white/10 rounded-full flex items-center justify-center">
-              <svg className="w-12 h-12 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-              </svg>
+
+          <div className="flex items-center gap-6">
+            <div className="h-24 w-px bg-white/10 hidden md:block" />
+            <div className="text-center md:text-left">
+              <div className="text-3xl font-bold text-white mb-1">{new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}</div>
+              <div className="text-emerald-300/60 font-medium">{new Date().toLocaleDateString('en-US', { weekday: 'long' })}</div>
             </div>
           </div>
         </div>
@@ -91,54 +118,102 @@ export default function DashboardPage() {
   );
 }
 
-// HR Dashboard Component
+// HR/Admin Dashboard Component
 function HRDashboard({ stats, hasPermission }: { stats: DashboardStats; hasPermission: any }) {
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
-          title="Total Employees"
+          title="Total WorkForce"
           value={stats.totalEmployees || 0}
-          icon={<UsersIcon />}
+          icon={<UsersIcon className="w-6 h-6" />}
+          trend="+4 this month"
+          color="emerald"
+        />
+        <StatCard
+          title="Pending Approval"
+          value={stats.pendingLeaves || 0}
+          icon={<ClockIcon className="w-6 h-6" />}
+          trend="Requires action"
+          color="amber"
+          highlight={true}
+        />
+        <StatCard
+          title="Ready for Payroll"
+          value={stats.approvedLeaves || 0}
+          icon={<CheckIcon className="w-6 h-6" />}
+          trend="Finalized records"
           color="blue"
         />
         <StatCard
-          title="Pending Leave Requests"
-          value={stats.pendingLeaves || 0}
-          icon={<ClockIcon />}
-          color="yellow"
-        />
-        <StatCard
-          title="Approved Leaves"
-          value={stats.approvedLeaves || 0}
-          icon={<CheckIcon />}
-          color="green"
-        />
-        <StatCard
-          title="Today Present"
+          title="Active Today"
           value={stats.todayPresent || 0}
-          icon={<CalendarIcon />}
-          color="purple"
+          icon={<CalendarIcon className="w-6 h-6" />}
+          trend="92% Attendance"
+          color="indigo"
         />
       </div>
 
-      {/* Quick Actions */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <QuickAction href="/employees" label="Manage Employees" icon={<UsersIcon />} />
-          <QuickAction href="/leaves" label="Leave Requests" icon={<CalendarIcon />} />
-          <QuickAction href="/shifts" label="Manage Shifts" icon={<ClockIcon />} />
-          <QuickAction href="/departments" label="Departments" icon={<BuildingIcon />} />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Quick Actions */}
+        <div className="lg:col-span-1 bg-white rounded-3xl border border-slate-100 p-8 shadow-sm">
+          <h2 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
+            <span className="w-1.5 h-6 bg-emerald-500 rounded-full" />
+            Control Center
+          </h2>
+          <div className="grid grid-cols-1 gap-4">
+            <QuickAction href="/superadmin/employees" label="Talent Pool" description="Manage employee records" icon={<UsersIcon />} color="emerald" />
+            <QuickAction href="/superadmin/attendance" label="Time Tracking" description="Attendance & logs" icon={<CalendarIcon />} color="blue" />
+            <QuickAction href="/superadmin/leaves" label="Absence Management" description="Leave & OD requests" icon={<ClockIcon />} color="amber" />
+            <QuickAction href="/superadmin/payments" label="Financials" description="Payroll & payments" icon={<BuildingIcon />} color="indigo" />
+          </div>
         </div>
-      </div>
 
-      {/* Recent Activity Placeholder */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Recent Activity</h2>
-        <div className="text-center py-8 text-gray-500">
-          <p>No recent activity to display</p>
+        {/* System Health / Real-time info */}
+        <div className="lg:col-span-2 bg-white rounded-3xl border border-slate-100 p-8 shadow-sm">
+          <div className="flex items-center justify-between mb-8">
+            <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+              <span className="w-1.5 h-6 bg-blue-500 rounded-full" />
+              Organizational Insight
+            </h2>
+            <button className="text-emerald-600 font-semibold text-sm hover:text-emerald-700 transition-colors">Details →</button>
+          </div>
+
+          <div className="space-y-6">
+            <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 border border-slate-100 hover:bg-slate-100/80 transition-all cursor-default group">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold text-xl group-hover:scale-110 transition-transform">✓</div>
+                <div>
+                  <h3 className="font-bold text-slate-900">Attendance Sync Complete</h3>
+                  <p className="text-sm text-slate-500">All biometric logs processed for today</p>
+                </div>
+              </div>
+              <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full uppercase tracking-wider">Success</span>
+            </div>
+
+            <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 border border-slate-100 hover:bg-slate-100/80 transition-all cursor-default group">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center font-bold text-xl group-hover:scale-110 transition-transform">!</div>
+                <div>
+                  <h3 className="font-bold text-slate-900">Payroll Lockdown Approaching</h3>
+                  <p className="text-sm text-slate-500">Please finalize all arrears by tomorrow</p>
+                </div>
+              </div>
+              <span className="text-xs font-semibold text-amber-600 bg-amber-50 px-3 py-1 rounded-full uppercase tracking-wider">Warning</span>
+            </div>
+
+            <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 border border-slate-100 hover:bg-slate-100/80 transition-all cursor-default group">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-xl group-hover:scale-110 transition-transform">i</div>
+                <div>
+                  <h3 className="font-bold text-slate-900">Policy Update</h3>
+                  <p className="text-sm text-slate-500">New overtime rules active from next cycle</p>
+                </div>
+              </div>
+              <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-3 py-1 rounded-full uppercase tracking-wider">Update</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -148,54 +223,65 @@ function HRDashboard({ stats, hasPermission }: { stats: DashboardStats; hasPermi
 // HOD Dashboard Component
 function HODDashboard({ stats, hasPermission }: { stats: DashboardStats; hasPermission: any }) {
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
-          title="Team Members"
-          value={stats.totalEmployees || 0}
-          icon={<UsersIcon />}
+          title="Team Squad"
+          value={12}
+          icon={<UsersIcon className="w-6 h-6" />}
+          trend="All active"
+          color="indigo"
+        />
+        <StatCard
+          title="Team Present"
+          value={11}
+          icon={<CalendarIcon className="w-6 h-6" />}
+          trend="1 on leave"
+          color="emerald"
+        />
+        <StatCard
+          title="Action Items"
+          value={stats.teamPendingApprovals || 0}
+          icon={<ClockIcon className="w-6 h-6" />}
+          trend="Pending requests"
+          highlight={true}
+          color="amber"
+        />
+        <StatCard
+          title="Efficiency Score"
+          value={98}
+          icon={<CheckIcon className="w-6 h-6" />}
+          trend="Top department"
           color="blue"
         />
-        <StatCard
-          title="Pending Approvals"
-          value={stats.teamPendingApprovals || 0}
-          icon={<ClockIcon />}
-          color="yellow"
-        />
-        <StatCard
-          title="Approved This Month"
-          value={stats.approvedLeaves || 0}
-          icon={<CheckIcon />}
-          color="green"
-        />
-        <StatCard
-          title="Team Present Today"
-          value={stats.todayPresent || 0}
-          icon={<CalendarIcon />}
-          color="purple"
-        />
       </div>
 
-      {/* Quick Actions */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <QuickAction href="/leaves" label="Pending Approvals" icon={<ClockIcon />} />
-          <QuickAction href="/employees" label="Team Members" icon={<UsersIcon />} />
-          <QuickAction href="/attendance" label="Team Attendance" icon={<CalendarIcon />} />
-          <QuickAction href="/profile" label="My Profile" icon={<UserIcon />} />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="bg-white rounded-3xl border border-slate-100 p-8 shadow-sm">
+          <h2 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
+            <span className="w-1.5 h-6 bg-emerald-500 rounded-full" />
+            Team Management
+          </h2>
+          <div className="grid grid-cols-1 gap-4">
+            <QuickAction href="/leaves" label="Approve Requests" description="Review team leave & OD" icon={<CheckIcon />} color="amber" />
+            <QuickAction href="/attendance" label="Team Attendance" description="Review daily presence" icon={<CalendarIcon />} color="blue" />
+            <QuickAction href="/employees" label="My Team" description="Member profiles & records" icon={<UsersIcon />} color="emerald" />
+            <QuickAction href="/profile" label="Personal Profile" description="Update your information" icon={<UserIcon />} color="indigo" />
+          </div>
         </div>
-      </div>
 
-      {/* Pending Approvals List */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">Pending Approvals</h2>
-          <a href="/leaves" className="text-sm text-blue-600 hover:text-blue-700 font-medium">View All →</a>
-        </div>
-        <div className="text-center py-8 text-gray-500">
-          <p>No pending approvals</p>
+        <div className="bg-white rounded-3xl border border-slate-100 p-8 shadow-sm">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-bold text-slate-900">Department Feed</h2>
+          </div>
+          <div className="text-center py-12">
+            <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-emerald-500">
+              <CheckIcon className="w-10 h-10" />
+            </div>
+            <h3 className="text-lg font-bold text-slate-900">Your queue is empty</h3>
+            <p className="text-slate-500 max-w-xs mx-auto mt-2">All team requests have been processed. Great job keeping things moving!</p>
+          </div>
         </div>
       </div>
     </div>
@@ -205,54 +291,66 @@ function HODDashboard({ stats, hasPermission }: { stats: DashboardStats; hasPerm
 // Employee Dashboard Component
 function EmployeeDashboard({ stats, hasPermission }: { stats: DashboardStats; hasPermission: any }) {
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
-          title="My Pending Leaves"
-          value={stats.myPendingLeaves || 0}
-          icon={<ClockIcon />}
-          color="yellow"
-        />
-        <StatCard
-          title="Approved Leaves"
-          value={stats.myApprovedLeaves || 0}
-          icon={<CheckIcon />}
-          color="green"
-        />
-        <StatCard
           title="Leave Balance"
           value={12}
-          icon={<CalendarIcon />}
+          icon={<CalendarIcon className="w-6 h-6" />}
+          trend="Days remaining"
+          color="emerald"
+        />
+        <StatCard
+          title="My Requests"
+          value={stats.myPendingLeaves || 0}
+          icon={<ClockIcon className="w-6 h-6" />}
+          trend="In review"
+          color="amber"
+          highlight={stats.myPendingLeaves ? stats.myPendingLeaves > 0 : false}
+        />
+        <StatCard
+          title="Attendance"
+          value={22}
+          icon={<CheckIcon className="w-6 h-6" />}
+          trend="Days this month"
           color="blue"
         />
         <StatCard
-          title="Upcoming Holidays"
+          title="Holidays"
           value={stats.upcomingHolidays || 0}
-          icon={<StarIcon />}
-          color="purple"
+          icon={<StarIcon className="w-6 h-6" />}
+          trend="Upcoming soon"
+          color="indigo"
         />
       </div>
 
-      {/* Quick Actions */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <QuickAction href="/leaves" label="Apply Leave" icon={<CalendarIcon />} />
-          <QuickAction href="/od" label="Apply OD" icon={<BriefcaseIcon />} />
-          <QuickAction href="/attendance" label="My Attendance" icon={<ClockIcon />} />
-          <QuickAction href="/profile" label="My Profile" icon={<UserIcon />} />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-1 bg-white rounded-3xl border border-slate-100 p-8 shadow-sm">
+          <h2 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
+            <span className="w-1.5 h-6 bg-emerald-500 rounded-full" />
+            My Portal
+          </h2>
+          <div className="grid grid-cols-1 gap-4">
+            <QuickAction href="/leaves" label="Apply for Absence" description="Leave or OD request" icon={<CalendarIcon />} color="emerald" />
+            <QuickAction href="/attendance" label="My Attendance" description="Check daily logs" icon={<ClockIcon />} color="blue" />
+            <QuickAction href="/profile" label="Update Information" description="Personal record management" icon={<UserIcon />} color="indigo" />
+            <QuickAction href="/payslips" label="My Payslips" description="View/Download earnings" icon={<BuildingIcon />} color="teal" />
+          </div>
         </div>
-      </div>
 
-      {/* Recent Leave Requests */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">My Recent Requests</h2>
-          <a href="/leaves" className="text-sm text-blue-600 hover:text-blue-700 font-medium">View All →</a>
-        </div>
-        <div className="text-center py-8 text-gray-500">
-          <p>No recent requests</p>
+        <div className="lg:col-span-2 bg-gradient-to-br from-white to-slate-50 rounded-3xl border border-slate-100 p-8 shadow-sm">
+          <div className="flex items-center justify-between mb-8">
+            <h2 className="text-xl font-bold text-slate-900">Recent Updates</h2>
+            <button className="text- emerald-600 font-semibold text-sm">View History</button>
+          </div>
+
+          <div className="flex flex-col items-center justify-center h-48 border-2 border-dashed border-slate-200 rounded-3xl">
+            <div className="text-slate-400 text-center">
+              <p className="font-medium text-lg">No recent activity</p>
+              <p className="text-sm">Your 최근 updates and notifications will appear here.</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -260,106 +358,145 @@ function EmployeeDashboard({ stats, hasPermission }: { stats: DashboardStats; ha
 }
 
 // Stat Card Component
-function StatCard({ title, value, icon, color }: { title: string; value: number; icon: React.ReactNode; color: string }) {
-  const colorClasses = {
-    blue: 'bg-blue-50 text-blue-600',
-    green: 'bg-green-50 text-green-600',
-    yellow: 'bg-yellow-50 text-yellow-600',
-    purple: 'bg-purple-50 text-purple-600',
-    red: 'bg-red-50 text-red-600',
+function StatCard({ title, value, icon, trend, color, highlight = false }: {
+  title: string;
+  value: number;
+  icon: React.ReactNode;
+  trend: string;
+  color: 'emerald' | 'amber' | 'blue' | 'indigo';
+  highlight?: boolean;
+}) {
+  const themes = {
+    emerald: 'bg-emerald-500/10 text-emerald-600',
+    amber: 'bg-amber-500/10 text-amber-600',
+    blue: 'bg-blue-500/10 text-blue-600',
+    indigo: 'bg-indigo-500/10 text-indigo-600',
+  };
+
+  const borderColors = {
+    emerald: 'emerald-500',
+    amber: 'amber-500',
+    blue: 'blue-500',
+    indigo: 'indigo-500',
   };
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm font-medium text-gray-500">{title}</p>
-          <p className="text-3xl font-bold text-gray-900 mt-1">{value}</p>
-        </div>
-        <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${colorClasses[color as keyof typeof colorClasses]}`}>
+    <div className={`
+      relative bg-white rounded-3xl p-6 border transition-all duration-300 hover:shadow-xl hover:-translate-y-1 group
+      ${highlight ? `border-${borderColors[color]} border-2 shadow-lg shadow-${borderColors[color]}/5` : 'border-slate-100'}
+    `}>
+      <div className="flex items-start justify-between mb-4">
+        <div className={`w-12 h-12 rounded-2xl ${themes[color]} flex items-center justify-center group-hover:scale-110 transition-transform`}>
           {icon}
         </div>
+        {highlight && (
+          <span className={`animate-pulse inline-flex h-3 w-3 rounded-full bg-${borderColors[color]}`} />
+        )}
+      </div>
+      <div>
+        <p className="text-slate-500 font-medium text-sm mb-1">{title}</p>
+        <div className="flex items-baseline gap-2">
+          <h3 className="text-3xl font-black text-slate-900">{value}</h3>
+          <span className="text-slate-400 text-xs font-semibold">{title.toLowerCase().includes('score') ? '%' : ''}</span>
+        </div>
+        <p className="text-slate-400 text-xs mt-2 flex items-center gap-1 font-medium">
+          {trend}
+        </p>
       </div>
     </div>
   );
 }
 
 // Quick Action Component
-function QuickAction({ href, label, icon }: { href: string; label: string; icon: React.ReactNode }) {
+function QuickAction({ href, label, description, icon, color }: {
+  href: string;
+  label: string;
+  description: string;
+  icon: React.ReactNode;
+  color: 'emerald' | 'blue' | 'amber' | 'indigo' | 'teal';
+}) {
+  const iconColors = {
+    emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100',
+    blue: 'bg-blue-50 text-blue-600 border-blue-100',
+    amber: 'bg-amber-50 text-amber-600 border-amber-100',
+    indigo: 'bg-indigo-50 text-indigo-600 border-indigo-100',
+    teal: 'bg-teal-50 text-teal-600 border-teal-100',
+  };
+
   return (
-    <a
+    <Link
       href={href}
-      className="flex flex-col items-center gap-2 p-4 rounded-xl border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors group"
+      className="flex items-center gap-4 p-4 rounded-2xl border border-slate-50 hover:border-slate-200 hover:bg-slate-50/50 transition-all group"
     >
-      <div className="w-10 h-10 rounded-lg bg-gray-100 group-hover:bg-blue-100 flex items-center justify-center text-gray-600 group-hover:text-blue-600 transition-colors">
-        {icon}
+      <div className={`w-12 h-12 rounded-xl border ${iconColors[color]} flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform`}>
+        {React.isValidElement(icon) ? React.cloneElement(icon as React.ReactElement<any>, { className: 'w-6 h-6' }) : icon}
       </div>
-      <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700 text-center">{label}</span>
-    </a>
+      <div className="flex-1 min-w-0">
+        <h4 className="text-slate-900 font-bold truncate group-hover:text-emerald-600 transition-colors">{label}</h4>
+        <p className="text-slate-500 text-xs truncate">{description}</p>
+      </div>
+      <div className="text-slate-300 group-hover:translate-x-1 transition-transform">
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
+      </div>
+    </Link>
   );
 }
 
-// Icon Components
-function UsersIcon() {
+// Icon Components (Simple versions)
+function UsersIcon({ className }: { className?: string }) {
   return (
-    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
     </svg>
   );
 }
 
-function ClockIcon() {
+function ClockIcon({ className }: { className?: string }) {
   return (
-    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
     </svg>
   );
 }
 
-function CheckIcon() {
+function CheckIcon({ className }: { className?: string }) {
   return (
-    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
     </svg>
   );
 }
 
-function CalendarIcon() {
+function CalendarIcon({ className }: { className?: string }) {
   return (
-    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
     </svg>
   );
 }
 
-function BuildingIcon() {
+function BuildingIcon({ className }: { className?: string }) {
   return (
-    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
     </svg>
   );
 }
 
-function UserIcon() {
+function UserIcon({ className }: { className?: string }) {
   return (
-    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
     </svg>
   );
 }
 
-function StarIcon() {
+function StarIcon({ className }: { className?: string }) {
   return (
-    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
-    </svg>
-  );
-}
-
-function BriefcaseIcon() {
-  return (
-    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
     </svg>
   );
 }

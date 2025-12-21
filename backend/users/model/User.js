@@ -28,6 +28,12 @@ const userSchema = new mongoose.Schema(
       required: [true, 'Role is required'],
       default: 'employee',
     },
+    // Scope of access for HR/Sub-admin
+    scope: {
+      type: String,
+      enum: ['global', 'restricted'],
+      default: 'global', // Defaults to global for backward compatibility, but UI should enforce selection
+    },
     roles: [
       {
         type: String,
@@ -39,12 +45,14 @@ const userSchema = new mongoose.Schema(
       ref: 'Department',
       default: null,
     },
+
+    // Legacy field - kept for backward compatibility if any
     departments: [
       {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Department',
       },
-    ], // Multi-department assignment
+    ],
     employeeId: {
       type: String,
       unique: true,

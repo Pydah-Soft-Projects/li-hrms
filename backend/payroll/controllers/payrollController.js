@@ -1,8 +1,8 @@
 const PayrollRecord = require('../model/PayrollRecord');
 const PayrollTransaction = require('../model/PayrollTransaction');
 const Employee = require('../../employees/model/Employee');
-const PayRegisterSummary = require('../../pay-register/model/PayRegisterSummary');
-const MonthlyAttendanceSummary = require('../../attendance/model/MonthlyAttendanceSummary');
+const User = require('../../users/model/User');
+const Settings = require('../../settings/model/Settings');
 const Loan = require('../../loans/model/Loan');
 const payrollCalculationService = require('../services/payrollCalculationService');
 const XLSX = require('xlsx');
@@ -655,6 +655,9 @@ exports.getPayrollRecords = async (req, res) => {
 
     const query = {};
 
+    // Role-based filtering
+    const isAdmin = ['super_admin', 'sub_admin', 'hr'].includes(req.user.role);
+
     if (month) {
       if (!/^\d{4}-\d{2}$/.test(month)) {
         return res.status(400).json({
@@ -667,10 +670,41 @@ exports.getPayrollRecords = async (req, res) => {
 
     if (employeeId) {
       query.employeeId = employeeId;
+    } else if (!isAdmin) {
+      // If not admin and no employeeId is provided, force employee filter to current user's employeeId
+      if (!req.user.employee) {
+        return res.status(403).json({ success: false, message: 'Access denied: No employee profile found' });
+      }
+      query.employeeId = req.user.employee;
+    }
+
+    // Secondary security check for non-admins
+    if (!isAdmin && query.employeeId && query.employeeId.toString() !== req.user.employee?.toString()) {
+      return res.status(403).json({ success: false, message: 'Access denied: You can only view your own records' });
     }
 
     if (status) {
       query.status = status;
+    }
+
+    // Apply Payslip Settings for non-admins
+    if (!isAdmin) {
+      // 1. Check if release is required
+      const releaseRequiredSetting = await Settings.findOne({ key: 'payslip_release_required' });
+      if (releaseRequiredSetting && releaseRequiredSetting.value === true) {
+        query.isReleased = true;
+      }
+
+      // 2. Filter by history window
+      const historyMonthsSetting = await Settings.findOne({ key: 'payslip_history_months' });
+      if (historyMonthsSetting && historyMonthsSetting.value > 0) {
+        const monthsOffset = parseInt(historyMonthsSetting.value);
+        const cutoffDate = new Date();
+        cutoffDate.setMonth(cutoffDate.getMonth() - monthsOffset);
+
+        const cutoffMonth = `${cutoffDate.getFullYear()}-${String(cutoffDate.getMonth() + 1).padStart(2, '0')}`;
+        query.month = { ...query.month, $gte: cutoffMonth };
+      }
     }
 
     // If departmentId is provided, filter by employees in that department
@@ -836,6 +870,39 @@ exports.getPayslip = async (req, res) => {
       });
     }
 
+    // Check permissions
+    const isAdmin = ['super_admin', 'sub_admin', 'hr'].includes(req.user.role);
+    if (!isAdmin && employeeId.toString() !== req.user.employee?.toString()) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    // Verify settings for non-admins
+    if (!isAdmin) {
+      const payrollRecord = await PayrollRecord.findOne({ employeeId, month });
+      if (!payrollRecord) {
+        return res.status(404).json({ success: false, message: 'Payslip not found' });
+      }
+
+      // Check Release status
+      const releaseRequiredSetting = await Settings.findOne({ key: 'payslip_release_required' });
+      if (releaseRequiredSetting && releaseRequiredSetting.value === true && !payrollRecord.isReleased) {
+        return res.status(403).json({ success: false, message: 'Payslip not yet released' });
+      }
+
+      // Check History months
+      const historyMonthsSetting = await Settings.findOne({ key: 'payslip_history_months' });
+      if (historyMonthsSetting && historyMonthsSetting.value > 0) {
+        const monthsOffset = parseInt(historyMonthsSetting.value);
+        const cutoffDate = new Date();
+        cutoffDate.setMonth(cutoffDate.getMonth() - monthsOffset);
+        const cutoffMonth = `${cutoffDate.getFullYear()}-${String(cutoffDate.getMonth() + 1).padStart(2, '0')}`;
+
+        if (month < cutoffMonth) {
+          return res.status(403).json({ success: false, message: 'Historical payslip access limit exceeded' });
+        }
+      }
+    }
+
     const { payslip } = await buildPayslipData(employeeId, month);
 
     res.status(200).json({
@@ -847,6 +914,108 @@ exports.getPayslip = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error fetching payslip',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * @desc    Get payslip data for download (tracks download count)
+ * @route   GET /api/payroll/download/:employeeId/:month
+ * @access  Private
+ */
+exports.downloadPayslip = async (req, res) => {
+  try {
+    const { employeeId, month } = req.params;
+
+    // Permissions check
+    const isAdmin = ['super_admin', 'sub_admin', 'hr'].includes(req.user.role);
+    if (!isAdmin && employeeId.toString() !== req.user.employee?.toString()) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const payrollRecord = await PayrollRecord.findOne({ employeeId, month });
+    if (!payrollRecord) {
+      return res.status(404).json({ success: false, message: 'Payroll record not found' });
+    }
+
+    // Check download limits for non-admins
+    if (!isAdmin) {
+      const downloadLimitSetting = await Settings.findOne({ key: 'payslip_download_limit' });
+      const limit = downloadLimitSetting ? parseInt(downloadLimitSetting.value) : 0;
+
+      if (limit > 0 && (payrollRecord.downloadCount || 0) >= limit) {
+        return res.status(403).json({
+          success: false,
+          message: `Download limit reached (${limit}). Please contact HR for assistance.`
+        });
+      }
+
+      // Increment download count
+      payrollRecord.downloadCount = (payrollRecord.downloadCount || 0) + 1;
+      await payrollRecord.save();
+    }
+
+    const { payslip } = await buildPayslipData(employeeId, month);
+
+    res.status(200).json({
+      success: true,
+      message: 'Download tracked successfully',
+      data: payslip,
+      downloadCount: payrollRecord.downloadCount,
+    });
+  } catch (error) {
+    console.error('Error tracking payslip download:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error tracking download',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * @desc    Release payslips for a specific month/department
+ * @route   PUT /api/payroll/release
+ * @access  Private (Super Admin, Sub Admin, HR)
+ */
+exports.releasePayslips = async (req, res) => {
+  try {
+    const { month, departmentId, employeeIds } = req.body;
+
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Month (YYYY-MM) is required',
+      });
+    }
+
+    const query = { month, status: { $in: ['approved', 'processed'] } };
+
+    if (employeeIds && Array.isArray(employeeIds) && employeeIds.length > 0) {
+      query.employeeId = { $in: employeeIds };
+    } else if (departmentId) {
+      // Find employees in department
+      const employees = await Employee.find({ department_id: departmentId }).select('_id');
+      const deptEmpIds = employees.map(e => e._id);
+      query.employeeId = { $in: deptEmpIds };
+    }
+
+    const updateResult = await PayrollRecord.updateMany(
+      query,
+      { $set: { isReleased: true } }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: `Released ${updateResult.modifiedCount} payslips for ${month}`,
+      modifiedCount: updateResult.modifiedCount,
+    });
+  } catch (error) {
+    console.error('Error releasing payslips:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error releasing payslips',
       error: error.message,
     });
   }

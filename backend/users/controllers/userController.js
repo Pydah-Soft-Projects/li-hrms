@@ -2,6 +2,7 @@ const User = require('../model/User');
 const Employee = require('../../employees/model/Employee');
 const Workspace = require('../../workspaces/model/Workspace');
 const RoleAssignment = require('../../workspaces/model/RoleAssignment');
+const Department = require('../../departments/model/Department');
 const jwt = require('jsonwebtoken');
 
 // Generate JWT Token
@@ -11,15 +12,8 @@ const generateToken = (userId) => {
   });
 };
 
-// Generate random password
-const generatePassword = (length = 12) => {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789@#$%';
-  let password = '';
-  for (let i = 0; i < length; i++) {
-    password += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return password;
-};
+const { generatePassword } = require('../../shared/services/passwordNotificationService');
+
 
 // Get workspace code by role type
 const getWorkspaceCodeByRole = (role) => {
@@ -50,6 +44,7 @@ exports.registerUser = async (req, res) => {
       employeeRef,
       autoGeneratePassword,
       assignWorkspace,
+      scope,
     } = req.body;
 
     // Validate required fields
@@ -70,7 +65,7 @@ exports.registerUser = async (req, res) => {
     }
 
     // Generate or use provided password
-    const userPassword = autoGeneratePassword ? generatePassword() : password;
+    const userPassword = autoGeneratePassword ? await generatePassword(employeeId ? { _id: employeeId } : null) : password;
     if (!userPassword) {
       return res.status(400).json({
         success: false,
@@ -100,8 +95,14 @@ exports.registerUser = async (req, res) => {
       departments: departments || (department ? [department] : []),
       employeeId: employeeId || null,
       employeeRef: employeeRef || null,
+      scope: scope || 'global',
       createdBy: req.user?._id,
     });
+
+    // Valid HOD Sync: Update Department with HOD ID
+    if (role === 'hod' && department) {
+      await Department.findByIdAndUpdate(department, { hod: user._id });
+    }
 
     // Auto-assign to workspace if requested
     let workspaceAssignment = null;
@@ -161,6 +162,7 @@ exports.registerUser = async (req, res) => {
         departments: user.departments,
         employeeId: user.employeeId,
         employeeRef: user.employeeRef,
+        scope: user.scope,
         isActive: user.isActive,
         createdAt: user.createdAt,
       },
@@ -200,6 +202,7 @@ exports.createUserFromEmployee = async (req, res) => {
       roles,
       departments, // For HR: multiple departments
       autoGeneratePassword,
+      scope,
     } = req.body;
 
     // Find employee
@@ -250,7 +253,7 @@ exports.createUserFromEmployee = async (req, res) => {
     }
 
     // Generate or use provided password
-    const userPassword = autoGeneratePassword ? generatePassword() : password;
+    const userPassword = autoGeneratePassword ? await generatePassword(employee) : password;
     if (!userPassword) {
       return res.status(400).json({
         success: false,
@@ -282,8 +285,14 @@ exports.createUserFromEmployee = async (req, res) => {
       departments: userDepartments,
       employeeId: employee.emp_no,
       employeeRef: employee._id,
+      scope: scope || 'global',
       createdBy: req.user?._id,
     });
+
+    // Valid HOD Sync: Update Department with HOD ID
+    if (role === 'hod' && department) {
+      await Department.findByIdAndUpdate(department, { hod: user._id });
+    }
 
     // Auto-assign to workspace
     const workspaceCode = getWorkspaceCodeByRole(role || 'employee');
@@ -338,6 +347,7 @@ exports.createUserFromEmployee = async (req, res) => {
         departments: user.departments,
         employeeId: user.employeeId,
         employeeRef: user.employeeRef,
+        scope: user.scope,
         isActive: user.isActive,
       },
       employee: {
@@ -478,7 +488,7 @@ exports.getUser = async (req, res) => {
 // @access  Private (Super Admin, Sub Admin, HR)
 exports.updateUser = async (req, res) => {
   try {
-    const { name, role, roles, department, departments, isActive, employeeId, employeeRef } = req.body;
+    const { name, role, roles, department, departments, isActive, employeeId, employeeRef, scope } = req.body;
 
     const user = await User.findById(req.params.id);
     if (!user) {
@@ -510,8 +520,14 @@ exports.updateUser = async (req, res) => {
     if (isActive !== undefined) user.isActive = isActive;
     if (employeeId !== undefined) user.employeeId = employeeId;
     if (employeeRef !== undefined) user.employeeRef = employeeRef;
+    if (scope !== undefined) user.scope = scope;
 
     await user.save();
+
+    // Valid HOD Sync: Update Department with HOD ID
+    if (user.role === 'hod' && user.department) {
+      await Department.findByIdAndUpdate(user.department, { hod: user._id });
+    }
 
     // If role changed, update workspace assignment
     if (roleChanged) {
@@ -596,7 +612,7 @@ exports.resetPassword = async (req, res) => {
       });
     }
 
-    const password = autoGenerate ? generatePassword() : newPassword;
+    const password = autoGenerate ? await generatePassword() : newPassword;
     if (!password) {
       return res.status(400).json({
         success: false,

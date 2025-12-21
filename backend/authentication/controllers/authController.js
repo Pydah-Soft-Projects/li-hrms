@@ -1,4 +1,5 @@
 const User = require('../../users/model/User');
+const Employee = require('../../employees/model/Employee');
 const { generateToken } = require('../../users/controllers/userController');
 const RoleAssignment = require('../../workspaces/model/RoleAssignment');
 
@@ -7,28 +8,59 @@ const RoleAssignment = require('../../workspaces/model/RoleAssignment');
 // @access  Public
 exports.login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { identifier: bodyIdentifier, email, password } = req.body;
+    const identifier = bodyIdentifier || email; // support both identifier and email keys
+
+    console.log(`[AuthLogin] Attempting login for identifier: ${identifier}`);
 
     // Validate input
-    if (!email || !password) {
+    if (!identifier || !password) {
+      console.warn(`[AuthLogin] Missing identifier or password`);
       return res.status(400).json({
         success: false,
-        message: 'Please provide email and password',
+        message: 'Please provide email/username/emp_no and password',
       });
     }
 
-    // Find user and include password
-    const user = await User.findOne({ email }).select('+password');
+    const isEmpNo = /^[A-Z]+\d+$/i.test(identifier);
+    let user = null;
+    let userType = null;
+
+    if (isEmpNo) {
+      console.log(`[AuthLogin] Identifier ${identifier} looks like an EmpNo, checking Employee first...`);
+      user = await Employee.findOne({ emp_no: identifier.toUpperCase() }).select('+password');
+      if (user) userType = 'employee';
+    }
+
+    // If not found as EmpNo or not an EmpNo format, check User
+    if (!user) {
+      console.log(`[AuthLogin] Checking User collection for ${identifier}...`);
+      user = await User.findOne({
+        $or: [{ email: identifier.toLowerCase() }, { name: identifier }],
+      }).select('+password');
+      if (user) userType = 'user';
+    }
+
+    // If still not found and not already checked as EmpNo, check Employee by email
+    if (!user && !isEmpNo) {
+      console.log(`[AuthLogin] Checking Employee collection by email for ${identifier}...`);
+      user = await Employee.findOne({ email: identifier.toLowerCase() }).select('+password');
+      if (user) userType = 'employee';
+    }
 
     if (!user) {
+      console.warn(`[AuthLogin] Identifier ${identifier} not found in any collection`);
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials',
       });
     }
 
-    // Check if user is active
-    if (!user.isActive) {
+    console.log(`[AuthLogin] Found ${userType} for identifier ${identifier}: ID ${user._id}`);
+
+    // Check if user/employee is active
+    const isActive = userType === 'user' ? user.isActive : user.is_active;
+    if (!isActive) {
       return res.status(401).json({
         success: false,
         message: 'Account is deactivated. Please contact administrator',
@@ -36,13 +68,17 @@ exports.login = async (req, res) => {
     }
 
     // Check password
+    console.log(`[AuthLogin] Verifying password for ${userType} ${identifier}...`);
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
+      console.warn(`[AuthLogin] Password mismatch for ${userType} ${identifier}. Provided length: ${password?.length}, Stored hash present: ${!!user.password}`);
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials',
       });
     }
+
+    console.log(`[AuthLogin] Login successful for ${userType} ${identifier}`);
 
     // Update last login
     user.lastLogin = new Date();
@@ -55,27 +91,47 @@ exports.login = async (req, res) => {
     let workspaces = [];
     let activeWorkspace = null;
 
-    try {
-      const assignments = await RoleAssignment.getUserWorkspaces(user._id);
-      workspaces = assignments.map((assignment) => ({
-        _id: assignment.workspaceId._id,
-        name: assignment.workspaceId.name,
-        code: assignment.workspaceId.code,
-        type: assignment.workspaceId.type,
-        description: assignment.workspaceId.description,
-        theme: assignment.workspaceId.theme,
-        modules: assignment.workspaceId.modules?.filter((m) => m.isEnabled) || [],
-        defaultModuleCode: assignment.workspaceId.defaultModuleCode,
-        role: assignment.role,
-        isPrimary: assignment.isPrimary,
-      }));
+    if (userType === 'user') {
+      try {
+        const assignments = await RoleAssignment.getUserWorkspaces(user._id);
+        workspaces = assignments.map((assignment) => ({
+          _id: assignment.workspaceId._id,
+          name: assignment.workspaceId.name,
+          code: assignment.workspaceId.code,
+          type: assignment.workspaceId.type,
+          description: assignment.workspaceId.description,
+          theme: assignment.workspaceId.theme,
+          modules: assignment.workspaceId.modules?.filter((m) => m.isEnabled) || [],
+          defaultModuleCode: assignment.workspaceId.defaultModuleCode,
+          role: assignment.role,
+          isPrimary: assignment.isPrimary,
+        }));
 
-      // Determine active workspace
-      activeWorkspace = user.activeWorkspaceId
-        ? workspaces.find((w) => w._id.toString() === user.activeWorkspaceId.toString())
-        : workspaces.find((w) => w.isPrimary) || workspaces[0];
-    } catch (wsError) {
-      console.log('Workspaces not configured yet:', wsError.message);
+        // Determine active workspace
+        activeWorkspace = user.activeWorkspaceId
+          ? workspaces.find((w) => w._id.toString() === user.activeWorkspaceId.toString())
+          : workspaces.find((w) => w.isPrimary) || workspaces[0];
+      } catch (wsError) {
+        console.log('Workspaces not configured yet:', wsError.message);
+      }
+    } else {
+      // For employees, we can assign a default "Employee Portal" workspace if it exists
+      try {
+        const Workspace = require('../../workspaces/model/Workspace');
+        const empWorkspace = await Workspace.findOne({ code: 'EMP' });
+        if (empWorkspace) {
+          activeWorkspace = {
+            _id: empWorkspace._id,
+            name: empWorkspace.name,
+            code: empWorkspace.code,
+            type: empWorkspace.type,
+            role: 'employee',
+          };
+          workspaces = [activeWorkspace];
+        }
+      } catch (wsError) {
+        console.log('Error fetching employee workspace:', wsError.message);
+      }
     }
 
     res.status(200).json({
@@ -86,10 +142,12 @@ exports.login = async (req, res) => {
         user: {
           id: user._id,
           email: user.email,
-          name: user.name,
-          role: user.role,
-          roles: user.roles,
-          department: user.department,
+          name: userType === 'user' ? user.name : user.employee_name,
+          role: userType === 'user' ? user.role : 'employee',
+          roles: userType === 'user' ? user.roles : ['employee'],
+          department: userType === 'user' ? user.department : user.department_id,
+          emp_no: userType === 'employee' ? user.emp_no : user.employeeId,
+          type: userType,
         },
         workspaces,
         activeWorkspace,
@@ -109,15 +167,24 @@ exports.login = async (req, res) => {
 // @access  Private
 exports.getMe = async (req, res) => {
   try {
-    const user = await User.findById(req.user.userId)
+    let user = await User.findById(req.user.userId)
       .populate('department', 'name')
       .populate('activeWorkspaceId', 'name code type')
       .select('-password');
 
+    let userType = 'user';
+
+    if (!user) {
+      user = await Employee.findById(req.user.userId)
+        .populate('department_id', 'name code')
+        .populate('designation_id', 'name code');
+      userType = 'employee';
+    }
+
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: 'User not found',
+        message: 'Account not found',
       });
     }
 
@@ -125,33 +192,63 @@ exports.getMe = async (req, res) => {
     let workspaces = [];
     let activeWorkspace = null;
 
-    try {
-      const assignments = await RoleAssignment.getUserWorkspaces(user._id);
-      workspaces = assignments.map((assignment) => ({
-        _id: assignment.workspaceId._id,
-        name: assignment.workspaceId.name,
-        code: assignment.workspaceId.code,
-        type: assignment.workspaceId.type,
-        description: assignment.workspaceId.description,
-        theme: assignment.workspaceId.theme,
-        modules: assignment.workspaceId.modules?.filter((m) => m.isEnabled) || [],
-        defaultModuleCode: assignment.workspaceId.defaultModuleCode,
-        role: assignment.role,
-        isPrimary: assignment.isPrimary,
-      }));
+    if (userType === 'user') {
+      try {
+        const RoleAssignment = require('../../authentication/model/RoleAssignment');
+        const assignments = await RoleAssignment.getUserWorkspaces(user._id);
+        workspaces = assignments.map((assignment) => ({
+          _id: assignment.workspaceId._id,
+          name: assignment.workspaceId.name,
+          code: assignment.workspaceId.code,
+          type: assignment.workspaceId.type,
+          description: assignment.workspaceId.description,
+          theme: assignment.workspaceId.theme,
+          modules: assignment.workspaceId.modules?.filter((m) => m.isEnabled) || [],
+          defaultModuleCode: assignment.workspaceId.defaultModuleCode,
+          role: assignment.role,
+          isPrimary: assignment.isPrimary,
+        }));
 
-      // Determine active workspace
-      activeWorkspace = user.activeWorkspaceId
-        ? workspaces.find((w) => w._id.toString() === user.activeWorkspaceId._id?.toString())
-        : workspaces.find((w) => w.isPrimary) || workspaces[0];
-    } catch (wsError) {
-      console.log('Workspaces not configured yet:', wsError.message);
+        // Determine active workspace
+        activeWorkspace = user.activeWorkspaceId
+          ? workspaces.find((w) => w._id.toString() === user.activeWorkspaceId.toString())
+          : workspaces.find((w) => w.isPrimary) || workspaces[0];
+      } catch (wsError) {
+        console.log('Workspaces not configured yet:', wsError.message);
+      }
+    } else {
+      // For employees, assign default "Employee Portal" workspace
+      try {
+        const Workspace = require('../../workspaces/model/Workspace');
+        const empWorkspace = await Workspace.findOne({ code: 'EMP' });
+        if (empWorkspace) {
+          activeWorkspace = {
+            _id: empWorkspace._id,
+            name: empWorkspace.name,
+            code: empWorkspace.code,
+            type: empWorkspace.type,
+            role: 'employee',
+          };
+          workspaces = [activeWorkspace];
+        }
+      } catch (wsError) {
+        console.log('Error fetching employee workspace:', wsError.message);
+      }
     }
 
     res.status(200).json({
       success: true,
       data: {
-        user,
+        user: {
+          id: user._id,
+          email: user.email,
+          name: userType === 'user' ? user.name : user.employee_name,
+          role: userType === 'user' ? user.role : 'employee',
+          roles: userType === 'user' ? user.roles : ['employee'],
+          department: userType === 'user' ? user.department : user.department_id,
+          emp_no: userType === 'employee' ? user.emp_no : user.employeeId,
+          type: userType,
+        },
         workspaces,
         activeWorkspace,
       },
@@ -179,7 +276,20 @@ exports.changePassword = async (req, res) => {
       });
     }
 
-    const user = await User.findById(req.user.userId).select('+password');
+    let user = await User.findById(req.user.userId).select('+password');
+    let userType = 'user';
+
+    if (!user) {
+      user = await Employee.findById(req.user.userId).select('+password');
+      userType = 'employee';
+    }
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Account not found',
+      });
+    }
 
     // Verify current password
     const isPasswordValid = await user.comparePassword(currentPassword);

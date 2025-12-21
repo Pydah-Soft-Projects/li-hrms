@@ -20,6 +20,10 @@ const {
   createEmployeeMSSQL,
   employeeExistsMSSQL,
 } = require('../../employees/config/mssqlHelper');
+const {
+  generatePassword,
+  sendCredentials,
+} = require('../../shared/services/passwordNotificationService');
 
 /**
  * @desc    Create employee application (HR)
@@ -45,25 +49,25 @@ exports.createApplication = async (req, res) => {
       }
     } else {
       // Fallback to basic validation if settings not found
-    if (!applicationData.emp_no) {
-      return res.status(400).json({
-        success: false,
-        message: 'Employee number (emp_no) is required',
-      });
-    }
+      if (!applicationData.emp_no) {
+        return res.status(400).json({
+          success: false,
+          message: 'Employee number (emp_no) is required',
+        });
+      }
 
-    if (!applicationData.employee_name) {
-      return res.status(400).json({
-        success: false,
-        message: 'Employee name is required',
-      });
-    }
+      if (!applicationData.employee_name) {
+        return res.status(400).json({
+          success: false,
+          message: 'Employee name is required',
+        });
+      }
 
-    if (!applicationData.proposedSalary) {
-      return res.status(400).json({
-        success: false,
-        message: 'Proposed salary is required',
-      });
+      if (!applicationData.proposedSalary) {
+        return res.status(400).json({
+          success: false,
+          message: 'Proposed salary is required',
+        });
       }
     }
 
@@ -116,20 +120,20 @@ exports.createApplication = async (req, res) => {
     const normalizeOverrides = (list) =>
       Array.isArray(list)
         ? list
-            .filter((item) => item && (item.masterId || item.name))
-            .map((item) => ({
-              masterId: item.masterId || null,
-              code: item.code || null,
-              name: item.name || '',
-              category: item.category || null,
-              type: item.type || null,
-              amount: item.amount ?? item.overrideAmount ?? null,
-              percentage: item.percentage ?? null,
-              percentageBase: item.percentageBase ?? null,
-              minAmount: item.minAmount ?? null,
-              maxAmount: item.maxAmount ?? null,
-              isOverride: true,
-            }))
+          .filter((item) => item && (item.masterId || item.name))
+          .map((item) => ({
+            masterId: item.masterId || null,
+            code: item.code || null,
+            name: item.name || '',
+            category: item.category || null,
+            type: item.type || null,
+            amount: item.amount ?? item.overrideAmount ?? null,
+            percentage: item.percentage ?? null,
+            percentageBase: item.percentageBase ?? null,
+            minAmount: item.minAmount ?? null,
+            maxAmount: item.maxAmount ?? null,
+            isOverride: true,
+          }))
         : [];
     const employeeAllowances = normalizeOverrides(applicationData.employeeAllowances);
     const employeeDeductions = normalizeOverrides(applicationData.employeeDeductions);
@@ -293,42 +297,38 @@ exports.approveApplication = async (req, res) => {
     // Determine DOJ: use provided doj, or default to current date
     const finalDOJ = doj ? new Date(doj) : new Date();
 
-    // Update application status
-    // Keep proposedSalary for reference, set approvedSalary
+    // Set approval data but DON'T SAVE YET
     application.status = 'approved';
     application.approvedSalary = finalSalary; // Store approved salary
-    // Keep proposedSalary in application (don't overwrite it)
     application.doj = finalDOJ;
     application.approvedBy = req.user._id;
     application.approvalComments = comments || null;
     application.approvedAt = new Date();
 
-    await application.save();
-
     // Normalize employee allowances and deductions from request (if provided) or use from application
     const normalizeOverrides = (list) =>
       Array.isArray(list)
         ? list
-            .filter((item) => item && (item.masterId || item.name))
-            .map((item) => ({
-              masterId: item.masterId || null,
-              code: item.code || null,
-              name: item.name || '',
-              category: item.category || null,
-              type: item.type || null,
-              amount: item.amount ?? item.overrideAmount ?? null,
-              percentage: item.percentage ?? null,
-              percentageBase: item.percentageBase ?? null,
-              minAmount: item.minAmount ?? null,
-              maxAmount: item.maxAmount ?? null,
-              isOverride: true,
-            }))
+          .filter((item) => item && (item.masterId || item.name))
+          .map((item) => ({
+            masterId: item.masterId || null,
+            code: item.code || null,
+            name: item.name || '',
+            category: item.category || null,
+            type: item.type || null,
+            amount: item.amount ?? item.overrideAmount ?? null,
+            percentage: item.percentage ?? null,
+            percentageBase: item.percentageBase ?? null,
+            minAmount: item.minAmount ?? null,
+            maxAmount: item.maxAmount ?? null,
+            isOverride: true,
+          }))
         : [];
 
     // Use provided overrides from request (from approval dialog) or fall back to application
     let finalEmployeeAllowances = employeeAllowances ? normalizeOverrides(employeeAllowances) : (application.employeeAllowances || []);
     let finalEmployeeDeductions = employeeDeductions ? normalizeOverrides(employeeDeductions) : (application.employeeDeductions || []);
-    
+
     // Use provided calculated salaries from request (from approval dialog) or calculate them
     let finalCtcSalary = ctcSalary !== undefined && ctcSalary !== null ? ctcSalary : null;
     let finalCalculatedSalary = calculatedSalary !== undefined && calculatedSalary !== null ? calculatedSalary : null;
@@ -377,28 +377,58 @@ exports.approveApplication = async (req, res) => {
 
     const results = { mongodb: false, mssql: false };
 
+    // Generate password
+    const password = await generatePassword(employeeData, null);
+    employeeData.password = password;
+
     // Create in MongoDB
     try {
-      await Employee.create(employeeData);
+      console.log(`[ApproveApplication] Attempting to create employee ${employeeData.emp_no} in MongoDB...`);
+      const newEmployee = await Employee.create(employeeData);
       results.mongodb = true;
+      console.log(`[ApproveApplication] Employee ${employeeData.emp_no} created successfully in MongoDB. ID: ${newEmployee._id}`);
+
+      // NOW save the application status since employee creation succeeded
+      await application.save();
+      console.log(`[ApproveApplication] Application ${application._id} status updated to 'approved'.`);
     } catch (mongoError) {
-      console.error('MongoDB create error:', mongoError);
+      console.error(`[ApproveApplication] MongoDB create error for ${employeeData.emp_no}:`, mongoError);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to create employee record in MongoDB. Application status remains pending.',
+        error: mongoError.message
+      });
     }
 
-    // Create in MSSQL
+    // Create in MSSQL (OPTIONAL/FAIL-SAFE)
     if (isHRMSConnected()) {
       try {
+        console.log(`[ApproveApplication] Syncing employee ${employeeData.emp_no} to MSSQL...`);
         // Check if employee exists in MSSQL
         const existsInMSSQL = await employeeExistsMSSQL(employeeData.emp_no);
         if (!existsInMSSQL) {
           await createEmployeeMSSQL(employeeData);
           results.mssql = true;
+          console.log(`[ApproveApplication] Employee ${employeeData.emp_no} created in MSSQL.`);
         } else {
-          console.log(`Employee ${employeeData.emp_no} already exists in MSSQL`);
+          console.log(`[ApproveApplication] Employee ${employeeData.emp_no} already exists in MSSQL`);
         }
       } catch (mssqlError) {
-        console.error('MSSQL create error:', mssqlError);
+        console.error(`[ApproveApplication] MSSQL sync error (non-blocking) for ${employeeData.emp_no}:`, mssqlError.message);
       }
+    } else {
+      console.warn(`[ApproveApplication] MSSQL not connected, skipping employee sync (non-blocking) for ${employeeData.emp_no}`);
+    }
+
+    // Send credentials notification
+    let notificationResults = null;
+    if (results.mongodb) {
+      console.log(`[ApproveApplication] Sending credentials notification for ${employeeData.emp_no}...`);
+      notificationResults = await sendCredentials(
+        employeeData,
+        password,
+        { email: true, sms: true }
+      );
     }
 
     await application.populate([
@@ -410,9 +440,12 @@ exports.approveApplication = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Employee application approved and employee created successfully',
+      message: results.mssql
+        ? 'Employee application approved and employee created successfully in both databases'
+        : 'Employee application approved and employee created successfully in MongoDB. MSSQL sync skipped/failed.',
       data: application,
-      employeeCreated: results,
+      savedTo: results,
+      notificationResults
     });
   } catch (error) {
     console.error('Error approving employee application:', error);

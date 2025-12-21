@@ -4,6 +4,8 @@
  */
 
 const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 
 const employeeSchema = new mongoose.Schema(
   {
@@ -210,6 +212,14 @@ const employeeSchema = new mongoose.Schema(
       trim: true,
       default: null,
     },
+    password: {
+      type: String,
+      default: null,
+      select: false,
+    },
+    resetPasswordToken: String,
+    resetPasswordExpire: Date,
+    lastLogin: Date,
   },
   {
     timestamps: {
@@ -270,7 +280,7 @@ employeeSchema.virtual('getQualifications').get(function () {
 employeeSchema.virtual('allData').get(function () {
   const permanentFields = this.toObject({ virtuals: false });
   const { dynamicFields, _id, __v, ...permanentData } = permanentFields;
-  
+
   // Merge dynamicFields into root level for easy access
   return {
     ...permanentData,
@@ -284,7 +294,7 @@ employeeSchema.virtual('allData').get(function () {
 employeeSchema.methods.getUnifiedData = function () {
   const permanentFields = this.toObject({ virtuals: false });
   const { dynamicFields, _id, __v, ...permanentData } = permanentFields;
-  
+
   return {
     ...permanentData,
     ...(dynamicFields || {}),
@@ -313,14 +323,14 @@ employeeSchema.methods.getPermanentFields = function () {
  */
 employeeSchema.statics.shouldIncludeForMonth = function (leftDate, month) {
   if (!leftDate) return true; // No left date, always include
-  
+
   // Parse month to get year and month number
   const [year, monthNum] = month.split('-').map(Number);
   const monthStart = new Date(year, monthNum - 1, 1);
-  
+
   // Convert leftDate to Date if it's a string
   const leftDateObj = leftDate instanceof Date ? leftDate : new Date(leftDate);
-  
+
   // Include if left date is on or after the start of this month
   // (meaning they were active during this month or left during this month)
   return leftDateObj >= monthStart;
@@ -338,6 +348,32 @@ employeeSchema.methods.shouldIncludeForMonth = function (month) {
 // Ensure virtuals are included in JSON output
 employeeSchema.set('toJSON', { virtuals: true });
 employeeSchema.set('toObject', { virtuals: true });
+
+// Password hashing middleware
+employeeSchema.pre('save', async function () {
+  if (!this.isModified('password') || !this.password) {
+    console.log(`[EmployeeModel] Password not modified or missing for ${this.emp_no}, skipping hash.`);
+    return;
+  }
+  console.log(`[EmployeeModel] Hashing password for employee ${this.emp_no}...`);
+  const salt = await bcrypt.genSalt(12);
+  this.password = await bcrypt.hash(this.password, salt);
+  console.log(`[EmployeeModel] Password hashed successfully for ${this.emp_no}.`);
+});
+
+// Compare password method
+employeeSchema.methods.comparePassword = async function (candidatePassword) {
+  if (!this.password) return false;
+  return await bcrypt.compare(candidatePassword, this.password);
+};
+
+// Generate password reset token
+employeeSchema.methods.getResetPasswordToken = function () {
+  const resetToken = crypto.randomBytes(20).toString('hex');
+  this.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+  this.resetPasswordExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
+  return resetToken;
+};
 
 module.exports = mongoose.models.Employee || mongoose.model('Employee', employeeSchema);
 

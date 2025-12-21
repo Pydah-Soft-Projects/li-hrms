@@ -1,5 +1,6 @@
 const Department = require('../model/Department');
 const User = require('../../users/model/User');
+const Employee = require('../../employees/model/Employee');
 const Shift = require('../../shifts/model/Shift');
 const Designation = require('../model/Designation');
 
@@ -82,10 +83,10 @@ exports.getDepartmentEmployees = async (req, res) => {
       });
     }
 
-    const employees = await User.find({ department: req.params.id })
+    const employees = await Employee.find({ department_id: req.params.id })
       .select('-password')
-      .populate('department', 'name')
-      .sort({ name: 1 });
+      .populate('department_id', 'name')
+      .sort({ employee_name: 1 });
 
     res.status(200).json({
       success: true,
@@ -271,7 +272,7 @@ exports.deleteDepartment = async (req, res) => {
     }
 
     // Check if department has employees
-    const employeeCount = await User.countDocuments({ department: req.params.id });
+    const employeeCount = await Employee.countDocuments({ department_id: req.params.id });
     if (employeeCount > 0) {
       return res.status(400).json({
         success: false,

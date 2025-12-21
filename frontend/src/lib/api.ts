@@ -144,6 +144,8 @@ export interface LoginResponse {
     role: string;
     roles: string[];
     department?: string;
+    scope?: 'global' | 'restricted';
+    departments?: { _id: string; name: string; code?: string }[];
   };
   workspaces?: Workspace[];
   activeWorkspace?: Workspace;
@@ -266,10 +268,10 @@ export interface Department {
 }
 
 export const api = {
-  login: async (email: string, password: string) => {
+  login: async (identifier: string, password: string) => {
     return apiRequest<LoginResponse>('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ identifier, email: identifier, password }),
     });
   },
   // Payroll include-missing setting (global)
@@ -426,6 +428,7 @@ export const api = {
     employeeId?: string;
     autoGeneratePassword?: boolean;
     assignWorkspace?: boolean;
+    scope?: 'global' | 'restricted';
   }) => {
     return apiRequest<any>('/users/register', {
       method: 'POST',
@@ -441,6 +444,7 @@ export const api = {
     roles?: string[];
     departments?: string[];
     autoGeneratePassword?: boolean;
+    scope?: 'global' | 'restricted';
   }) => {
     return apiRequest<any>('/users/from-employee', {
       method: 'POST',
@@ -731,6 +735,29 @@ export const api = {
     return apiRequest<any>(`/employees/${empNo}/left-date`, {
       method: 'DELETE',
     });
+  },
+
+  // Resend credentials
+  resendEmployeeCredentials: async (empNo: string, data: { passwordMode: string; notificationChannels: any }) => {
+    return apiRequest<any>(`/employees/${empNo}/resend-credentials`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Bulk export passwords
+  bulkExportEmployeePasswords: async (data: { empNos?: string[]; passwordMode: string }) => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const response = await fetch(`${API_BASE_URL}/employees/bulk-export-passwords`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) throw new Error('Export failed');
+    return response.blob();
   },
 
   // Employee Applications
@@ -2010,7 +2037,7 @@ export const api = {
   // Payroll
   calculatePayroll: async (employeeId: string, month: string, query: string = '', arrears?: Array<{ id: string, amount: number, employeeId?: string }>) => {
     const path = `/payroll/calculate${query || ''}`;
-    
+
     // Format arrears to use arrearId instead of id
     const formattedArrears = arrears?.map(arrear => ({
       arrearId: arrear.id,
@@ -2020,10 +2047,10 @@ export const api = {
 
     return apiRequest<any>(path, {
       method: 'POST',
-      body: JSON.stringify({ 
-        employeeId, 
-        month, 
-        arrears: formattedArrears 
+      body: JSON.stringify({
+        employeeId,
+        month,
+        arrears: formattedArrears
       }),
     });
   },

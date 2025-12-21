@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const User = require('../../users/model/User');
+const Employee = require('../../employees/model/Employee');
 
 // Protect routes - verify JWT token and load user data
 exports.protect = async (req, res, next) => {
@@ -21,39 +22,73 @@ exports.protect = async (req, res, next) => {
     try {
       // Verify token
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      
+
       // Fetch user and set on request (includes role)
-      const user = await User.findById(decoded.userId).select('-password');
-      
-      if (!user) {
+      // Check User collection first
+      let authUser = await User.findById(decoded.userId).select('-password');
+      let authEmployee = null;
+
+      if (authUser) {
+        // If it's a user, try to find the linked employee record
+        if (authUser.employeeRef) {
+          authEmployee = await Employee.findById(authUser.employeeRef).select('-password');
+        } else if (authUser.employeeId) {
+          authEmployee = await Employee.findOne({ emp_no: authUser.employeeId }).select('-password');
+        }
+      } else {
+        // If not found in User collection, it might be an Employee ID
+        authEmployee = await Employee.findById(decoded.userId).select('-password');
+        if (authEmployee) {
+          // If it's an employee, see if they have a corresponding User record for roles
+          authUser = await User.findOne({
+            $or: [
+              { employeeRef: authEmployee._id },
+              { employeeId: authEmployee.emp_no }
+            ]
+          }).select('-password');
+        }
+      }
+
+      if (!authUser && !authEmployee) {
         return res.status(401).json({
           success: false,
-          message: 'User not found',
+          message: 'User/Employee not found',
         });
       }
 
-      if (!user.isActive) {
+      // Check deactivation
+      if (authUser && !authUser.isActive) {
         return res.status(401).json({
           success: false,
           message: 'User account is deactivated',
         });
       }
 
-      // Set user on request with all necessary fields
+      if (authEmployee && authEmployee.is_active === false) {
+        return res.status(401).json({
+          success: false,
+          message: 'Employee account is deactivated',
+        });
+      }
+
+      // Set user on request with merged data
+      // Preference for User record for role-based logic, but use Employee for identity
       req.user = {
-        _id: user._id,
-        userId: user._id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        roles: user.roles || [],
-        department: user.department,
-        departments: user.departments || [],
-        employeeId: user.employeeId,
-        employeeRef: user.employeeRef,
-        activeWorkspaceId: user.activeWorkspaceId,
+        _id: authUser?._id || authEmployee?._id,
+        userId: authUser?._id || authEmployee?._id,
+        email: authUser?.email || authEmployee?.email,
+        name: authUser?.name || authEmployee?.employee_name,
+        // Role logic: use User role if available, otherwise 'employee'
+        role: authUser?.role || 'employee',
+        roles: authUser?.roles || (authUser?.role ? [authUser.role] : ['employee']),
+        department: authUser?.department || authEmployee?.department_id,
+        departments: authUser?.departments || [],
+        employeeId: authUser?.employeeId || authEmployee?.emp_no,
+        employeeRef: authUser?.employeeRef || authEmployee?._id,
+        activeWorkspaceId: authUser?.activeWorkspaceId,
+        type: authUser ? 'user' : 'employee'
       };
-      
+
       next();
     } catch (error) {
       return res.status(401).json({
@@ -83,7 +118,7 @@ exports.authorize = (...roles) => {
       }
 
       // Check if user has required role (check primary role and roles array)
-      const hasRole = roles.includes(req.user.role) || 
+      const hasRole = roles.includes(req.user.role) ||
         (req.user.roles && req.user.roles.some((role) => roles.includes(role)));
 
       if (!hasRole) {

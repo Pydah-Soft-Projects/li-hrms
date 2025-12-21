@@ -27,6 +27,7 @@ const {
   deleteEmployeeMSSQL,
   employeeExistsMSSQL,
 } = require('../config/mssqlHelper');
+const { generatePassword, sendCredentials } = require('../../shared/services/passwordNotificationService');
 
 // ============== Helper Functions ==============
 
@@ -98,7 +99,7 @@ const populateUsersInDynamicFields = async (dynamicFields) => {
   // Check if reporting_to or reporting_to_ exists and is an array of ObjectIds
   // Handle both field names (reporting_to and reporting_to_)
   const reportingToField = populated.reporting_to || populated.reporting_to_;
-  
+
   if (reportingToField && Array.isArray(reportingToField) && reportingToField.length > 0) {
     try {
       const fieldName = populated.reporting_to ? 'reporting_to' : 'reporting_to_';
@@ -106,7 +107,7 @@ const populateUsersInDynamicFields = async (dynamicFields) => {
       // Check if already populated (has user objects with name property)
       const isAlreadyPopulated = reportingToField[0] && typeof reportingToField[0] === 'object' && reportingToField[0].name;
       console.log('Is already populated:', isAlreadyPopulated);
-      
+
       if (!isAlreadyPopulated) {
         // Filter valid ObjectIds and convert to strings
         const userIds = [];
@@ -170,23 +171,23 @@ const populateUsersInDynamicFields = async (dynamicFields) => {
               } else {
                 idStr = String(id);
               }
-              
+
               // Try to find user by string ID
               const user = userMap.get(idStr);
               if (user) {
                 return user;
               }
-              
+
               // Try to find by ObjectId if id is an object
               if (typeof id === 'object' && id._id) {
                 const userById = userMap.get(id._id);
                 if (userById) return userById;
               }
-              
+
               // If not found, return original ID
               return id;
             });
-            
+
             console.log(`Populated ${users.length} of ${userIds.length} users for ${fieldName} field`);
             console.log(`Populated ${fieldName}:`, JSON.stringify(populated[fieldName]));
           } else {
@@ -216,16 +217,16 @@ const populateUsersInDynamicFields = async (dynamicFields) => {
  */
 const transformEmployeeForResponse = async (employee, populateUsers = true) => {
   if (!employee) return null;
-  
+
   const plainObj = toPlainObject(employee);
   const { dynamicFields, ...permanentFields } = plainObj;
-  
+
   // Populate users in dynamicFields if needed
   let populatedDynamicFields = dynamicFields || {};
   if (populateUsers && dynamicFields) {
     populatedDynamicFields = await populateUsersInDynamicFields(dynamicFields);
   }
-  
+
   // Merge dynamicFields into root level for easy access
   // Also keep dynamicFields separate for reference
   const merged = {
@@ -233,7 +234,7 @@ const transformEmployeeForResponse = async (employee, populateUsers = true) => {
     ...populatedDynamicFields,
     dynamicFields: populatedDynamicFields,
   };
-  
+
   // Normalize reporting_to_ to reporting_to (handle field name inconsistency)
   if (merged.reporting_to_ && !merged.reporting_to) {
     merged.reporting_to = merged.reporting_to_;
@@ -243,7 +244,7 @@ const transformEmployeeForResponse = async (employee, populateUsers = true) => {
     merged.dynamicFields.reporting_to = merged.dynamicFields.reporting_to_;
     delete merged.dynamicFields.reporting_to_;
   }
-  
+
   // Also populate reporting_to if it exists at root level (from previous merge)
   const rootReportingTo = merged.reporting_to;
   if (populateUsers && rootReportingTo && Array.isArray(rootReportingTo) && rootReportingTo.length > 0) {
@@ -258,7 +259,7 @@ const transformEmployeeForResponse = async (employee, populateUsers = true) => {
       }
     }
   }
-  
+
   return merged;
 };
 
@@ -281,7 +282,7 @@ exports.getAllEmployees = async (req, res) => {
     if (is_active !== undefined) filters.is_active = is_active === 'true';
     if (department_id) filters.department_id = department_id;
     if (designation_id) filters.designation_id = designation_id;
-    
+
     // By default, exclude employees who have left (unless includeLeft=true)
     // Only include employees with no leftDate (active) or includeLeft is true
     if (includeLeft !== 'true') {
@@ -412,7 +413,7 @@ exports.getEmployee = async (req, res) => {
  */
 exports.createEmployee = async (req, res) => {
   try {
-    const employeeData = req.body;
+    const { passwordMode, notificationChannels, ...employeeData } = req.body;
 
     // Validate required fields
     if (!employeeData.emp_no) {
@@ -469,25 +470,28 @@ exports.createEmployee = async (req, res) => {
     const normalizeOverrides = (list) =>
       Array.isArray(list)
         ? list
-            .filter((item) => item && (item.masterId || item.name))
-            .map((item) => ({
-              masterId: item.masterId || null,
-              code: item.code || null,
-              name: item.name || '',
-              category: item.category || null,
-              type: item.type || null,
-              amount: item.amount ?? item.overrideAmount ?? null,
-              percentage: item.percentage ?? null,
-              percentageBase: item.percentageBase ?? null,
-              minAmount: item.minAmount ?? null,
-              maxAmount: item.maxAmount ?? null,
-              isOverride: true,
-            }))
+          .filter((item) => item && (item.masterId || item.name))
+          .map((item) => ({
+            masterId: item.masterId || null,
+            code: item.code || null,
+            name: item.name || '',
+            category: item.category || null,
+            type: item.type || null,
+            amount: item.amount ?? item.overrideAmount ?? null,
+            percentage: item.percentage ?? null,
+            percentageBase: item.percentageBase ?? null,
+            minAmount: item.minAmount ?? null,
+            maxAmount: item.maxAmount ?? null,
+            isOverride: true,
+          }))
         : [];
     const employeeAllowances = normalizeOverrides(employeeData.employeeAllowances);
     const employeeDeductions = normalizeOverrides(employeeData.employeeDeductions);
 
-    // Create in MongoDB
+    // Generate password
+    const rawPassword = await generatePassword(employeeData, passwordMode || null);
+
+    // Create in MongoDB (MANDATORY)
     try {
       const mongoEmployee = await Employee.create({
         ...permanentFields,
@@ -495,13 +499,19 @@ exports.createEmployee = async (req, res) => {
         emp_no: employeeData.emp_no.toUpperCase(),
         employeeAllowances,
         employeeDeductions,
+        password: rawPassword, // Will be hashed by pre-save hook
       });
       results.mongodb = true;
     } catch (mongoError) {
       console.error('MongoDB create error:', mongoError);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to create employee in MongoDB',
+        error: mongoError.message,
+      });
     }
 
-    // Create in MSSQL (only permanent fields, exclude dynamicFields)
+    // Create in MSSQL (OPTIONAL/FAIL-SAFE)
     if (isHRMSConnected()) {
       try {
         await createEmployeeMSSQL({
@@ -512,15 +522,11 @@ exports.createEmployee = async (req, res) => {
         });
         results.mssql = true;
       } catch (mssqlError) {
-        console.error('MSSQL create error:', mssqlError);
+        console.error('MSSQL create error (non-blocking):', mssqlError.message);
+        // We don't return error here because MongoDB succeeded
       }
-    }
-
-    if (!results.mongodb && !results.mssql) {
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to create employee in both databases',
-      });
+    } else {
+      console.warn('MSSQL not connected, skipping employee sync (non-blocking)');
     }
 
     // Fetch the created employee
@@ -528,10 +534,20 @@ exports.createEmployee = async (req, res) => {
       .populate('department_id', 'name code')
       .populate('designation_id', 'name code');
 
+    // Send notifications
+    const notificationResults = await sendCredentials(
+      createdEmployee,
+      rawPassword,
+      notificationChannels || { email: true, sms: true }
+    );
+
     res.status(201).json({
       success: true,
-      message: 'Employee created successfully',
+      message: results.mssql
+        ? 'Employee created successfully in both databases'
+        : 'Employee created successfully in MongoDB. MSSQL sync skipped/failed.',
       savedTo: results,
+      notificationResults,
       data: createdEmployee,
     });
   } catch (error) {
@@ -598,7 +614,7 @@ exports.updateEmployee = async (req, res) => {
       employeeData.paidLeaves !== undefined ||
       employeeData.allottedLeaves !== undefined
     );
-    
+
     // Only validate if dynamicFields are being updated (not for simple permanent field updates)
     if (hasDynamicFieldsUpdate && !hasOnlyPermanentFieldsUpdate) {
       const settings = await EmployeeApplicationFormSettings.getActiveSettings();
@@ -608,7 +624,7 @@ exports.updateEmployee = async (req, res) => {
           ...existingEmployee.toObject(),
           ...employeeData,
         };
-        
+
         const validation = await validateFormData(mergedData, settings);
         if (!validation.isValid) {
           console.error('Validation errors:', validation.errors);
@@ -629,20 +645,20 @@ exports.updateEmployee = async (req, res) => {
     const normalizeOverrides = (list) =>
       Array.isArray(list)
         ? list
-            .filter((item) => item && (item.masterId || item.name))
-            .map((item) => ({
-              masterId: item.masterId || null,
-              code: item.code || null,
-              name: item.name || '',
-              category: item.category || null,
-              type: item.type || null,
-              amount: item.amount ?? item.overrideAmount ?? null,
-              percentage: item.percentage ?? null,
-              percentageBase: item.percentageBase ?? null,
-              minAmount: item.minAmount ?? null,
-              maxAmount: item.maxAmount ?? null,
-              isOverride: true,
-            }))
+          .filter((item) => item && (item.masterId || item.name))
+          .map((item) => ({
+            masterId: item.masterId || null,
+            code: item.code || null,
+            name: item.name || '',
+            category: item.category || null,
+            type: item.type || null,
+            amount: item.amount ?? item.overrideAmount ?? null,
+            percentage: item.percentage ?? null,
+            percentageBase: item.percentageBase ?? null,
+            minAmount: item.minAmount ?? null,
+            maxAmount: item.maxAmount ?? null,
+            isOverride: true,
+          }))
         : [];
     const employeeAllowances = normalizeOverrides(employeeData.employeeAllowances);
     const employeeDeductions = normalizeOverrides(employeeData.employeeDeductions);
@@ -651,7 +667,7 @@ exports.updateEmployee = async (req, res) => {
 
     const results = { mongodb: false, mssql: false };
 
-    // Update in MongoDB
+    // Update in MongoDB (MANDATORY)
     try {
       // Ensure paidLeaves is explicitly set (even if 0)
       const updateData = {
@@ -671,7 +687,7 @@ exports.updateEmployee = async (req, res) => {
       if (employeeData.allottedLeaves !== undefined && employeeData.allottedLeaves !== null) {
         updateData.allottedLeaves = Number(employeeData.allottedLeaves);
       }
-      
+
       await Employee.findOneAndUpdate(
         { emp_no: empNo },
         updateData,
@@ -680,9 +696,14 @@ exports.updateEmployee = async (req, res) => {
       results.mongodb = true;
     } catch (mongoError) {
       console.error('MongoDB update error:', mongoError);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to update employee in MongoDB',
+        error: mongoError.message,
+      });
     }
 
-    // Update in MSSQL (only permanent fields, exclude dynamicFields)
+    // Update in MSSQL (OPTIONAL/FAIL-SAFE)
     if (isHRMSConnected()) {
       try {
         await updateEmployeeMSSQL(empNo, {
@@ -692,30 +713,34 @@ exports.updateEmployee = async (req, res) => {
         });
         results.mssql = true;
       } catch (mssqlError) {
-        console.error('MSSQL update error:', mssqlError);
+        console.error('MSSQL update error (non-blocking):', mssqlError.message);
       }
+    } else {
+      console.warn('MSSQL not connected, skipping employee update sync (non-blocking)');
     }
 
     // Fetch updated employee
     const updatedEmployeeDoc = await Employee.findOne({ emp_no: empNo })
       .populate('department_id', 'name code')
       .populate('designation_id', 'name code');
-    
+
     // Transform employee with user population
     const updatedEmployee = await transformEmployeeForResponse(updatedEmployeeDoc, true);
     if (updatedEmployee) {
-      updatedEmployee.paidLeaves = updatedEmployee.paidLeaves !== undefined && updatedEmployee.paidLeaves !== null 
-        ? Number(updatedEmployee.paidLeaves) 
+      updatedEmployee.paidLeaves = updatedEmployee.paidLeaves !== undefined && updatedEmployee.paidLeaves !== null
+        ? Number(updatedEmployee.paidLeaves)
         : 0;
-      updatedEmployee.allottedLeaves = updatedEmployee.allottedLeaves !== undefined && updatedEmployee.allottedLeaves !== null 
-        ? Number(updatedEmployee.allottedLeaves) 
+      updatedEmployee.allottedLeaves = updatedEmployee.allottedLeaves !== undefined && updatedEmployee.allottedLeaves !== null
+        ? Number(updatedEmployee.allottedLeaves)
         : 0;
     }
 
     res.status(200).json({
       success: true,
-      message: 'Employee updated successfully',
-      updatedIn: results,
+      message: results.mssql
+        ? 'Employee updated successfully in both databases'
+        : 'Employee updated successfully in MongoDB. MSSQL sync skipped/failed.',
+      savedTo: results,
       data: updatedEmployee,
     });
   } catch (error) {
@@ -1004,3 +1029,84 @@ exports.getAllowanceDeductionDefaults = async (req, res) => {
   }
 };
 
+/**
+ * @desc    Resend employee credentials
+ * @route   POST /api/employees/:empNo/resend-credentials
+ * @access  Private (Super Admin)
+ */
+exports.resendEmployeePassword = async (req, res) => {
+  try {
+    const { empNo } = req.params;
+    const { passwordMode, notificationChannels } = req.body;
+
+    const employee = await Employee.findOne({ emp_no: empNo.toUpperCase() });
+    if (!employee) {
+      return res.status(404).json({ success: false, message: 'Employee not found' });
+    }
+
+    // Generate a new temporary password
+    const newPassword = await generatePassword(employee, passwordMode || null);
+    employee.password = newPassword;
+    await employee.save();
+
+    // Send credentials
+    const notificationResults = await sendCredentials(
+      employee,
+      newPassword,
+      notificationChannels || { email: true, sms: true }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: 'Credentials resent successfully',
+      notificationResults
+    });
+  } catch (error) {
+    console.error('Error resending credentials:', error);
+    res.status(500).json({ success: false, message: 'Error resending credentials', error: error.message });
+  }
+};
+
+/**
+ * @desc    Bulk export employee passwords
+ * @route   POST /api/employees/bulk-export-passwords
+ * @access  Private (Super Admin)
+ */
+exports.bulkExportEmployeePasswords = async (req, res) => {
+  try {
+    const { empNos, passwordMode } = req.body; // Array of emp_nos to reset/export
+
+    const query = empNos && empNos.length > 0 ? { emp_no: { $in: empNos } } : { is_active: true };
+    const employees = await Employee.find(query);
+
+    const exportData = [];
+
+    for (const emp of employees) {
+      const newPassword = await generatePassword(emp, passwordMode || null);
+      emp.password = newPassword;
+      await emp.save();
+
+      exportData.push({
+        emp_no: emp.emp_no,
+        employee_name: emp.employee_name,
+        email: emp.email,
+        phone: emp.phone_number,
+        password: newPassword
+      });
+    }
+
+    // Convert to CSV for response
+    const { Parser } = require('json2csv');
+    const fields = ['emp_no', 'employee_name', 'email', 'phone', 'password'];
+    const json2csvParser = new Parser({ fields });
+    const csv = json2csvParser.parse(exportData);
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename=employee_credentials.csv');
+    res.status(200).send(csv);
+
+  } catch (error) {
+    console.error('Error in bulk password export:', error);
+    res.status(500).json({ success: false, message: 'Error in bulk password export', error: error.message });
+  }
+};

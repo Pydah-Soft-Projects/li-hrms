@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
 
-type TabType = 'shift' | 'employee' | 'leaves' | 'loan' | 'salary_advance' | 'attendance' | 'payroll' | 'overtime' | 'permissions' | 'attendance_deductions' | 'general';
+type TabType = 'shift' | 'employee' | 'leaves' | 'loan' | 'salary_advance' | 'attendance' | 'payroll' | 'overtime' | 'permissions' | 'attendance_deductions' | 'communications' | 'feature_control' | 'general';
 
 interface ShiftDuration {
   _id: string;
@@ -147,7 +147,7 @@ export default function SettingsPage() {
   const [odSettings, setODSettings] = useState<LeaveSettingsData | null>(null);
   const [leaveSettingsLoading, setLeaveSettingsLoading] = useState(false);
   const [leaveSubTab, setLeaveSubTab] = useState<'types' | 'statuses' | 'odTypes' | 'odStatuses' | 'workflow' | 'odWorkflow' | 'workspacePermissions' | 'general'>('types');
-  
+
   // Workspace permissions state
   const [workspaces, setWorkspaces] = useState<any[]>([]);
   const [workspacesLoading, setWorkspacesLoading] = useState(false);
@@ -171,12 +171,12 @@ export default function SettingsPage() {
   const [syncing, setSyncing] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
-  
+
   // New leave type form
   const [newLeaveType, setNewLeaveType] = useState({ code: '', name: '', description: '', maxDaysPerYear: 12, leaveNature: 'paid' as 'paid' | 'lop' | 'without_pay', carryForward: false, maxCarryForward: 0 });
   const [newODType, setNewODType] = useState({ code: '', name: '', description: '' });
   const [newStatus, setNewStatus] = useState({ code: '', name: '', description: '', color: '#6b7280' });
-  
+
   // Editing state
   const [editingType, setEditingType] = useState<LeaveType | null>(null);
   const [editingStatus, setEditingStatus] = useState<LeaveStatus | null>(null);
@@ -191,7 +191,7 @@ export default function SettingsPage() {
   }>>({});
   const [workflowUsers, setWorkflowUsers] = useState<any[]>([]);
   const [workflowUsersByRole, setWorkflowUsersByRole] = useState<Record<string, any[]>>({});
-  
+
   // Loan general settings form state
   const [loanGeneralSettings, setLoanGeneralSettings] = useState({
     minAmount: 1000,
@@ -255,6 +255,153 @@ export default function SettingsPage() {
     description: '',
   });
 
+  const [passwordGenerationMode, setPasswordGenerationMode] = useState<'random' | 'phone_empno'>('random');
+  const [credentialDeliveryStrategy, setCredentialDeliveryStrategy] = useState<'email_only' | 'sms_only' | 'both' | 'intelligent'>('both');
+  const [communicationsLoading, setCommunicationsLoading] = useState(false);
+
+  // Feature Control state
+  const [featureControlEmployee, setFeatureControlEmployee] = useState<string[]>([]);
+  const [featureControlHOD, setFeatureControlHOD] = useState<string[]>([]);
+  const [featureControlHR, setFeatureControlHR] = useState<string[]>([]);
+  const [featureControlLoading, setFeatureControlLoading] = useState(false);
+
+  // Payslip Settings state
+  const [payslipReleaseRequired, setPayslipReleaseRequired] = useState<boolean>(true);
+  const [payslipHistoryMonths, setPayslipHistoryMonths] = useState<number>(6);
+  const [payslipDownloadLimit, setPayslipDownloadLimit] = useState<number>(5);
+  const [payrollLoading, setPayrollLoading] = useState(false);
+
+  // Bulk Release state
+  const [releaseMonth, setReleaseMonth] = useState<string>(new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' }));
+  const [releasing, setReleasing] = useState(false);
+
+  const loadFeatureControlSettings = async () => {
+    try {
+      setFeatureControlLoading(true);
+      const resEmp = await api.getSetting('feature_control_employee');
+      const resHOD = await api.getSetting('feature_control_hod');
+      const resHR = await api.getSetting('feature_control_hr');
+
+      if (resEmp.success && resEmp.data?.value?.activeModules) setFeatureControlEmployee(resEmp.data.value.activeModules);
+      if (resHOD.success && resHOD.data?.value?.activeModules) setFeatureControlHOD(resHOD.data.value.activeModules);
+      if (resHR.success && resHR.data?.value?.activeModules) setFeatureControlHR(resHR.data.value.activeModules);
+    } catch (err) {
+      console.error('Failed to load feature control settings', err);
+    } finally {
+      setFeatureControlLoading(false);
+    }
+  };
+
+  const saveFeatureControlSettings = async () => {
+    try {
+      setSaving(true);
+      const resEmp = await api.upsertSetting({
+        key: 'feature_control_employee',
+        value: { activeModules: featureControlEmployee },
+        category: 'feature_control',
+        description: 'Active modules for Employee role'
+      });
+      const resHOD = await api.upsertSetting({
+        key: 'feature_control_hod',
+        value: { activeModules: featureControlHOD },
+        category: 'feature_control',
+        description: 'Active modules for HOD role'
+      });
+      const resHR = await api.upsertSetting({
+        key: 'feature_control_hr',
+        value: { activeModules: featureControlHR },
+        category: 'feature_control',
+        description: 'Active modules for HR role'
+      });
+
+      if (resEmp.success && resHOD.success && resHR.success) {
+        setMessage({ type: 'success', text: 'Feature control settings saved successfully' });
+      } else {
+        setMessage({ type: 'error', text: 'Failed to save feature control settings' });
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: 'An error occurred while saving' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const loadPayrollSettings = async () => {
+    try {
+      setPayrollLoading(true);
+      const resRelease = await api.getSetting('payslip_release_required');
+      const resHistory = await api.getSetting('payslip_history_months');
+      const resLimit = await api.getSetting('payslip_download_limit');
+
+      if (resRelease.success && resRelease.data) setPayslipReleaseRequired(!!resRelease.data.value);
+      if (resHistory.success && resHistory.data) setPayslipHistoryMonths(Number(resHistory.data.value));
+      if (resLimit.success && resLimit.data) setPayslipDownloadLimit(Number(resLimit.data.value));
+    } catch (err) {
+      console.error('Failed to load payroll settings', err);
+    } finally {
+      setPayrollLoading(false);
+    }
+  };
+
+  const savePayrollSettings = async () => {
+    try {
+      setSaving(true);
+      const resRelease = await api.upsertSetting({
+        key: 'payslip_release_required',
+        value: payslipReleaseRequired,
+        category: 'payroll',
+        description: 'Whether payslips must be explicitly released before employees can view them'
+      });
+      const resHistory = await api.upsertSetting({
+        key: 'payslip_history_months',
+        value: payslipHistoryMonths,
+        category: 'payroll',
+        description: 'Number of previous months of payslips visible to employees'
+      });
+      const resLimit = await api.upsertSetting({
+        key: 'payslip_download_limit',
+        value: payslipDownloadLimit,
+        category: 'payroll',
+        description: 'Maximum number of times an employee can download a single payslip'
+      });
+
+      if (resRelease.success && resHistory.success && resLimit.success) {
+        setMessage({ type: 'success', text: 'Payroll settings saved successfully' });
+      } else {
+        setMessage({ type: 'error', text: 'Failed to save payroll settings' });
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: 'An error occurred while saving' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleBulkRelease = async () => {
+    if (!releaseMonth) {
+      toast.error('Please select a month for release');
+      return;
+    }
+
+    try {
+      setReleasing(true);
+      const response = await api.put('/payroll/release', {
+        month: releaseMonth
+      });
+
+      if (response.data.success) {
+        toast.success(`Successfully released ${response.data.count} payslips for ${releaseMonth}`);
+      } else {
+        toast.error(response.data.message || 'Failed to release payslips');
+      }
+    } catch (err) {
+      console.error('Error releasing payslips:', err);
+      toast.error(err.response?.data?.message || 'Error releasing payslips');
+    } finally {
+      setReleasing(false);
+    }
+  };
+
   useEffect(() => {
     if (activeTab === 'shift') {
       loadShiftDurations();
@@ -275,9 +422,14 @@ export default function SettingsPage() {
       loadEarlyOutSettings();
     } else if (activeTab === 'payroll') {
       loadIncludeMissingSetting();
+      loadPayrollSettings();
+    } else if (activeTab === 'communications') {
+      loadCommunicationSettings();
+    } else if (activeTab === 'feature_control') {
+      loadFeatureControlSettings();
     }
   }, [activeTab]);
-  
+
   // Load workspaces when workspace permissions tab is selected
   useEffect(() => {
     if (activeTab === 'leaves' && leaveSubTab === 'workspacePermissions') {
@@ -289,7 +441,7 @@ export default function SettingsPage() {
     try {
       setLoading(true);
       const response = await api.getShiftDurations();
-      
+
       if (response.success) {
         const durations = response.durations || [];
         setShiftDurations(Array.isArray(durations) ? durations : []);
@@ -308,7 +460,7 @@ export default function SettingsPage() {
   const loadEmployeeSettings = async () => {
     try {
       setEmployeeSettingsLoading(true);
-      
+
       // Get current employee settings
       const empSettingsRes = await api.getEmployeeSettings();
       if (empSettingsRes.success && empSettingsRes.data) {
@@ -340,7 +492,7 @@ export default function SettingsPage() {
 
   const saveAttendanceSettings = async () => {
     if (!attendanceSettings) return;
-    
+
     try {
       setSaving(true);
       const response = await api.updateAttendanceSettings(attendanceSettings);
@@ -377,11 +529,11 @@ export default function SettingsPage() {
   const loadOTSettings = async () => {
     try {
       setOTSettingsLoading(true);
-      
+
       // Get OT Pay Per Hour setting
       const payPerHourRes = await api.getSetting('ot_pay_per_hour');
       const minHoursRes = await api.getSetting('ot_min_hours');
-      
+
       setOTSettings({
         otPayPerHour: payPerHourRes.success && payPerHourRes.data ? (payPerHourRes.data.value || 0) : 0,
         minOTHours: minHoursRes.success && minHoursRes.data ? (minHoursRes.data.value || 0) : 0,
@@ -397,7 +549,7 @@ export default function SettingsPage() {
   const saveOTSettings = async () => {
     try {
       setSaving(true);
-      
+
       // Save OT Pay Per Hour
       const payPerHourRes = await api.upsertSetting({
         key: 'ot_pay_per_hour',
@@ -405,7 +557,7 @@ export default function SettingsPage() {
         description: 'Amount per hour of overtime worked (in ₹)',
         category: 'overtime',
       });
-      
+
       // Save Minimum OT Hours
       const minHoursRes = await api.upsertSetting({
         key: 'ot_min_hours',
@@ -413,7 +565,7 @@ export default function SettingsPage() {
         description: 'Minimum overtime hours required to be eligible for overtime pay',
         category: 'overtime',
       });
-      
+
       if (payPerHourRes.success && minHoursRes.success) {
         setMessage({ type: 'success', text: 'OT settings saved successfully' });
       } else {
@@ -430,9 +582,9 @@ export default function SettingsPage() {
   const loadPermissionDeductionRules = async () => {
     try {
       setPermissionRulesLoading(true);
-      
+
       const response = await api.getPermissionDeductionSettings();
-      
+
       if (response.success && response.data) {
         const rules = response.data.deductionRules || {};
         setPermissionDeductionRules({
@@ -454,11 +606,11 @@ export default function SettingsPage() {
   const savePermissionDeductionRules = async () => {
     try {
       setSaving(true);
-      
+
       const response = await api.savePermissionDeductionSettings({
         deductionRules: permissionDeductionRules,
       });
-      
+
       if (response.success) {
         setMessage({ type: 'success', text: 'Permission deduction rules saved successfully' });
       } else {
@@ -475,9 +627,9 @@ export default function SettingsPage() {
   const loadAttendanceDeductionRules = async () => {
     try {
       setAttendanceRulesLoading(true);
-      
+
       const response = await api.getAttendanceDeductionSettings();
-      
+
       if (response.success && response.data) {
         const rules = response.data.deductionRules || {};
         setAttendanceDeductionRules({
@@ -522,11 +674,11 @@ export default function SettingsPage() {
   const saveAttendanceDeductionRules = async () => {
     try {
       setSaving(true);
-      
+
       const response = await api.saveAttendanceDeductionSettings({
         deductionRules: attendanceDeductionRules,
       });
-      
+
       if (response.success) {
         setMessage({ type: 'success', text: 'Attendance deduction rules saved successfully' });
       } else {
@@ -624,6 +776,54 @@ export default function SettingsPage() {
     }
   };
 
+  const loadCommunicationSettings = async () => {
+    try {
+      setCommunicationsLoading(true);
+      const resMode = await api.getSetting('password_generation_mode');
+      const resStrategy = await api.getSetting('credential_delivery_strategy');
+
+      if (resMode.success && resMode.data) {
+        setPasswordGenerationMode(resMode.data.value || 'random');
+      }
+      if (resStrategy.success && resStrategy.data) {
+        setCredentialDeliveryStrategy(resStrategy.data.value || 'both');
+      }
+    } catch (err) {
+      console.error('Failed to load communication settings', err);
+    } finally {
+      setCommunicationsLoading(false);
+    }
+  };
+
+  const saveCommunicationSettings = async () => {
+    try {
+      setSaving(true);
+      const resMode = await api.upsertSetting({
+        key: 'password_generation_mode',
+        value: passwordGenerationMode,
+        category: 'communications',
+        description: 'Method for generating temporary passwords (random or phone+emp_no)'
+      });
+      const resStrategy = await api.upsertSetting({
+        key: 'credential_delivery_strategy',
+        value: credentialDeliveryStrategy,
+        category: 'communications',
+        description: 'Strategy for delivering credentials (email, sms, both, or intelligent)'
+      });
+
+      if (resMode.success && resStrategy.success) {
+        setMessage({ type: 'success', text: 'Communication settings saved successfully' });
+      } else {
+        setMessage({ type: 'error', text: 'Failed to save communication settings' });
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: 'An error occurred while saving' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+
   const handleExcelUpload = async () => {
     if (!uploadFile) {
       setMessage({ type: 'error', text: 'Please select a file to upload' });
@@ -661,7 +861,7 @@ export default function SettingsPage() {
   const loadLeaveSettings = async () => {
     try {
       setLeaveSettingsLoading(true);
-      
+
       // Load leave settings
       const leaveRes = await api.getLeaveSettings('leave');
       console.log('[Frontend] Loaded leave settings:', leaveRes);
@@ -679,33 +879,33 @@ export default function SettingsPage() {
       } else {
         setODSettings(null);
       }
-      
+
       // Merge workspace permissions from both Leave and OD settings
       const leavePerms = leaveRes.success && leaveRes.data?.settings?.workspacePermissions ? leaveRes.data.settings.workspacePermissions : {};
       const odPerms = odRes.success && odRes.data?.settings?.workspacePermissions ? odRes.data.settings.workspacePermissions : {};
-      
+
       console.log('[Frontend] Leave workspace permissions:', leavePerms);
       console.log('[Frontend] OD workspace permissions:', odPerms);
-      
+
       // Get all unique workspace IDs from both
       const allWorkspaceIds = new Set([
         ...Object.keys(leavePerms),
         ...Object.keys(odPerms),
       ]);
-      
+
       const mergedPerms: Record<string, {
         leave?: { canApplyForSelf: boolean; canApplyForOthers: boolean };
         od?: { canApplyForSelf: boolean; canApplyForOthers: boolean };
         canApplyForSelf?: boolean;
         canApplyForOthers?: boolean;
       }> = {};
-      
+
       allWorkspaceIds.forEach(workspaceId => {
         const leavePerm = leavePerms[workspaceId];
         const odPerm = odPerms[workspaceId];
-        
+
         mergedPerms[workspaceId] = {};
-        
+
         // Process Leave permissions
         if (leavePerm) {
           if (typeof leavePerm === 'boolean') {
@@ -729,7 +929,7 @@ export default function SettingsPage() {
             };
           }
         }
-        
+
         // Process OD permissions
         if (odPerm) {
           if (typeof odPerm === 'boolean') {
@@ -756,10 +956,10 @@ export default function SettingsPage() {
           };
         }
       });
-      
+
       console.log('[Frontend] Merged workspace permissions:', mergedPerms);
       setWorkspacePermissions(mergedPerms);
-      
+
       // Load workspaces if on workspace permissions tab
       if (leaveSubTab === 'workspacePermissions') {
         await loadWorkspaces();
@@ -778,7 +978,7 @@ export default function SettingsPage() {
       const response = await api.getWorkspaces();
       if (response.success && response.data) {
         setWorkspaces(response.data);
-        
+
         // Workspace permissions are already loaded in loadLeaveSettings
         // No need to reload here
       }
@@ -796,7 +996,7 @@ export default function SettingsPage() {
       const response = await api.getLoanSettings(type);
       if (response.success && response.data) {
         setLoanSettings(response.data);
-        
+
         // Initialize form state with loaded settings
         const settings = response.data?.settings || {};
         setLoanGeneralSettings({
@@ -809,16 +1009,16 @@ export default function SettingsPage() {
           maxActivePerEmployee: settings.maxActivePerEmployee || 1,
           minServicePeriod: settings.minServicePeriod || 0,
         });
-        
+
         // Load workspace permissions
         const perms = settings.workspacePermissions || {};
         setLoanWorkspacePermissions(perms);
-        
+
         // Load workspaces if on workspace permissions tab
         if (loanSubTab === 'workspacePermissions') {
           await loadWorkspaces();
         }
-        
+
         // Load users for workflow if on workflow tab
         if (loanSubTab === 'workflow') {
           await loadWorkflowUsers();
@@ -900,7 +1100,7 @@ export default function SettingsPage() {
       const leavePermissionsToSave: Record<string, any> = {};
       // Prepare permissions for OD settings
       const odPermissionsToSave: Record<string, any> = {};
-      
+
       Object.keys(workspacePermissions).forEach(workspaceId => {
         const perm = workspacePermissions[workspaceId];
         // Save leave permissions
@@ -917,7 +1117,7 @@ export default function SettingsPage() {
             },
           };
         }
-        
+
         // Save od permissions
         if (perm.od) {
           odPermissionsToSave[workspaceId] = {
@@ -972,7 +1172,7 @@ export default function SettingsPage() {
       ]);
 
       console.log('[Frontend] Save responses - Leave:', leaveResponse, 'OD:', odResponse);
-      
+
       if (leaveResponse.success && odResponse.success) {
         // Reload settings to get the updated data from backend (ensures sync)
         await loadLeaveSettings();
@@ -996,20 +1196,20 @@ export default function SettingsPage() {
       return;
     }
 
-    const updatedTypes = [...(leaveSettings?.types || []), { 
-      ...newLeaveType, 
+    const updatedTypes = [...(leaveSettings?.types || []), {
+      ...newLeaveType,
       isActive: true,
       color: '#3b82f6',
       sortOrder: (leaveSettings?.types?.length || 0) + 1
     }];
-    
+
     try {
       setSaving(true);
-      const response = await api.updateLeaveSettings('leave', { 
-        ...leaveSettings, 
-        types: updatedTypes 
+      const response = await api.updateLeaveSettings('leave', {
+        ...leaveSettings,
+        types: updatedTypes
       });
-      
+
       if (response.success) {
         setLeaveSettings(prev => prev ? { ...prev, types: updatedTypes } : null);
         setNewLeaveType({ code: '', name: '', description: '', maxDaysPerYear: 12, leaveNature: 'paid', carryForward: false, maxCarryForward: 0 });
@@ -1026,16 +1226,16 @@ export default function SettingsPage() {
 
   const handleDeleteLeaveType = async (code: string) => {
     if (!confirm('Are you sure you want to delete this leave type?')) return;
-    
+
     const updatedTypes = leaveSettings?.types?.filter(t => t.code !== code) || [];
-    
+
     try {
       setSaving(true);
-      const response = await api.updateLeaveSettings('leave', { 
-        ...leaveSettings, 
-        types: updatedTypes 
+      const response = await api.updateLeaveSettings('leave', {
+        ...leaveSettings,
+        types: updatedTypes
       });
-      
+
       if (response.success) {
         setLeaveSettings(prev => prev ? { ...prev, types: updatedTypes } : null);
         setMessage({ type: 'success', text: 'Leave type deleted' });
@@ -1055,20 +1255,20 @@ export default function SettingsPage() {
       return;
     }
 
-    const updatedTypes = [...(odSettings?.types || []), { 
-      ...newODType, 
+    const updatedTypes = [...(odSettings?.types || []), {
+      ...newODType,
       isActive: true,
       color: '#8b5cf6',
       sortOrder: (odSettings?.types?.length || 0) + 1
     }];
-    
+
     try {
       setSaving(true);
-      const response = await api.updateLeaveSettings('od', { 
-        ...odSettings, 
-        types: updatedTypes 
+      const response = await api.updateLeaveSettings('od', {
+        ...odSettings,
+        types: updatedTypes
       });
-      
+
       if (response.success) {
         setODSettings(prev => prev ? { ...prev, types: updatedTypes } : null);
         setNewODType({ code: '', name: '', description: '' });
@@ -1085,16 +1285,16 @@ export default function SettingsPage() {
 
   const handleDeleteODType = async (code: string) => {
     if (!confirm('Are you sure you want to delete this OD type?')) return;
-    
+
     const updatedTypes = odSettings?.types?.filter(t => t.code !== code) || [];
-    
+
     try {
       setSaving(true);
-      const response = await api.updateLeaveSettings('od', { 
-        ...odSettings, 
-        types: updatedTypes 
+      const response = await api.updateLeaveSettings('od', {
+        ...odSettings,
+        types: updatedTypes
       });
-      
+
       if (response.success) {
         setODSettings(prev => prev ? { ...prev, types: updatedTypes } : null);
         setMessage({ type: 'success', text: 'OD type deleted' });
@@ -1115,22 +1315,22 @@ export default function SettingsPage() {
     }
 
     const settings = settingsType === 'leave' ? leaveSettings : odSettings;
-    const updatedStatuses = [...(settings?.statuses || []), { 
-      ...newStatus, 
+    const updatedStatuses = [...(settings?.statuses || []), {
+      ...newStatus,
       isFinal: false,
       isApproved: false,
       canEmployeeEdit: false,
       canEmployeeCancel: false,
       sortOrder: (settings?.statuses?.length || 0) + 1
     }];
-    
+
     try {
       setSaving(true);
-      const response = await api.updateLeaveSettings(settingsType, { 
-        ...settings, 
-        statuses: updatedStatuses 
+      const response = await api.updateLeaveSettings(settingsType, {
+        ...settings,
+        statuses: updatedStatuses
       });
-      
+
       if (response.success) {
         if (settingsType === 'leave') {
           setLeaveSettings(prev => prev ? { ...prev, statuses: updatedStatuses } : null);
@@ -1151,17 +1351,17 @@ export default function SettingsPage() {
 
   const handleDeleteStatus = async (settingsType: 'leave' | 'od', code: string) => {
     if (!confirm('Are you sure you want to delete this status?')) return;
-    
+
     const settings = settingsType === 'leave' ? leaveSettings : odSettings;
     const updatedStatuses = settings?.statuses?.filter(s => s.code !== code) || [];
-    
+
     try {
       setSaving(true);
-      const response = await api.updateLeaveSettings(settingsType, { 
-        ...settings, 
-        statuses: updatedStatuses 
+      const response = await api.updateLeaveSettings(settingsType, {
+        ...settings,
+        statuses: updatedStatuses
       });
-      
+
       if (response.success) {
         if (settingsType === 'leave') {
           setLeaveSettings(prev => prev ? { ...prev, statuses: updatedStatuses } : null);
@@ -1181,11 +1381,11 @@ export default function SettingsPage() {
 
   const handleSaveLeaveWorkflow = async () => {
     if (!leaveSettings) return;
-    
+
     try {
       setSaving(true);
       const response = await api.updateLeaveSettings('leave', leaveSettings);
-      
+
       if (response.success) {
         setMessage({ type: 'success', text: 'Leave workflow saved successfully' });
       }
@@ -1198,11 +1398,11 @@ export default function SettingsPage() {
 
   const handleSaveODWorkflow = async () => {
     if (!odSettings) return;
-    
+
     try {
       setSaving(true);
       const response = await api.updateLeaveSettings('od', odSettings);
-      
+
       if (response.success) {
         setMessage({ type: 'success', text: 'OD workflow saved successfully' });
       }
@@ -1215,11 +1415,11 @@ export default function SettingsPage() {
 
   const handleSaveLeaveGeneralSettings = async () => {
     if (!leaveSettings) return;
-    
+
     try {
       setSaving(true);
       const response = await api.updateLeaveSettings('leave', leaveSettings);
-      
+
       if (response.success) {
         setMessage({ type: 'success', text: 'Leave settings saved successfully' });
       }
@@ -1344,6 +1544,8 @@ export default function SettingsPage() {
     { id: 'permissions', label: 'Permission Deductions' },
     { id: 'attendance_deductions', label: 'Attendance Deductions' },
     { id: 'payroll', label: 'Payroll' },
+    { id: 'communications', label: 'Communications & Notifications' },
+    { id: 'feature_control', label: 'Feature Control' },
     { id: 'general', label: 'General' },
   ];
 
@@ -1387,11 +1589,10 @@ export default function SettingsPage() {
                   setActiveTab(tab.id);
                   setMessage(null);
                 }}
-                className={`flex-1 whitespace-nowrap rounded-xl px-4 py-3 text-sm font-semibold transition-all ${
-                  activeTab === tab.id
-                    ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg shadow-blue-500/30'
-                    : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
-                }`}
+                className={`flex-1 whitespace-nowrap rounded-xl px-4 py-3 text-sm font-semibold transition-all ${activeTab === tab.id
+                  ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg shadow-blue-500/30'
+                  : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
+                  }`}
               >
                 {tab.label}
               </button>
@@ -1409,11 +1610,10 @@ export default function SettingsPage() {
 
             {message && (
               <div
-                className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${
-                  message.type === 'success'
-                    ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400'
-                    : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'
-                }`}
+                className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${message.type === 'success'
+                  ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400'
+                  : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'
+                  }`}
               >
                 {message.text}
               </div>
@@ -1513,28 +1713,25 @@ export default function SettingsPage() {
 
             {message && (
               <div
-                className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${
-                  message.type === 'success'
-                    ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400'
-                    : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'
-                }`}
+                className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${message.type === 'success'
+                  ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400'
+                  : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'
+                  }`}
               >
                 {message.text}
               </div>
             )}
 
             {/* MSSQL Connection Status */}
-            <div className={`mb-6 flex items-center gap-3 rounded-2xl border p-4 ${
-              mssqlConnected 
-                ? 'border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20' 
-                : 'border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20'
-            }`}>
-              <div className={`h-3 w-3 rounded-full ${mssqlConnected ? 'bg-green-500' : 'bg-amber-500'}`}></div>
-              <span className={`text-sm font-medium ${
-                mssqlConnected 
-                  ? 'text-green-700 dark:text-green-400' 
-                  : 'text-amber-700 dark:text-amber-400'
+            <div className={`mb-6 flex items-center gap-3 rounded-2xl border p-4 ${mssqlConnected
+              ? 'border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20'
+              : 'border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20'
               }`}>
+              <div className={`h-3 w-3 rounded-full ${mssqlConnected ? 'bg-green-500' : 'bg-amber-500'}`}></div>
+              <span className={`text-sm font-medium ${mssqlConnected
+                ? 'text-green-700 dark:text-green-400'
+                : 'text-amber-700 dark:text-amber-400'
+                }`}>
                 MSSQL (HRMS Database): {mssqlConnected ? 'Connected' : 'Not Connected'}
               </span>
             </div>
@@ -1561,11 +1758,10 @@ export default function SettingsPage() {
                     ].map((option) => (
                       <label
                         key={option.value}
-                        className={`flex cursor-pointer items-center gap-3 rounded-xl border p-4 transition-all ${
-                          employeeDataSource === option.value
-                            ? 'border-blue-400 bg-blue-50 shadow-md dark:border-blue-600 dark:bg-blue-900/30'
-                            : 'border-slate-200 bg-white hover:border-blue-200 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600'
-                        }`}
+                        className={`flex cursor-pointer items-center gap-3 rounded-xl border p-4 transition-all ${employeeDataSource === option.value
+                          ? 'border-blue-400 bg-blue-50 shadow-md dark:border-blue-600 dark:bg-blue-900/30'
+                          : 'border-slate-200 bg-white hover:border-blue-200 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600'
+                          }`}
                       >
                         <input
                           type="radio"
@@ -1600,11 +1796,10 @@ export default function SettingsPage() {
                     ].map((option) => (
                       <label
                         key={option.value}
-                        className={`flex cursor-pointer items-center gap-3 rounded-xl border p-4 transition-all ${
-                          employeeDeleteTarget === option.value
-                            ? 'border-red-400 bg-red-50 shadow-md dark:border-red-600 dark:bg-red-900/30'
-                            : 'border-slate-200 bg-white hover:border-red-200 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600'
-                        }`}
+                        className={`flex cursor-pointer items-center gap-3 rounded-xl border p-4 transition-all ${employeeDeleteTarget === option.value
+                          ? 'border-red-400 bg-red-50 shadow-md dark:border-red-600 dark:bg-red-900/30'
+                          : 'border-slate-200 bg-white hover:border-red-200 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600'
+                          }`}
                       >
                         <input
                           type="radio"
@@ -1655,11 +1850,10 @@ export default function SettingsPage() {
 
             {message && (
               <div
-                className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${
-                  message.type === 'success'
-                    ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400'
-                    : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'
-                }`}
+                className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${message.type === 'success'
+                  ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400'
+                  : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'
+                  }`}
               >
                 {message.text}
               </div>
@@ -1675,11 +1869,10 @@ export default function SettingsPage() {
                       setLeaveSubTab(tab.id as typeof leaveSubTab);
                       setMessage(null);
                     }}
-                    className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition-all ${
-                      leaveSubTab === tab.id
-                        ? 'bg-white text-blue-600 shadow-sm dark:bg-slate-800 dark:text-blue-400'
-                        : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
-                    }`}
+                    className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition-all ${leaveSubTab === tab.id
+                      ? 'bg-white text-blue-600 shadow-sm dark:bg-slate-800 dark:text-blue-400'
+                      : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
+                      }`}
                   >
                     {tab.label}
                   </button>
@@ -1704,27 +1897,27 @@ export default function SettingsPage() {
                       </label>
                       <div className="space-y-3">
                         <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-                        <input
-                          type="text"
-                          value={newLeaveType.code}
-                          onChange={(e) => setNewLeaveType(prev => ({ ...prev, code: e.target.value.toUpperCase() }))}
-                          className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                          placeholder="Code (e.g., CL)"
-                        />
-                        <input
-                          type="text"
-                          value={newLeaveType.name}
-                          onChange={(e) => setNewLeaveType(prev => ({ ...prev, name: e.target.value }))}
-                          className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 sm:col-span-2"
-                          placeholder="Name (e.g., Casual Leave)"
-                        />
-                        <input
-                          type="number"
-                          value={newLeaveType.maxDaysPerYear}
-                          onChange={(e) => setNewLeaveType(prev => ({ ...prev, maxDaysPerYear: Number(e.target.value) }))}
-                          className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                          placeholder="Max Days/Year"
-                        />
+                          <input
+                            type="text"
+                            value={newLeaveType.code}
+                            onChange={(e) => setNewLeaveType(prev => ({ ...prev, code: e.target.value.toUpperCase() }))}
+                            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                            placeholder="Code (e.g., CL)"
+                          />
+                          <input
+                            type="text"
+                            value={newLeaveType.name}
+                            onChange={(e) => setNewLeaveType(prev => ({ ...prev, name: e.target.value }))}
+                            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 sm:col-span-2"
+                            placeholder="Name (e.g., Casual Leave)"
+                          />
+                          <input
+                            type="number"
+                            value={newLeaveType.maxDaysPerYear}
+                            onChange={(e) => setNewLeaveType(prev => ({ ...prev, maxDaysPerYear: Number(e.target.value) }))}
+                            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                            placeholder="Max Days/Year"
+                          />
                         </div>
                         <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
                           <select
@@ -1776,7 +1969,7 @@ export default function SettingsPage() {
                           leaveSettings.types.map((type) => (
                             <div key={type.code} className="flex items-center justify-between px-4 py-3">
                               <div className="flex items-center gap-4">
-                                <span 
+                                <span
                                   className="rounded-lg px-2.5 py-1 text-xs font-bold text-white"
                                   style={{ backgroundColor: type.color || '#3b82f6' }}
                                 >
@@ -1784,21 +1977,20 @@ export default function SettingsPage() {
                                 </span>
                                 <div>
                                   <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="font-medium text-slate-900 dark:text-slate-100">{type.name}</span>
-                                    <span className={`px-2 py-0.5 text-[10px] font-medium rounded ${
-                                      (type as any).leaveNature === 'paid' 
-                                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
-                                        : (type as any).leaveNature === 'lop'
+                                    <span className="font-medium text-slate-900 dark:text-slate-100">{type.name}</span>
+                                    <span className={`px-2 py-0.5 text-[10px] font-medium rounded ${(type as any).leaveNature === 'paid'
+                                      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                                      : (type as any).leaveNature === 'lop'
                                         ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'
                                         : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
-                                    }`}>
+                                      }`}>
                                       {(type as any).leaveNature === 'paid' ? 'Paid' : (type as any).leaveNature === 'lop' ? 'LOP' : 'Without Pay'}
                                     </span>
-                                  {type.maxDaysPerYear && (
+                                    {type.maxDaysPerYear && (
                                       <span className="text-xs text-slate-500 dark:text-slate-400">
-                                      (Max: {type.maxDaysPerYear} days/year)
-                                    </span>
-                                  )}
+                                        (Max: {type.maxDaysPerYear} days/year)
+                                      </span>
+                                    )}
                                     {type.carryForward && (
                                       <span className="px-2 py-0.5 text-[10px] font-medium rounded bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
                                         Carry Forward {type.maxCarryForward ? `(${type.maxCarryForward} days)` : ''}
@@ -1878,7 +2070,7 @@ export default function SettingsPage() {
                           odSettings.types.map((type) => (
                             <div key={type.code} className="flex items-center justify-between px-4 py-3">
                               <div className="flex items-center gap-4">
-                                <span 
+                                <span
                                   className="rounded-lg px-2.5 py-1 text-xs font-bold text-white"
                                   style={{ backgroundColor: type.color || '#8b5cf6' }}
                                 >
@@ -1964,7 +2156,7 @@ export default function SettingsPage() {
                           leaveSettings.statuses.map((status) => (
                             <div key={status.code} className="flex items-center justify-between px-4 py-3">
                               <div className="flex items-center gap-4">
-                                <span 
+                                <span
                                   className="rounded-lg px-2.5 py-1 text-xs font-bold text-white"
                                   style={{ backgroundColor: status.color || '#6b7280' }}
                                 >
@@ -2047,7 +2239,7 @@ export default function SettingsPage() {
                           odSettings.statuses.map((status) => (
                             <div key={status.code} className="flex items-center justify-between px-4 py-3">
                               <div className="flex items-center gap-4">
-                                <span 
+                                <span
                                   className="rounded-lg px-2.5 py-1 text-xs font-bold text-white"
                                   style={{ backgroundColor: status.color || '#6b7280' }}
                                 >
@@ -2116,11 +2308,10 @@ export default function SettingsPage() {
                           {leaveSettings?.workflow?.steps && leaveSettings.workflow.steps.map((step, index) => (
                             <div key={step.stepOrder} className="flex items-center gap-4">
                               <div className="flex flex-col items-center">
-                                <div className={`flex h-12 w-12 items-center justify-center rounded-full ${
-                                  step.approverRole === 'hod' 
-                                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300'
-                                    : 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300'
-                                }`}>
+                                <div className={`flex h-12 w-12 items-center justify-center rounded-full ${step.approverRole === 'hod'
+                                  ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300'
+                                  : 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300'
+                                  }`}>
                                   <span className="text-lg font-bold">{step.stepOrder}</span>
                                 </div>
                                 <span className="mt-1 text-xs font-medium text-slate-600 dark:text-slate-400">{step.stepName}</span>
@@ -2236,11 +2427,10 @@ export default function SettingsPage() {
                           {odSettings?.workflow?.steps && odSettings.workflow.steps.map((step, index) => (
                             <div key={step.stepOrder} className="flex items-center gap-4">
                               <div className="flex flex-col items-center">
-                                <div className={`flex h-12 w-12 items-center justify-center rounded-full ${
-                                  step.approverRole === 'hod' 
-                                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300'
-                                    : 'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300'
-                                }`}>
+                                <div className={`flex h-12 w-12 items-center justify-center rounded-full ${step.approverRole === 'hod'
+                                  ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300'
+                                  : 'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300'
+                                  }`}>
                                   <span className="text-lg font-bold">{step.stepOrder}</span>
                                 </div>
                                 <span className="mt-1 text-xs font-medium text-slate-600 dark:text-slate-400">{step.stepName}</span>
@@ -2281,9 +2471,9 @@ export default function SettingsPage() {
                     <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-indigo-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-indigo-900/10">
                       <h3 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">Workspace Permissions</h3>
                       <p className="text-xs text-slate-500 dark:text-slate-400">
-                        Configure leave/OD application permissions for each workspace. 
-                        <strong>Apply for Self:</strong> Users can apply leave/OD for themselves. 
-                        <strong>Apply for Others:</strong> Users can apply leave/OD for employees in their department(s). 
+                        Configure leave/OD application permissions for each workspace.
+                        <strong>Apply for Self:</strong> Users can apply leave/OD for themselves.
+                        <strong>Apply for Others:</strong> Users can apply leave/OD for employees in their department(s).
                         Employee workspace users can only apply for themselves (self-only).
                       </p>
                     </div>
@@ -2301,25 +2491,24 @@ export default function SettingsPage() {
                         {workspaces.map((workspace) => {
                           const isEmployeeWorkspace = workspace.type === 'employee';
                           const permissions = workspacePermissions[workspace._id] || {};
-                          
+
                           // Get Leave permissions
                           const leavePerms = permissions.leave || { canApplyForSelf: false, canApplyForOthers: false };
                           // Fallback to legacy format if leave not specified
                           const leaveCanApplyForSelf = leavePerms.canApplyForSelf || permissions.canApplyForSelf || false;
                           const leaveCanApplyForOthers = leavePerms.canApplyForOthers || permissions.canApplyForOthers || false;
-                          
+
                           // Get OD permissions
                           const odPerms = permissions.od || { canApplyForSelf: false, canApplyForOthers: false };
                           // Fallback to legacy format if od not specified
                           const odCanApplyForSelf = odPerms.canApplyForSelf || permissions.canApplyForSelf || false;
                           const odCanApplyForOthers = odPerms.canApplyForOthers || permissions.canApplyForOthers || false;
-                          
+
                           return (
                             <div
                               key={workspace._id}
-                              className={`rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800 ${
-                                isEmployeeWorkspace ? 'opacity-60' : ''
-                              }`}
+                              className={`rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800 ${isEmployeeWorkspace ? 'opacity-60' : ''
+                                }`}
                             >
                               <div className="mb-4">
                                 <div className="flex items-center gap-3 mb-2">
@@ -2369,9 +2558,8 @@ export default function SettingsPage() {
                                         onChange={(e) => handleWorkspacePermissionToggle(workspace._id, 'leave', 'self', e.target.checked)}
                                         className="peer sr-only"
                                       />
-                                      <div className={`peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-blue-500 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-blue-800 ${
-                                        isEmployeeWorkspace ? 'opacity-50 cursor-not-allowed' : ''
-                                      }`}></div>
+                                      <div className={`peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-blue-500 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-blue-800 ${isEmployeeWorkspace ? 'opacity-50 cursor-not-allowed' : ''
+                                        }`}></div>
                                     </label>
                                   </div>
 
@@ -2393,9 +2581,8 @@ export default function SettingsPage() {
                                         onChange={(e) => handleWorkspacePermissionToggle(workspace._id, 'leave', 'others', e.target.checked)}
                                         className="peer sr-only"
                                       />
-                                      <div className={`peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-blue-500 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-blue-800 ${
-                                        isEmployeeWorkspace ? 'opacity-50 cursor-not-allowed' : ''
-                                      }`}></div>
+                                      <div className={`peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-blue-500 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-blue-800 ${isEmployeeWorkspace ? 'opacity-50 cursor-not-allowed' : ''
+                                        }`}></div>
                                     </label>
                                   </div>
                                 </div>
@@ -2428,9 +2615,8 @@ export default function SettingsPage() {
                                         onChange={(e) => handleWorkspacePermissionToggle(workspace._id, 'od', 'self', e.target.checked)}
                                         className="peer sr-only"
                                       />
-                                      <div className={`peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-purple-500 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-purple-800 ${
-                                        isEmployeeWorkspace ? 'opacity-50 cursor-not-allowed' : ''
-                                      }`}></div>
+                                      <div className={`peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-purple-500 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-purple-800 ${isEmployeeWorkspace ? 'opacity-50 cursor-not-allowed' : ''
+                                        }`}></div>
                                     </label>
                                   </div>
 
@@ -2452,9 +2638,8 @@ export default function SettingsPage() {
                                         onChange={(e) => handleWorkspacePermissionToggle(workspace._id, 'od', 'others', e.target.checked)}
                                         className="peer sr-only"
                                       />
-                                      <div className={`peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-purple-500 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-purple-800 ${
-                                        isEmployeeWorkspace ? 'opacity-50 cursor-not-allowed' : ''
-                                      }`}></div>
+                                      <div className={`peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-purple-500 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-purple-800 ${isEmployeeWorkspace ? 'opacity-50 cursor-not-allowed' : ''
+                                        }`}></div>
                                     </label>
                                   </div>
                                 </div>
@@ -2601,11 +2786,10 @@ export default function SettingsPage() {
                             loadWorkflowUsers();
                           }
                         }}
-                        className={`flex-1 whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition-all ${
-                          loanSubTab === tab.id
-                            ? 'bg-white text-blue-600 shadow-sm dark:bg-slate-700 dark:text-blue-400'
-                            : 'text-slate-600 hover:bg-white/50 dark:text-slate-400 dark:hover:bg-slate-700/50'
-                        }`}
+                        className={`flex-1 whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition-all ${loanSubTab === tab.id
+                          ? 'bg-white text-blue-600 shadow-sm dark:bg-slate-700 dark:text-blue-400'
+                          : 'text-slate-600 hover:bg-white/50 dark:text-slate-400 dark:hover:bg-slate-700/50'
+                          }`}
                       >
                         {tab.label}
                       </button>
@@ -3044,11 +3228,10 @@ export default function SettingsPage() {
                         </div>
                       </div>
                       {attendanceSettings.mssqlAvailable !== undefined && (
-                        <div className={`rounded-xl px-4 py-2 text-sm ${
-                          attendanceSettings.mssqlAvailable
-                            ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400'
-                            : 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400'
-                        }`}>
+                        <div className={`rounded-xl px-4 py-2 text-sm ${attendanceSettings.mssqlAvailable
+                          ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400'
+                          : 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400'
+                          }`}>
                           {attendanceSettings.mssqlAvailable ? '✓ MSSQL connection available' : '✗ MSSQL connection unavailable'}
                         </div>
                       )}
@@ -3261,31 +3444,157 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              <div className="flex justify-end">
+
+              <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-emerald-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-emerald-900/10">
+                <div className="mb-4">
+                  <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Payslip Access Control</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Configure how and when employees can access their payslips</p>
+                </div>
+
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-slate-800 dark:text-slate-200">Release Required</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Employees can only view payslips after they are explicitly released by HR</p>
+                    </div>
+                    <label className="relative inline-flex cursor-pointer items-center">
+                      <input
+                        type="checkbox"
+                        className="peer sr-only"
+                        checked={payslipReleaseRequired}
+                        onChange={(e) => setPayslipReleaseRequired(e.target.checked)}
+                      />
+                      <div className="peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-emerald-600 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-emerald-800"></div>
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                        History Visibility (Months)
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="60"
+                        value={payslipHistoryMonths}
+                        onChange={(e) => setPayslipHistoryMonths(parseInt(e.target.value) || 6)}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                      />
+                      <p className="mt-1 text-[10px] text-slate-500">Number of previous months available in portal</p>
+                    </div>
+
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                        Download Limit Per Payslip
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="100"
+                        value={payslipDownloadLimit}
+                        onChange={(e) => setPayslipDownloadLimit(parseInt(e.target.value) || 5)}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                      />
+                      <p className="mt-1 text-[10px] text-slate-500">Maximum times an employee can download a single payslip</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3">
                 <button
-                  onClick={async () => {
-                    setIncludeMissingSaving(true);
-                    try {
-                      const res = await api.saveIncludeMissingSetting(includeMissing);
-                      if (res?.success) {
-                        setMessage({ type: 'success', text: 'Payroll setting saved' });
-                      } else {
-                        setMessage({ type: 'error', text: res?.message || 'Failed to save setting' });
-                      }
-                    } catch (err) {
-                      console.error(err);
-                      setMessage({ type: 'error', text: 'Failed to save setting' });
-                    } finally {
-                      setIncludeMissingSaving(false);
-                    }
-                  }}
-                  disabled={includeMissingSaving || includeMissingLoading}
-                  className="rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={savePayrollSettings}
+                  disabled={saving || payrollLoading}
+                  className="rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-500/30 transition-all hover:from-emerald-600 hover:to-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {includeMissingSaving ? 'Saving...' : 'Save Payroll Settings'}
+                  {saving ? 'Saving...' : 'Save Payroll Settings'}
                 </button>
               </div>
+
+              <div className="mt-8 rounded-2xl border border-blue-200 bg-blue-50/30 p-5 dark:border-blue-700 dark:bg-blue-900/10">
+                <div className="mb-4">
+                  <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-100">Bulk Payslip Release</h3>
+                  <p className="text-xs text-blue-500 dark:text-blue-400">Trigger manual release of payslips for a specific month</p>
+                </div>
+
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+                  <div className="flex-1">
+                    <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Target Month</label>
+                    <input
+                      type="text"
+                      placeholder="e.g., January 2024"
+                      value={releaseMonth}
+                      onChange={(e) => setReleaseMonth(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                    />
+                  </div>
+                  <button
+                    onClick={handleBulkRelease}
+                    disabled={releasing}
+                    className="rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-bold text-white shadow-md shadow-blue-500/20 hover:bg-blue-700 active:scale-95 disabled:opacity-50 transition-all"
+                  >
+                    {releasing ? 'Releasing...' : 'Release Now'}
+                  </button>
+                </div>
+              </div>
             </div>
+          </div>
+        )}
+
+        {activeTab === 'feature_control' && (
+          <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg dark:border-slate-800 dark:bg-slate-950/95 sm:p-8">
+            <h2 className="mb-2 text-xl font-semibold text-slate-900 dark:text-slate-100">Feature Control</h2>
+            <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">
+              Manage sidebar application visibility for different user roles.
+            </p>
+
+            {featureControlLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
+              </div>
+            ) : (
+              <div className="space-y-8">
+                {[
+                  { id: 'employee', label: 'Employee Role', state: featureControlEmployee, setState: setFeatureControlEmployee },
+                  { id: 'hod', label: 'HOD Role', state: featureControlHOD, setState: setFeatureControlHOD },
+                  { id: 'hr', label: 'HR Role', state: featureControlHR, setState: setFeatureControlHR },
+                ].map((role) => (
+                  <div key={role.id} className="rounded-2xl border border-slate-200 bg-slate-50/50 p-6 dark:border-slate-700 dark:bg-slate-900/50">
+                    <h3 className="mb-4 text-sm font-semibold text-slate-900 dark:text-slate-100 uppercase tracking-wider">{role.label}</h3>
+                    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+                      {['DASHBOARD', 'LEAVE', 'OD', 'ATTENDANCE', 'PAYSLIPS', 'PROFILE', 'REPORTS', 'EMPLOYEES', 'OT', 'LOAN', 'PERMISSION'].map((module) => (
+                        <label key={module} className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 transition-all hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800">
+                          <input
+                            type="checkbox"
+                            checked={role.state.includes(module)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                role.setState([...role.state, module]);
+                              } else {
+                                role.setState(role.state.filter(m => m !== module));
+                              }
+                            }}
+                            className="h-4 w-4 rounded text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="text-xs font-medium text-slate-700 dark:text-slate-300 uppercase">{module}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+
+                <div className="flex justify-end">
+                  <button
+                    onClick={saveFeatureControlSettings}
+                    disabled={saving}
+                    className="rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-600 px-8 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/25 transition-all hover:from-blue-600 hover:to-indigo-700 disabled:opacity-50"
+                  >
+                    {saving ? 'Saving...' : 'Save Feature Control'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -3306,11 +3615,10 @@ export default function SettingsPage() {
 
                   {message && (
                     <div
-                      className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${
-                        message.type === 'success'
-                          ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400'
-                          : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'
-                      }`}
+                      className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${message.type === 'success'
+                        ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400'
+                        : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'
+                        }`}
                     >
                       {message.text}
                     </div>
@@ -3388,11 +3696,10 @@ export default function SettingsPage() {
 
                   {message && (
                     <div
-                      className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${
-                        message.type === 'success'
-                          ? 'border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-900/20 dark:text-green-200'
-                          : 'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200'
-                      }`}
+                      className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${message.type === 'success'
+                        ? 'border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-900/20 dark:text-green-200'
+                        : 'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200'
+                        }`}
                     >
                       {message.text}
                     </div>
@@ -3516,11 +3823,10 @@ export default function SettingsPage() {
 
                   {message && (
                     <div
-                      className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${
-                        message.type === 'success'
-                          ? 'border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-900/20 dark:text-green-200'
-                          : 'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200'
-                      }`}
+                      className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${message.type === 'success'
+                        ? 'border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-900/20 dark:text-green-200'
+                        : 'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200'
+                        }`}
                     >
                       {message.text}
                     </div>
@@ -3805,6 +4111,125 @@ export default function SettingsPage() {
                         {earlyOutSaving ? 'Saving...' : 'Save Early-Out Settings'}
                       </button>
                     </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'communications' && (
+          <div className="space-y-6">
+            {communicationsLoading ? (
+              <div className="flex items-center justify-center rounded-3xl border border-slate-200 bg-white/95 py-16 shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
+              </div>
+            ) : (
+              <>
+                <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg dark:border-slate-800 dark:bg-slate-950/95 sm:p-8">
+                  <h2 className="mb-2 text-xl font-semibold text-slate-900 dark:text-slate-100">Password Management</h2>
+                  <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">
+                    Configure how temporary passwords are generated for new employees and users.
+                  </p>
+
+                  <div className="grid gap-6 sm:grid-cols-2">
+                    <button
+                      onClick={() => setPasswordGenerationMode('random')}
+                      className={`relative flex flex-col items-start rounded-2xl border p-5 text-left transition-all ${passwordGenerationMode === 'random'
+                        ? 'border-blue-500 bg-blue-50/50 ring-2 ring-blue-500/20 dark:border-blue-400 dark:bg-blue-900/10'
+                        : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800'
+                        }`}
+                    >
+                      <div className={`mb-3 flex h-10 w-10 items-center justify-center rounded-xl ${passwordGenerationMode === 'random' ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400'}`}>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                        </svg>
+                      </div>
+                      <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Random Password</h3>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Secure 10-character alphanumeric password</p>
+                      {passwordGenerationMode === 'random' && <div className="absolute right-4 top-4 text-blue-500"><svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg></div>}
+                    </button>
+
+                    <button
+                      onClick={() => setPasswordGenerationMode('phone_empno')}
+                      className={`relative flex flex-col items-start rounded-2xl border p-5 text-left transition-all ${passwordGenerationMode === 'phone_empno'
+                        ? 'border-blue-500 bg-blue-50/50 ring-2 ring-blue-500/20 dark:border-blue-400 dark:bg-blue-900/10'
+                        : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800'
+                        }`}
+                    >
+                      <div className={`mb-3 flex h-10 w-10 items-center justify-center rounded-xl ${passwordGenerationMode === 'phone_empno' ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400'}`}>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                        </svg>
+                      </div>
+                      <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Predictable Password</h3>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Last 4 digits of phone + Employee ID</p>
+                      {passwordGenerationMode === 'phone_empno' && <div className="absolute right-4 top-4 text-blue-500"><svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg></div>}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg dark:border-slate-800 dark:bg-slate-950/95 sm:p-8">
+                  <h2 className="mb-2 text-xl font-semibold text-slate-900 dark:text-slate-100">Credential Delivery Strategy</h2>
+                  <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">
+                    Define how credentials should be sent to employees upon account creation.
+                  </p>
+
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    {[
+                      { id: 'email_only', label: 'Email Only', desc: 'Send via Email only', icon: 'M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z' },
+                      { id: 'sms_only', label: 'SMS Only', desc: 'Send via SMS only', icon: 'M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z' },
+                      { id: 'both', label: 'Email & SMS', desc: 'Send via both channels', icon: 'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9' },
+                      { id: 'intelligent', label: 'Intelligent', desc: 'Auto-select based on availability', icon: 'M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.989-2.386l-.548-.547z' }
+                    ].map((item) => (
+                      <button
+                        key={item.id}
+                        onClick={() => setCredentialDeliveryStrategy(item.id as any)}
+                        className={`group relative flex flex-col items-start rounded-2xl border p-4 text-left transition-all ${credentialDeliveryStrategy === item.id
+                          ? 'border-indigo-500 bg-indigo-50/50 ring-2 ring-indigo-500/20 dark:border-indigo-400 dark:bg-indigo-900/10'
+                          : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800'
+                          }`}
+                      >
+                        <div className={`mb-3 flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${credentialDeliveryStrategy === item.id ? 'bg-indigo-500 text-white' : 'bg-slate-100 text-slate-600 group-hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-400'}`}>
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={item.icon} />
+                          </svg>
+                        </div>
+                        <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{item.label}</h3>
+                        <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">{item.desc}</p>
+                        {credentialDeliveryStrategy === item.id && <div className="absolute right-3 top-3 text-indigo-500"><svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg></div>}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="mt-6 rounded-2xl border border-blue-100 bg-blue-50/30 p-4 dark:border-blue-900/30 dark:bg-blue-900/10">
+                    <div className="flex gap-3">
+                      <div className="text-blue-500">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-semibold text-blue-900 dark:text-blue-100">About {credentialDeliveryStrategy === 'intelligent' ? 'Intelligent Mode' : credentialDeliveryStrategy.replace('_', ' ')}</h4>
+                        <p className="mt-1 text-[11px] leading-relaxed text-blue-800/80 dark:text-blue-200/80">
+                          {credentialDeliveryStrategy === 'intelligent'
+                            ? "Prioritizes SMS for mobile accessibility. If no phone number is found, it automatically falls back to Email delivery."
+                            : credentialDeliveryStrategy === 'both'
+                              ? "Sends credentials to both Email and Phone Number for maximum visibility and record keeping."
+                              : `Sends credentials exclusively via ${credentialDeliveryStrategy === 'email_only' ? 'Email' : 'SMS'}. Ensure users have the required contact info.`}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-8 flex justify-end">
+                    <button
+                      onClick={saveCommunicationSettings}
+                      disabled={saving}
+                      className="rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-600 px-8 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/25 transition-all hover:scale-[1.02] hover:shadow-blue-500/40 active:scale-95 disabled:opacity-50"
+                    >
+                      {saving ? 'Saving...' : 'Save Communication Settings'}
+                    </button>
                   </div>
                 </div>
               </>

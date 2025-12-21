@@ -7,6 +7,8 @@ export interface User {
   role: string;
   roles: string[];
   department?: string;
+  scope?: 'global' | 'restricted';
+  departments?: { _id: string; name: string; code?: string }[];
 }
 
 export const auth = {

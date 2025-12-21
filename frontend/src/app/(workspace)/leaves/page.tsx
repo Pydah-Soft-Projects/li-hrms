@@ -72,11 +72,11 @@ interface LeaveSplitSummary {
 
 interface LeaveApplication {
   _id: string;
-  employeeId?: { 
-    _id: string; 
-    employee_name?: string; 
-    first_name?: string; 
-    last_name?: string; 
+  employeeId?: {
+    _id: string;
+    employee_name?: string;
+    first_name?: string;
+    last_name?: string;
     emp_no: string;
   };
   emp_no?: string;
@@ -106,11 +106,11 @@ interface LeaveApplication {
 
 interface ODApplication {
   _id: string;
-  employeeId?: { 
-    _id: string; 
-    employee_name?: string; 
-    first_name?: string; 
-    last_name?: string; 
+  employeeId?: {
+    _id: string;
+    employee_name?: string;
+    first_name?: string;
+    last_name?: string;
     emp_no: string;
   };
   emp_no?: string;
@@ -363,7 +363,7 @@ export default function LeavesPage() {
   const canCreateOD = hasPermission('OD', 'canCreate');
   const canApprove = hasPermission('LEAVE', 'canApprove') || hasPermission('OD', 'canApprove');
   const dataScope = leaveModuleConfig?.dataScope || odModuleConfig?.dataScope || 'own';
-  
+
   // Debug: Log module configuration
   console.log('[Workspace Leaves] Module configs - LEAVE:', leaveModuleConfig, 'OD:', odModuleConfig);
   console.log('[Workspace Leaves] Module permissions - canCreateLeave:', canCreateLeave, 'canCreateOD:', canCreateOD);
@@ -379,12 +379,12 @@ export default function LeavesPage() {
   useEffect(() => {
     console.log('[Workspace Leaves] Permissions updated - Leave:', { self: canApplyLeaveForSelf, others: canApplyLeaveForOthers }, 'OD:', { self: canApplyODForSelf, others: canApplyODForOthers });
     console.log('[Workspace Leaves] Module permissions - canCreateLeave:', canCreateLeave, 'canCreateOD:', canCreateOD);
-    
+
     // Check button display conditions
     const showLeaveOnly = (canApplyLeaveForSelf || canApplyLeaveForOthers) && canCreateLeave && !canCreateOD;
     const showODOnly = (canApplyODForSelf || canApplyODForOthers) && !canCreateLeave && canCreateOD;
     const showCombined = ((canApplyLeaveForSelf || canApplyLeaveForOthers) || (canApplyODForSelf || canApplyODForOthers)) && canCreateLeave && canCreateOD;
-    
+
     console.log('[Workspace Leaves] Button display conditions:');
     console.log('  - Show Leave Only:', showLeaveOnly, '| Condition:', `(${canApplyLeaveForSelf || canApplyLeaveForOthers}) && ${canCreateLeave} && !${canCreateOD}`);
     console.log('  - Show OD Only:', showODOnly, '| Condition:', `(${canApplyODForSelf || canApplyODForOthers}) && !${canCreateLeave} && ${canCreateOD}`);
@@ -465,7 +465,7 @@ export default function LeavesPage() {
     try {
       const workspaceId = activeWorkspace?._id;
       console.log('[Workspace Leaves] Checking permissions for workspace:', workspaceId, activeWorkspace?.name);
-      
+
       if (!workspaceId) {
         console.log('[Workspace Leaves] No workspace ID found');
         setCanApplyLeaveForSelf(false);
@@ -494,12 +494,12 @@ export default function LeavesPage() {
         api.getLeaveSettings('leave'),
         api.getLeaveSettings('od'),
       ]);
-      
+
       console.log('[Workspace Leaves] Leave settings response:', leaveSettingsRes);
       console.log('[Workspace Leaves] OD settings response:', odSettingsRes);
-      
+
       const workspaceIdStr = String(workspaceId);
-      
+
       // Check Leave permissions from leave settings
       let leavePermissionsFromLeave = null;
       if (leaveSettingsRes.success && leaveSettingsRes.data?.settings?.workspacePermissions) {
@@ -513,7 +513,7 @@ export default function LeavesPage() {
           }
         }
       }
-      
+
       // Check OD permissions from od settings
       let odPermissionsFromOD = null;
       if (odSettingsRes.success && odSettingsRes.data?.settings?.workspacePermissions) {
@@ -527,11 +527,11 @@ export default function LeavesPage() {
           }
         }
       }
-      
+
       // Process Leave permissions
       let leaveSelf = false;
       let leaveOthers = false;
-      
+
       if (leavePermissionsFromLeave) {
         console.log('[Workspace Leaves] Processing leave permissions, type:', typeof leavePermissionsFromLeave, 'has leave prop:', !!leavePermissionsFromLeave.leave);
         if (typeof leavePermissionsFromLeave === 'boolean') {
@@ -557,15 +557,25 @@ export default function LeavesPage() {
       } else {
         console.log('[Workspace Leaves] No leave permissions found');
       }
-      
+
+
+      // Override based on Role (Strict Role-Based Access)
+      if (currentUser) {
+        if (currentUser.role === 'employee') {
+          leaveOthers = false;
+        } else if (['hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser.role)) {
+          leaveOthers = true;
+        }
+      }
+
       console.log('[Workspace Leaves] Parsed leave permissions:', { self: leaveSelf, others: leaveOthers });
       setCanApplyLeaveForSelf(leaveSelf);
       setCanApplyLeaveForOthers(leaveOthers);
-      
+
       // Process OD permissions - check OD settings first, then fallback to leave settings
       let odSelf = false;
       let odOthers = false;
-      
+
       // First try OD settings
       if (odPermissionsFromOD) {
         console.log('[Workspace Leaves] Processing OD permissions from OD settings, type:', typeof odPermissionsFromOD, 'has od prop:', !!odPermissionsFromOD.od);
@@ -585,7 +595,7 @@ export default function LeavesPage() {
           odSelf = odPermissionsFromOD.canApplyForSelf || false;
           odOthers = odPermissionsFromOD.canApplyForOthers || false;
         }
-      } 
+      }
       // If not found in OD settings, check leave settings (might have OD permissions stored there)
       else if (leavePermissionsFromLeave && typeof leavePermissionsFromLeave === 'object' && leavePermissionsFromLeave.od) {
         console.log('[Workspace Leaves] Found OD permissions in leave settings, using them');
@@ -601,15 +611,25 @@ export default function LeavesPage() {
       } else {
         console.log('[Workspace Leaves] No OD permissions found');
       }
-      
+
+
+      // Override OD based on Role
+      if (currentUser) {
+        if (currentUser.role === 'employee') {
+          odOthers = false;
+        } else if (['hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser.role)) {
+          odOthers = true;
+        }
+      }
+
       console.log('[Workspace Leaves] Parsed OD permissions:', { self: odSelf, others: odOthers });
       setCanApplyODForSelf(odSelf);
       setCanApplyODForOthers(odOthers);
-      
+
       // Set combined permissions (for backward compatibility)
       setCanApplyForSelf(leaveSelf || odSelf);
       setCanApplyForOthers(leaveOthers || odOthers);
-      
+
       console.log('[Workspace Leaves] Final permissions - Leave:', { self: leaveSelf, others: leaveOthers }, 'OD:', { self: odSelf, others: odOthers });
     } catch (err) {
       console.error('[Workspace Leaves] Failed to check workspace permission:', err);
@@ -626,45 +646,64 @@ export default function LeavesPage() {
     try {
       if (!currentUser) return;
 
-      // Get department IDs from user
-      const departmentIds: string[] = [];
-      
-      // HR can have multiple departments
-      if (currentUser.role === 'hr' && currentUser.departments) {
-        // If departments array exists, use it
-        if (Array.isArray(currentUser.departments)) {
-          departmentIds.push(...currentUser.departments.map((d: any) => typeof d === 'string' ? d : d._id));
-        }
-      } 
-      // HOD has single department
-      else if (currentUser.role === 'hod' && currentUser.department) {
-        departmentIds.push(typeof currentUser.department === 'string' ? currentUser.department : currentUser.department._id);
-      }
-      // Sub-admin or Super-admin can see all
-      else if (currentUser.role === 'sub_admin' || currentUser.role === 'super_admin') {
-        // Load all employees
-        const response = await api.getEmployees({ is_active: true });
-        if (response.success) {
-          setEmployees(response.data || []);
-        }
-        return;
-      }
 
-      // Load employees filtered by departments
-      if (departmentIds.length > 0) {
-        const allEmployees: Employee[] = [];
-        for (const deptId of departmentIds) {
-          const response = await api.getEmployees({ is_active: true, department_id: deptId });
-          if (response.success && response.data) {
-            allEmployees.push(...response.data);
+
+      // Load employees logic (based on Role)
+      if (currentUser) {
+        // 1. Employee: No access to other employees
+        if (currentUser.role === 'employee') {
+          setEmployees([]);
+        }
+        // 2. HOD: Access to own department employees
+        else if (currentUser.role === 'hod') {
+          const deptId = typeof currentUser.department === 'object' && currentUser.department ? currentUser.department._id : currentUser.department;
+
+          if (deptId) {
+            const response = await api.getEmployees({ is_active: true, department_id: deptId });
+            if (response.success && response.data) {
+              setEmployees(response.data);
+            }
           }
         }
-        // Remove duplicates
-        const uniqueEmployees = allEmployees.filter((emp, index, self) => 
-          index === self.findIndex((e) => e._id === emp._id)
-        );
-        setEmployees(uniqueEmployees);
+        // 3. HR/Sub-Admin/Super-Admin: Access based on Scope
+        else if (['hr', 'sub_admin', 'super_admin'].includes(currentUser.role)) {
+          console.log('[Workspace Leaves] Loading employees for HR/Admin. Scope:', currentUser.scope);
+
+          if (currentUser.scope === 'restricted' && currentUser.departments?.length > 0) {
+            // Fetch employees for assigned departments
+            const allEmployees: Employee[] = [];
+            for (const dept of currentUser.departments) {
+              const deptId = typeof dept === 'object' && dept ? dept._id : dept;
+              const response = await api.getEmployees({ is_active: true, department_id: deptId });
+              if (response.success && response.data) {
+                allEmployees.push(...response.data);
+              }
+            }
+            // Unique
+            const uniqueEmployees = allEmployees.filter((emp, index, self) =>
+              index === self.findIndex((e) => e._id === emp._id)
+            );
+            setEmployees(uniqueEmployees);
+          } else if (currentUser.scope === 'global' || currentUser.role === 'super_admin') {
+            // Fetch all employees? Or rely on server-side pagination/search for "All". 
+            // For dropdown, bringing ALL might be too heavy. 
+            // But existing logic seemingly tried to fetch all if departmentIds was empty? 
+            // Existing logic: if (departmentIds.length > 0) ... else setEmployees([]) 
+            // The previous logic relied on `activeWorkspace` departments. 
+
+            // If Global HR, maybe we fetch all? Or fetch nothing and rely on search API?
+            // For now, let's fetch based on workspace config if available, or just fetch all active.
+            // Given the previous code, let's check workspace config.
+
+            // If it's a "Global" view, we might want to fetch all.
+            const response = await api.getEmployees({ is_active: true });
+            if (response.success && response.data) {
+              setEmployees(response.data);
+            }
+          }
+        }
       } else {
+        // Fallback if currentUser not loaded yet
         setEmployees([]);
       }
     } catch (err) {
@@ -757,7 +796,7 @@ export default function LeavesPage() {
       odStartTime: '',
       odEndTime: '',
     });
-    
+
     // Reset employee selection
     setSelectedEmployee(null);
     setEmployeeSearch('');
@@ -790,7 +829,7 @@ export default function LeavesPage() {
     // Check permissions based on apply type
     const canApplySelf = applyType === 'leave' ? canApplyLeaveForSelf : canApplyODForSelf;
     const canApplyOthers = applyType === 'leave' ? canApplyLeaveForOthers : canApplyODForOthers;
-    
+
     // If canApplyForOthers is enabled, require employee selection
     // If only canApplyForSelf is enabled, don't require employee selection (applies for self)
     if (canApplyOthers && !canApplySelf && !selectedEmployee) {
@@ -1119,9 +1158,9 @@ export default function LeavesPage() {
           const hasBothPermissions = hasLeavePermission && hasODPermission;
           const hasOnlyLeave = hasLeavePermission && !hasODPermission;
           const hasOnlyOD = !hasLeavePermission && hasODPermission;
-          
+
           console.log('[Workspace Leaves] Button display check:', { hasLeavePermission, hasODPermission, hasBothPermissions, hasOnlyLeave, hasOnlyOD });
-          
+
           // Show combined button if user has permissions for both Leave and OD
           if (hasBothPermissions) {
             return (
@@ -1134,7 +1173,7 @@ export default function LeavesPage() {
               </button>
             );
           }
-          
+
           // Show Leave-only button if user only has Leave permission
           if (hasOnlyLeave) {
             return (
@@ -1147,7 +1186,7 @@ export default function LeavesPage() {
               </button>
             );
           }
-          
+
           // Show OD-only button if user only has OD permission
           if (hasOnlyOD) {
             return (
@@ -1160,7 +1199,7 @@ export default function LeavesPage() {
               </button>
             );
           }
-          
+
           return null;
         })()}
       </div>
@@ -1234,11 +1273,10 @@ export default function LeavesPage() {
         <div className="flex gap-2 border-b border-gray-200 dark:border-slate-700">
           <button
             onClick={() => setActiveTab('leaves')}
-            className={`px-4 py-2.5 font-medium text-sm transition-all border-b-2 -mb-px ${
-              activeTab === 'leaves'
-                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-            }`}
+            className={`px-4 py-2.5 font-medium text-sm transition-all border-b-2 -mb-px ${activeTab === 'leaves'
+              ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+              : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+              }`}
           >
             <span className="flex items-center gap-2">
               <CalendarIcon />
@@ -1247,11 +1285,10 @@ export default function LeavesPage() {
           </button>
           <button
             onClick={() => setActiveTab('od')}
-            className={`px-4 py-2.5 font-medium text-sm transition-all border-b-2 -mb-px ${
-              activeTab === 'od'
-                ? 'border-purple-500 text-purple-600 dark:text-purple-400'
-                : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-            }`}
+            className={`px-4 py-2.5 font-medium text-sm transition-all border-b-2 -mb-px ${activeTab === 'od'
+              ? 'border-purple-500 text-purple-600 dark:text-purple-400'
+              : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+              }`}
           >
             <span className="flex items-center gap-2">
               <BriefcaseIcon />
@@ -1261,11 +1298,10 @@ export default function LeavesPage() {
           {canApprove && (
             <button
               onClick={() => setActiveTab('pending')}
-              className={`px-4 py-2.5 font-medium text-sm transition-all border-b-2 -mb-px ${
-                activeTab === 'pending'
-                  ? 'border-yellow-500 text-yellow-600 dark:text-yellow-400'
-                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-              }`}
+              className={`px-4 py-2.5 font-medium text-sm transition-all border-b-2 -mb-px ${activeTab === 'pending'
+                ? 'border-yellow-500 text-yellow-600 dark:text-yellow-400'
+                : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                }`}
             >
               <span className="flex items-center gap-2">
                 <ClockIcon />
@@ -1282,11 +1318,10 @@ export default function LeavesPage() {
           <div className="flex rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-0.5">
             <button
               onClick={() => setViewMode('list')}
-              className={`rounded-md px-4 py-2 text-sm font-medium transition-all ${
-                viewMode === 'list'
-                  ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-sm'
-                  : 'text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-slate-700'
-              }`}
+              className={`rounded-md px-4 py-2 text-sm font-medium transition-all ${viewMode === 'list'
+                ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-sm'
+                : 'text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-slate-700'
+                }`}
             >
               <span className="flex items-center gap-2">
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1297,11 +1332,10 @@ export default function LeavesPage() {
             </button>
             <button
               onClick={() => setViewMode('calendar')}
-              className={`rounded-md px-4 py-2 text-sm font-medium transition-all ${
-                viewMode === 'calendar'
-                  ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-sm'
-                  : 'text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-slate-700'
-              }`}
+              className={`rounded-md px-4 py-2 text-sm font-medium transition-all ${viewMode === 'calendar'
+                ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-sm'
+                : 'text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-slate-700'
+                }`}
             >
               <span className="flex items-center gap-2">
                 <CalendarIcon />
@@ -1309,7 +1343,7 @@ export default function LeavesPage() {
               </span>
             </button>
           </div>
-          
+
           {/* Month/Year Selector for Calendar */}
           {viewMode === 'calendar' && (
             <div className="flex items-center gap-2 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
@@ -1399,8 +1433,8 @@ export default function LeavesPage() {
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-slate-700">
                 {leaves.map((leave) => (
-                  <tr 
-                    key={leave._id} 
+                  <tr
+                    key={leave._id}
                     className="hover:bg-gray-50 dark:hover:bg-slate-700/50 cursor-pointer transition-colors"
                     onClick={() => openDetailDialog(leave, 'leave')}
                   >
@@ -1459,7 +1493,7 @@ export default function LeavesPage() {
               const lastDay = new Date(year, month + 1, 0);
               const daysInMonth = lastDay.getDate();
               const startingDayOfWeek = firstDay.getDay();
-              
+
               // Get leaves for this month
               const monthLeaves = leaves.filter((leave) => {
                 const fromDate = new Date(leave.fromDate);
@@ -1485,7 +1519,7 @@ export default function LeavesPage() {
               };
 
               const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-              
+
               return (
                 <div>
                   <div className="grid grid-cols-7 gap-2 mb-4">
@@ -1501,22 +1535,20 @@ export default function LeavesPage() {
                     ))}
                     {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
                       const leave = getLeaveForDate(day);
-                      const isToday = 
+                      const isToday =
                         day === new Date().getDate() &&
                         month === new Date().getMonth() &&
                         year === new Date().getFullYear();
-                      
+
                       return (
                         <div
                           key={day}
                           onClick={() => leave && openDetailDialog(leave, 'leave')}
-                          className={`aspect-square rounded-lg border-2 p-2 transition-all ${
-                            leave
-                              ? 'cursor-pointer hover:scale-105 border-blue-400 bg-blue-50 dark:bg-blue-900/30'
-                              : 'border-gray-200 dark:border-slate-700'
-                          } ${
-                            isToday ? 'ring-2 ring-green-500 ring-offset-2' : ''
-                          }`}
+                          className={`aspect-square rounded-lg border-2 p-2 transition-all ${leave
+                            ? 'cursor-pointer hover:scale-105 border-blue-400 bg-blue-50 dark:bg-blue-900/30'
+                            : 'border-gray-200 dark:border-slate-700'
+                            } ${isToday ? 'ring-2 ring-green-500 ring-offset-2' : ''
+                            }`}
                         >
                           <div className="flex flex-col h-full">
                             <div className={`text-sm font-semibold mb-1 ${isToday ? 'text-green-600 dark:text-green-400' : 'text-gray-900 dark:text-white'}`}>
@@ -1542,7 +1574,7 @@ export default function LeavesPage() {
                       );
                     })}
                   </div>
-                  
+
                   {/* Legend */}
                   <div className="mt-6 flex flex-wrap gap-4 text-xs">
                     <div className="flex items-center gap-2">
@@ -1589,8 +1621,8 @@ export default function LeavesPage() {
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-slate-700">
                 {ods.map((od) => (
-                  <tr 
-                    key={od._id} 
+                  <tr
+                    key={od._id}
                     className="hover:bg-gray-50 dark:hover:bg-slate-700/50 cursor-pointer transition-colors"
                     onClick={() => openDetailDialog(od, 'od')}
                   >
@@ -1651,8 +1683,8 @@ export default function LeavesPage() {
                 </h3>
                 <div className="space-y-3">
                   {pendingLeaves.map((leave) => (
-                    <div 
-                      key={leave._id} 
+                    <div
+                      key={leave._id}
                       className="rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 p-4 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
                       onClick={() => openDetailDialog(leave, 'leave')}
                     >
@@ -1703,8 +1735,8 @@ export default function LeavesPage() {
                 </h3>
                 <div className="space-y-3">
                   {pendingODs.map((od) => (
-                    <div 
-                      key={od._id} 
+                    <div
+                      key={od._id}
                       className="rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 p-4 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
                       onClick={() => openDetailDialog(od, 'od')}
                     >
@@ -1774,11 +1806,10 @@ export default function LeavesPage() {
                       odType: '',
                     }));
                   }}
-                  className={`flex-1 py-3 rounded-xl font-medium text-sm transition-all ${
-                    applyType === 'leave'
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
-                  }`}
+                  className={`flex-1 py-3 rounded-xl font-medium text-sm transition-all ${applyType === 'leave'
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                    }`}
                 >
                   <span className="flex items-center justify-center gap-2">
                     <CalendarIcon />
@@ -1795,11 +1826,10 @@ export default function LeavesPage() {
                       leaveType: '',
                     }));
                   }}
-                  className={`flex-1 py-3 rounded-xl font-medium text-sm transition-all ${
-                    applyType === 'od'
-                      ? 'bg-purple-500 text-white'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
-                  }`}
+                  className={`flex-1 py-3 rounded-xl font-medium text-sm transition-all ${applyType === 'od'
+                    ? 'bg-purple-500 text-white'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                    }`}
                 >
                   <span className="flex items-center justify-center gap-2">
                     <BriefcaseIcon />
@@ -1876,7 +1906,7 @@ export default function LeavesPage() {
                           placeholder="Search by name, emp no, or department..."
                           className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20"
                         />
-                        
+
                         {/* Employee Dropdown */}
                         {showEmployeeDropdown && (
                           <div className="absolute z-10 w-full mt-1 max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-800">
@@ -1928,8 +1958,8 @@ export default function LeavesPage() {
                 {((applyType === 'leave' && leaveTypes.length === 1) || (applyType === 'od' && odTypes.length === 1)) ? (
                   <div className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-700 dark:text-white">
                     <span className="font-medium">
-                      {applyType === 'leave' 
-                        ? leaveTypes[0]?.name || leaveTypes[0]?.code 
+                      {applyType === 'leave'
+                        ? leaveTypes[0]?.name || leaveTypes[0]?.code
                         : odTypes[0]?.name || odTypes[0]?.code}
                     </span>
                     <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">(Only type available)</span>
@@ -2046,12 +2076,11 @@ export default function LeavesPage() {
                     {/* Full Day */}
                     <button
                       type="button"
-                  onClick={() => setFormData({ ...formData, odType_extended: 'full_day', isHalfDay: false, halfDayType: '', odStartTime: '', odEndTime: '' })}
-                      className={`p-3 rounded-lg border-2 transition-all ${
-                        formData.odType_extended === 'full_day'
-                          ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
-                          : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
-                      }`}
+                      onClick={() => setFormData({ ...formData, odType_extended: 'full_day', isHalfDay: false, halfDayType: '', odStartTime: '', odEndTime: '' })}
+                      className={`p-3 rounded-lg border-2 transition-all ${formData.odType_extended === 'full_day'
+                        ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
+                        : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                        }`}
                     >
                       <div className="text-sm font-semibold text-slate-900 dark:text-white">Full Day</div>
                       <div className="text-xs text-slate-500 dark:text-slate-400">Complete day</div>
@@ -2063,21 +2092,20 @@ export default function LeavesPage() {
                       onClick={() => {
                         // Auto-set end date = start date for half-day OD
                         const endDate = formData.fromDate || formData.toDate;
-                        setFormData({ 
-                          ...formData, 
-                          odType_extended: 'half_day', 
-                          isHalfDay: true, 
+                        setFormData({
+                          ...formData,
+                          odType_extended: 'half_day',
+                          isHalfDay: true,
                           halfDayType: formData.halfDayType || 'first_half',
-                          odStartTime: '', 
+                          odStartTime: '',
                           odEndTime: '',
                           toDate: endDate || formData.fromDate // Set end date = start date
                         });
                       }}
-                      className={`p-3 rounded-lg border-2 transition-all ${
-                        formData.odType_extended === 'half_day'
-                          ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
-                          : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
-                      }`}
+                      className={`p-3 rounded-lg border-2 transition-all ${formData.odType_extended === 'half_day'
+                        ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
+                        : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                        }`}
                     >
                       <div className="text-sm font-semibold text-slate-900 dark:text-white">Half Day</div>
                       <div className="text-xs text-slate-500 dark:text-slate-400">4 hours</div>
@@ -2089,9 +2117,9 @@ export default function LeavesPage() {
                       onClick={() => {
                         // Auto-set end date = start date for hour-based OD
                         const endDate = formData.fromDate || formData.toDate;
-                        setFormData({ 
-                          ...formData, 
-                          odType_extended: 'hours', 
+                        setFormData({
+                          ...formData,
+                          odType_extended: 'hours',
                           isHalfDay: false,
                           halfDayType: '',
                           toDate: endDate || formData.fromDate, // Set end date = start date
@@ -2099,11 +2127,10 @@ export default function LeavesPage() {
                           odEndTime: '',
                         });
                       }}
-                      className={`p-3 rounded-lg border-2 transition-all ${
-                        formData.odType_extended === 'hours'
-                          ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
-                          : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
-                      }`}
+                      className={`p-3 rounded-lg border-2 transition-all ${formData.odType_extended === 'hours'
+                        ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
+                        : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                        }`}
                     >
                       <div className="text-sm font-semibold text-slate-900 dark:text-white">Specific Hours</div>
                       <div className="text-xs text-slate-500 dark:text-slate-400">Custom duration</div>
@@ -2151,18 +2178,18 @@ export default function LeavesPage() {
                           const startMinutes = startHour * 60 + startMin;
                           const endMinutes = endHour * 60 + endMin;
                           const durationMinutes = endMinutes - startMinutes;
-                          
+
                           if (durationMinutes <= 0) {
                             return <span className="text-red-600 dark:text-red-400">❌ End time must be after start time</span>;
                           }
-                          
+
                           const hours = Math.floor(durationMinutes / 60);
                           const minutes = durationMinutes % 60;
-                          
+
                           if (durationMinutes > 480) {
                             return <span className="text-red-600 dark:text-red-400">❌ Maximum duration is 8 hours</span>;
                           }
-                          
+
                           return (
                             <span className="text-green-600 dark:text-green-400">
                               ✓ Duration: {hours}h {minutes}m
@@ -2239,11 +2266,10 @@ export default function LeavesPage() {
                 </button>
                 <button
                   type="submit"
-                  className={`flex-1 px-4 py-2.5 text-sm font-semibold text-white rounded-xl ${
-                    applyType === 'leave'
-                      ? 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600'
-                      : 'bg-gradient-to-r from-purple-500 to-red-500 hover:from-purple-600 hover:to-red-600'
-                  }`}
+                  className={`flex-1 px-4 py-2.5 text-sm font-semibold text-white rounded-xl ${applyType === 'leave'
+                    ? 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600'
+                    : 'bg-gradient-to-r from-purple-500 to-red-500 hover:from-purple-600 hover:to-red-600'
+                    }`}
                 >
                   Apply {applyType === 'leave' ? 'Leave' : 'OD'}
                 </button>
@@ -2258,11 +2284,10 @@ export default function LeavesPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="mx-4 w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-800">
             {/* Header */}
-            <div className={`px-6 py-4 border-b border-slate-200 dark:border-slate-700 ${
-              detailType === 'leave' 
-                ? 'bg-gradient-to-r from-blue-500 to-indigo-500' 
-                : 'bg-gradient-to-r from-purple-500 to-red-500'
-            }`}>
+            <div className={`px-6 py-4 border-b border-slate-200 dark:border-slate-700 ${detailType === 'leave'
+              ? 'bg-gradient-to-r from-blue-500 to-indigo-500'
+              : 'bg-gradient-to-r from-purple-500 to-red-500'
+              }`}>
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold text-white flex items-center gap-2">
                   {detailType === 'leave' ? (
@@ -2305,9 +2330,8 @@ export default function LeavesPage() {
               <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50">
                 <h3 className="text-sm font-semibold text-slate-500 dark:text-slate-400 mb-3 uppercase tracking-wide">Employee Details</h3>
                 <div className="flex items-start gap-4">
-                  <div className={`w-14 h-14 rounded-full flex items-center justify-center text-white font-bold text-lg flex-shrink-0 ${
-                    detailType === 'leave' ? 'bg-blue-500' : 'bg-purple-500'
-                  }`}>
+                  <div className={`w-14 h-14 rounded-full flex items-center justify-center text-white font-bold text-lg flex-shrink-0 ${detailType === 'leave' ? 'bg-blue-500' : 'bg-purple-500'
+                    }`}>
                     {getEmployeeInitials(selectedItem.employeeId)}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -2345,8 +2369,8 @@ export default function LeavesPage() {
                     {detailType === 'leave' ? 'Leave Type' : 'OD Type'}
                   </p>
                   <p className="text-sm font-medium text-slate-900 dark:text-white capitalize">
-                    {(detailType === 'leave' 
-                      ? (selectedItem as LeaveApplication).leaveType 
+                    {(detailType === 'leave'
+                      ? (selectedItem as LeaveApplication).leaveType
                       : (selectedItem as ODApplication).odType
                     )?.replace('_', ' ') || '-'}
                   </p>
@@ -2386,10 +2410,10 @@ export default function LeavesPage() {
                       return <p className="text-sm font-medium text-slate-900 dark:text-white">{selectedItem.numberOfDays} day{selectedItem.numberOfDays !== 1 ? 's' : ''}</p>;
                     })()
                   ) : (
-                  <p className="text-sm font-medium text-slate-900 dark:text-white">
-                    {selectedItem.numberOfDays} day{selectedItem.numberOfDays !== 1 ? 's' : ''}
-                    {selectedItem.isHalfDay && ` (${selectedItem.halfDayType?.replace('_', ' ')})`}
-                  </p>
+                    <p className="text-sm font-medium text-slate-900 dark:text-white">
+                      {selectedItem.numberOfDays} day{selectedItem.numberOfDays !== 1 ? 's' : ''}
+                      {selectedItem.isHalfDay && ` (${selectedItem.halfDayType?.replace('_', ' ')})`}
+                    </p>
                   )}
                 </div>
 
@@ -2429,7 +2453,7 @@ export default function LeavesPage() {
                       </p>
                     </div>
                   )}
-                  
+
                   {/* Assigned By - OD specific */}
                   {(selectedItem as ODApplication).assignedBy && (
                     <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
@@ -2662,11 +2686,10 @@ export default function LeavesPage() {
                   <div className="space-y-3">
                     {selectedItem.workflow.history.map((entry: any, idx: number) => (
                       <div key={idx} className="flex items-start gap-3 text-sm">
-                        <div className={`w-2 h-2 mt-1.5 rounded-full ${
-                          entry.action === 'approved' ? 'bg-green-500' :
+                        <div className={`w-2 h-2 mt-1.5 rounded-full ${entry.action === 'approved' ? 'bg-green-500' :
                           entry.action === 'rejected' ? 'bg-red-500' :
-                          entry.action === 'forwarded' ? 'bg-blue-500' : 'bg-slate-400'
-                        }`} />
+                            entry.action === 'forwarded' ? 'bg-blue-500' : 'bg-slate-400'
+                          }`} />
                         <div>
                           <span className="font-medium text-slate-900 dark:text-white capitalize">
                             {entry.action}
@@ -2691,7 +2714,7 @@ export default function LeavesPage() {
               {canApprove && !['approved', 'rejected', 'cancelled'].includes(selectedItem.status) && (
                 <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-4">
                   <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-semibold">Take Action</p>
-                  
+
                   {/* Comment */}
                   <textarea
                     value={actionComment}
@@ -2700,7 +2723,7 @@ export default function LeavesPage() {
                     rows={2}
                     className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                   />
-                  
+
                   {/* Action Buttons */}
                   <div className="flex flex-wrap gap-2">
                     <button

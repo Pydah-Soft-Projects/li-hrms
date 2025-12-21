@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { auth } from '@/lib/auth';
+import { api } from '@/lib/api';
 import { WorkspaceProvider, useWorkspace, setWorkspaceDataFromLogin, Workspace } from '@/contexts/WorkspaceContext';
 
 // Icon components
@@ -145,6 +146,15 @@ const ExpandIcon = ({ className, ...props }: IconProps) => (
   </svg>
 );
 
+const PayslipsIcon = ({ className, ...props }: IconProps) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+    <polyline points="14 2 14 8 20 8" />
+    <path d="M12 18v-6" />
+    <path d="M9 15l3 3 3-3" />
+  </svg>
+);
+
 // Module code to icon mapping
 const moduleIcons: Record<string, React.ComponentType<IconProps>> = {
   DASHBOARD: DashboardIcon,
@@ -168,6 +178,8 @@ const moduleIcons: Record<string, React.ComponentType<IconProps>> = {
   ALLOWANCES_DEDUCTIONS: AllowancesDeductionsIcon,
   PAYROLL_TRANSACTIONS: ReportsIcon,
   PAY_REGISTER: ReportsIcon,
+  PAYSLIPS: PayslipsIcon,
+  PAYROLL: PayslipsIcon,
 };
 
 // Module code to route mapping
@@ -193,6 +205,7 @@ const moduleRoutes: Record<string, string> = {
   ALLOWANCES_DEDUCTIONS: '/allowances-deductions',
   PAYROLL_TRANSACTIONS: '/payroll-transactions',
   PAY_REGISTER: '/pay-register',
+  PAYSLIPS: '/payslips',
 };
 
 // Workspace type colors
@@ -212,6 +225,22 @@ function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<{ name: string; email: string; role: string } | null>(null);
   const [showWorkspaceSwitcher, setShowWorkspaceSwitcher] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [featureControl, setFeatureControl] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    const fetchFeatureControl = async () => {
+      if (user?.role) {
+        const response = await api.getSetting(`feature_control_${user.role}`);
+        if (response.success && response.data?.value?.activeModules) {
+          setFeatureControl(response.data.value.activeModules);
+        } else {
+          // Default fallback if setting not found
+          setFeatureControl(['DASHBOARD', 'LEAVE', 'OD', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS']);
+        }
+      }
+    };
+    fetchFeatureControl();
+  }, [user?.role]);
 
   useEffect(() => {
     const userData = auth.getUser();
@@ -232,56 +261,64 @@ function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {
     router.push('/dashboard');
   };
 
-  const availableModules = getAvailableModules();
+  const availableModules = getAvailableModules().filter(m =>
+    !featureControl || featureControl.includes(m.moduleCode)
+  );
+
   const workspaceColor = workspaceColors[activeWorkspace?.type || 'custom'];
 
-  // Get navigation items from available modules
-  // Combine LEAVE and OD into a single "Leave & OD" item
-  const hasLeave = availableModules.some(m => m.moduleCode === 'LEAVE');
-  const hasOD = availableModules.some(m => m.moduleCode === 'OD');
-  const hasLeaveOrOD = hasLeave || hasOD;
-
+  // Navigation Items with categorization
   const navItems: Array<{
     href: string;
     label: string;
     icon: React.ComponentType<IconProps>;
     moduleCode: string;
+    category: string;
   }> = [];
 
-  // Process modules, but combine LEAVE and OD
+  const addNavItem = (moduleCode: string, label: string, href: string, icon: any, category: string) => {
+    if (!featureControl || featureControl.includes(moduleCode)) {
+      navItems.push({ href, label, icon, moduleCode, category });
+    }
+  };
+
+  // 1. Dashboard Category
+  addNavItem('DASHBOARD', 'Dashboard', '/dashboard', DashboardIcon, 'Main');
+
+  // 2. Attendance & Leave Category
+  const hasLeave = availableModules.some(m => m.moduleCode === 'LEAVE');
+  const hasOD = availableModules.some(m => m.moduleCode === 'OD');
+
+  if (hasLeave || hasOD) {
+    addNavItem('LEAVE_OD', 'Leave & OD', '/leaves', LeavesIcon, 'Time & Attendance');
+  }
+
+  addNavItem('ATTENDANCE', 'My Attendance', '/attendance', AttendanceIcon, 'Time & Attendance');
+
+  // 3. Finance Category
+  addNavItem('PAYSLIPS', 'My Payslips', '/payslips', PayslipsIcon, 'Finance');
+  addNavItem('LOANS', 'Loans & Advances', '/loans', LoansIcon, 'Finance');
+
+  // 4. Other Modules from workspace (filtered by feature control and not already added)
   availableModules.forEach((module) => {
-    // Skip OD if LEAVE is also present (we'll add combined item)
-    if (module.moduleCode === 'OD' && hasLeave) {
-      return;
-    }
-    
-    // If this is LEAVE and OD also exists, create combined item
-    if (module.moduleCode === 'LEAVE' && hasOD) {
-      navItems.push({
-        href: '/leaves',
-        label: 'Leave & OD',
-        icon: LeavesIcon,
-        moduleCode: 'LEAVE_OD',
-      });
-    } else {
-      navItems.push({
-        href: moduleRoutes[module.moduleCode] || `/${module.moduleCode.toLowerCase()}`,
-        label: module.moduleId?.name || module.moduleCode,
-        icon: moduleIcons[module.moduleCode] || DashboardIcon,
-        moduleCode: module.moduleCode,
-      });
-    }
+    if (['DASHBOARD', 'LEAVE', 'OD', 'ATTENDANCE', 'PAYSLIPS', 'LOANS', 'PROFILE'].includes(module.moduleCode)) return;
+
+    // Categorize based on module code or generic name
+    let category = 'Management';
+    if (module.moduleCode === 'EMPLOYEES') category = 'HR Management';
+    if (module.moduleCode === 'REPORTS') category = 'Reports';
+
+    navItems.push({
+      href: moduleRoutes[module.moduleCode] || `/${module.moduleCode.toLowerCase()}`,
+      label: module.moduleId?.name || module.moduleCode,
+      icon: moduleIcons[module.moduleCode] || DashboardIcon,
+      moduleCode: module.moduleCode,
+      category
+    });
   });
 
-  // Always add Profile at the end
-  if (!navItems.find((item) => item.moduleCode === 'PROFILE')) {
-    navItems.push({
-      href: '/profile',
-      label: 'Profile',
-      icon: ProfileIcon,
-      moduleCode: 'PROFILE',
-    });
-  }
+  // 5. Account/Profile Category
+  addNavItem('PROFILE', 'My Profile', '/profile', ProfileIcon, 'Account');
 
   if (isLoading) {
     return (
@@ -320,9 +357,8 @@ function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen bg-gray-50">
       {/* Sidebar */}
       <aside
-        className={`fixed top-0 left-0 h-screen bg-white border-r border-gray-200 transition-all duration-300 ease-in-out z-40 ${
-          sidebarCollapsed ? 'w-[70px]' : 'w-64'
-        }`}
+        className={`fixed top-0 left-0 h-screen bg-white border-r border-gray-200 transition-all duration-300 ease-in-out z-40 ${sidebarCollapsed ? 'w-[70px]' : 'w-64'
+          }`}
       >
         {/* Collapse/Expand Button */}
         <button
@@ -341,49 +377,61 @@ function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {
           <div className={`p-4 border-b border-gray-200 ${sidebarCollapsed ? 'flex justify-center' : ''}`}>
             {!sidebarCollapsed ? (
               <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-lg ${workspaceColor.bg} flex items-center justify-center text-white font-bold`}>
-                  {activeWorkspace.name[0]}
+                <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center shadow-sm">
+                  <span className="text-sm font-bold text-white">H</span>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h2 className="text-sm font-semibold text-gray-900 truncate">{activeWorkspace.name}</h2>
-                  <p className="text-xs text-gray-500 capitalize">{activeWorkspace.type} Portal</p>
+                  <h2 className="text-base font-semibold text-slate-900">HRMS</h2>
                 </div>
               </div>
             ) : (
-              <div className={`w-10 h-10 rounded-lg ${workspaceColor.bg} flex items-center justify-center text-white font-bold`}>
-                {activeWorkspace.name[0]}
+              <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center shadow-sm">
+                <span className="text-sm font-bold text-white">H</span>
               </div>
             )}
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 overflow-y-auto py-4">
-            <ul className="space-y-1 px-2">
-              {navItems.map((item) => {
-                const Icon = item.icon;
-                // For combined Leave & OD, check both /leaves and /od paths
-                const isActive = item.moduleCode === 'LEAVE_OD' 
-                  ? (pathname === '/leaves' || pathname === '/od')
-                  : pathname === item.href;
+          <nav className="flex-1 overflow-y-auto py-4 space-y-4">
+            {Array.from(new Set(navItems.map(i => i.category))).map(category => {
+              const categoryItems = navItems.filter(i => i.category === category);
+              const showHeader = categoryItems.length > 1;
 
-                return (
-                  <li key={item.href}>
-                    <Link
-                      href={item.href}
-                      className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
-                        isActive
-                          ? `bg-gray-100 ${workspaceColor.text} font-medium`
-                          : 'text-gray-700 hover:bg-gray-50'
-                      } ${sidebarCollapsed ? 'justify-center' : ''}`}
-                      title={sidebarCollapsed ? item.label : undefined}
-                    >
-                      <Icon className={`h-5 w-5 flex-shrink-0 ${isActive ? workspaceColor.text : 'text-gray-500'}`} />
-                      {!sidebarCollapsed && <span className="text-sm">{item.label}</span>}
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
+              return (
+                <div key={category} className="space-y-1">
+                  {!sidebarCollapsed && showHeader && (
+                    <h3 className="px-5 text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">
+                      {category}
+                    </h3>
+                  )}
+                  <ul className="space-y-1 px-2">
+                    {categoryItems.map((item) => {
+                      const Icon = item.icon;
+                      // For combined Leave & OD, check both /leaves and /od paths
+                      const isActive = item.moduleCode === 'LEAVE_OD'
+                        ? (pathname === '/leaves' || pathname === '/od')
+                        : pathname === item.href;
+
+                      return (
+                        <li key={item.href}>
+                          <Link
+                            href={item.href}
+                            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${isActive
+                              ? `bg-gray-100 ${workspaceColor.text} font-medium`
+                              : 'text-gray-700 hover:bg-gray-50'
+                              } ${sidebarCollapsed ? 'justify-center' : ''}`}
+                            title={sidebarCollapsed ? item.label : undefined}
+                          >
+                            <Icon className={`h-5 w-5 flex-shrink-0 ${isActive ? workspaceColor.text : 'text-gray-500'}`} />
+                            {!sidebarCollapsed && <span className="text-sm">{item.label}</span>}
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              );
+            })}
           </nav>
 
           {/* User Section & Logout */}
@@ -410,9 +458,8 @@ function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {
             {/* Logout Button */}
             <button
               onClick={handleLogout}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-red-600 hover:bg-red-50 ${
-                sidebarCollapsed ? 'justify-center' : ''
-              }`}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-red-600 hover:bg-red-50 ${sidebarCollapsed ? 'justify-center' : ''
+                }`}
               title={sidebarCollapsed ? 'Logout' : undefined}
             >
               <LogoutIcon className="h-5 w-5 flex-shrink-0" />
@@ -465,9 +512,8 @@ function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {
                             <button
                               key={ws._id}
                               onClick={() => handleWorkspaceSwitch(ws)}
-                              className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors ${
-                                isActive ? 'bg-gray-50' : ''
-                              }`}
+                              className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors ${isActive ? 'bg-gray-50' : ''
+                                }`}
                             >
                               <div className={`w-8 h-8 rounded-lg ${wsColor.bg} flex items-center justify-center text-white font-bold text-sm`}>
                                 {ws.name[0]}

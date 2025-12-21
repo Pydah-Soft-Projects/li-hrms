@@ -24,6 +24,12 @@ router.get('/:empNo', employeeController.getEmployee);
 // Create employee (Super Admin, Sub Admin, HR)
 router.post('/', authorize('super_admin', 'sub_admin', 'hr'), employeeController.createEmployee);
 
+// Resend credentials (Super Admin)
+router.post('/:empNo/resend-credentials', authorize('super_admin'), employeeController.resendEmployeePassword);
+
+// Bulk export passwords (Super Admin)
+router.post('/bulk-export-passwords', authorize('super_admin'), employeeController.bulkExportEmployeePasswords);
+
 // Update employee (Super Admin, Sub Admin, HR)
 router.put('/:empNo', authorize('super_admin', 'sub_admin', 'hr'), employeeController.updateEmployee);
 
