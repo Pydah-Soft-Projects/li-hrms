@@ -209,6 +209,11 @@ const EmployeeApplicationFormSettingsSchema = new mongoose.Schema(
         type: Boolean,
         default: true,
       },
+      // Enable certificate upload for qualifications
+      enableCertificateUpload: {
+        type: Boolean,
+        default: false,
+      },
       // Fields within each qualification object
       fields: [
         {
@@ -513,7 +518,7 @@ EmployeeApplicationFormSettingsSchema.statics.initializeDefault = async function
             label: 'Reporting To',
             type: 'userselect',
             dataType: 'array',
-            isRequired: false,
+            isRequired: false, // Changed from true - not required by default
             isSystem: true,
             placeholder: 'Select reporting manager(s)',
             validation: { minItems: 0, maxItems: 2 },
@@ -526,6 +531,7 @@ EmployeeApplicationFormSettingsSchema.statics.initializeDefault = async function
     // Default Qualifications Configuration
     qualifications: {
       isEnabled: true,
+      enableCertificateUpload: false, // Can be enabled from form settings
       fields: [
         {
           id: 'degree',

@@ -97,18 +97,18 @@ exports.updateSettings = async (req, res) => {
             // Update field labels but preserve system field structure
             fields: group.fields
               ? group.fields.map((field) => {
-                  const existingField = existingSystemGroup.fields.find((f) => f.id === field.id);
-                  if (existingField && existingField.isSystem) {
-                    return {
-                      ...existingField.toObject(),
-                      label: field.label || existingField.label,
-                      placeholder: field.placeholder !== undefined ? field.placeholder : existingField.placeholder,
-                      order: field.order !== undefined ? field.order : existingField.order,
-                      isEnabled: field.isEnabled !== undefined ? field.isEnabled : existingField.isEnabled,
-                    };
-                  }
-                  return field;
-                })
+                const existingField = existingSystemGroup.fields.find((f) => f.id === field.id);
+                if (existingField && existingField.isSystem) {
+                  return {
+                    ...existingField.toObject(),
+                    label: field.label || existingField.label,
+                    placeholder: field.placeholder !== undefined ? field.placeholder : existingField.placeholder,
+                    order: field.order !== undefined ? field.order : existingField.order,
+                    isEnabled: field.isEnabled !== undefined ? field.isEnabled : existingField.isEnabled,
+                  };
+                }
+                return field;
+              })
               : existingSystemGroup.fields,
           };
         }
@@ -537,13 +537,13 @@ exports.deleteField = async (req, res) => {
 };
 
 /**
- * @desc    Update qualifications configuration (enable/disable)
+ * @desc    Update qualifications configuration (enable/disable and certificate upload)
  * @route   PUT /api/employee-applications/form-settings/qualifications
  * @access  Private (Super Admin, Sub Admin)
  */
 exports.updateQualificationsConfig = async (req, res) => {
   try {
-    const { isEnabled } = req.body;
+    const { isEnabled, enableCertificateUpload } = req.body;
 
     const settings = await EmployeeApplicationFormSettings.getActiveSettings();
     if (!settings) {
@@ -554,14 +554,26 @@ exports.updateQualificationsConfig = async (req, res) => {
     }
 
     if (!settings.qualifications) {
-      settings.qualifications = { isEnabled: true, fields: [] };
+      settings.qualifications = { isEnabled: true, enableCertificateUpload: false, fields: [] };
     }
 
-    settings.qualifications.isEnabled = isEnabled !== undefined ? isEnabled : settings.qualifications.isEnabled;
+    // Update fields if provided
+    if (isEnabled !== undefined) {
+      settings.qualifications.isEnabled = isEnabled;
+    }
+    if (enableCertificateUpload !== undefined) {
+      settings.qualifications.enableCertificateUpload = enableCertificateUpload;
+    }
+
     settings.updatedBy = req.user._id;
     settings.version = (settings.version || 1) + 1;
 
     await settings.save();
+
+    console.log('[Form Settings] Qualifications config updated:', {
+      isEnabled: settings.qualifications.isEnabled,
+      enableCertificateUpload: settings.qualifications.enableCertificateUpload,
+    });
 
     res.status(200).json({
       success: true,

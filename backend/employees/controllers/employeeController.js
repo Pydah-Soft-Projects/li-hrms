@@ -273,21 +273,23 @@ const transformEmployeeForResponse = async (employee, populateUsers = true) => {
 exports.getAllEmployees = async (req, res) => {
   try {
     const { is_active, department_id, designation_id, includeLeft } = req.query;
+    const { roleFilter } = req; // Get role-based filter from middleware
     const settings = await getEmployeeSettings();
 
     let employees = [];
 
-    // Build filters
-    const filters = {};
+    // Build filters - merge role filter with query filters
+    const filters = { ...roleFilter };
     if (is_active !== undefined) filters.is_active = is_active === 'true';
     if (department_id) filters.department_id = department_id;
     if (designation_id) filters.designation_id = designation_id;
 
     // By default, exclude employees who have left (unless includeLeft=true)
-    // Only include employees with no leftDate (active) or includeLeft is true
     if (includeLeft !== 'true') {
-      filters.leftDate = null; // Only show employees who haven't left
+      filters.leftDate = null;
     }
+
+    console.log('[Employee Controller] Final filters:', filters);
 
     // Fetch based on data source setting
     if (settings.dataSource === 'mssql' && isHRMSConnected()) {
@@ -301,6 +303,7 @@ exports.getAllEmployees = async (req, res) => {
       if (filters.department_id) query.department_id = filters.department_id;
       if (filters.designation_id) query.designation_id = filters.designation_id;
       if (filters.leftDate !== undefined) query.leftDate = filters.leftDate;
+      if (filters.emp_no) query.emp_no = filters.emp_no; // For employee role
 
       const mongoEmployees = await Employee.find(query)
         .populate('department_id', 'name code')
@@ -314,11 +317,8 @@ exports.getAllEmployees = async (req, res) => {
           ...transformed,
           department: transformed.department_id,
           designation: transformed.designation_id,
-          // Explicitly ensure paidLeaves is included (default to 0 if not set)
           paidLeaves: transformed.paidLeaves !== undefined && transformed.paidLeaves !== null ? Number(transformed.paidLeaves) : 0,
-          // Explicitly ensure allottedLeaves is included (default to 0 if not set)
           allottedLeaves: transformed.allottedLeaves !== undefined && transformed.allottedLeaves !== null ? Number(transformed.allottedLeaves) : 0,
-          // Explicitly include allowances, deductions, and calculated salaries
           employeeAllowances: transformed.employeeAllowances || [],
           employeeDeductions: transformed.employeeDeductions || [],
           ctcSalary: transformed.ctcSalary !== undefined && transformed.ctcSalary !== null ? Number(transformed.ctcSalary) : null,
