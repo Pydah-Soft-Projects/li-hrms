@@ -136,6 +136,13 @@ exports.createDepartment = async (req, res) => {
       createdBy: req.user?.userId,
     });
 
+    // Auto-sync: Add department to HOD's departments list
+    if (hod) {
+      await User.findByIdAndUpdate(hod, {
+        $addToSet: { departments: department._id }
+      });
+    }
+
     res.status(201).json({
       success: true,
       message: 'Department created successfully',
@@ -208,12 +215,45 @@ exports.updateDepartment = async (req, res) => {
       }
     }
 
-    // Update fields
+    // Update fields & Sync Users
     if (name) department.name = name;
     if (code !== undefined) department.code = code;
     if (description !== undefined) department.description = description;
-    if (hod !== undefined) department.hod = hod || null;
-    if (hr !== undefined) department.hr = hr || null;
+
+    // Handle HOD Sync
+    if (hod !== undefined) {
+      // If HOD changed, remove department from old HOD
+      if (department.hod && department.hod.toString() !== (hod || '')) {
+        await User.findByIdAndUpdate(department.hod, {
+          $pull: { departments: department._id }
+        });
+      }
+      // Add department to new HOD
+      if (hod) {
+        await User.findByIdAndUpdate(hod, {
+          $addToSet: { departments: department._id }
+        });
+      }
+      department.hod = hod || null;
+    }
+
+    // Handle HR Sync
+    if (hr !== undefined) {
+      // If HR changed, remove department from old HR
+      if (department.hr && department.hr.toString() !== (hr || '')) {
+        await User.findByIdAndUpdate(department.hr, {
+          $pull: { departments: department._id }
+        });
+      }
+      // Add department to new HR
+      if (hr) {
+        await User.findByIdAndUpdate(hr, {
+          $addToSet: { departments: department._id }
+        });
+      }
+      department.hr = hr || null;
+    }
+
     if (attendanceConfig) department.attendanceConfig = { ...department.attendanceConfig, ...attendanceConfig };
     if (permissionPolicy) department.permissionPolicy = { ...department.permissionPolicy, ...permissionPolicy };
     if (autoDeductionRules) department.autoDeductionRules = autoDeductionRules;
@@ -280,6 +320,18 @@ exports.deleteDepartment = async (req, res) => {
       });
     }
 
+    // Sync: Remove department from HOD and HR users
+    if (department.hod) {
+      await User.findByIdAndUpdate(department.hod, {
+        $pull: { departments: department._id }
+      });
+    }
+    if (department.hr) {
+      await User.findByIdAndUpdate(department.hr, {
+        $pull: { departments: department._id }
+      });
+    }
+
     await department.deleteOne();
 
     res.status(200).json({
@@ -325,6 +377,18 @@ exports.assignHOD = async (req, res) => {
         message: 'User not found',
       });
     }
+
+    // Sync: Remove from old HOD
+    if (department.hod) {
+      await User.findByIdAndUpdate(department.hod, {
+        $pull: { departments: department._id }
+      });
+    }
+
+    // Sync: Add to new HOD
+    await User.findByIdAndUpdate(hodId, {
+      $addToSet: { departments: department._id }
+    });
 
     department.hod = hodId;
     await department.save();
@@ -373,6 +437,18 @@ exports.assignHR = async (req, res) => {
         message: 'User not found',
       });
     }
+
+    // Sync: Remove from old HR
+    if (department.hr) {
+      await User.findByIdAndUpdate(department.hr, {
+        $pull: { departments: department._id }
+      });
+    }
+
+    // Sync: Add to new HR
+    await User.findByIdAndUpdate(hrId, {
+      $addToSet: { departments: department._id }
+    });
 
     department.hr = hrId;
     await department.save();
