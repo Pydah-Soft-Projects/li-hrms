@@ -97,15 +97,15 @@ function mergeWithOverrides(baseList = [], overrides = [], includeMissing = true
   // Create maps for quick lookup of base items by ID and name
   const baseMap = new Map();
   const baseNameMap = new Map();
-  
+
   // Track which base items have been overridden
   const overriddenBaseItems = new Set();
-  
+
   // Index base items
   baseList.forEach((item, index) => {
     const masterIdKey = item.masterId ? item.masterId.toString() : null;
     const nameKey = item.name ? item.name.trim().toLowerCase() : null;
-    
+
     if (masterIdKey) {
       baseMap.set(`id_${masterIdKey}`, { ...item, _index: index });
     }
@@ -121,42 +121,42 @@ function mergeWithOverrides(baseList = [], overrides = [], includeMissing = true
   // Process overrides first
   overrides.forEach(override => {
     if (!override) return;
-    
+
     const ovMasterIdKey = override.masterId ? `id_${override.masterId.toString()}` : null;
     const ovNameKey = override.name ? `name_${override.name.trim().toLowerCase()}` : null;
-    
+
     // Find matching base item
     let baseItem = null;
     let baseItemIndex = -1;
-    
+
     // Try to find by masterId first
     if (ovMasterIdKey && baseMap.has(ovMasterIdKey)) {
       const match = baseMap.get(ovMasterIdKey);
       baseItem = match;
       baseItemIndex = match._index;
-    } 
+    }
     // Then try by name if no match by ID
     else if (ovNameKey && baseNameMap.has(ovNameKey)) {
       const match = baseNameMap.get(ovNameKey);
       baseItem = match;
       baseItemIndex = match._index;
     }
-    
+
     // Mark base item as overridden if found
     if (baseItemIndex >= 0) {
       overriddenBaseItems.add(baseItemIndex);
     }
-    
+
     // Create merged item
     const merged = {
       ...(baseItem || {}), // Start with base item properties if exists
       ...override,         // Apply override properties
-      amount: override.amount !== undefined ? override.amount : 
-             (override.overrideAmount !== undefined ? override.overrideAmount : 
-             (baseItem ? baseItem.amount : 0)),
+      amount: override.amount !== undefined ? override.amount :
+        (override.overrideAmount !== undefined ? override.overrideAmount :
+          (baseItem ? baseItem.amount : 0)),
       isEmployeeOverride: true
     };
-    
+
     // Ensure we have required fields
     if (!merged.masterId && baseItem?.masterId) {
       merged.masterId = baseItem.masterId;
@@ -164,7 +164,7 @@ function mergeWithOverrides(baseList = [], overrides = [], includeMissing = true
     if (!merged.name && baseItem?.name) {
       merged.name = baseItem.name;
     }
-    
+
     // Track this override to avoid duplicates
     const overrideKey = merged.masterId ? `id_${merged.masterId}` : `name_${merged.name?.toLowerCase()}`;
     if (!overrideIds.has(overrideKey)) {
@@ -195,19 +195,20 @@ function mergeWithOverrides(baseList = [], overrides = [], includeMissing = true
 /**
  * Build base (dept/global) allowances and deductions for a given salary context.
  */
-async function buildBaseComponents(departmentId, grossSalary) {
+async function buildBaseComponents(departmentId, grossSalary, attendanceData = null) {
   const basicPay = grossSalary || 0;
 
   // Allowances: two passes (basic-based and gross-based), mirroring payroll
-  const allowancesBasic = await allowanceService.calculateAllowances(departmentId, basicPay, null, false);
-  const allowancesGross = await allowanceService.calculateAllowances(departmentId, basicPay, grossSalary, true);
+  const allowancesBasic = await allowanceService.calculateAllowances(departmentId, basicPay, null, false, attendanceData);
+  const allowancesGross = await allowanceService.calculateAllowances(departmentId, basicPay, grossSalary, true, attendanceData);
   const allowances = [...allowancesBasic, ...allowancesGross];
 
   // Deductions
   const deductions = await deductionService.calculateOtherDeductions(
     departmentId ? departmentId.toString() : null,
     basicPay,
-    grossSalary
+    grossSalary,
+    attendanceData
   );
 
   return { allowances, deductions };

@@ -27,13 +27,18 @@ class ArrearsService {
         throw new Error('Start month must be before or equal to end month');
       }
 
-      // Calculate total amount based on monthly amount and months
-      const monthCount = this.getMonthDifference(data.startMonth, data.endMonth);
-      const calculatedTotal = data.monthlyAmount * monthCount;
+      // Calculate total amount based on breakdown if provided, else legacy calculation
+      let calculatedTotal = 0;
+      if (data.calculationBreakdown && Array.isArray(data.calculationBreakdown) && data.calculationBreakdown.length > 0) {
+        calculatedTotal = data.calculationBreakdown.reduce((sum, item) => sum + item.proratedAmount, 0);
+      } else {
+        const monthCount = this.getMonthDifference(data.startMonth, data.endMonth);
+        calculatedTotal = data.monthlyAmount * monthCount;
+      }
 
-      // Validate total amount matches calculation
-      if (Math.abs(data.totalAmount - calculatedTotal) > 0.01) {
-        throw new Error(`Total amount mismatch. Expected: ${calculatedTotal}, Got: ${data.totalAmount}`);
+      // Validate total amount matches calculation (allow small precision difference)
+      if (Math.abs(data.totalAmount - calculatedTotal) > 0.05) {
+        throw new Error(`Total amount mismatch. Calculated: ${calculatedTotal.toFixed(2)}, Provided: ${data.totalAmount}`);
       }
 
       const arrears = new ArrearsRequest({

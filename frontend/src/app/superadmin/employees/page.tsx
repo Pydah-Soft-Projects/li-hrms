@@ -825,24 +825,30 @@ export default function EmployeesPage() {
     // Pre-populate override state from existing employee overrides
     if (Array.isArray(employee.employeeAllowances) && employee.employeeAllowances.length > 0) {
       const allowanceOverrides: Record<string, number | null> = {};
+      const allowanceBasedOnPresentDays: Record<string, boolean> = {};
       employee.employeeAllowances.forEach((allowance: any) => {
         const key = allowance.masterId ? allowance.masterId.toString() : (allowance.name || '').toLowerCase();
         if (key && (allowance.amount !== null && allowance.amount !== undefined)) {
           allowanceOverrides[key] = Number(allowance.amount);
+          allowanceBasedOnPresentDays[key] = allowance.basedOnPresentDays ?? false;
         }
       });
       setOverrideAllowances(allowanceOverrides);
+      setOverrideAllowancesBasedOnPresentDays(allowanceBasedOnPresentDays);
     }
 
     if (Array.isArray(employee.employeeDeductions) && employee.employeeDeductions.length > 0) {
       const deductionOverrides: Record<string, number | null> = {};
+      const deductionBasedOnPresentDays: Record<string, boolean> = {};
       employee.employeeDeductions.forEach((deduction: any) => {
         const key = deduction.masterId ? deduction.masterId.toString() : (deduction.name || '').toLowerCase();
         if (key && (deduction.amount !== null && deduction.amount !== undefined)) {
           deductionOverrides[key] = Number(deduction.amount);
+          deductionBasedOnPresentDays[key] = deduction.basedOnPresentDays ?? false;
         }
       });
       setOverrideDeductions(deductionOverrides);
+      setOverrideDeductionsBasedOnPresentDays(deductionBasedOnPresentDays);
     }
 
     // Trigger fetch of component defaults after a brief delay to ensure formData is set
@@ -2343,6 +2349,8 @@ export default function EmployeesPage() {
                       {componentDefaults.allowances.map((item) => {
                         const key = getKey(item);
                         const current = overrideAllowances[key] ?? item.amount ?? 0;
+                        const isFixed = item.type === 'fixed';
+                        const basedOnPresentDays = overrideAllowancesBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
                         return (
                           <div key={key} className="rounded-lg border border-green-100 bg-white/70 px-3 py-2 text-xs dark:border-green-900/50 dark:bg-green-950/40">
                             <div className="flex items-center justify-between gap-2">
@@ -2366,6 +2374,26 @@ export default function EmployeesPage() {
                                 />
                               </div>
                             </div>
+                            {isFixed && (
+                              <div className="mt-2 pt-2 border-t border-green-100 dark:border-green-900/50">
+                                <label className="flex items-start gap-1.5 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={basedOnPresentDays}
+                                    onChange={(e) => {
+                                      setOverrideAllowancesBasedOnPresentDays({
+                                        ...overrideAllowancesBasedOnPresentDays,
+                                        [key]: e.target.checked
+                                      });
+                                    }}
+                                    className="mt-0.5 h-3 w-3 rounded border-green-300 text-green-600 focus:ring-green-500 dark:border-green-700"
+                                  />
+                                  <span className="text-[10px] leading-tight text-green-700 dark:text-green-300">
+                                    Prorate based on present days
+                                  </span>
+                                </label>
+                              </div>
+                            )}
                           </div>
                         );
                       })}
@@ -2387,6 +2415,8 @@ export default function EmployeesPage() {
                       {componentDefaults.deductions.map((item) => {
                         const key = getKey(item);
                         const current = overrideDeductions[key] ?? item.amount ?? 0;
+                        const isFixed = item.type === 'fixed';
+                        const basedOnPresentDays = overrideDeductionsBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
                         return (
                           <div key={key} className="rounded-lg border border-red-100 bg-white/70 px-3 py-2 text-xs dark:border-red-900/50 dark:bg-red-950/40">
                             <div className="flex items-center justify-between gap-2">
@@ -2410,6 +2440,26 @@ export default function EmployeesPage() {
                                 />
                               </div>
                             </div>
+                            {isFixed && (
+                              <div className="mt-2 pt-2 border-t border-red-100 dark:border-red-900/50">
+                                <label className="flex items-start gap-1.5 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={basedOnPresentDays}
+                                    onChange={(e) => {
+                                      setOverrideDeductionsBasedOnPresentDays({
+                                        ...overrideDeductionsBasedOnPresentDays,
+                                        [key]: e.target.checked
+                                      });
+                                    }}
+                                    className="mt-0.5 h-3 w-3 rounded border-red-300 text-red-600 focus:ring-red-500 dark:border-red-700"
+                                  />
+                                  <span className="text-[10px] leading-tight text-red-700 dark:text-red-300">
+                                    Prorate based on present days
+                                  </span>
+                                </label>
+                              </div>
+                            )}
                           </div>
                         );
                       })}

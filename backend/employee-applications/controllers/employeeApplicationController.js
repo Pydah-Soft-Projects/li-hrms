@@ -132,6 +132,7 @@ exports.createApplication = async (req, res) => {
             percentageBase: item.percentageBase ?? null,
             minAmount: item.minAmount ?? null,
             maxAmount: item.maxAmount ?? null,
+            basedOnPresentDays: item.basedOnPresentDays ?? false,
             isOverride: true,
           }))
         : [];
@@ -321,6 +322,7 @@ exports.approveApplication = async (req, res) => {
             percentageBase: item.percentageBase ?? null,
             minAmount: item.minAmount ?? null,
             maxAmount: item.maxAmount ?? null,
+            basedOnPresentDays: item.basedOnPresentDays ?? false,
             isOverride: true,
           }))
         : [];

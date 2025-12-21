@@ -2260,6 +2260,15 @@ export const api = {
     });
   },
 
+  // Get attendance data for a range of months (NEW)
+  getAttendanceDataRange: async (employeeId: string, startMonth: string, endMonth: string) => {
+    const query = new URLSearchParams();
+    query.append('employeeId', employeeId);
+    query.append('startMonth', startMonth);
+    query.append('endMonth', endMonth);
+    return apiRequest<any>(`/payroll/attendance-range?${query.toString()}`, { method: 'GET' });
+  },
+
   // Arrears APIs - Get all arrears
   getArrears: async (filters?: { status?: string; employeeId?: string; department?: string; page?: number; limit?: number }) => {
     const params = new URLSearchParams();
