@@ -373,7 +373,7 @@ async function getAllActiveDeductions(departmentId) {
  * @param {Number} grossSalary - Gross salary (for percentage base = 'gross')
  * @returns {Array} Array of deduction objects
  */
-async function calculateOtherDeductions(departmentId, basicPay, grossSalary = null) {
+async function calculateOtherDeductions(departmentId, basicPay, grossSalary = null, attendanceData = null) {
   try {
     // Get all active deductions
     const allDeductions = await getAllActiveDeductions(departmentId);
@@ -392,7 +392,7 @@ async function calculateOtherDeductions(departmentId, basicPay, grossSalary = nu
 
       if (rule.type === 'fixed') {
         // Fixed deductions don't need a base - apply them directly
-        const amount = calculateDeductionAmount(rule, basicPay, grossSalary);
+        const amount = calculateDeductionAmount(rule, basicPay, grossSalary, attendanceData);
         if (amount > 0) {
           fixedDeductions.push({
             masterId: deduction.masterId,
@@ -400,6 +400,7 @@ async function calculateOtherDeductions(departmentId, basicPay, grossSalary = nu
             amount,
             type: 'fixed',
             base: null,
+            basedOnPresentDays: rule.basedOnPresentDays || false,
           });
         }
       } else if (rule.type === 'percentage') {
@@ -418,7 +419,7 @@ async function calculateOtherDeductions(departmentId, basicPay, grossSalary = nu
     // Calculate percentage deductions based on 'basic'
     const percentageBasicResults = [];
     for (const deduction of percentageBasicDeductions) {
-      const amount = calculateDeductionAmount(deduction.rule, basicPay, null);
+      const amount = calculateDeductionAmount(deduction.rule, basicPay, null, attendanceData);
       if (amount > 0) {
         percentageBasicResults.push({
           masterId: deduction.masterId,
@@ -426,6 +427,7 @@ async function calculateOtherDeductions(departmentId, basicPay, grossSalary = nu
           amount,
           type: 'percentage',
           base: 'basic',
+          basedOnPresentDays: deduction.rule.basedOnPresentDays || false,
         });
       }
     }
@@ -434,7 +436,7 @@ async function calculateOtherDeductions(departmentId, basicPay, grossSalary = nu
     const percentageGrossResults = [];
     if (grossSalary !== null && grossSalary !== undefined) {
       for (const deduction of percentageGrossDeductions) {
-        const amount = calculateDeductionAmount(deduction.rule, basicPay, grossSalary);
+        const amount = calculateDeductionAmount(deduction.rule, basicPay, grossSalary, attendanceData);
         if (amount > 0) {
           percentageGrossResults.push({
             masterId: deduction.masterId,
@@ -442,6 +444,7 @@ async function calculateOtherDeductions(departmentId, basicPay, grossSalary = nu
             amount,
             type: 'percentage',
             base: 'gross',
+            basedOnPresentDays: deduction.rule.basedOnPresentDays || false,
           });
         }
       }
@@ -520,12 +523,12 @@ function calculateDeductionAmount(rule, basicPay, grossSalary = null, attendance
 
   if (rule.type === 'fixed') {
     amount = rule.amount || 0;
-    
+
     // Prorate based on present days if enabled
     if (rule.basedOnPresentDays && attendanceData) {
       const { presentDays = 0, paidLeaveDays = 0, odDays = 0, monthDays = 30 } = attendanceData;
       const totalPaidDays = presentDays + paidLeaveDays + odDays;
-      
+
       if (monthDays > 0) {
         const perDayAmount = amount / monthDays;
         amount = perDayAmount * totalPaidDays;

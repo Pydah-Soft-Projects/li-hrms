@@ -46,7 +46,7 @@ export default function AllowancesDeductionsPage() {
   const [items, setItems] = useState<AllowanceDeduction[]>([]);
   const [loading, setLoading] = useState(true);
   const [departments, setDepartments] = useState<Department[]>([]);
-  
+
   // Dialog states
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
@@ -65,6 +65,7 @@ export default function AllowancesDeductionsPage() {
     percentageBase: 'basic' as 'basic' | 'gross',
     minAmount: null as number | null,
     maxAmount: null as number | null,
+    basedOnPresentDays: false,
     isActive: true,
   });
 
@@ -77,6 +78,7 @@ export default function AllowancesDeductionsPage() {
     percentageBase: 'basic' as 'basic' | 'gross',
     minAmount: null as number | null,
     maxAmount: null as number | null,
+    basedOnPresentDays: false,
   });
 
   useEffect(() => {
@@ -88,7 +90,7 @@ export default function AllowancesDeductionsPage() {
     try {
       setLoading(true);
       let response;
-      
+
       if (activeTab === 'allowances') {
         response = await api.getAllowances(true);
       } else if (activeTab === 'deductions') {
@@ -142,6 +144,7 @@ export default function AllowancesDeductionsPage() {
       percentageBase: item.globalRule.percentageBase || 'basic',
       minAmount: item.globalRule.minAmount ?? null,
       maxAmount: item.globalRule.maxAmount ?? null,
+      basedOnPresentDays: item.globalRule.basedOnPresentDays || false,
       isActive: item.isActive,
     });
     setShowEditDialog(true);
@@ -158,7 +161,7 @@ export default function AllowancesDeductionsPage() {
     const rule = item.departmentRules.find(
       (r) => (typeof r.departmentId === 'string' ? r.departmentId : r.departmentId._id) === deptId
     );
-    
+
     if (rule) {
       setSelectedItem(item);
       setSelectedDeptForRule(deptId);
@@ -170,6 +173,7 @@ export default function AllowancesDeductionsPage() {
         percentageBase: rule.percentageBase || 'basic',
         minAmount: rule.minAmount ?? null,
         maxAmount: rule.maxAmount ?? null,
+        basedOnPresentDays: rule.basedOnPresentDays || false,
       });
       setShowDeptRuleDialog(true);
     }
@@ -186,6 +190,7 @@ export default function AllowancesDeductionsPage() {
       percentageBase: 'basic',
       minAmount: null,
       maxAmount: null,
+      basedOnPresentDays: false,
       isActive: true,
     });
   };
@@ -199,6 +204,7 @@ export default function AllowancesDeductionsPage() {
       percentageBase: 'basic',
       minAmount: null,
       maxAmount: null,
+      basedOnPresentDays: false,
     });
   };
 
@@ -260,6 +266,7 @@ export default function AllowancesDeductionsPage() {
         percentageBase: formData.type === 'percentage' ? formData.percentageBase : null,
         minAmount: formData.minAmount,
         maxAmount: formData.maxAmount,
+        basedOnPresentDays: formData.type === 'fixed' ? formData.basedOnPresentDays : false,
       };
 
       // Convert GlobalRule to API format (null -> undefined for amount/percentage)
@@ -270,6 +277,7 @@ export default function AllowancesDeductionsPage() {
         percentageBase: globalRule.percentageBase ?? undefined,
         minAmount: globalRule.minAmount ?? undefined,
         maxAmount: globalRule.maxAmount ?? undefined,
+        basedOnPresentDays: globalRule.basedOnPresentDays,
       };
 
       if (selectedItem) {
@@ -398,6 +406,7 @@ export default function AllowancesDeductionsPage() {
         percentageBase: deptRuleForm.type === 'percentage' ? (deptRuleForm.percentageBase ?? undefined) : undefined,
         minAmount: deptRuleForm.minAmount ?? undefined,
         maxAmount: deptRuleForm.maxAmount ?? undefined,
+        basedOnPresentDays: deptRuleForm.type === 'fixed' ? deptRuleForm.basedOnPresentDays : false,
       });
 
       if (response.success) {
@@ -548,31 +557,28 @@ export default function AllowancesDeductionsPage() {
             <div className="flex gap-1.5 rounded-xl border border-slate-200 bg-white/80 p-0.5 shadow-sm dark:border-slate-700 dark:bg-slate-900/80">
               <button
                 onClick={() => setActiveTab('all')}
-                className={`rounded-lg px-3 py-1.5 text-[10px] font-semibold transition-all ${
-                  activeTab === 'all'
-                    ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-md'
-                    : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
-                }`}
+                className={`rounded-lg px-3 py-1.5 text-[10px] font-semibold transition-all ${activeTab === 'all'
+                  ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-md'
+                  : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
+                  }`}
               >
                 All
               </button>
               <button
                 onClick={() => setActiveTab('allowances')}
-                className={`rounded-lg px-3 py-1.5 text-[10px] font-semibold transition-all ${
-                  activeTab === 'allowances'
-                    ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-md'
-                    : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
-                }`}
+                className={`rounded-lg px-3 py-1.5 text-[10px] font-semibold transition-all ${activeTab === 'allowances'
+                  ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-md'
+                  : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
+                  }`}
               >
                 Allowances
               </button>
               <button
                 onClick={() => setActiveTab('deductions')}
-                className={`rounded-lg px-3 py-1.5 text-[10px] font-semibold transition-all ${
-                  activeTab === 'deductions'
-                    ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-md'
-                    : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
-                }`}
+                className={`rounded-lg px-3 py-1.5 text-[10px] font-semibold transition-all ${activeTab === 'deductions'
+                  ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-md'
+                  : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
+                  }`}
               >
                 Deductions
               </button>
@@ -614,11 +620,10 @@ export default function AllowancesDeductionsPage() {
                 className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-lg shadow-green-100/40 transition-all hover:border-green-300 hover:shadow-xl hover:shadow-green-200/50 dark:border-slate-800 dark:bg-slate-950/95 dark:shadow-none dark:hover:border-slate-700"
               >
                 {/* Gradient accent */}
-                <div className={`absolute top-0 left-0 h-1 w-full ${
-                  item.category === 'allowance'
-                    ? 'bg-gradient-to-r from-green-500 via-green-500 to-green-500'
-                    : 'bg-gradient-to-r from-red-500 via-red-500 to-red-500'
-                }`}></div>
+                <div className={`absolute top-0 left-0 h-1 w-full ${item.category === 'allowance'
+                  ? 'bg-gradient-to-r from-green-500 via-green-500 to-green-500'
+                  : 'bg-gradient-to-r from-red-500 via-red-500 to-red-500'
+                  }`}></div>
 
                 <div className="mb-3 flex items-start justify-between">
                   <div className="flex-1">
@@ -629,11 +634,10 @@ export default function AllowancesDeductionsPage() {
                   </div>
                   <div className="ml-2 flex flex-col gap-1.5">
                     <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                        item.category === 'allowance'
-                          ? 'bg-green-100 text-green-700 shadow-sm dark:bg-green-900/30 dark:text-green-400'
-                          : 'bg-red-100 text-red-700 shadow-sm dark:bg-red-900/30 dark:text-red-400'
-                      }`}
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${item.category === 'allowance'
+                        ? 'bg-green-100 text-green-700 shadow-sm dark:bg-green-900/30 dark:text-green-400'
+                        : 'bg-red-100 text-red-700 shadow-sm dark:bg-red-900/30 dark:text-red-400'
+                        }`}
                     >
                       {item.category === 'allowance' ? 'Allowance' : 'Deduction'}
                     </span>
@@ -688,6 +692,13 @@ export default function AllowancesDeductionsPage() {
                         </span>
                       </div>
                     )}
+                    {item.globalRule.type === 'fixed' && item.globalRule.basedOnPresentDays && (
+                      <div className="mt-1 flex items-center gap-1">
+                        <span className="rounded bg-orange-50 px-1.5 py-0.5 text-[9px] font-medium text-orange-700 dark:bg-orange-900/20 dark:text-orange-400">
+                          Prorated based on presence
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -717,6 +728,11 @@ export default function AllowancesDeductionsPage() {
                                     <>{rule.percentage}% of {rule.percentageBase === 'basic' ? 'Basic' : 'Gross'}</>
                                   )}
                                 </p>
+                                {rule.type === 'fixed' && rule.basedOnPresentDays && (
+                                  <p className="mt-0.5 text-[9px] font-medium text-orange-600 dark:text-orange-400">
+                                    Prorated based on presence
+                                  </p>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -877,6 +893,21 @@ export default function AllowancesDeductionsPage() {
                     className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     placeholder="e.g., 2000"
                   />
+                </div>
+              )}
+
+              {/* Based on Present Days (only for fixed) */}
+              {formData.type === 'fixed' && (
+                <div>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={formData.basedOnPresentDays}
+                      onChange={(e) => setFormData({ ...formData, basedOnPresentDays: e.target.checked })}
+                      className="h-3.5 w-3.5 rounded border-slate-300 text-green-600 focus:ring-green-500"
+                    />
+                    <span className="text-xs font-medium text-slate-700 dark:text-slate-300">Prorate based on present days</span>
+                  </label>
                 </div>
               )}
 
@@ -1084,6 +1115,21 @@ export default function AllowancesDeductionsPage() {
                     className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     placeholder="e.g., 5000"
                   />
+                </div>
+              )}
+
+              {/* Based on Present Days (only for fixed) */}
+              {deptRuleForm.type === 'fixed' && (
+                <div>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={deptRuleForm.basedOnPresentDays}
+                      onChange={(e) => setDeptRuleForm({ ...deptRuleForm, basedOnPresentDays: e.target.checked })}
+                      className="h-3.5 w-3.5 rounded border-slate-300 text-green-600 focus:ring-green-500"
+                    />
+                    <span className="text-xs font-medium text-slate-700 dark:text-slate-300">Prorate based on present days</span>
+                  </label>
                 </div>
               )}
 

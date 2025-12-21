@@ -1228,3 +1228,40 @@ exports.getPayrollTransactionsWithAnalytics = async (req, res) => {
   }
 };
 
+/**
+ * @desc    Get attendance data for a range of months for an employee
+ * @route   GET /api/payroll/attendance-range
+ * @access  Private
+ */
+exports.getAttendanceDataRange = async (req, res) => {
+  try {
+    const { employeeId, startMonth, endMonth } = req.query;
+
+    if (!employeeId || !startMonth || !endMonth) {
+      return res.status(400).json({
+        success: false,
+        message: 'Employee ID, start month, and end month are required'
+      });
+    }
+
+    // Fetch payroll records for the range
+    // Since month is "YYYY-MM", string comparison works for range
+    const records = await PayrollRecord.find({
+      employeeId,
+      month: { $gte: startMonth, $lte: endMonth }
+    }).select('month totalDaysInMonth attendance.totalPaidDays');
+
+    res.status(200).json({
+      success: true,
+      data: records
+    });
+  } catch (error) {
+    console.error('Error fetching attendance data range:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching attendance data range',
+      error: error.message
+    });
+  }
+};
+

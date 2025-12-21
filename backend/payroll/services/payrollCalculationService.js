@@ -219,6 +219,14 @@ async function calculatePayroll(employeeId, month, userId) {
       totalPayableShifts: adjustedPayableShifts,
     };
 
+    // Prepare attendance data for proration
+    const attendanceDataForProration = {
+      presentDays: modifiedAttendanceSummary.totalPresentDays || 0,
+      paidLeaveDays: modifiedAttendanceSummary.paidLeaves || 0,
+      odDays: modifiedAttendanceSummary.totalODs || 0,
+      monthDays: modifiedAttendanceSummary.totalDaysInMonth || 30,
+    };
+
     // Step 2: Calculate Basic Pay & Incentive
     console.log('\n========== PAYROLL CALCULATION START ==========');
     console.log(`Employee: ${employee.emp_no} (${employee.employee_name})`);
@@ -256,7 +264,8 @@ async function calculatePayroll(employeeId, month, userId) {
       departmentId.toString(),
       basicPayResult.basicPay,
       null,
-      false
+      false,
+      attendanceDataForProration
     );
     console.log(`Allowances (Basic Base): ${allowances.length} items`);
     allowances.forEach((allow, idx) => {
@@ -277,7 +286,8 @@ async function calculatePayroll(employeeId, month, userId) {
       departmentId.toString(),
       basicPayResult.basicPay,
       grossSalary,
-      true
+      true,
+      attendanceDataForProration
     );
     console.log(`Allowances (Gross Base): ${allowancesWithGrossBase.length} items`);
     allowancesWithGrossBase.forEach((allow, idx) => {
@@ -401,7 +411,8 @@ async function calculatePayroll(employeeId, month, userId) {
     const allOtherDeductions = await deductionService.calculateOtherDeductions(
       departmentId.toString(),
       basicPayResult.basicPay,
-      grossSalary // Pass gross salary for percentage-gross deductions
+      grossSalary, // Pass gross salary for percentage-gross deductions
+      attendanceDataForProration
     );
 
     console.log(`\nTotal Other Deductions Found: ${allOtherDeductions.length} items`);
@@ -969,10 +980,19 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     console.log(`[Payroll] Include missing allowances/deductions: ${includeMissing}`);
     console.log(`[Payroll] Employee ID: ${employee._id}, Department: ${departmentId}`);
 
+    // Prepare attendance data for proration
+    const attendanceData = {
+      presentDays,
+      paidLeaveDays,
+      odDays,
+      monthDays,
+    };
+
     // Get base allowances and deductions for the department
     const { allowances: baseAllowances, deductions: baseDeductions } = await buildBaseComponents(
       departmentId,
-      basicPay
+      basicPay,
+      attendanceData
     );
 
     // Log base components for debugging
@@ -981,25 +1001,6 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     // Normalize employee overrides
     const normalizedEmployeeAllowances = normalizeOverrides(employee.employeeAllowances || [], 'allowance');
     const normalizedEmployeeDeductions = normalizeOverrides(employee.employeeDeductions || [], 'deduction');
-
-    // Log employee overrides for debugging
-    console.log(`[Payroll] Employee allowance overrides: ${normalizedEmployeeAllowances.length}`);
-    console.log(`[Payroll] Employee deduction overrides: ${normalizedEmployeeDeductions.length}`);
-
-    // Merge with overrides
-    const resolvedAllowances = mergeWithOverrides(
-      baseAllowances,
-      normalizedEmployeeAllowances,
-      includeMissing
-    );
-
-    // Prepare attendance data for proration
-    const attendanceData = {
-      presentDays,
-      paidLeaveDays,
-      odDays,
-      monthDays
-    };
 
     // Process allowances
     let totalAllowances = 0;

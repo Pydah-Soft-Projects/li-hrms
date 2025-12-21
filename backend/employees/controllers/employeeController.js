@@ -482,6 +482,7 @@ exports.createEmployee = async (req, res) => {
             percentageBase: item.percentageBase ?? null,
             minAmount: item.minAmount ?? null,
             maxAmount: item.maxAmount ?? null,
+            basedOnPresentDays: item.basedOnPresentDays ?? false,
             isOverride: true,
           }))
         : [];
@@ -657,6 +658,7 @@ exports.updateEmployee = async (req, res) => {
             percentageBase: item.percentageBase ?? null,
             minAmount: item.minAmount ?? null,
             maxAmount: item.maxAmount ?? null,
+            basedOnPresentDays: item.basedOnPresentDays ?? false,
             isOverride: true,
           }))
         : [];

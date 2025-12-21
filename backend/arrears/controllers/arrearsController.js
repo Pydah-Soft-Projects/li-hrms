@@ -6,7 +6,7 @@ const ArrearsService = require('../services/arrearsService');
 // @access  Private
 exports.createArrears = async (req, res) => {
   try {
-    const { employee, startMonth, endMonth, monthlyAmount, totalAmount, reason } = req.body;
+    const { employee, startMonth, endMonth, monthlyAmount, totalAmount, reason, calculationBreakdown } = req.body;
 
     // Validate required fields
     if (!employee || !startMonth || !endMonth || !monthlyAmount || !totalAmount || !reason) {
@@ -17,7 +17,7 @@ exports.createArrears = async (req, res) => {
     }
 
     const arrears = await ArrearsService.createArrearsRequest(
-      { employee, startMonth, endMonth, monthlyAmount, totalAmount, reason },
+      { employee, startMonth, endMonth, monthlyAmount, totalAmount, reason, calculationBreakdown },
       req.user._id || req.user.userId || req.user.id
     );
 
