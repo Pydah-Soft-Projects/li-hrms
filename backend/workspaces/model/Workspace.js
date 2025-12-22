@@ -183,5 +183,5 @@ WorkspaceSchema.methods.hasPermission = function (moduleCode, permission) {
   return moduleConfig.permissions[permission] === true;
 };
 
-module.exports = mongoose.model('Workspace', WorkspaceSchema);
+module.exports = mongoose.models.Workspace || mongoose.model('Workspace', WorkspaceSchema);
 

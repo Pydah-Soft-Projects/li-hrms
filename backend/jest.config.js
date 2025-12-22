@@ -1,5 +1,6 @@
 module.exports = {
   testEnvironment: 'node',
+  transform: {},
   coverageDirectory: 'coverage',
   collectCoverageFrom: [
     'payroll/services/**/*.js',

@@ -216,5 +216,5 @@ otSchema.post('save', async function() {
   }
 });
 
-module.exports = mongoose.model('OT', otSchema);
+module.exports = mongoose.models.OT || mongoose.model('OT', otSchema);
 

@@ -24,5 +24,5 @@ const rosterMetaSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-module.exports = mongoose.model('RosterMeta', rosterMetaSchema);
+module.exports = mongoose.models.RosterMeta || mongoose.model('RosterMeta', rosterMetaSchema);
 

@@ -372,5 +372,5 @@ departmentSettingsSchema.statics.getOrCreate = async function (departmentId) {
   return settings;
 };
 
-module.exports = mongoose.model('DepartmentSettings', departmentSettingsSchema);
+module.exports = mongoose.models.DepartmentSettings || mongoose.model('DepartmentSettings', departmentSettingsSchema);
 

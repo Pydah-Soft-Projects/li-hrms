@@ -26,5 +26,5 @@ const shiftDurationSchema = new mongoose.Schema(
 // Note: duration already has unique:true which creates an index
 shiftDurationSchema.index({ isActive: 1 });
 
-module.exports = mongoose.model('ShiftDuration', shiftDurationSchema);
+module.exports = mongoose.models.ShiftDuration || mongoose.model('ShiftDuration', shiftDurationSchema);
 

@@ -195,5 +195,5 @@ RoleAssignmentSchema.statics.hasAccess = async function (userId, workspaceId) {
   return !!assignment;
 };
 
-module.exports = mongoose.model('RoleAssignment', RoleAssignmentSchema);
+module.exports = mongoose.models.RoleAssignment || mongoose.model('RoleAssignment', RoleAssignmentSchema);
 

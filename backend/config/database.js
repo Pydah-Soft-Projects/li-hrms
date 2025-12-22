@@ -25,7 +25,9 @@ const connectMongoDB = async () => {
     console.log('✅ MongoDB connected successfully');
   } catch (error) {
     console.error('❌ MongoDB connection error:', error.message);
-    process.exit(1);
+    if (process.env.NODE_ENV !== 'test') {
+      if (process.env.NODE_ENV !== "test") if (process.env.NODE_ENV !== "test") process.exit(1);
+    }
   }
 };
 
@@ -155,29 +157,9 @@ const closeMongoDB = async () => {
   }
 };
 
-// Initialize HRMS Database (runs specific helper init logic)
-const initializeHRMSDatabase = async () => {
-  // Dynamic require based on new 'sqlHelper' naming convention
-  // But implementation plan says we rename mssqlHelper to sqlHelper
-  // We will assume that rename happens next.
-  try {
-    const { initializeHRMSDatabase: initHRMS } = require('../employees/config/sqlHelper');
-    await initHRMS();
-  } catch (error) {
-    // Try checking if it's purely a path issue during refactor
-    try {
-      const { initializeHRMSDatabase: initHRMS } = require('../employees/config/sqlHelper');
-      await initHRMS();
-    } catch (e) {
-      console.error('❌ Error initializing HRMS database schema:', error.message);
-    }
-  }
-};
-
 const initializeDatabases = async () => {
   await connectMongoDB();
   await connectSQL();
-  await initializeHRMSDatabase();
 };
 
 module.exports = {

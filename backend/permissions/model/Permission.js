@@ -199,5 +199,5 @@ permissionSchema.pre('save', function() {
   }
 });
 
-module.exports = mongoose.model('Permission', permissionSchema);
+module.exports = mongoose.models.Permission || mongoose.model('Permission', permissionSchema);
 

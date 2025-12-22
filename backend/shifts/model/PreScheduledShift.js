@@ -88,5 +88,5 @@ preScheduledShiftSchema.pre('save', async function () {
 // Index for date range queries
 preScheduledShiftSchema.index({ date: 1, employeeNumber: 1 });
 
-module.exports = mongoose.model('PreScheduledShift', preScheduledShiftSchema);
+module.exports = mongoose.models.PreScheduledShift || mongoose.model('PreScheduledShift', preScheduledShiftSchema);
 

@@ -71,5 +71,5 @@ AttendanceDeductionSettingsSchema.statics.getActiveSettings = async function () 
   return this.findOne({ isActive: true });
 };
 
-module.exports = mongoose.model('AttendanceDeductionSettings', AttendanceDeductionSettingsSchema);
+module.exports = mongoose.models.AttendanceDeductionSettings || mongoose.model('AttendanceDeductionSettings', AttendanceDeductionSettingsSchema);
 

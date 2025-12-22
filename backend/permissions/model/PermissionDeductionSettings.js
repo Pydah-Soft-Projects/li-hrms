@@ -71,5 +71,5 @@ PermissionDeductionSettingsSchema.statics.getActiveSettings = async function () 
   return this.findOne({ isActive: true });
 };
 
-module.exports = mongoose.model('PermissionDeductionSettings', PermissionDeductionSettingsSchema);
+module.exports = mongoose.models.PermissionDeductionSettings || mongoose.model('PermissionDeductionSettings', PermissionDeductionSettingsSchema);
 

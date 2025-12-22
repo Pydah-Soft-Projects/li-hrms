@@ -265,6 +265,6 @@ employeeApplicationSchema.index({ status: 1 });
 employeeApplicationSchema.index({ createdBy: 1 });
 employeeApplicationSchema.index({ emp_no: 1 });
 
-module.exports = mongoose.model('EmployeeApplication', employeeApplicationSchema);
+module.exports = mongoose.models.EmployeeApplication || mongoose.model('EmployeeApplication', employeeApplicationSchema);
 
 

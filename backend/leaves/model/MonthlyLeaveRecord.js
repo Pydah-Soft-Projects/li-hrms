@@ -150,6 +150,6 @@ monthlyLeaveRecordSchema.index({ emp_no: 1, month: 1 });
 monthlyLeaveRecordSchema.index({ employeeId: 1, financialYear: 1 });
 monthlyLeaveRecordSchema.index({ year: 1, monthNumber: 1 });
 
-module.exports = mongoose.model('MonthlyLeaveRecord', monthlyLeaveRecordSchema);
+module.exports = mongoose.models.MonthlyLeaveRecord || mongoose.model('MonthlyLeaveRecord', monthlyLeaveRecordSchema);
 
 

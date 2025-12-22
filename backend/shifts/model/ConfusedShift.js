@@ -90,5 +90,5 @@ confusedShiftSchema.index({ employeeNumber: 1, date: 1 }, { unique: true });
 // Index for status queries
 confusedShiftSchema.index({ status: 1, date: -1 });
 
-module.exports = mongoose.model('ConfusedShift', confusedShiftSchema);
+module.exports = mongoose.models.ConfusedShift || mongoose.model('ConfusedShift', confusedShiftSchema);
 

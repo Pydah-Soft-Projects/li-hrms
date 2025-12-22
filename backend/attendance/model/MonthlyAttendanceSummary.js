@@ -225,5 +225,5 @@ monthlyAttendanceSummarySchema.statics.getOrCreate = async function (employeeId,
   return summary;
 };
 
-module.exports = mongoose.model('MonthlyAttendanceSummary', monthlyAttendanceSummarySchema);
+module.exports = mongoose.models.MonthlyAttendanceSummary || mongoose.model('MonthlyAttendanceSummary', monthlyAttendanceSummarySchema);
 

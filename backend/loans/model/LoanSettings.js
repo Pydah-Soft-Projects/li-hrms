@@ -320,5 +320,5 @@ LoanSettingsSchema.statics.getNextApprover = async function (type, currentStep) 
   return nextStep || null;
 };
 
-module.exports = mongoose.model('LoanSettings', LoanSettingsSchema);
+module.exports = mongoose.models.LoanSettings || mongoose.model('LoanSettings', LoanSettingsSchema);
 

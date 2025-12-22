@@ -1,0 +1,147 @@
+﻿  console.log
+    --- ENTERING MINIMAL TEST ---
+
+      at Object.<anonymous> (tests/api/minimal.test.js:1:45)
+
+  console.log
+    --- ATTEMPTING REQUIRE SERVER ---
+
+      at Object.log (tests/api/minimal.test.js:4:13)
+
+  console.log
+    [Server] File loading...
+
+      at Object.<anonymous> (server.js:1:40)
+
+  console.log
+    [dotenv@17.2.3] injecting env (27) from .env -- tip: ≡ƒæÑ sync secrets across teammates & machines: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+  console.log
+    [dotenv@17.2.3] injecting env (0) from .env -- tip: ≡ƒöæ add access controls to secrets: https://dotenvx.com/ops
+
+      at _log (node_modules/dotenv/lib/main.js:142:11)
+
+  console.error
+    --- SERVER REQUIRE FAILED --- Jest encountered an unexpected token
+    
+    Jest failed to parse a file. This happens e.g. when your code or its dependencies use non-standard JavaScript syntax, or when Jest is not configured to support such syntax.
+    
+    Out of the box Jest supports Babel, which will be used to transform your files into valid JS based on your Babel configuration.
+    
+    By default "node_modules" folder is ignored by transformers.
+    
+    Here's what you can do:
+     ΓÇó If you are trying to use ECMAScript Modules, see https://jestjs.io/docs/ecmascript-modules for how to enable it.
+     ΓÇó If you are trying to use TypeScript, see https://jestjs.io/docs/getting-started#using-typescript
+     ΓÇó To have some of your "node_modules" files transformed, you can specify a custom "transformIgnorePatterns" in your config.
+     ΓÇó If you need a custom transformation specify a "transform" option in your config.
+     ΓÇó If you simply want to mock your non-JS modules (e.g. binary assets) you can stub them out with the "moduleNameMapper" config option.
+    
+    You'll find more details and examples of these config options in the docs:
+    https://jestjs.io/docs/configuration
+    For information about custom transformations, see:
+    https://jestjs.io/docs/code-transformation
+    
+    Details:
+    
+    D:\li-hrms\backend\shared\services\brevoEmail.service.js:1
+    ({"Object.<anonymous>":function(module,exports,require,__dirname,__filename,jest){import axios from 'axios';
+                                                                                      ^^^^^^
+    
+    SyntaxError: Cannot use import statement outside a module
+        at new Script (node:vm:117:7)
+        at Runtime.createScriptFromCode (D:\li-hrms\backend\node_modules\jest-runtime\build\index.js:1505:14)
+        at Runtime._execModule (D:\li-hrms\backend\node_modules\jest-runtime\build\index.js:1399:25)
+        at Runtime._loadModule (D:\li-hrms\backend\node_modules\jest-runtime\build\index.js:1022:12)
+        at Runtime.requireModule (D:\li-hrms\backend\node_modules\jest-runtime\build\index.js:882:12)
+        at Runtime.requireModuleOrMock (D:\li-hrms\backend\node_modules\jest-runtime\build\index.js:1048:21)
+        at Object.require (D:\li-hrms\backend\shared\services\passwordNotificationService.js:1:31)
+        at Runtime._execModule (D:\li-hrms\backend\node_modules\jest-runtime\build\index.js:1439:24)
+        at Runtime._loadModule (D:\li-hrms\backend\node_modules\jest-runtime\build\index.js:1022:12)
+        at Runtime.requireModule (D:\li-hrms\backend\node_modules\jest-runtime\build\index.js:882:12)
+        at Runtime.requireModuleOrMock (D:\li-hrms\backend\node_modules\jest-runtime\build\index.js:1048:21)
+        at Object.require (D:\li-hrms\backend\users\controllers\userController.js:15:30)
+        at Runtime._execModule (D:\li-hrms\backend\node_modules\jest-runtime\build\index.js:1439:24)
+        at Runtime._loadModule (D:\li-hrms\backend\node_modules\jest-runtime\build\index.js:1022:12)
+        at Runtime.requireModule (D:\li-hrms\backend\node_modules\jest-runtime\build\index.js:882:12)
+        at Runtime.requireModuleOrMock (D:\li-hrms\backend\node_modules\jest-runtime\build\index.js:1048:21)
+        at Object.require (D:\li-hrms\backend\authentication\controllers\authController.js:3:27)
+        at Runtime._execModule (D:\li-hrms\backend\node_modules\jest-runtime\build\index.js:1439:24)
+        at Runtime._loadModule (D:\li-hrms\backend\node_modules\jest-runtime\build\index.js:1022:12)
+        at Runtime.requireModule (D:\li-hrms\backend\node_modules\jest-runtime\build\index.js:882:12)
+        at Runtime.requireModuleOrMock (D:\li-hrms\backend\node_modules\jest-runtime\build\index.js:1048:21)
+        at Object.require (D:\li-hrms\backend\authentication\index.js:3:24)
+        at Runtime._execModule (D:\li-hrms\backend\node_modules\jest-runtime\build\index.js:1439:24)
+        at Runtime._loadModule (D:\li-hrms\backend\node_modules\jest-runtime\build\index.js:1022:12)
+        at Runtime.requireModule (D:\li-hrms\backend\node_modules\jest-runtime\build\index.js:882:12)
+        at Runtime.requireModuleOrMock (D:\li-hrms\backend\node_modules\jest-runtime\build\index.js:1048:21)
+        at Object.require (D:\li-hrms\backend\server.js:52:20)
+        at Runtime._execModule (D:\li-hrms\backend\node_modules\jest-runtime\build\index.js:1439:24)
+        at Runtime._loadModule (D:\li-hrms\backend\node_modules\jest-runtime\build\index.js:1022:12)
+        at Runtime.requireModule (D:\li-hrms\backend\node_modules\jest-runtime\build\index.js:882:12)
+        at Runtime.requireModuleOrMock (D:\li-hrms\backend\node_modules\jest-runtime\build\index.js:1048:21)
+        at Object.require (D:\li-hrms\backend\tests\api\minimal.test.js:5:11)
+        at Runtime._execModule (D:\li-hrms\backend\node_modules\jest-runtime\build\index.js:1439:24)
+        at Runtime._loadModule (D:\li-hrms\backend\node_modules\jest-runtime\build\index.js:1022:12)
+        at Runtime.requireModule (D:\li-hrms\backend\node_modules\jest-runtime\build\index.js:882:12)
+        at jestAdapter (D:\li-hrms\backend\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:77:13)
+        at processTicksAndRejections (node:internal/process/task_queues:105:5)
+        at runTestInternal (D:\li-hrms\backend\node_modules\jest-runner\build\runTest.js:367:16)
+        at runTest (D:\li-hrms\backend\node_modules\jest-runner\build\runTest.js:444:34)
+
+    [0m [90m  6 |[39m     console[33m.[39mlog([32m'--- SERVER REQUIRE SUCCESS ---'[39m)[33m;[39m
+     [90m  7 |[39m } [36mcatch[39m (err) {
+    [31m[1m>[22m[39m[90m  8 |[39m     console[33m.[39merror([32m'--- SERVER REQUIRE FAILED ---'[39m[33m,[39m err)[33m;[39m
+     [90m    |[39m             [31m[1m^[22m[39m
+     [90m  9 |[39m }
+     [90m 10 |[39m
+     [90m 11 |[39m describe([32m'Minimal App Test'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at Object.error (tests/api/minimal.test.js:8:13)
+
+node.exe : FAIL tests/api/minimal.test.js
+At C:\Program Files\nodejs\npx.ps1:29 
+char:3
++   & $NODE_EXE $NPX_CLI_JS $args
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecifie 
+   d: (FAIL tests/api/minimal.test.js:St  
+  ring) [], RemoteException
+    + FullyQualifiedErrorId : NativeComma 
+   ndError
+ 
+  Minimal App Test
+    ├ù should load app (4 ms)
+
+  ΓùÅ Minimal App Test ΓÇ║ should load app
+
+    expect(received).toBeDefined()
+
+    Received: undefined
+
+    [0m [90m 11 |[39m 
+describe([32m'Minimal App 
+Test'[39m[33m,[39m () [33m=>[39m {
+     [90m 12 |[39m     
+test([32m'should load 
+app'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 13 |[39m   
+      expect(app)[33m.[39mtoBeDefined()
+[33m;[39m
+     [90m    |[39m                     
+[31m[1m^[22m[39m
+     [90m 14 |[39m     })[33m;[39m
+     [90m 15 |[39m })[33m;[39m
+     [90m 16 |[39m[0m
+
+      at Object.toBeDefined 
+(tests/api/minimal.test.js:13:21)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 1 total
+Snapshots:   0 total
+Time:        3.04 s
+Ran all test suites matching 
+/tests\\api\\minimal.test.js/i.

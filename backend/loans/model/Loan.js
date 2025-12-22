@@ -403,5 +403,5 @@ LoanSchema.statics.getPendingForRole = async function (role, departmentIds = [])
     .sort({ appliedAt: -1 });
 };
 
-module.exports = mongoose.model('Loan', LoanSchema);
+module.exports = mongoose.models.Loan || mongoose.model('Loan', LoanSchema);
 

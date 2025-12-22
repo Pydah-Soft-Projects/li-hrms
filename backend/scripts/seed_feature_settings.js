@@ -64,7 +64,7 @@ const seedSettings = async () => {
         process.exit(0);
     } catch (error) {
         console.error('Error seeding settings:', error);
-        process.exit(1);
+        if(process.env.NODE_ENV !== "test") process.exit(1);
     }
 };
 

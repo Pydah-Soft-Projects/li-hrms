@@ -459,5 +459,5 @@ LeaveSchema.post('save', async function() {
   }
 });
 
-module.exports = mongoose.model('Leave', LeaveSchema);
+module.exports = mongoose.models.Leave || mongoose.model('Leave', LeaveSchema);
 

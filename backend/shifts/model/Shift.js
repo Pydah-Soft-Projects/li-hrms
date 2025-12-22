@@ -113,5 +113,5 @@ shiftSchema.pre('save', async function () {
     // If ShiftDuration model doesn't exist yet, skip validation (for initial setup)
 });
 
-module.exports = mongoose.model('Shift', shiftSchema);
+module.exports = mongoose.models.Shift || mongoose.model('Shift', shiftSchema);
 

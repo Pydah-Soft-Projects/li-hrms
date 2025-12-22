@@ -50,5 +50,5 @@ attendanceRawLogSchema.index({ employeeNumber: 1, timestamp: 1, source: 1 }, { u
 // Index for date queries
 attendanceRawLogSchema.index({ employeeNumber: 1, date: 1 });
 
-module.exports = mongoose.model('AttendanceRawLog', attendanceRawLogSchema);
+module.exports = mongoose.models.AttendanceRawLog || mongoose.model('AttendanceRawLog', attendanceRawLogSchema);
 

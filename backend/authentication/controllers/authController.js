@@ -194,7 +194,7 @@ exports.getMe = async (req, res) => {
 
     if (userType === 'user') {
       try {
-        const RoleAssignment = require('../../authentication/model/RoleAssignment');
+        const RoleAssignment = require('../../workspaces/model/RoleAssignment');
         const assignments = await RoleAssignment.getUserWorkspaces(user._id);
         workspaces = assignments.map((assignment) => ({
           _id: assignment.workspaceId._id,

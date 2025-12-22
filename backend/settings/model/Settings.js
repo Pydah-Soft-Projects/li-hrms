@@ -31,5 +31,5 @@ const settingsSchema = new mongoose.Schema(
 // Note: key already has unique:true which creates an index
 settingsSchema.index({ category: 1 });
 
-module.exports = mongoose.model('Settings', settingsSchema);
+module.exports = mongoose.models.Settings || mongoose.model('Settings', settingsSchema);
 

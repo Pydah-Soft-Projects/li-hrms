@@ -134,6 +134,6 @@ departmentSchema.index({ hod: 1 });
 departmentSchema.index({ hr: 1 });
 departmentSchema.index({ isActive: 1 });
 
-module.exports = mongoose.model('Department', departmentSchema);
+module.exports = mongoose.models.Department || mongoose.model('Department', departmentSchema);
 
 

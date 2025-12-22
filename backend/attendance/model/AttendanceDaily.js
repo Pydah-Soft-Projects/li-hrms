@@ -287,5 +287,5 @@ attendanceDailySchema.post('save', async function() {
   }
 });
 
-module.exports = mongoose.model('AttendanceDaily', attendanceDailySchema);
+module.exports = mongoose.models.AttendanceDaily || mongoose.model('AttendanceDaily', attendanceDailySchema);
 

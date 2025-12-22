@@ -155,5 +155,5 @@ leaveSplitSchema.virtual('displayText').get(function () {
 leaveSplitSchema.set('toJSON', { virtuals: true });
 leaveSplitSchema.set('toObject', { virtuals: true });
 
-module.exports = mongoose.model('LeaveSplit', leaveSplitSchema);
+module.exports = mongoose.models.LeaveSplit || mongoose.model('LeaveSplit', leaveSplitSchema);
 

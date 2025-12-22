@@ -439,5 +439,5 @@ ODSchema.post('save', async function() {
   }
 });
 
-module.exports = mongoose.model('OD', ODSchema);
+module.exports = mongoose.models.OD || mongoose.model('OD', ODSchema);
 

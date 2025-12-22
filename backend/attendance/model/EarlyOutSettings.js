@@ -128,5 +128,5 @@ EarlyOutSettingsSchema.methods.validateRanges = function () {
   return { valid: true };
 };
 
-module.exports = mongoose.model('EarlyOutSettings', EarlyOutSettingsSchema);
+module.exports = mongoose.models.EarlyOutSettings || mongoose.model('EarlyOutSettings', EarlyOutSettingsSchema);
 

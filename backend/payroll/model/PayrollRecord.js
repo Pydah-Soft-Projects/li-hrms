@@ -521,5 +521,5 @@ payrollRecordSchema.statics.getOrCreate = async function (employeeId, emp_no, ye
   return record;
 };
 
-module.exports = mongoose.model('PayrollRecord', payrollRecordSchema);
+module.exports = mongoose.models.PayrollRecord || mongoose.model('PayrollRecord', payrollRecordSchema);
 

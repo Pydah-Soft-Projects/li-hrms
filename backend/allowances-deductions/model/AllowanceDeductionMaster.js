@@ -245,5 +245,5 @@ allowanceDeductionMasterSchema.statics.getResolvedRule = async function (masterI
   return deptRule || master.globalRule;
 };
 
-module.exports = mongoose.model('AllowanceDeductionMaster', allowanceDeductionMasterSchema);
+module.exports = mongoose.models.AllowanceDeductionMaster || mongoose.model('AllowanceDeductionMaster', allowanceDeductionMasterSchema);
 

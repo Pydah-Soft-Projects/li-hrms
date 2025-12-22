@@ -652,5 +652,5 @@ payRegisterSummarySchema.methods.recalculateTotals = function () {
   return totals;
 };
 
-module.exports = mongoose.model('PayRegisterSummary', payRegisterSummarySchema);
+module.exports = mongoose.models.PayRegisterSummary || mongoose.model('PayRegisterSummary', payRegisterSummarySchema);
 

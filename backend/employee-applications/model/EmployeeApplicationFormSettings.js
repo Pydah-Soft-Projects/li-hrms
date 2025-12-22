@@ -566,5 +566,5 @@ EmployeeApplicationFormSettingsSchema.statics.initializeDefault = async function
   return this.create(defaultSettings);
 };
 
-module.exports = mongoose.model('EmployeeApplicationFormSettings', EmployeeApplicationFormSettingsSchema);
+module.exports = mongoose.models.EmployeeApplicationFormSettings || mongoose.model('EmployeeApplicationFormSettings', EmployeeApplicationFormSettingsSchema);
 

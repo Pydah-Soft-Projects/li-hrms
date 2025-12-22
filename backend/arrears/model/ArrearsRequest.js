@@ -204,4 +204,4 @@ arrearsRequestSchema.pre('save', async function () {
   }
 });
 
-module.exports = mongoose.model('ArrearsRequest', arrearsRequestSchema);
+module.exports = mongoose.models.ArrearsRequest || mongoose.model('ArrearsRequest', arrearsRequestSchema);

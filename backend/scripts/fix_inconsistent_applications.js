@@ -38,7 +38,7 @@ async function fixApplications() {
         process.exit(0);
     } catch (error) {
         console.error('Error fixing applications:', error);
-        process.exit(1);
+        if(process.env.NODE_ENV !== "test") process.exit(1);
     }
 }
 

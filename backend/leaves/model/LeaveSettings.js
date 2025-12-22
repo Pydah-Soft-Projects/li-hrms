@@ -355,5 +355,5 @@ LeaveSettingsSchema.statics.getNextApprover = async function (type, currentStep)
   return nextStep || null;
 };
 
-module.exports = mongoose.model('LeaveSettings', LeaveSettingsSchema);
+module.exports = mongoose.models.LeaveSettings || mongoose.model('LeaveSettings', LeaveSettingsSchema);
 

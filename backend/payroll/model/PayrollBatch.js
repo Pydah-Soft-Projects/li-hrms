@@ -299,4 +299,4 @@ payrollBatchSchema.pre('save', async function () {
     }
 });
 
-module.exports = mongoose.model('PayrollBatch', payrollBatchSchema);
+module.exports = mongoose.models.PayrollBatch || mongoose.model('PayrollBatch', payrollBatchSchema);

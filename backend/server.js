@@ -1,9 +1,11 @@
+
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const { initializeDatabases } = require('./config/database');
+const { initializeAllDatabases } = require('./config/init');
 
 const app = express();
+module.exports = app;
 const PORT = process.env.PORT || 5000;
 
 // Middleware
@@ -47,15 +49,15 @@ app.get('/health', (req, res) => {
 });
 
 // Import and mount module routes
-// Authentication routes
+
 const authRoutes = require('./authentication/index.js');
 app.use('/api/auth', authRoutes);
 
-// Users routes
+
 const userRoutes = require('./users/index.js');
 app.use('/api/users', userRoutes);
 
-// Shifts routes
+
 const shiftRoutes = require('./shifts/index.js');
 app.use('/api/shifts', shiftRoutes);
 
@@ -143,7 +145,7 @@ app.use((err, req, res, next) => {
 const startServer = async () => {
   try {
     // Initialize database connections
-    await initializeDatabases();
+    await initializeAllDatabases();
 
     // Start attendance sync job
     const { startSyncJob } = require('./attendance/services/attendanceSyncJob');
@@ -176,7 +178,7 @@ const startServer = async () => {
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error.message);
-    process.exit(1);
+    if (process.env.NODE_ENV !== "test") process.exit(1);
   }
 };
 
@@ -189,6 +191,11 @@ process.on('SIGTERM', async () => {
   process.exit(0);
 });
 
-// Start the server
-startServer();
+// Export app for testing
+module.exports = app;
+
+// Start the server only if run directly (not required as a module)
+if (require.main === module) {
+  startServer();
+}
 

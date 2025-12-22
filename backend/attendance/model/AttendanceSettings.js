@@ -102,5 +102,5 @@ attendanceSettingsSchema.statics.getSettings = async function() {
   return settings;
 };
 
-module.exports = mongoose.model('AttendanceSettings', attendanceSettingsSchema);
+module.exports = mongoose.models.AttendanceSettings || mongoose.model('AttendanceSettings', attendanceSettingsSchema);
 

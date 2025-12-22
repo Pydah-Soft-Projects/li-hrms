@@ -38,7 +38,7 @@ const seedSuperAdmin = async () => {
     console.error('❌ Error seeding super admin:', error.message);
     console.error('   Full error:', error);
     await closeMongoDB().catch(() => {});
-    process.exit(1);
+    if(process.env.NODE_ENV !== "test") process.exit(1);
   }
 };
 

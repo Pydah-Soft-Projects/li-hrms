@@ -99,5 +99,5 @@ payrollTransactionSchema.index({ employeeId: 1, month: 1 });
 payrollTransactionSchema.index({ emp_no: 1, month: 1 });
 payrollTransactionSchema.index({ category: 1 });
 
-module.exports = mongoose.model('PayrollTransaction', payrollTransactionSchema);
+module.exports = mongoose.models.PayrollTransaction || mongoose.model('PayrollTransaction', payrollTransactionSchema);
 

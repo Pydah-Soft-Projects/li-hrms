@@ -116,5 +116,5 @@ const ModuleSchema = new mongoose.Schema(
 // Note: code already has unique:true which creates an index
 ModuleSchema.index({ isActive: 1, sortOrder: 1 });
 
-module.exports = mongoose.model('Module', ModuleSchema);
+module.exports = mongoose.models.Module || mongoose.model('Module', ModuleSchema);
 

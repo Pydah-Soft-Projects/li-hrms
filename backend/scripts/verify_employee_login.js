@@ -56,7 +56,7 @@ async function verifyLogin(identifier, password) {
 const args = process.argv.slice(2);
 if (args.length < 2) {
     console.log('Usage: node verify_employee_login.js <identifier> <password>');
-    process.exit(1);
+    if(process.env.NODE_ENV !== "test") process.exit(1);
 }
 
 verifyLogin(args[0], args[1]);
