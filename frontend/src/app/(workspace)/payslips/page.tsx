@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '@/context/AuthContext';
-import api from '@/lib/api';
+import { useAuth } from '@/contexts/AuthContext';
+import { api } from '@/lib/api';
 import {
     FileText,
     Download,

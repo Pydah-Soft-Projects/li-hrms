@@ -294,6 +294,14 @@ exports.createUserFromEmployee = async (req, res) => {
       await Department.findByIdAndUpdate(department, { hod: user._id });
     }
 
+    // Valid HR Sync: Update Departments with HR ID
+    if (role === 'hr' && userDepartments.length > 0) {
+      await Department.updateMany(
+        { _id: { $in: userDepartments } },
+        { hr: user._id }
+      );
+    }
+
     // Auto-assign to workspace
     const workspaceCode = getWorkspaceCodeByRole(role || 'employee');
     let workspaceAssignment = null;
@@ -509,6 +517,10 @@ exports.updateUser = async (req, res) => {
     // Track if role changed for workspace update
     const roleChanged = role && role !== user.role;
 
+    // Capture old values for sync
+    const oldDepartments = user.departments ? user.departments.map(d => d.toString()) : [];
+    const oldDepartment = user.department ? user.department.toString() : null;
+
     // Update fields
     if (name !== undefined) user.name = name;
     if (role !== undefined) {
@@ -524,9 +536,46 @@ exports.updateUser = async (req, res) => {
 
     await user.save();
 
+    // Sync: Reverse Sync (User -> Department)
+    // If user removed from a department, unset them as HOD/HR there
+    if (departments !== undefined) {
+      const newCtxDepartments = departments.map(d => d.toString());
+      const removedDepartments = oldDepartments.filter(d => !newCtxDepartments.includes(d));
+
+      if (removedDepartments.length > 0) {
+        // Unset HOD
+        await Department.updateMany(
+          { _id: { $in: removedDepartments }, hod: user._id },
+          { $unset: { hod: "" } }
+        );
+        // Unset HR
+        await Department.updateMany(
+          { _id: { $in: removedDepartments }, hr: user._id },
+          { $unset: { hr: "" } }
+        );
+      }
+    }
+
+    // Sync: Handle Single Department Change (mainly for HODs)
+    if (department !== undefined && oldDepartment && oldDepartment !== (department || '')) {
+      // If user was HOD of the old department, unset it
+      await Department.findOneAndUpdate(
+        { _id: oldDepartment, hod: user._id },
+        { $unset: { hod: "" } }
+      );
+    }
+
     // Valid HOD Sync: Update Department with HOD ID
     if (user.role === 'hod' && user.department) {
       await Department.findByIdAndUpdate(user.department, { hod: user._id });
+    }
+
+    // Valid HR Sync: Update Departments with HR ID
+    if (user.role === 'hr' && user.departments && user.departments.length > 0) {
+      await Department.updateMany(
+        { _id: { $in: user.departments } },
+        { hr: user._id }
+      );
     }
 
     // If role changed, update workspace assignment

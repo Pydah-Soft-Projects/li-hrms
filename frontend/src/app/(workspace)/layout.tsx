@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { auth } from '@/lib/auth';
 import { api } from '@/lib/api';
+import { AuthProvider } from '@/contexts/AuthContext';
 import { WorkspaceProvider, useWorkspace, setWorkspaceDataFromLogin, Workspace } from '@/contexts/WorkspaceContext';
 
 // Icon components
@@ -598,9 +599,11 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <WorkspaceProvider>
-      <WorkspaceLayoutContent>{children}</WorkspaceLayoutContent>
-    </WorkspaceProvider>
+    <AuthProvider>
+      <WorkspaceProvider>
+        <WorkspaceLayoutContent>{children}</WorkspaceLayoutContent>
+      </WorkspaceProvider>
+    </AuthProvider>
   );
 }
 
