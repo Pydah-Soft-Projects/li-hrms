@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { api } from '@/lib/api';
+import { api, apiRequest } from '@/lib/api';
 import { toast } from 'react-toastify';
 
 type TabType = 'shift' | 'employee' | 'leaves' | 'loan' | 'salary_advance' | 'attendance' | 'payroll' | 'overtime' | 'permissions' | 'attendance_deductions' | 'communications' | 'feature_control' | 'general';
@@ -385,18 +385,19 @@ export default function SettingsPage() {
 
     try {
       setReleasing(true);
-      const response = await api.put('/payroll/release', {
-        month: releaseMonth
+      const response = await apiRequest<any>('/payroll/release', {
+        method: 'PUT',
+        body: JSON.stringify({ month: releaseMonth })
       });
 
-      if (response.data.success) {
-        toast.success(`Successfully released ${response.data.count} payslips for ${releaseMonth}`);
+      if (response.success) {
+        toast.success(`Successfully released ${response.count} payslips for ${releaseMonth}`);
       } else {
-        toast.error(response.data.message || 'Failed to release payslips');
+        toast.error(response.message || 'Failed to release payslips');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error releasing payslips:', err);
-      toast.error(err.response?.data?.message || 'Error releasing payslips');
+      toast.error(err.message || 'Error releasing payslips');
     } finally {
       setReleasing(false);
     }

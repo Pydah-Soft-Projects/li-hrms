@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { api } from '@/lib/api';
+import { apiRequest } from '@/lib/api';
+import { auth } from '@/lib/auth';
 import {
     FileText,
     Download,
@@ -23,9 +24,9 @@ import { toast } from 'react-hot-toast';
 
 const PayslipsPage = () => {
     const { user } = useAuth();
-    const [payslips, setPayslips] = useState([]);
+    const [payslips, setPayslips] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
+    const [error, setError] = useState<string | null>(null);
     const [stats, setStats] = useState({
         totalEarned: 0,
         totalDeductions: 0,
@@ -43,28 +44,32 @@ const PayslipsPage = () => {
             setError(null);
 
             // getPayrollRecords handles role-based filtering and history settings on backend
-            const response = await api.get('/payroll/records');
+            // Using apiRequest instead of api.get
+            const response = await apiRequest<any>('/payroll/records');
 
-            if (response.data.success) {
-                setPayslips(response.data.data);
-                calculateStats(response.data.data);
+            if (response.success) {
+                // apiRequest returns the response body merged with success:true
+                // Assuming backend returns { success: true, data: [...] }
+                const data = response.data || [];
+                setPayslips(data);
+                calculateStats(data);
             } else {
-                setError(response.data.message || 'Failed to load payslips');
+                setError(response.message || 'Failed to load payslips');
             }
-        } catch (err) {
+        } catch (err: any) {
             console.error('Error loading payslips:', err);
-            setError(err.response?.data?.message || 'Error connecting to server');
+            setError(err.message || 'Error connecting to server');
         } finally {
             setLoading(false);
         }
     };
 
-    const calculateStats = (data) => {
+    const calculateStats = (data: any[]) => {
         if (!data || data.length === 0) return;
 
         const latest = data[0];
-        const totalEarned = data.reduce((acc, curr) => acc + (curr.totalEarnings || 0), 0);
-        const netPayTotal = data.reduce((acc, curr) => acc + (curr.netSalary || 0), 0);
+        const totalEarned = data.reduce((acc: number, curr: any) => acc + (curr.totalEarnings || 0), 0);
+        const netPayTotal = data.reduce((acc: number, curr: any) => acc + (curr.netSalary || 0), 0);
 
         setStats({
             totalEarned: totalEarned,
@@ -74,20 +79,31 @@ const PayslipsPage = () => {
         });
     };
 
-    const handleDownload = async (record) => {
+    const handleDownload = async (record: any) => {
         try {
             toast.loading('Preparing payslip...', { id: 'download' });
 
             const employeeId = record.employee_id?._id || record.employee_id;
             const month = record.month;
+            const token = auth.getToken();
 
-            // Use the new downloadPayslip endpoint
-            const response = await api.get(`/payroll/download/${employeeId}/${month}`, {
-                responseType: 'blob'
+            // Use fetch directly for blob response
+            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'}/payroll/download/${employeeId}/${month}`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
             });
 
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || 'Download failed');
+            }
+
+            const blob = await response.blob();
+
             // Create a link to download the file
-            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const url = window.URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = url;
             link.setAttribute('download', `Payslip_${month}.pdf`);
@@ -99,9 +115,9 @@ const PayslipsPage = () => {
 
             // Refresh to update download count
             loadPayslips();
-        } catch (err) {
+        } catch (err: any) {
             console.error('Download error:', err);
-            const message = err.response?.data?.message || 'Download limit reached or file unavailable';
+            const message = err.message || 'Download limit reached or file unavailable';
             toast.error(message, { id: 'download' });
         }
     };

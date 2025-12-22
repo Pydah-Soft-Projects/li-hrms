@@ -17,6 +17,7 @@ interface GlobalRule {
   percentageBase?: 'basic' | 'gross' | null;
   minAmount?: number | null;
   maxAmount?: number | null;
+  basedOnPresentDays?: boolean;
 }
 
 interface DepartmentRule {
@@ -27,6 +28,7 @@ interface DepartmentRule {
   percentageBase?: 'basic' | 'gross' | null;
   minAmount?: number | null;
   maxAmount?: number | null;
+  basedOnPresentDays?: boolean;
 }
 
 interface AllowanceDeduction {

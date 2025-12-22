@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from "next/navigation";
-import { api } from '@/lib/api';
+import { api, apiRequest } from '@/lib/api';
 import { toast } from 'react-toastify';
 import ArrearsPayrollSection from '@/components/Arrears/ArrearsPayrollSection';
 
@@ -757,15 +757,23 @@ export default function PayRegisterPage() {
       };
 
       // Submit payroll data
-      const response = await api.post('/api/payroll/process', payrollData);
+      // Use apiRequest for generic post
+      const response = await apiRequest<any>('/payroll/process', {
+        method: 'POST',
+        body: JSON.stringify(payrollData)
+      });
 
       // Process arrears settlement after successful payroll
-      if (selectedArrears.length > 0) {
+      if (selectedArrears.length > 0 && response.success) {
         await settleArrears(response.data.payrollId);
       }
 
-      toast.success('Payroll processed successfully');
-    } catch (error) {
+      if (response.success) {
+        toast.success('Payroll processed successfully');
+      } else {
+        toast.error(response.message || 'Failed to process payroll');
+      }
+    } catch (error: any) {
       console.error('Error processing payroll:', error);
       toast.error('Failed to process payroll');
     }
@@ -918,7 +926,7 @@ export default function PayRegisterPage() {
                   >
                     {bulkCalculating ? 'Calculating...' : exportingExcel ? 'Preparing Excel...' : 'Calculate Payroll (Listed)'}
                   </button>
-                  
+
                   {/* Export Excel Button */}
                   <button
                     onClick={async () => {

@@ -86,7 +86,7 @@ export const useRoleAccess = (): RoleAccess => {
         isSubAdmin,
 
         // Department/Scope info
-        department: user.department?._id || user.department,
+        department: typeof user.department === 'object' ? user.department?._id : user.department,
         departments: user.departments?.map((d: any) => d._id || d),
         scopeType: user.scope,
     };

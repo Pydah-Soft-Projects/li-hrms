@@ -6,9 +6,11 @@ export interface User {
   name: string;
   role: string;
   roles: string[];
-  department?: string;
+  department?: string | { _id: string; name: string };
   scope?: 'global' | 'restricted';
   departments?: { _id: string; name: string; code?: string }[];
+  employeeId?: string;
+  employeeRef?: string;
 }
 
 export const auth = {
