@@ -3,7 +3,7 @@ const Loan = require('../model/Loan');
 const LoanSettings = require('../model/LoanSettings');
 const Employee = require('../../employees/model/Employee');
 const User = require('../../users/model/User');
-const { isHRMSConnected, getEmployeeByIdMSSQL } = require('../../employees/config/mssqlHelper');
+const { isHRMSConnected, getEmployeeByIdMSSQL } = require('../../employees/config/sqlHelper');
 const { getResolvedLoanSettings } = require('../../departments/controllers/departmentSettingsController');
 
 /**
@@ -27,23 +27,23 @@ const getEmployeeSettings = async () => {
  */
 const findEmployeeByEmpNo = async (empNo) => {
   if (!empNo) return null;
-  
+
   // Always try MongoDB first
   let employee = await Employee.findOne({ emp_no: empNo });
-  
+
   if (employee) {
     return employee;
   }
-  
+
   // If not in MongoDB, check if MSSQL is available and try there
   const settings = await getEmployeeSettings();
-  
+
   if ((settings.dataSource === 'mssql' || settings.dataSource === 'both') && isHRMSConnected()) {
     try {
       const mssqlEmployee = await getEmployeeByIdMSSQL(empNo);
       if (mssqlEmployee) {
         console.log(`Syncing employee ${empNo} from MSSQL to MongoDB...`);
-        
+
         const newEmployee = new Employee({
           emp_no: mssqlEmployee.emp_no,
           employee_name: mssqlEmployee.employee_name,
@@ -71,7 +71,7 @@ const findEmployeeByEmpNo = async (empNo) => {
           ifsc_code: mssqlEmployee.ifsc_code || null,
           is_active: mssqlEmployee.is_active !== false,
         });
-        
+
         await newEmployee.save();
         console.log(`✅ Employee ${empNo} synced to MongoDB`);
         return newEmployee;
@@ -80,20 +80,20 @@ const findEmployeeByEmpNo = async (empNo) => {
       console.error('Error fetching/syncing from MSSQL:', error);
     }
   }
-  
+
   return null;
 };
 
 // Helper to find employee by ID or emp_no
 const findEmployeeByIdOrEmpNo = async (identifier) => {
   if (!identifier) return null;
-  
+
   // Check if it's a valid MongoDB ObjectId
   if (mongoose.Types.ObjectId.isValid(identifier)) {
     const employee = await Employee.findById(identifier);
     if (employee) return employee;
   }
-  
+
   // Try to find by emp_no as fallback
   return await findEmployeeByEmpNo(identifier);
 };
@@ -106,7 +106,7 @@ const findEmployeeByIdOrEmpNo = async (identifier) => {
 // Helper function to get workflow settings
 const getWorkflowSettings = async (type) => {
   let settings = await LoanSettings.getActiveSettings(type);
-  
+
   // Return default workflow if no settings found
   if (!settings) {
     return {
@@ -126,7 +126,7 @@ const getWorkflowSettings = async (type) => {
       },
     };
   }
-  
+
   return settings;
 };
 
@@ -180,7 +180,7 @@ const calculateEarlySettlement = (loan, settlementDate = new Date()) => {
   }
 
   const remainingPrincipal = Math.max(0, principal - principalPaid);
-  
+
   // Settlement amount = Remaining Principal + Interest for used period - Interest already paid
   const interestAlreadyPaid = totalPaid - principalPaid;
   const settlementInterest = Math.max(0, recalculatedInterest - interestAlreadyPaid);
@@ -260,7 +260,7 @@ exports.getLoans = async (req, res) => {
 exports.getMyLoans = async (req, res) => {
   try {
     const { status, requestType } = req.query;
-    const filter = { 
+    const filter = {
       isActive: true,
       appliedBy: req.user._id,
     };
@@ -353,10 +353,10 @@ exports.applyLoan = async (req, res) => {
     if (empNo) {
       // Check if user has permission to apply for others
       const hasRolePermission = ['hr', 'sub_admin', 'super_admin'].includes(req.user.role);
-      
+
       console.log(`[Apply Loan] User ${req.user._id} (${req.user.role}) applying for employee ${empNo}`);
-      console.log(`[Apply Loan] Has role permission: ${hasRolePermission}`);
-      
+      console.log(`[Apply Loan] Has role permission: ${hasRolePermission} `);
+
       // Check workspace permissions if user has active workspace
       let hasWorkspacePermission = false;
       if (req.user.activeWorkspaceId) {
@@ -365,9 +365,9 @@ exports.applyLoan = async (req, res) => {
           if (loanSettings?.settings?.workspacePermissions) {
             const workspaceIdStr = String(req.user.activeWorkspaceId);
             const permissions = loanSettings.settings.workspacePermissions[workspaceIdStr];
-            
-            console.log(`[Apply Loan] Checking workspace ${workspaceIdStr} permissions:`, permissions);
-            
+
+            console.log(`[Apply Loan] Checking workspace ${workspaceIdStr} permissions: `, permissions);
+
             if (permissions) {
               // Handle both old format (boolean) and new format (object)
               if (typeof permissions === 'boolean') {
@@ -381,9 +381,9 @@ exports.applyLoan = async (req, res) => {
           console.error('[Apply Loan] Error checking workspace permissions:', error);
         }
       }
-      
-      console.log(`[Apply Loan] Has workspace permission: ${hasWorkspacePermission}`);
-      
+
+      console.log(`[Apply Loan] Has workspace permission: ${hasWorkspacePermission} `);
+
       // User must have either role permission OR workspace permission
       if (!hasRolePermission && !hasWorkspacePermission) {
         console.log(`[Apply Loan] ❌ Authorization denied - no role or workspace permission`);
@@ -392,15 +392,15 @@ exports.applyLoan = async (req, res) => {
           error: 'Not authorized to apply loan/advance for others',
         });
       }
-      
+
       console.log(`[Apply Loan] ✅ Authorization granted`);
-      
+
       // Find employee by emp_no
       employee = await findEmployeeByEmpNo(empNo);
     } else if (employeeId) {
       // Legacy: Check if user has permission to apply for others
       const hasRolePermission = ['hr', 'sub_admin', 'super_admin'].includes(req.user.role);
-      
+
       // Check workspace permissions
       let hasWorkspacePermission = false;
       if (req.user.activeWorkspaceId) {
@@ -421,14 +421,14 @@ exports.applyLoan = async (req, res) => {
           console.error('[Apply Loan] Error checking workspace permissions:', error);
         }
       }
-      
+
       if (!hasRolePermission && !hasWorkspacePermission) {
         return res.status(403).json({
           success: false,
           error: 'Not authorized to apply loan/advance for others',
         });
       }
-      
+
       employee = await findEmployeeByIdOrEmpNo(employeeId);
     } else {
       // Apply for self
@@ -448,7 +448,7 @@ exports.applyLoan = async (req, res) => {
 
     // Get workflow settings
     const workflowSettings = await getWorkflowSettings(requestType);
-    
+
     // Get resolved settings (department + global fallback)
     let settings = workflowSettings.settings || {};
     if (employee.department_id) {
@@ -478,14 +478,14 @@ exports.applyLoan = async (req, res) => {
     if (amount < (settings.minAmount || 1000)) {
       return res.status(400).json({
         success: false,
-        error: `Amount must be at least ${settings.minAmount || 1000}`,
+        error: `Amount must be at least ${settings.minAmount || 1000} `,
       });
     }
 
     if (settings.maxAmount && amount > settings.maxAmount) {
       return res.status(400).json({
         success: false,
-        error: `Amount cannot exceed ${settings.maxAmount}`,
+        error: `Amount cannot exceed ${settings.maxAmount} `,
       });
     }
 
@@ -512,7 +512,7 @@ exports.applyLoan = async (req, res) => {
     if (requestType === 'loan') {
       const interestRate = settings.interestRate || 0;
       const emiAmount = calculateEMI(amount, interestRate, duration);
-      
+
       if (settings.isInterestApplicable && interestRate > 0) {
         totalAmount = amount + (amount * interestRate / 100 * duration / 12);
       }
@@ -521,7 +521,7 @@ exports.applyLoan = async (req, res) => {
       const startDate = new Date();
       startDate.setMonth(startDate.getMonth() + 1);
       startDate.setDate(1); // First day of next month
-      
+
       const endDate = new Date(startDate);
       endDate.setMonth(endDate.getMonth() + duration);
 
@@ -622,7 +622,7 @@ exports.updateLoan = async (req, res) => {
     // Super Admin can edit any status except disbursed/active/completed
     const isSuperAdmin = req.user.role === 'super_admin';
     const isFinalApproved = ['approved', 'disbursed', 'active', 'completed'].includes(loan.status);
-    
+
     if (isFinalApproved && !isSuperAdmin) {
       return res.status(400).json({
         success: false,
@@ -647,10 +647,10 @@ exports.updateLoan = async (req, res) => {
     if (isSuperAdmin && req.body.status !== undefined) {
       const oldStatus = loan.status;
       const newStatus = req.body.status;
-      
+
       if (oldStatus !== newStatus) {
         allowedUpdates.push('status');
-        
+
         // Add status change to timeline
         if (!loan.workflow.history) {
           loan.workflow.history = [];
@@ -661,10 +661,10 @@ exports.updateLoan = async (req, res) => {
           actionBy: req.user._id,
           actionByName: req.user.name,
           actionByRole: req.user.role,
-          comments: `Status changed from ${oldStatus} to ${newStatus}${req.body.statusChangeReason ? ': ' + req.body.statusChangeReason : ''}`,
+          comments: `Status changed from ${oldStatus} to ${newStatus}${req.body.statusChangeReason ? ': ' + req.body.statusChangeReason : ''} `,
           timestamp: new Date(),
         });
-        
+
         // If changing status, also update workflow accordingly
         if (newStatus === 'pending') {
           loan.workflow.currentStep = 'hod';
@@ -688,7 +688,7 @@ exports.updateLoan = async (req, res) => {
       if (req.body[field] !== undefined && loan[field] !== req.body[field]) {
         const originalValue = loan[field];
         const newValue = req.body[field];
-        
+
         // Store change
         changes.push({
           field: field,
@@ -700,7 +700,7 @@ exports.updateLoan = async (req, res) => {
           modifiedAt: new Date(),
           reason: req.body.changeReason || null,
         });
-        
+
         loan[field] = newValue;
       }
     });
@@ -723,16 +723,16 @@ exports.updateLoan = async (req, res) => {
       const duration = req.body.duration !== undefined ? req.body.duration : loan.duration;
 
       // Get settings for recalculation
-      const settings = await LoanSettings.findOne({ 
-        type: loan.requestType, 
-        isActive: true 
+      const settings = await LoanSettings.findOne({
+        type: loan.requestType,
+        isActive: true
       });
 
       if (settings) {
         if (loan.requestType === 'loan') {
           const interestRate = settings.interestRate || 0;
           const emiAmount = calculateEMI(amount, interestRate, duration);
-          
+
           let totalAmount = amount;
           if (settings.isInterestApplicable && interestRate > 0) {
             totalAmount = amount + (amount * interestRate / 100 * duration / 12);
@@ -741,7 +741,7 @@ exports.updateLoan = async (req, res) => {
           const startDate = new Date();
           startDate.setMonth(startDate.getMonth() + 1);
           startDate.setDate(1);
-          
+
           const endDate = new Date(startDate);
           endDate.setMonth(endDate.getMonth() + duration);
 
@@ -862,7 +862,7 @@ exports.processLoanAction = async (req, res) => {
     // Validate user can perform this action
     let canProcess = false;
     if (currentApprover === 'hod' && userRole === 'hod') {
-      canProcess = !req.user.department || 
+      canProcess = !req.user.department ||
         loan.department?.toString() === req.user.department?.toString();
     } else if (currentApprover === 'hr' && userRole === 'hr') {
       canProcess = true;
@@ -1180,7 +1180,7 @@ exports.payEMI = async (req, res) => {
     if (isEarlySettlement) {
       const settlementDate = paymentDate ? new Date(paymentDate) : new Date();
       settlementDetails = calculateEarlySettlement(loan, settlementDate);
-      
+
       if (!settlementDetails) {
         return res.status(400).json({
           success: false,
@@ -1203,7 +1203,7 @@ exports.payEMI = async (req, res) => {
       if (amount > remainingBalance) {
         return res.status(400).json({
           success: false,
-          error: `Payment amount (₹${amount}) exceeds remaining balance (₹${remainingBalance})`,
+          error: `Payment amount(₹${amount}) exceeds remaining balance(₹${remainingBalance})`,
         });
       }
     }
@@ -1222,7 +1222,7 @@ exports.payEMI = async (req, res) => {
 
     // Update repayment totals
     loan.repayment.totalPaid = (loan.repayment.totalPaid || 0) + paymentAmount;
-    
+
     if (isEarlySettlement) {
       // For early settlement, set remaining balance to 0
       loan.repayment.remainingBalance = 0;
@@ -1231,7 +1231,7 @@ exports.payEMI = async (req, res) => {
       loan.repayment.remainingBalance = (loan.loanConfig.totalAmount || loan.amount) - loan.repayment.totalPaid;
       loan.repayment.installmentsPaid = (loan.repayment.installmentsPaid || 0) + 1;
     }
-    
+
     loan.repayment.lastPaymentDate = transaction.transactionDate;
 
     // Calculate next payment date (if not fully paid)
@@ -1317,7 +1317,7 @@ exports.payAdvance = async (req, res) => {
     if (amount > remainingBalance) {
       return res.status(400).json({
         success: false,
-        error: `Payment amount (₹${amount}) exceeds remaining balance (₹${remainingBalance})`,
+        error: `Payment amount(₹${amount}) exceeds remaining balance(₹${remainingBalance})`,
       });
     }
 

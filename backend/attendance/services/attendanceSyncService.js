@@ -8,7 +8,7 @@ const AttendanceRawLog = require('../model/AttendanceRawLog');
 const AttendanceDaily = require('../model/AttendanceDaily');
 const AttendanceSettings = require('../model/AttendanceSettings');
 const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
-const { fetchAttendanceLogsFromMSSQL } = require('../config/attendanceMSSQLHelper');
+const { fetchAttendanceLogsSQL } = require('../config/attendanceSQLHelper');
 const { detectAndAssignShift } = require('../../shifts/services/shiftDetectionService');
 const { detectExtraHours } = require('./extraHoursService');
 
@@ -358,7 +358,7 @@ const syncAttendanceFromMSSQL = async (fromDate = null, toDate = null) => {
     }
 
     // Fetch logs from MSSQL
-    const rawLogs = await fetchAttendanceLogsFromMSSQL(settings, fromDate, toDate);
+    const rawLogs = await fetchAttendanceLogsSQL(settings, fromDate, toDate);
     stats.rawLogsFetched = rawLogs.length;
 
     if (rawLogs.length === 0) {

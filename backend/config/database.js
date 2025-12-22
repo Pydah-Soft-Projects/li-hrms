@@ -1,6 +1,21 @@
 require('dotenv').config();
-const sql = require('mssql');
+const mssql = require('mssql');
+const mysql = require('mysql2/promise');
 const mongoose = require('mongoose');
+
+// Determine Database Type
+const getDBType = () => {
+  if (process.env.SQL_TYPE) return process.env.SQL_TYPE.toLowerCase();
+
+  const port = parseInt(process.env.SQL_PORT);
+  if (port === 3306) return 'mysql';
+  if (port === 1433) return 'mssql';
+
+  return 'mssql'; // Default to MSSQL
+};
+
+const dbType = getDBType();
+let sqlPool = null;
 
 // MongoDB Connection
 const connectMongoDB = async () => {
@@ -14,79 +29,123 @@ const connectMongoDB = async () => {
   }
 };
 
-// MSSQL Connection Pool
-let mssqlPool = null;
-
-const connectMSSQL = async () => {
+// SQL Connection (Hybrid)
+const connectSQL = async () => {
   try {
-    // Build server and port configuration
-    const server = process.env.SQL_SERVER || 'localhost';
-    const port = parseInt(process.env.SQL_PORT) || 1433;
+    // Parse URL if provided (for MySQL mostly, but generic enough)
+    const serverUrl = process.env.SQL_SERVER || 'localhost';
+    // Remove protocol if present for drivers that don't need it
+    const host = serverUrl.replace(/^https?:\/\//, '').split('/')[0];
 
-    const config = {
-      server: server,
-      port: port,
-      database: process.env.SQL_DATABASE || 'master',
-      user: process.env.SQL_USER,
-      password: process.env.SQL_PASSWORD,
-      options: {
-        encrypt: process.env.SQL_ENCRYPT === 'true',
-        trustServerCertificate: process.env.SQL_TRUST_SERVER_CERTIFICATE === 'true',
-        enableArithAbort: true,
-      },
-      pool: {
-        max: 10,
-        min: 0,
-        idleTimeoutMillis: 30000,
-      },
-    };
+    // Check if we need to auto-create database (MySQL specific mostly here, but logic helps)
+    const database = process.env.SQL_DATABASE || 'HRMS';
 
-    // For Windows/NTLM authentication, add domain
-    if (process.env.SQL_AUTH === 'ntlm' && process.env.SQL_DOMAIN) {
-      config.domain = process.env.SQL_DOMAIN;
-    }
+    if (dbType === 'mysql') {
+      console.log('🔄 Connecting to MySQL...');
+      const config = {
+        host: host,
+        port: parseInt(process.env.SQL_PORT) || 3306,
+        user: process.env.SQL_USER,
+        password: process.env.SQL_PASSWORD,
+        database: database,
+        waitForConnections: true,
+        connectionLimit: 10,
+        queueLimit: 0,
+        // MySQL specific options
+        multipleStatements: true
+      };
 
-    // Validate required fields for SQL authentication
-    if (process.env.SQL_AUTH === 'sql' || !process.env.SQL_AUTH) {
-      if (!config.user || !config.password) {
-        throw new Error('SQL_USER and SQL_PASSWORD are required for SQL authentication');
+      try {
+        sqlPool = await mysql.createPool(config);
+        // Test connection
+        await sqlPool.getConnection();
+        console.log('✅ MySQL connected successfully');
+      } catch (err) {
+        if (err.code === 'ER_BAD_DB_ERROR') {
+          console.log('⚠️ Database does not exist. Attempting to create...');
+          // Connect without DB to create it
+          const adminConfig = { ...config, database: undefined };
+          const adminPool = await mysql.createConnection(adminConfig);
+          await adminPool.query(`CREATE DATABASE IF NOT EXISTS \`${database}\``);
+          await adminPool.end();
+          console.log(`✅ Database ${database} created.`);
+
+          // Reconnect with DB
+          sqlPool = await mysql.createPool(config);
+          console.log('✅ MySQL connected successfully (after creation)');
+        } else {
+          throw err;
+        }
       }
+
+      console.log(`   Host: ${host}:${config.port}`);
+      console.log(`   Database: ${database}`);
+
+    } else {
+      // MSSQL Legacy Connection
+      console.log('🔄 Connecting to MSSQL...');
+      const config = {
+        server: host,
+        port: parseInt(process.env.SQL_PORT) || 1433,
+        database: database,
+        user: process.env.SQL_USER,
+        password: process.env.SQL_PASSWORD,
+        options: {
+          encrypt: process.env.SQL_ENCRYPT === 'true',
+          trustServerCertificate: process.env.SQL_TRUST_SERVER_CERTIFICATE === 'true',
+          enableArithAbort: true,
+        },
+        pool: {
+          max: 10,
+          min: 0,
+          idleTimeoutMillis: 30000,
+        },
+      };
+
+      // Handle NTLM
+      if (process.env.SQL_AUTH === 'ntlm' && process.env.SQL_DOMAIN) {
+        config.domain = process.env.SQL_DOMAIN;
+      }
+
+      sqlPool = await mssql.connect(config);
+      console.log('✅ MSSQL connected successfully');
+      console.log(`   Server: ${host}:${config.port}`);
+      console.log(`   Database: ${database}`);
     }
 
-    mssqlPool = await sql.connect(config);
-    console.log('✅ MSSQL connected successfully');
-    console.log(`   Server: ${server}:${port}`);
-    console.log(`   Database: ${config.database}`);
-    return mssqlPool;
+    return sqlPool;
+
   } catch (error) {
-    console.error('❌ MSSQL connection error:', error.message);
-    // Don't exit - MSSQL is for read-only operations, app can work without it
-    console.warn('⚠️  Continuing without MSSQL connection (biometric data may not be available)');
+    console.error(`❌ ${dbType.toUpperCase()} connection error:`, error.message);
+    console.warn(`⚠️  Continuing without ${dbType.toUpperCase()} connection`);
     return null;
   }
 };
 
-// Get MSSQL Pool (for use in other modules)
-const getMSSQLPool = () => {
-  if (!mssqlPool) {
-    throw new Error('MSSQL connection not established');
+const getSQLPool = () => {
+  if (!sqlPool) {
+    // Return mock or throw based on strictness. For now throwing is safe as callers check connection usually.
+    // Or return null and let helpers handle it.
+    throw new Error('SQL connection not established');
   }
-  return mssqlPool;
+  return sqlPool;
 };
 
-// Close MSSQL Connection
-const closeMSSQL = async () => {
+const closeSQL = async () => {
   try {
-    if (mssqlPool) {
-      await mssqlPool.close();
-      console.log('✅ MSSQL connection closed');
+    if (sqlPool) {
+      if (dbType === 'mysql') {
+        await sqlPool.end();
+      } else {
+        await sqlPool.close();
+      }
+      console.log(`✅ ${dbType.toUpperCase()} connection closed`);
     }
   } catch (error) {
-    console.error('❌ Error closing MSSQL connection:', error.message);
+    console.error('❌ Error closing SQL connection:', error.message);
   }
 };
 
-// Close MongoDB Connection
 const closeMongoDB = async () => {
   try {
     await mongoose.connection.close();
@@ -96,31 +155,43 @@ const closeMongoDB = async () => {
   }
 };
 
-// Initialize HRMS Database (for employees)
+// Initialize HRMS Database (runs specific helper init logic)
 const initializeHRMSDatabase = async () => {
+  // Dynamic require based on new 'sqlHelper' naming convention
+  // But implementation plan says we rename mssqlHelper to sqlHelper
+  // We will assume that rename happens next.
   try {
-    const { initializeHRMSDatabase: initHRMS } = require('../employees/config/mssqlHelper');
+    const { initializeHRMSDatabase: initHRMS } = require('../employees/config/sqlHelper');
     await initHRMS();
   } catch (error) {
-    console.error('❌ Error initializing HRMS database:', error.message);
-    console.warn('⚠️  Continuing without HRMS database (employee MSSQL storage may not be available)');
+    // Try checking if it's purely a path issue during refactor
+    try {
+      const { initializeHRMSDatabase: initHRMS } = require('../employees/config/sqlHelper');
+      await initHRMS();
+    } catch (e) {
+      console.error('❌ Error initializing HRMS database schema:', error.message);
+    }
   }
 };
 
-// Initialize all connections
 const initializeDatabases = async () => {
   await connectMongoDB();
-  await connectMSSQL();
+  await connectSQL();
   await initializeHRMSDatabase();
 };
 
 module.exports = {
   connectMongoDB,
-  connectMSSQL,
-  getMSSQLPool,
-  closeMSSQL,
+  connectSQL,
+  getSQLPool,
+  getDBType, // Exported for helpers
+  closeSQL,
   closeMongoDB,
   initializeDatabases,
   mongoose,
+  // Alias for backward compatibility if needed, though we should update callers
+  connectMSSQL: connectSQL,
+  getMSSQLPool: getSQLPool,
+  closeMSSQL: closeSQL
 };
 

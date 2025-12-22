@@ -4,7 +4,7 @@ const LeaveSettings = require('../model/LeaveSettings');
 const Employee = require('../../employees/model/Employee');
 const User = require('../../users/model/User');
 const Settings = require('../../settings/model/Settings');
-const { isHRMSConnected, getEmployeeByIdMSSQL } = require('../../employees/config/mssqlHelper');
+const { isHRMSConnected, getEmployeeByIdMSSQL } = require('../../employees/config/sqlHelper');
 
 /**
  * Get employee settings from database
@@ -28,24 +28,24 @@ const getEmployeeSettings = async () => {
  */
 const findEmployeeByEmpNo = async (empNo) => {
   if (!empNo) return null;
-  
+
   // Always try MongoDB first (OD model needs MongoDB employee references)
   let employee = await Employee.findOne({ emp_no: empNo });
-  
+
   if (employee) {
     return employee;
   }
-  
+
   // If not in MongoDB, check if MSSQL is available and try there
   const settings = await getEmployeeSettings();
-  
+
   if ((settings.dataSource === 'mssql' || settings.dataSource === 'both') && isHRMSConnected()) {
     try {
       const mssqlEmployee = await getEmployeeByIdMSSQL(empNo);
       if (mssqlEmployee) {
         // Sync employee from MSSQL to MongoDB for OD record integrity
         console.log(`Syncing employee ${empNo} from MSSQL to MongoDB...`);
-        
+
         const newEmployee = new Employee({
           emp_no: mssqlEmployee.emp_no,
           employee_name: mssqlEmployee.employee_name,
@@ -73,7 +73,7 @@ const findEmployeeByEmpNo = async (empNo) => {
           ifsc_code: mssqlEmployee.ifsc_code || null,
           is_active: mssqlEmployee.is_active !== false,
         });
-        
+
         await newEmployee.save();
         console.log(`✅ Employee ${empNo} synced to MongoDB`);
         return newEmployee;
@@ -82,20 +82,20 @@ const findEmployeeByEmpNo = async (empNo) => {
       console.error('Error fetching/syncing from MSSQL:', error);
     }
   }
-  
+
   return null;
 };
 
 // Helper to find employee by ID or emp_no (legacy support)
 const findEmployeeByIdOrEmpNo = async (identifier) => {
   if (!identifier) return null;
-  
+
   // Check if it's a valid MongoDB ObjectId
   if (mongoose.Types.ObjectId.isValid(identifier)) {
     const employee = await Employee.findById(identifier);
     if (employee) return employee;
   }
-  
+
   // Try to find by emp_no as fallback
   return await findEmployeeByEmpNo(identifier);
 };
@@ -108,7 +108,7 @@ const findEmployeeByIdOrEmpNo = async (identifier) => {
 // Helper function to get workflow settings
 const getWorkflowSettings = async () => {
   let settings = await LeaveSettings.getActiveSettings('od');
-  
+
   // Return default workflow if no settings found
   if (!settings) {
     return {
@@ -122,7 +122,7 @@ const getWorkflowSettings = async () => {
       },
     };
   }
-  
+
   return settings;
 };
 
@@ -178,7 +178,7 @@ exports.getODs = async (req, res) => {
 exports.getMyODs = async (req, res) => {
   try {
     const { status, fromDate, toDate } = req.query;
-    const filter = { 
+    const filter = {
       isActive: true,
       appliedBy: req.user._id,
     };
@@ -276,10 +276,10 @@ exports.applyOD = async (req, res) => {
       // Check if user has permission to apply for others
       // Allow hod, hr, sub_admin, super_admin (backward compatibility)
       const hasRolePermission = ['hod', 'hr', 'sub_admin', 'super_admin'].includes(req.user.role);
-      
+
       console.log(`[Apply OD] User ${req.user._id} (${req.user.role}) applying for employee ${empNo}`);
-      console.log(`[Apply OD] Has role permission: ${hasRolePermission}`);
-      
+      console.log(`[Apply OD] Has role permission: ${hasRolePermission} `);
+
       // Check workspace permissions if user has active workspace
       let hasWorkspacePermission = false;
       if (req.user.activeWorkspaceId) {
@@ -288,9 +288,9 @@ exports.applyOD = async (req, res) => {
           if (odSettings?.settings?.workspacePermissions) {
             const workspaceIdStr = String(req.user.activeWorkspaceId);
             const permissions = odSettings.settings.workspacePermissions[workspaceIdStr];
-            
-            console.log(`[Apply OD] Checking workspace ${workspaceIdStr} permissions:`, permissions);
-            
+
+            console.log(`[Apply OD] Checking workspace ${workspaceIdStr} permissions: `, permissions);
+
             if (permissions) {
               // Handle both old format (boolean) and new format (object)
               if (typeof permissions === 'boolean') {
@@ -308,9 +308,9 @@ exports.applyOD = async (req, res) => {
       } else {
         console.log(`[Apply OD] User has no active workspace`);
       }
-      
-      console.log(`[Apply OD] Has workspace permission: ${hasWorkspacePermission}`);
-      
+
+      console.log(`[Apply OD] Has workspace permission: ${hasWorkspacePermission} `);
+
       // User must have either role permission OR workspace permission
       if (!hasRolePermission && !hasWorkspacePermission) {
         console.log(`[Apply OD] ❌ Authorization denied - no role or workspace permission`);
@@ -319,19 +319,19 @@ exports.applyOD = async (req, res) => {
           error: 'Not authorized to apply OD for others',
         });
       }
-      
+
       console.log(`[Apply OD] ✅ Authorization granted`);
-      
+
       // Find employee by emp_no (checks MongoDB first, then MSSQL based on settings)
       employee = await findEmployeeByEmpNo(empNo);
     } else if (employeeId) {
       // Legacy: Check if user has permission to apply for others
       // Allow hod, hr, sub_admin, super_admin (backward compatibility)
       const hasRolePermission = ['hod', 'hr', 'sub_admin', 'super_admin'].includes(req.user.role);
-      
-      console.log(`[Apply OD] User ${req.user._id} (${req.user.role}) applying for employee ${employeeId} (legacy)`);
-      console.log(`[Apply OD] Has role permission: ${hasRolePermission}`);
-      
+
+      console.log(`[Apply OD] User ${req.user._id} (${req.user.role}) applying for employee ${employeeId}(legacy)`);
+      console.log(`[Apply OD] Has role permission: ${hasRolePermission} `);
+
       // Check workspace permissions if user has active workspace
       let hasWorkspacePermission = false;
       if (req.user.activeWorkspaceId) {
@@ -340,9 +340,9 @@ exports.applyOD = async (req, res) => {
           if (odSettings?.settings?.workspacePermissions) {
             const workspaceIdStr = String(req.user.activeWorkspaceId);
             const permissions = odSettings.settings.workspacePermissions[workspaceIdStr];
-            
-            console.log(`[Apply OD] Checking workspace ${workspaceIdStr} permissions:`, permissions);
-            
+
+            console.log(`[Apply OD] Checking workspace ${workspaceIdStr} permissions: `, permissions);
+
             if (permissions) {
               // Handle both old format (boolean) and new format (object)
               if (typeof permissions === 'boolean') {
@@ -356,9 +356,9 @@ exports.applyOD = async (req, res) => {
           console.error('[Apply OD] Error checking workspace permissions:', error);
         }
       }
-      
-      console.log(`[Apply OD] Has workspace permission: ${hasWorkspacePermission}`);
-      
+
+      console.log(`[Apply OD] Has workspace permission: ${hasWorkspacePermission} `);
+
       // User must have either role permission OR workspace permission
       if (!hasRolePermission && !hasWorkspacePermission) {
         console.log(`[Apply OD] ❌ Authorization denied - no role or workspace permission`);
@@ -367,9 +367,9 @@ exports.applyOD = async (req, res) => {
           error: 'Not authorized to apply OD for others',
         });
       }
-      
+
       console.log(`[Apply OD] ✅ Authorization granted`);
-      
+
       // Find employee by ID or emp_no
       employee = await findEmployeeByIdOrEmpNo(employeeId);
     } else {
@@ -552,7 +552,7 @@ exports.updateOD = async (req, res) => {
     // Super Admin can edit any status except final approved
     const isSuperAdmin = req.user.role === 'super_admin';
     const isFinalApproved = od.status === 'approved';
-    
+
     if (isFinalApproved && !isSuperAdmin) {
       return res.status(400).json({
         success: false,
@@ -582,10 +582,10 @@ exports.updateOD = async (req, res) => {
     if (isSuperAdmin && req.body.status !== undefined) {
       const oldStatus = od.status;
       const newStatus = req.body.status;
-      
+
       if (oldStatus !== newStatus) {
         allowedUpdates.push('status');
-        
+
         // Add status change to timeline
         if (!od.workflow.history) {
           od.workflow.history = [];
@@ -596,10 +596,10 @@ exports.updateOD = async (req, res) => {
           actionBy: req.user._id,
           actionByName: req.user.name,
           actionByRole: req.user.role,
-          comments: `Status changed from ${oldStatus} to ${newStatus}${req.body.statusChangeReason ? ': ' + req.body.statusChangeReason : ''}`,
+          comments: `Status changed from ${oldStatus} to ${newStatus}${req.body.statusChangeReason ? ': ' + req.body.statusChangeReason : ''} `,
           timestamp: new Date(),
         });
-        
+
         // If changing status, also update workflow accordingly
         if (newStatus === 'pending') {
           od.workflow.currentStep = 'hod';
@@ -636,12 +636,12 @@ exports.updateOD = async (req, res) => {
       if (req.body[field] !== undefined && od[field] !== req.body[field]) {
         const originalValue = od[field];
         let newValue = req.body[field];
-        
+
         // Convert empty strings to null for enum fields
         if (field === 'halfDayType' && (newValue === '' || newValue === null)) {
           newValue = null;
         }
-        
+
         // Store change
         changes.push({
           field: field,
@@ -653,7 +653,7 @@ exports.updateOD = async (req, res) => {
           modifiedAt: new Date(),
           reason: req.body.changeReason || null,
         });
-        
+
         od[field] = newValue;
       }
     });
@@ -730,7 +730,7 @@ exports.updateOD = async (req, res) => {
         const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
         const formatDate = (date) => {
           const d = new Date(date);
-          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          return `${d.getFullYear()} -${String(d.getMonth() + 1).padStart(2, '0')} -${String(d.getDate()).padStart(2, '0')} `;
         };
 
         // Get the attendance record for the OD date
@@ -753,7 +753,7 @@ exports.updateOD = async (req, res) => {
             approvedBy: od.approvedBy || req.user._id,
           };
           await attendance.save();
-          console.log(`✅ OD hours updated in AttendanceDaily for ${od.emp_no} on ${attendanceDate}`);
+          console.log(`✅ OD hours updated in AttendanceDaily for ${od.emp_no} on ${attendanceDate} `);
         }
       } catch (error) {
         console.error('Error updating OD hours in AttendanceDaily:', error);
@@ -917,7 +917,7 @@ exports.processODAction = async (req, res) => {
     // Validate user can perform this action
     let canProcess = false;
     if (currentApprover === 'hod' && userRole === 'hod') {
-      canProcess = !req.user.department || 
+      canProcess = !req.user.department ||
         od.department?.toString() === req.user.department?.toString();
     } else if (currentApprover === 'hr' && userRole === 'hr') {
       canProcess = true;
@@ -1051,7 +1051,7 @@ exports.processODAction = async (req, res) => {
         const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
         const formatDate = (date) => {
           const d = new Date(date);
-          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          return `${d.getFullYear()} -${String(d.getMonth() + 1).padStart(2, '0')} -${String(d.getDate()).padStart(2, '0')} `;
         };
 
         // Get the attendance record for the OD date
@@ -1074,7 +1074,7 @@ exports.processODAction = async (req, res) => {
             approvedBy: req.user._id,
           };
           await attendance.save();
-          console.log(`✅ OD hours stored in AttendanceDaily for ${od.emp_no} on ${attendanceDate}`);
+          console.log(`✅ OD hours stored in AttendanceDaily for ${od.emp_no} on ${attendanceDate} `);
         }
       } catch (error) {
         console.error('Error storing OD hours in AttendanceDaily:', error);
@@ -1139,13 +1139,13 @@ exports.revokeODApproval = async (req, res) => {
     if (hoursSinceApproval > revocationWindow) {
       return res.status(400).json({
         success: false,
-        error: `Approval can only be revoked within ${revocationWindow} hours. ${hoursSinceApproval.toFixed(1)} hours have passed.`,
+        error: `Approval can only be revoked within ${revocationWindow} hours.${hoursSinceApproval.toFixed(1)} hours have passed.`,
       });
     }
 
     // Check authorization
     const userRole = req.user.role;
-    const isApprover = 
+    const isApprover =
       (od.approvals.hod?.approvedBy?.toString() === req.user._id.toString()) ||
       (od.approvals.hr?.approvedBy?.toString() === req.user._id.toString());
     const isAdmin = ['hr', 'sub_admin', 'super_admin'].includes(userRole);
@@ -1191,7 +1191,7 @@ exports.revokeODApproval = async (req, res) => {
       actionBy: req.user._id,
       actionByName: req.user.name,
       actionByRole: userRole,
-      comments: reason || `Approval revoked by ${req.user.name}`,
+      comments: reason || `Approval revoked by ${req.user.name} `,
       timestamp: new Date(),
     });
 

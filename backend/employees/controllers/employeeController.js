@@ -26,7 +26,7 @@ const {
   updateEmployeeMSSQL,
   deleteEmployeeMSSQL,
   employeeExistsMSSQL,
-} = require('../config/mssqlHelper');
+} = require('../config/sqlHelper');
 const { generatePassword, sendCredentials } = require('../../shared/services/passwordNotificationService');
 
 // ============== Helper Functions ==============

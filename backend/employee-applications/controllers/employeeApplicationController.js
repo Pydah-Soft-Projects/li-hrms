@@ -15,11 +15,7 @@ const {
 const {
   transformApplicationToEmployee,
 } = require('../services/fieldMappingService');
-const {
-  isHRMSConnected,
-  createEmployeeMSSQL,
-  employeeExistsMSSQL,
-} = require('../../employees/config/mssqlHelper');
+const sqlHelper = require('../../employees/config/sqlHelper');
 const {
   generatePassword,
   sendCredentials,

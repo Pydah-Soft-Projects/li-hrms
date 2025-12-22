@@ -4,7 +4,7 @@
  */
 
 const AttendanceSettings = require('../model/AttendanceSettings');
-const { isMSSQLAvailable } = require('../config/attendanceMSSQLHelper');
+const { isSQLAvailable } = require('../config/attendanceSQLHelper');
 
 /**
  * @desc    Get attendance settings
@@ -14,12 +14,12 @@ const { isMSSQLAvailable } = require('../config/attendanceMSSQLHelper');
 exports.getSettings = async (req, res) => {
   try {
     const settings = await AttendanceSettings.getSettings();
-    
+
     // Check MSSQL availability if configured
     let mssqlAvailable = false;
     if (settings.mssqlConfig.databaseName && settings.mssqlConfig.tableName) {
       try {
-        mssqlAvailable = await isMSSQLAvailable(settings);
+        mssqlAvailable = await isSQLAvailable(settings);
       } catch (error) {
         // Ignore error
       }

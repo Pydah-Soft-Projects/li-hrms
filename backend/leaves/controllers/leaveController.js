@@ -4,12 +4,12 @@ const LeaveSettings = require('../model/LeaveSettings');
 const Employee = require('../../employees/model/Employee');
 const User = require('../../users/model/User');
 const Settings = require('../../settings/model/Settings');
-const { isHRMSConnected, getEmployeeByIdMSSQL } = require('../../employees/config/mssqlHelper');
+const { isHRMSConnected, getEmployeeByIdMSSQL } = require('../../employees/config/sqlHelper');
 const { getResolvedLeaveSettings } = require('../../departments/controllers/departmentSettingsController');
-const { 
-  revokeFullDayLeave, 
-  updateLeaveForAttendance, 
-  getLeaveConflicts 
+const {
+  revokeFullDayLeave,
+  updateLeaveForAttendance,
+  getLeaveConflicts
 } = require('../services/leaveConflictService');
 
 /**
@@ -34,17 +34,17 @@ const getEmployeeSettings = async () => {
  */
 const findEmployeeByEmpNo = async (empNo) => {
   if (!empNo) return null;
-  
+
   // Always try MongoDB first (Leave model needs MongoDB employee references)
   let employee = await Employee.findOne({ emp_no: empNo });
-  
+
   if (employee) {
     return employee;
   }
-  
+
   // If not in MongoDB, check if MSSQL is available and try there
   const settings = await getEmployeeSettings();
-  
+
   if ((settings.dataSource === 'mssql' || settings.dataSource === 'both') && isHRMSConnected()) {
     try {
       const mssqlEmployee = await getEmployeeByIdMSSQL(empNo);
@@ -52,7 +52,7 @@ const findEmployeeByEmpNo = async (empNo) => {
         // Sync employee from MSSQL to MongoDB for leave record integrity
         // This ensures we have a valid MongoDB _id for the leave record
         console.log(`Syncing employee ${empNo} from MSSQL to MongoDB...`);
-        
+
         const newEmployee = new Employee({
           emp_no: mssqlEmployee.emp_no,
           employee_name: mssqlEmployee.employee_name,
@@ -80,7 +80,7 @@ const findEmployeeByEmpNo = async (empNo) => {
           ifsc_code: mssqlEmployee.ifsc_code || null,
           is_active: mssqlEmployee.is_active !== false,
         });
-        
+
         await newEmployee.save();
         console.log(`✅ Employee ${empNo} synced to MongoDB`);
         return newEmployee;
@@ -89,20 +89,20 @@ const findEmployeeByEmpNo = async (empNo) => {
       console.error('Error fetching/syncing from MSSQL:', error);
     }
   }
-  
+
   return null;
 };
 
 // Helper to find employee by ID or emp_no (legacy support)
 const findEmployeeByIdOrEmpNo = async (identifier) => {
   if (!identifier) return null;
-  
+
   // Check if it's a valid MongoDB ObjectId
   if (mongoose.Types.ObjectId.isValid(identifier)) {
     const employee = await Employee.findById(identifier);
     if (employee) return employee;
   }
-  
+
   // Try to find by emp_no as fallback
   return await findEmployeeByEmpNo(identifier);
 };
@@ -115,7 +115,7 @@ const findEmployeeByIdOrEmpNo = async (identifier) => {
 // Helper function to get workflow settings
 const getWorkflowSettings = async () => {
   let settings = await LeaveSettings.getActiveSettings('leave');
-  
+
   // Return default workflow if no settings found
   if (!settings) {
     return {
@@ -135,7 +135,7 @@ const getWorkflowSettings = async () => {
       },
     };
   }
-  
+
   return settings;
 };
 
@@ -190,7 +190,7 @@ exports.getLeaves = async (req, res) => {
 exports.getMyLeaves = async (req, res) => {
   try {
     const { status, fromDate, toDate } = req.query;
-    const filter = { 
+    const filter = {
       isActive: true,
       appliedBy: req.user._id,
     };
@@ -298,10 +298,10 @@ exports.applyLeave = async (req, res) => {
       // Check if user has permission to apply for others
       // Allow super_admin, hr, sub_admin (backward compatibility)
       const hasRolePermission = ['hr', 'sub_admin', 'super_admin'].includes(req.user.role);
-      
+
       console.log(`[Apply Leave] User ${req.user._id} (${req.user.role}) applying for employee ${empNo}`);
-      console.log(`[Apply Leave] Has role permission: ${hasRolePermission}`);
-      
+      console.log(`[Apply Leave] Has role permission: ${hasRolePermission} `);
+
       // Check workspace permissions if user has active workspace
       let hasWorkspacePermission = false;
       if (req.user.activeWorkspaceId) {
@@ -310,9 +310,9 @@ exports.applyLeave = async (req, res) => {
           if (leaveSettings?.settings?.workspacePermissions) {
             const workspaceIdStr = String(req.user.activeWorkspaceId);
             const permissions = leaveSettings.settings.workspacePermissions[workspaceIdStr];
-            
-            console.log(`[Apply Leave] Checking workspace ${workspaceIdStr} permissions:`, permissions);
-            
+
+            console.log(`[Apply Leave] Checking workspace ${workspaceIdStr} permissions: `, permissions);
+
             if (permissions) {
               // Handle both old format (boolean) and new format (object)
               if (typeof permissions === 'boolean') {
@@ -330,9 +330,9 @@ exports.applyLeave = async (req, res) => {
       } else {
         console.log(`[Apply Leave] User has no active workspace`);
       }
-      
-      console.log(`[Apply Leave] Has workspace permission: ${hasWorkspacePermission}`);
-      
+
+      console.log(`[Apply Leave] Has workspace permission: ${hasWorkspacePermission} `);
+
       // User must have either role permission OR workspace permission
       if (!hasRolePermission && !hasWorkspacePermission) {
         console.log(`[Apply Leave] ❌ Authorization denied - no role or workspace permission`);
@@ -341,19 +341,19 @@ exports.applyLeave = async (req, res) => {
           error: 'Not authorized to apply leave for others',
         });
       }
-      
+
       console.log(`[Apply Leave] ✅ Authorization granted`);
-      
+
       // Find employee by emp_no (checks MongoDB first, then MSSQL based on settings)
       employee = await findEmployeeByEmpNo(empNo);
     } else if (employeeId) {
       // Legacy: Check if user has permission to apply for others
       // Allow super_admin, hr, sub_admin (backward compatibility)
       const hasRolePermission = ['hr', 'sub_admin', 'super_admin'].includes(req.user.role);
-      
-      console.log(`[Apply Leave] User ${req.user._id} (${req.user.role}) applying for employee ${employeeId} (legacy)`);
-      console.log(`[Apply Leave] Has role permission: ${hasRolePermission}`);
-      
+
+      console.log(`[Apply Leave] User ${req.user._id} (${req.user.role}) applying for employee ${employeeId}(legacy)`);
+      console.log(`[Apply Leave] Has role permission: ${hasRolePermission} `);
+
       // Check workspace permissions if user has active workspace
       let hasWorkspacePermission = false;
       if (req.user.activeWorkspaceId) {
@@ -362,9 +362,9 @@ exports.applyLeave = async (req, res) => {
           if (leaveSettings?.settings?.workspacePermissions) {
             const workspaceIdStr = String(req.user.activeWorkspaceId);
             const permissions = leaveSettings.settings.workspacePermissions[workspaceIdStr];
-            
-            console.log(`[Apply Leave] Checking workspace ${workspaceIdStr} permissions:`, permissions);
-            
+
+            console.log(`[Apply Leave] Checking workspace ${workspaceIdStr} permissions: `, permissions);
+
             if (permissions) {
               // Handle both old format (boolean) and new format (object)
               if (typeof permissions === 'boolean') {
@@ -378,9 +378,9 @@ exports.applyLeave = async (req, res) => {
           console.error('[Apply Leave] Error checking workspace permissions:', error);
         }
       }
-      
-      console.log(`[Apply Leave] Has workspace permission: ${hasWorkspacePermission}`);
-      
+
+      console.log(`[Apply Leave] Has workspace permission: ${hasWorkspacePermission} `);
+
       // User must have either role permission OR workspace permission
       if (!hasRolePermission && !hasWorkspacePermission) {
         console.log(`[Apply Leave] ❌ Authorization denied - no role or workspace permission`);
@@ -389,9 +389,9 @@ exports.applyLeave = async (req, res) => {
           error: 'Not authorized to apply leave for others',
         });
       }
-      
+
       console.log(`[Apply Leave] ✅ Authorization granted`);
-      
+
       // Find employee by ID or emp_no
       employee = await findEmployeeByIdOrEmpNo(employeeId);
     } else {
@@ -437,7 +437,7 @@ exports.applyLeave = async (req, res) => {
       // Check daily limit (if set, 0 = unlimited)
       if (resolvedLeaveSettings.dailyLimit !== null && resolvedLeaveSettings.dailyLimit > 0) {
         if (numberOfDays > resolvedLeaveSettings.dailyLimit) {
-          limitWarnings.push(`Leave duration (${numberOfDays} days) exceeds the recommended daily limit of ${resolvedLeaveSettings.dailyLimit} day(s) per application`);
+          limitWarnings.push(`Leave duration(${numberOfDays} days) exceeds the recommended daily limit of ${resolvedLeaveSettings.dailyLimit} day(s) per application`);
         }
       }
 
@@ -446,24 +446,24 @@ exports.applyLeave = async (req, res) => {
         // Get month and year from fromDate
         const month = from.getMonth() + 1;
         const year = from.getFullYear();
-        
+
         // Count approved/pending leaves for this employee in this month
         const Leave = require('../model/Leave');
         const monthStart = new Date(year, month - 1, 1);
         const monthEnd = new Date(year, month, 0, 23, 59, 59);
-        
+
         const existingLeaves = await Leave.find({
           employeeId: employee._id,
           fromDate: { $gte: monthStart, $lte: monthEnd },
           status: { $in: ['pending', 'hod_approved', 'hr_approved', 'approved'] },
           isActive: true,
         });
-        
+
         const totalDaysThisMonth = existingLeaves.reduce((sum, l) => sum + (l.numberOfDays || 0), 0);
         const newTotal = totalDaysThisMonth + numberOfDays;
-        
+
         if (newTotal > resolvedLeaveSettings.monthlyLimit) {
-          limitWarnings.push(`Total leave days for this month (${newTotal} days) would exceed the recommended monthly limit of ${resolvedLeaveSettings.monthlyLimit} days. Current month total: ${totalDaysThisMonth} days`);
+          limitWarnings.push(`Total leave days for this month(${newTotal} days) would exceed the recommended monthly limit of ${resolvedLeaveSettings.monthlyLimit} days.Current month total: ${totalDaysThisMonth} days`);
         }
       }
     }
@@ -573,7 +573,7 @@ exports.updateLeave = async (req, res) => {
     // Super Admin can edit any status except final approved
     const isSuperAdmin = req.user.role === 'super_admin';
     const isFinalApproved = leave.status === 'approved';
-    
+
     if (isFinalApproved && !isSuperAdmin) {
       return res.status(400).json({
         success: false,
@@ -601,10 +601,10 @@ exports.updateLeave = async (req, res) => {
     if (isSuperAdmin && req.body.status !== undefined) {
       const oldStatus = leave.status;
       const newStatus = req.body.status;
-      
+
       if (oldStatus !== newStatus) {
         allowedUpdates.push('status');
-        
+
         // Add status change to timeline
         if (!leave.workflow.history) {
           leave.workflow.history = [];
@@ -615,10 +615,10 @@ exports.updateLeave = async (req, res) => {
           actionBy: req.user._id,
           actionByName: req.user.name,
           actionByRole: req.user.role,
-          comments: `Status changed from ${oldStatus} to ${newStatus}${req.body.statusChangeReason ? ': ' + req.body.statusChangeReason : ''}`,
+          comments: `Status changed from ${oldStatus} to ${newStatus}${req.body.statusChangeReason ? ': ' + req.body.statusChangeReason : ''} `,
           timestamp: new Date(),
         });
-        
+
         // If changing status, also update workflow accordingly
         if (newStatus === 'pending') {
           leave.workflow.currentStep = 'hod';
@@ -649,12 +649,12 @@ exports.updateLeave = async (req, res) => {
       if (req.body[field] !== undefined && leave[field] !== req.body[field]) {
         const originalValue = leave[field];
         let newValue = req.body[field];
-        
+
         // Convert empty strings to null for enum fields
         if (field === 'halfDayType' && (newValue === '' || newValue === null)) {
           newValue = null;
         }
-        
+
         // Store change
         changes.push({
           field: field,
@@ -666,7 +666,7 @@ exports.updateLeave = async (req, res) => {
           modifiedAt: new Date(),
           reason: req.body.changeReason || null,
         });
-        
+
         leave[field] = newValue;
       }
     });
@@ -856,7 +856,7 @@ exports.processLeaveAction = async (req, res) => {
     let canProcess = false;
     if (currentApprover === 'hod' && userRole === 'hod') {
       // HOD can process if leave is in their department
-      canProcess = !req.user.department || 
+      canProcess = !req.user.department ||
         leave.department?.toString() === req.user.department?.toString();
     } else if (currentApprover === 'hr' && userRole === 'hr') {
       canProcess = true;
@@ -892,15 +892,15 @@ exports.processLeaveAction = async (req, res) => {
         approvalWarnings = [];
         const Employee = require('../../employees/model/Employee');
         const employee = await Employee.findById(leave.employeeId);
-        
+
         if (employee && employee.department_id) {
           const resolvedLeaveSettings = await getResolvedLeaveSettings(employee.department_id);
-          
+
           if (resolvedLeaveSettings) {
             // Check daily limit
             if (resolvedLeaveSettings.dailyLimit !== null && resolvedLeaveSettings.dailyLimit > 0) {
               if (leave.numberOfDays > resolvedLeaveSettings.dailyLimit) {
-                approvalWarnings.push(`⚠️ Leave duration (${leave.numberOfDays} days) exceeds the recommended daily limit of ${resolvedLeaveSettings.dailyLimit} day(s) per application`);
+                approvalWarnings.push(`⚠️ Leave duration(${leave.numberOfDays} days) exceeds the recommended daily limit of ${resolvedLeaveSettings.dailyLimit} day(s) per application`);
               }
             }
 
@@ -911,7 +911,7 @@ exports.processLeaveAction = async (req, res) => {
               const year = from.getFullYear();
               const monthStart = new Date(year, month - 1, 1);
               const monthEnd = new Date(year, month, 0, 23, 59, 59);
-              
+
               const existingLeaves = await Leave.find({
                 employeeId: leave.employeeId,
                 fromDate: { $gte: monthStart, $lte: monthEnd },
@@ -919,12 +919,12 @@ exports.processLeaveAction = async (req, res) => {
                 isActive: true,
                 _id: { $ne: leave._id }, // Exclude current leave
               });
-              
+
               const totalDaysThisMonth = existingLeaves.reduce((sum, l) => sum + (l.numberOfDays || 0), 0);
               const newTotal = totalDaysThisMonth + leave.numberOfDays;
-              
+
               if (newTotal > resolvedLeaveSettings.monthlyLimit) {
-                approvalWarnings.push(`⚠️ Total leave days for this month (${newTotal} days) would exceed the recommended monthly limit of ${resolvedLeaveSettings.monthlyLimit} days. Current month total: ${totalDaysThisMonth} days`);
+                approvalWarnings.push(`⚠️ Total leave days for this month(${newTotal} days) would exceed the recommended monthly limit of ${resolvedLeaveSettings.monthlyLimit} days.Current month total: ${totalDaysThisMonth} days`);
               }
             }
           }
@@ -977,16 +977,16 @@ exports.processLeaveAction = async (req, res) => {
           leave.workflow.currentStep = 'completed';
           leave.workflow.nextApprover = null;
           historyEntry.action = 'approved';
-          
+
           // Store approval timestamp for revocation window (2-3 hours)
           leave.approvals.hr.approvedAt = new Date();
         }
-        
+
         // Add warnings to history entry if any
         if (approvalWarnings.length > 0) {
           historyEntry.warnings = approvalWarnings;
         }
-        
+
         break;
 
       case 'reject':
@@ -1054,7 +1054,7 @@ exports.processLeaveAction = async (req, res) => {
       message: `Leave ${action}ed successfully`,
       data: leave,
     };
-    
+
     if (approvalWarnings && approvalWarnings.length > 0) {
       response.warnings = approvalWarnings;
     }
@@ -1107,13 +1107,13 @@ exports.revokeLeaveApproval = async (req, res) => {
     if (hoursSinceApproval > revocationWindow) {
       return res.status(400).json({
         success: false,
-        error: `Approval can only be revoked within ${revocationWindow} hours. ${hoursSinceApproval.toFixed(1)} hours have passed.`,
+        error: `Approval can only be revoked within ${revocationWindow} hours.${hoursSinceApproval.toFixed(1)} hours have passed.`,
       });
     }
 
     // Check authorization
     const userRole = req.user.role;
-    const isApprover = 
+    const isApprover =
       (leave.approvals.hod?.approvedBy?.toString() === req.user._id.toString()) ||
       (leave.approvals.hr?.approvedBy?.toString() === req.user._id.toString());
     const isAdmin = ['hr', 'sub_admin', 'super_admin'].includes(userRole);
@@ -1159,7 +1159,7 @@ exports.revokeLeaveApproval = async (req, res) => {
       actionBy: req.user._id,
       actionByName: req.user.name,
       actionByRole: userRole,
-      comments: reason || `Approval revoked by ${req.user.name}`,
+      comments: reason || `Approval revoked by ${req.user.name} `,
       timestamp: new Date(),
     });
 
@@ -1237,7 +1237,7 @@ exports.getLeaveStats = async (req, res) => {
 
     if (year) {
       const startOfYear = new Date(`${year}-01-01`);
-      const endOfYear = new Date(`${year}-12-31`);
+      const endOfYear = new Date(`${year} -12 - 31`);
       filter.fromDate = { $gte: startOfYear, $lte: endOfYear };
     }
 
