@@ -11,6 +11,7 @@ const {
   getApplication,
   approveApplication,
   rejectApplication,
+  bulkApproveApplications,
 } = require('./controllers/employeeApplicationController');
 
 const {
@@ -74,11 +75,14 @@ router.get('/', getApplications);
 // Get single application
 router.get('/:id', getApplication);
 
+// Bulk approve applications (Superadmin)
+router.put('/bulk-approve', authorize('super_admin', 'sub_admin'), bulkApproveApplications);
+
 // Approve application (Superadmin)
-router.put('/:id/approve', approveApplication);
+router.put('/:id/approve', authorize('super_admin', 'sub_admin'), approveApplication);
 
 // Reject application (Superadmin)
-router.put('/:id/reject', rejectApplication);
+router.put('/:id/reject', authorize('super_admin', 'sub_admin'), rejectApplication);
 
 module.exports = router;
 

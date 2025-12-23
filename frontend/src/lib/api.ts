@@ -791,6 +791,13 @@ export const api = {
     });
   },
 
+  bulkApproveEmployeeApplications: async (applicationIds: string[], bulkSettings: any) => {
+    return apiRequest<any>('/employee-applications/bulk-approve', {
+      method: 'PUT',
+      body: JSON.stringify({ applicationIds, bulkSettings }),
+    });
+  },
+
   // Employee Application Form Settings
   getFormSettings: async () => {
     return apiRequest<any>('/employee-applications/form-settings', { method: 'GET' });

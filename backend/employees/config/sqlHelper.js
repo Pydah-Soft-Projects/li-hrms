@@ -31,7 +31,7 @@ const initializeHRMSDatabase = async () => {
         console.log(`✅ HRMS ${dbType.toUpperCase()} schema initialized`);
     } catch (error) {
         console.error(`❌ Error initializing HRMS ${dbType.toUpperCase()} database:`, error.message);
-        throw error;
+        console.warn(`⚠️ Continuing without ${dbType.toUpperCase()} schema initialization`);
     }
 };
 
@@ -119,7 +119,19 @@ const createEmployeesTable = async () => {
         console.log('✅ employees table checked/created');
     } catch (error) {
         console.error('❌ Error creating employees table:', error.message);
-        throw error;
+        console.warn('⚠️ Continuing even if employees table check failed');
+    }
+};
+
+/**
+ * Check if SQL Database is connected
+ */
+const isHRMSConnected = () => {
+    try {
+        const pool = getSQLPool();
+        return !!pool;
+    } catch (error) {
+        return false;
     }
 };
 
@@ -313,6 +325,7 @@ module.exports = {
     updateEmployeeSQL,
     deleteEmployeeSQL,
     employeeExistsSQL,
+    isHRMSConnected,
 
     // Legacy Aliases
     getHRMSPool: getSQLPool,

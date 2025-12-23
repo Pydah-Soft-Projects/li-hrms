@@ -159,6 +159,7 @@ export default function EmployeesPage() {
   const [selectedEmployeeForLeftDate, setSelectedEmployeeForLeftDate] = useState<Employee | null>(null);
   const [leftDateForm, setLeftDateForm] = useState({ leftDate: '', leftReason: '' });
   const [includeLeftEmployees, setIncludeLeftEmployees] = useState(false);
+  const [selectedApplicationIds, setSelectedApplicationIds] = useState<string[]>([]);
 
   useEffect(() => {
     const user = auth.getUser();
@@ -193,18 +194,18 @@ export default function EmployeesPage() {
 
   useEffect(() => {
     if (applicationFormData.department_id) {
-      const deptId = typeof applicationFormData.department_id === 'string' 
-        ? applicationFormData.department_id 
+      const deptId = typeof applicationFormData.department_id === 'string'
+        ? applicationFormData.department_id
         : applicationFormData.department_id._id;
       const filtered = designations.filter(d => d.department === deptId);
       setFilteredApplicationDesignations(filtered);
       // Reset designation if it doesn't belong to selected department
       if (applicationFormData.designation_id) {
-        const desigId = typeof applicationFormData.designation_id === 'string' 
-          ? applicationFormData.designation_id 
+        const desigId = typeof applicationFormData.designation_id === 'string'
+          ? applicationFormData.designation_id
           : applicationFormData.designation_id._id;
         if (!filtered.find(d => d._id === desigId)) {
-        setApplicationFormData(prev => ({ ...prev, designation_id: '' }));
+          setApplicationFormData(prev => ({ ...prev, designation_id: '' }));
         }
       }
     } else {
@@ -255,6 +256,7 @@ export default function EmployeesPage() {
       const response = await api.getEmployeeApplications();
       if (response.success) {
         setApplications(response.data || []);
+        setSelectedApplicationIds([]); // Reset selection on reload
       }
     } catch (err) {
       console.error('Error loading applications:', err);
@@ -420,14 +422,14 @@ export default function EmployeesPage() {
 
   const filteredEmployees = employees.filter(emp => {
     // Filter by search term
-    const matchesSearch = 
+    const matchesSearch =
       emp.employee_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       emp.emp_no?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       emp.department?.name?.toLowerCase().includes(searchTerm.toLowerCase());
-    
+
     // Filter by left employees (if includeLeftEmployees is false, exclude those with leftDate)
     const matchesLeftFilter = includeLeftEmployees || !emp.leftDate;
-    
+
     return matchesSearch && matchesLeftFilter;
   });
 
@@ -571,6 +573,61 @@ export default function EmployeesPage() {
     setError('');
   };
 
+  const toggleSelectAll = () => {
+    const pendingApps = pendingApplications;
+    if (selectedApplicationIds.length === pendingApps.length && pendingApps.length > 0) {
+      setSelectedApplicationIds([]);
+    } else {
+      setSelectedApplicationIds(pendingApps.map(app => app._id));
+    }
+  };
+
+  const toggleSelectApplication = (id: string) => {
+    setSelectedApplicationIds(prev =>
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleBulkApprove = async () => {
+    if (selectedApplicationIds.length === 0) return;
+
+    if (!confirm(`Are you sure you want to approve ${selectedApplicationIds.length} selected applications using their proposed salaries?`)) {
+      return;
+    }
+
+    try {
+      setLoadingApplications(true);
+      setError('');
+      setSuccess('');
+
+      // Simple bulk settings: proposed salary for all, today's DOJ
+      const bulkSettings = {
+        doj: new Date().toISOString().split('T')[0],
+        comments: 'Bulk approved',
+      };
+
+      const response = await api.bulkApproveEmployeeApplications(selectedApplicationIds, bulkSettings);
+
+      if (response.success) {
+        setSuccess(`Bulk approval completed! Succeeded: ${response.data.successCount}, Failed: ${response.data.failCount}`);
+      } else {
+        setError(response.message || 'Bulk approval failed or partially failed');
+        if (response.data?.successCount > 0) {
+          setSuccess(`Partially completed. Succeeded: ${response.data.successCount}`);
+        }
+      }
+
+      setSelectedApplicationIds([]);
+      loadApplications();
+      loadEmployees();
+    } catch (err: any) {
+      setError(err.message || 'An error occurred during bulk approval');
+      console.error(err);
+    } finally {
+      setLoadingApplications(false);
+    }
+  };
+
   return (
     <div className="relative min-h-screen">
       {/* Background */}
@@ -624,21 +681,19 @@ export default function EmployeesPage() {
         <div className="mb-6 flex gap-2 border-b border-slate-200 dark:border-slate-700">
           <button
             onClick={() => setActiveTab('employees')}
-            className={`px-6 py-3 text-sm font-semibold transition-colors ${
-              activeTab === 'employees'
-                ? 'border-b-2 border-green-500 text-green-600 dark:text-green-400'
-                : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-            }`}
+            className={`px-6 py-3 text-sm font-semibold transition-colors ${activeTab === 'employees'
+              ? 'border-b-2 border-green-500 text-green-600 dark:text-green-400'
+              : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+              }`}
           >
             Employees
           </button>
           <button
             onClick={() => setActiveTab('applications')}
-            className={`px-6 py-3 text-sm font-semibold transition-colors ${
-              activeTab === 'applications'
-                ? 'border-b-2 border-green-500 text-green-600 dark:text-green-400'
-                : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-            }`}
+            className={`px-6 py-3 text-sm font-semibold transition-colors ${activeTab === 'applications'
+              ? 'border-b-2 border-green-500 text-green-600 dark:text-green-400'
+              : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+              }`}
           >
             Applications
             {pendingApplications.length > 0 && (
@@ -662,6 +717,14 @@ export default function EmployeesPage() {
                   >
                     <span className="text-lg">+</span>
                     <span>New Application</span>
+                  </button>
+                )}
+                {selectedApplicationIds.length > 0 && (userRole === 'super_admin' || userRole === 'sub_admin') && (
+                  <button
+                    onClick={handleBulkApprove}
+                    className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:bg-blue-700 hover:shadow-xl hover:shadow-blue-500/40"
+                  >
+                    <span>Approve Selected ({selectedApplicationIds.length})</span>
                   </button>
                 )}
               </div>
@@ -702,6 +765,14 @@ export default function EmployeesPage() {
                       <table className="w-full">
                         <thead>
                           <tr className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-green-50/30 dark:border-slate-700 dark:from-slate-900 dark:to-green-900/10">
+                            <th className="px-6 py-4 text-left">
+                              <input
+                                type="checkbox"
+                                checked={selectedApplicationIds.length === pendingApplications.length && pendingApplications.length > 0}
+                                onChange={toggleSelectAll}
+                                className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500 dark:border-slate-600 cursor-pointer"
+                              />
+                            </th>
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Emp No</th>
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Name</th>
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Department</th>
@@ -712,7 +783,15 @@ export default function EmployeesPage() {
                         </thead>
                         <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                           {pendingApplications.map((app) => (
-                            <tr key={app._id} className="transition-colors hover:bg-green-50/30 dark:hover:bg-green-900/10">
+                            <tr key={app._id} className={`transition-colors hover:bg-green-50/30 dark:hover:bg-green-900/10 ${selectedApplicationIds.includes(app._id) ? 'bg-green-50/50 dark:bg-green-900/20' : ''}`}>
+                              <td className="px-6 py-4">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedApplicationIds.includes(app._id)}
+                                  onChange={() => toggleSelectApplication(app._id)}
+                                  className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500 dark:border-slate-600 cursor-pointer"
+                                />
+                              </td>
                               <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-green-600 dark:text-green-400">
                                 {app.emp_no}
                               </td>
@@ -783,11 +862,10 @@ export default function EmployeesPage() {
                                 {app.approvedSalary ? `₹${app.approvedSalary.toLocaleString()}` : '-'}
                               </td>
                               <td className="whitespace-nowrap px-6 py-4">
-                                <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
-                                  app.status === 'approved'
-                                    ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                                    : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                                }`}>
+                                <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${app.status === 'approved'
+                                  ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                  : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                  }`}>
                                   {app.status}
                                 </span>
                               </td>
@@ -833,128 +911,127 @@ export default function EmployeesPage() {
             </div>
 
             {/* Employee List */}
-        {loading ? (
-          <div className="flex flex-col items-center justify-center rounded-3xl border border-slate-200 bg-white/95 py-16 shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
-            <div className="h-10 w-10 animate-spin rounded-full border-2 border-green-500 border-t-transparent"></div>
-            <p className="mt-4 text-sm font-medium text-slate-600 dark:text-slate-400">Loading employees...</p>
-          </div>
-        ) : filteredEmployees.length === 0 ? (
-          <div className="rounded-3xl border border-slate-200 bg-white/95 p-12 text-center shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-green-100 to-green-100 dark:from-green-900/30 dark:to-green-900/30">
-              <svg className="h-8 w-8 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-              </svg>
-            </div>
-            <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">No employees found</p>
-            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Add your first employee to get started</p>
-          </div>
-        ) : (
-          <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white/95 shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-green-50/30 dark:border-slate-700 dark:from-slate-900 dark:to-green-900/10">
-                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Emp No</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Name</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Department</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Designation</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Phone</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Status</th>
-                    <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                  {filteredEmployees.map((employee) => (
-                    <tr key={employee.emp_no} className="transition-colors hover:bg-green-50/30 dark:hover:bg-green-900/10">
-                      <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-green-600 dark:text-green-400">
-                        {employee.emp_no}
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-4">
-                        <div className="text-sm font-medium text-slate-900 dark:text-slate-100">{employee.employee_name}</div>
-                        {employee.email && (
-                          <div className="text-xs text-slate-500 dark:text-slate-400">{employee.email}</div>
-                        )}
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
-                        {employee.department?.name || '-'}
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
-                        {employee.designation?.name || '-'}
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
-                        {employee.phone_number || '-'}
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-4">
-                        <div className="flex flex-col gap-1">
-                          <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
-                            employee.is_active !== false
-                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                              : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                          }`}>
-                            {employee.is_active !== false ? 'Active' : 'Inactive'}
-                          </span>
-                          {employee.leftDate && (
-                            <span className="inline-flex rounded-full px-2.5 py-1 text-xs font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
-                              Left: {new Date(employee.leftDate).toLocaleDateString()}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-4 text-right">
-                        <button
-                          onClick={() => handleEdit(employee)}
-                          className="mr-2 rounded-lg p-2 text-slate-400 transition-all hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/30 dark:hover:text-blue-400"
-                          title="Edit"
-                        >
-                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                          </svg>
-                        </button>
-                        {employee.leftDate ? (
-                          <button
-                            onClick={() => handleRemoveLeftDate(employee)}
-                            className="rounded-lg p-2 text-slate-400 transition-all hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/30 dark:hover:text-green-400"
-                            title="Reactivate Employee"
-                          >
-                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                          </button>
-                        ) : (
-                          <>
+            {loading ? (
+              <div className="flex flex-col items-center justify-center rounded-3xl border border-slate-200 bg-white/95 py-16 shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
+                <div className="h-10 w-10 animate-spin rounded-full border-2 border-green-500 border-t-transparent"></div>
+                <p className="mt-4 text-sm font-medium text-slate-600 dark:text-slate-400">Loading employees...</p>
+              </div>
+            ) : filteredEmployees.length === 0 ? (
+              <div className="rounded-3xl border border-slate-200 bg-white/95 p-12 text-center shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
+                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-green-100 to-green-100 dark:from-green-900/30 dark:to-green-900/30">
+                  <svg className="h-8 w-8 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                  </svg>
+                </div>
+                <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">No employees found</p>
+                <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Add your first employee to get started</p>
+              </div>
+            ) : (
+              <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white/95 shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-green-50/30 dark:border-slate-700 dark:from-slate-900 dark:to-green-900/10">
+                        <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Emp No</th>
+                        <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Name</th>
+                        <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Department</th>
+                        <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Designation</th>
+                        <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Phone</th>
+                        <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Status</th>
+                        <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                      {filteredEmployees.map((employee) => (
+                        <tr key={employee.emp_no} className="transition-colors hover:bg-green-50/30 dark:hover:bg-green-900/10">
+                          <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-green-600 dark:text-green-400">
+                            {employee.emp_no}
+                          </td>
+                          <td className="whitespace-nowrap px-6 py-4">
+                            <div className="text-sm font-medium text-slate-900 dark:text-slate-100">{employee.employee_name}</div>
+                            {employee.email && (
+                              <div className="text-xs text-slate-500 dark:text-slate-400">{employee.email}</div>
+                            )}
+                          </td>
+                          <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
+                            {employee.department?.name || '-'}
+                          </td>
+                          <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
+                            {employee.designation?.name || '-'}
+                          </td>
+                          <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
+                            {employee.phone_number || '-'}
+                          </td>
+                          <td className="whitespace-nowrap px-6 py-4">
+                            <div className="flex flex-col gap-1">
+                              <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${employee.is_active !== false
+                                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                                }`}>
+                                {employee.is_active !== false ? 'Active' : 'Inactive'}
+                              </span>
+                              {employee.leftDate && (
+                                <span className="inline-flex rounded-full px-2.5 py-1 text-xs font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+                                  Left: {new Date(employee.leftDate).toLocaleDateString()}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="whitespace-nowrap px-6 py-4 text-right">
                             <button
-                              onClick={() => handleSetLeftDate(employee)}
-                              className="mr-2 rounded-lg p-2 text-slate-400 transition-all hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
-                              title="Set Left Date"
+                              onClick={() => handleEdit(employee)}
+                              className="mr-2 rounded-lg p-2 text-slate-400 transition-all hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/30 dark:hover:text-blue-400"
+                              title="Edit"
                             >
                               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                               </svg>
                             </button>
-                            <button
-                              onClick={() => handleDelete(employee.emp_no)}
-                              className="rounded-lg p-2 text-slate-400 transition-all hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
-                              title="Delete"
-                            >
-                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                              </svg>
-                            </button>
-                          </>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="border-t border-slate-200 bg-slate-50/50 px-6 py-3 dark:border-slate-700 dark:bg-slate-900/50">
-              <p className="text-sm text-slate-600 dark:text-slate-400">
-                Showing <span className="font-medium">{filteredEmployees.length}</span> of <span className="font-medium">{employees.length}</span> employees
-              </p>
-            </div>
-          </div>
-        )}
+                            {employee.leftDate ? (
+                              <button
+                                onClick={() => handleRemoveLeftDate(employee)}
+                                className="rounded-lg p-2 text-slate-400 transition-all hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/30 dark:hover:text-green-400"
+                                title="Reactivate Employee"
+                              >
+                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                              </button>
+                            ) : (
+                              <>
+                                <button
+                                  onClick={() => handleSetLeftDate(employee)}
+                                  className="mr-2 rounded-lg p-2 text-slate-400 transition-all hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
+                                  title="Set Left Date"
+                                >
+                                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                                  </svg>
+                                </button>
+                                <button
+                                  onClick={() => handleDelete(employee.emp_no)}
+                                  className="rounded-lg p-2 text-slate-400 transition-all hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
+                                  title="Delete"
+                                >
+                                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                  </svg>
+                                </button>
+                              </>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="border-t border-slate-200 bg-slate-50/50 px-6 py-3 dark:border-slate-700 dark:bg-slate-900/50">
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
+                    Showing <span className="font-medium">{filteredEmployees.length}</span> of <span className="font-medium">{employees.length}</span> employees
+                  </p>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -1741,6 +1818,7 @@ export default function EmployeesPage() {
             { key: 'employee_name', label: 'Name', width: '150px' },
             { key: 'department_name', label: 'Department', type: 'select', options: departments.map(d => ({ value: d.name, label: d.name })), width: '150px' },
             { key: 'designation_name', label: 'Designation', width: '150px' },
+            { key: 'proposedSalary', label: 'Proposed Salary', width: '120px' },
             { key: 'doj', label: 'DOJ', type: 'date', width: '120px' },
             { key: 'gender', label: 'Gender', type: 'select', options: [{ value: 'Male', label: 'Male' }, { value: 'Female', label: 'Female' }, { value: 'Other', label: 'Other' }], width: '100px' },
             { key: 'phone_number', label: 'Phone', width: '120px' },
@@ -1759,23 +1837,22 @@ export default function EmployeesPage() {
               try {
                 // Map department and designation names to IDs
                 const deptId = departments.find(d => d.name.toLowerCase() === (row.department_name as string)?.toLowerCase())?._id;
-                const desigId = designations.find(d => 
+                const desigId = designations.find(d =>
                   d.name.toLowerCase() === (row.designation_name as string)?.toLowerCase() &&
                   d.department === deptId
                 )?._id;
 
-                const employeeData = {
+                const employeeData: any = {
                   emp_no: row.emp_no,
                   employee_name: row.employee_name,
                   department_id: deptId || undefined,
                   designation_id: desigId || undefined,
                   doj: row.doj || undefined,
                   dob: row.dob || undefined,
-                  gross_salary: row.gross_salary ? Number(row.gross_salary) : undefined,
+                  proposedSalary: row.proposedSalary ? Number(row.proposedSalary) : undefined,
                   gender: row.gender || undefined,
                   marital_status: row.marital_status || undefined,
                   blood_group: row.blood_group || undefined,
-                  qualifications: row.qualifications || undefined,
                   experience: row.experience ? Number(row.experience) : undefined,
                   address: row.address || undefined,
                   location: row.location || undefined,
@@ -1791,7 +1868,39 @@ export default function EmployeesPage() {
                   ifsc_code: row.ifsc_code || undefined,
                 };
 
-                const response = await api.createEmployee(employeeData);
+                // Qualifications Parsing Logic
+                if (row.qualifications && typeof row.qualifications === 'string') {
+                  const qualParts = row.qualifications.split(',').map(s => s.trim()).filter(Boolean);
+                  const parsedQuals = qualParts.map(part => {
+                    const [degree, year] = part.split(':').map(s => s.trim());
+                    return {
+                      degree,
+                      qualified_year: year ? parseInt(year) : undefined
+                    };
+                  });
+                  employeeData.qualifications = parsedQuals;
+                }
+
+                // Dynamic Field Handling: Map any columns not processed above to dynamicFields
+                const processedKeys = Object.keys(employeeData);
+                const dynamicFields: any = {};
+                Object.keys(row).forEach(key => {
+                  // Only add keys that aren't in processedKeys and aren't noise
+                  if (!processedKeys.includes(key) &&
+                    key !== 'department_name' &&
+                    key !== 'designation_name' &&
+                    row[key] !== undefined &&
+                    row[key] !== null &&
+                    row[key] !== '') {
+                    dynamicFields[key] = row[key];
+                  }
+                });
+
+                if (Object.keys(dynamicFields).length > 0) {
+                  employeeData.dynamicFields = dynamicFields;
+                }
+
+                const response = await api.createEmployeeApplication(employeeData);
                 if (response.success) {
                   successCount++;
                 } else {
@@ -1800,11 +1909,11 @@ export default function EmployeesPage() {
                 }
               } catch (err) {
                 failCount++;
-                errors.push(`${row.emp_no}: Failed to create`);
+                errors.push(`${row.emp_no}: Failed to create application`);
               }
             }
 
-            loadEmployees();
+            loadApplications(); // Reload applications instead of employees
 
             if (failCount === 0) {
               return { success: true, message: `Successfully created ${successCount} employees` };

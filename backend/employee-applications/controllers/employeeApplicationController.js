@@ -249,13 +249,201 @@ exports.getApplication = async (req, res) => {
 };
 
 /**
+ * Helper logic for approving a single application
+ * This contains the core logic to be shared between individual and bulk approval
+ */
+const approveSingleApplicationInternal = async (applicationId, approvalData, approverId) => {
+  const { approvedSalary, doj, comments, employeeAllowances, employeeDeductions, ctcSalary, calculatedSalary } = approvalData;
+
+  const application = await EmployeeApplication.findById(applicationId);
+
+  if (!application) {
+    throw new Error('Employee application not found');
+  }
+
+  if (application.status !== 'pending') {
+    throw new Error(`Application for ${application.emp_no} is already ${application.status}`);
+  }
+
+  // Use approvedSalary if provided, otherwise use proposedSalary
+  const finalSalary = approvedSalary !== undefined ? approvedSalary : application.proposedSalary;
+
+  if (!finalSalary || finalSalary <= 0) {
+    throw new Error(`Valid approved salary is required for ${application.emp_no}`);
+  }
+
+  // Determine DOJ: use provided doj, or default to current date
+  const finalDOJ = doj ? new Date(doj) : new Date();
+
+  // Set approval data but DON'T SAVE YET
+  application.status = 'approved';
+  application.approvedSalary = finalSalary;
+  application.doj = finalDOJ;
+  application.approvedBy = approverId;
+  application.approvalComments = comments || null;
+  application.approvedAt = new Date();
+
+  // Normalize employee allowances and deductions
+  const normalizeOverrides = (list) =>
+    Array.isArray(list)
+      ? list
+        .filter((item) => item && (item.masterId || item.name))
+        .map((item) => ({
+          masterId: item.masterId || null,
+          code: item.code || null,
+          name: item.name || '',
+          category: item.category || null,
+          type: item.type || null,
+          amount: item.amount ?? item.overrideAmount ?? null,
+          percentage: item.percentage ?? null,
+          percentageBase: item.percentageBase ?? null,
+          minAmount: item.minAmount ?? null,
+          maxAmount: item.maxAmount ?? null,
+          basedOnPresentDays: item.basedOnPresentDays ?? false,
+          isOverride: true,
+        }))
+      : [];
+
+  let finalEmployeeAllowances = employeeAllowances ? normalizeOverrides(employeeAllowances) : (application.employeeAllowances || []);
+  let finalEmployeeDeductions = employeeDeductions ? normalizeOverrides(employeeDeductions) : (application.employeeDeductions || []);
+
+  let finalCtcSalary = ctcSalary !== undefined && ctcSalary !== null ? ctcSalary : null;
+  let finalCalculatedSalary = calculatedSalary !== undefined && calculatedSalary !== null ? calculatedSalary : null;
+
+  if ((finalCtcSalary === null || finalCalculatedSalary === null) && (finalEmployeeAllowances.length > 0 || finalEmployeeDeductions.length > 0)) {
+    const totalAllowances = (finalEmployeeAllowances || []).reduce((sum, a) => sum + (a.amount || 0), 0);
+    const totalDeductions = (finalEmployeeDeductions || []).reduce((sum, d) => sum + (d.amount || 0), 0);
+    if (finalCtcSalary === null) finalCtcSalary = finalSalary + totalAllowances;
+    if (finalCalculatedSalary === null) finalCalculatedSalary = finalSalary + totalAllowances - totalDeductions;
+  }
+
+  application.employeeAllowances = finalEmployeeAllowances;
+  application.employeeDeductions = finalEmployeeDeductions;
+  application.ctcSalary = finalCtcSalary;
+  application.calculatedSalary = finalCalculatedSalary;
+
+  const { permanentFields, dynamicFields } = transformApplicationToEmployee(
+    application.toObject(),
+    {
+      gross_salary: finalSalary,
+      doj: finalDOJ,
+      ctcSalary: finalCtcSalary,
+      calculatedSalary: finalCalculatedSalary,
+    }
+  );
+
+  const employeeData = {
+    ...permanentFields,
+    dynamicFields: dynamicFields || {},
+    employeeAllowances: finalEmployeeAllowances,
+    employeeDeductions: finalEmployeeDeductions,
+    ctcSalary: finalCtcSalary,
+    calculatedSalary: finalCalculatedSalary,
+  };
+
+  const results = { mongodb: false, mssql: false };
+
+  const password = await generatePassword(employeeData, null);
+  employeeData.password = password;
+
+  // Create in MongoDB
+  try {
+    await Employee.create(employeeData);
+    results.mongodb = true;
+    await application.save();
+  } catch (mongoError) {
+    console.error(`[ApproveApplication] MongoDB create error for ${employeeData.emp_no}:`, mongoError);
+    throw new Error(`Failed to create employee record in MongoDB for ${employeeData.emp_no}`);
+  }
+
+  // Create in MSSQL (OPTIONAL/FAIL-SAFE)
+  const { isHRMSConnected, employeeExistsMSSQL, createEmployeeMSSQL } = sqlHelper;
+  if (isHRMSConnected && isHRMSConnected()) {
+    try {
+      const existsInMSSQL = await employeeExistsMSSQL(employeeData.emp_no);
+      if (!existsInMSSQL) {
+        await createEmployeeMSSQL(employeeData);
+        results.mssql = true;
+      }
+    } catch (mssqlError) {
+      console.error(`[ApproveApplication] MSSQL sync error (non-blocking) for ${employeeData.emp_no}:`, mssqlError.message);
+    }
+  }
+
+  // Send credentials notification
+  let notificationResults = null;
+  if (results.mongodb) {
+    try {
+      notificationResults = await sendCredentials(
+        employeeData,
+        password,
+        { email: true, sms: true }
+      );
+    } catch (notifError) {
+      console.error(`[ApproveApplication] Notification error (non-blocking) for ${employeeData.emp_no}:`, notifError.message);
+    }
+  }
+
+  return { application, results, notificationResults };
+};
+
+/**
  * @desc    Approve employee application (Superadmin)
  * @route   PUT /api/employee-applications/:id/approve
  * @access  Private (Super Admin, Sub Admin)
  */
 exports.approveApplication = async (req, res) => {
   try {
-    const { approvedSalary, doj, comments, employeeAllowances, employeeDeductions, ctcSalary, calculatedSalary } = req.body;
+    // Only Superadmin and Sub Admin can approve
+    if (!['super_admin', 'sub_admin'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to approve applications',
+      });
+    }
+
+    const result = await approveSingleApplicationInternal(req.params.id, req.body, req.user._id);
+
+    await result.application.populate([
+      { path: 'createdBy', select: 'name email' },
+      { path: 'approvedBy', select: 'name email' },
+      { path: 'department_id', select: 'name code' },
+      { path: 'designation_id', select: 'name code' },
+    ]);
+
+    res.status(200).json({
+      success: true,
+      message: result.results.mssql
+        ? 'Employee application approved and employee created successfully in both databases'
+        : 'Employee application approved and employee created successfully in MongoDB. MSSQL sync skipped/failed.',
+      data: result.application,
+      savedTo: result.results,
+      notificationResults: result.notificationResults
+    });
+  } catch (error) {
+    console.error('Error approving employee application:', error);
+    res.status(error.message.includes('not found') ? 404 : 400).json({
+      success: false,
+      message: error.message || 'Failed to approve employee application',
+    });
+  }
+};
+
+/**
+ * @desc    Bulk approve employee applications (Superadmin)
+ * @route   PUT /api/employee-applications/bulk-approve
+ * @access  Private (Super Admin, Sub Admin)
+ */
+exports.bulkApproveApplications = async (req, res) => {
+  try {
+    const { applicationIds, bulkSettings } = req.body;
+
+    if (!Array.isArray(applicationIds) || applicationIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No application IDs provided',
+      });
+    }
 
     // Only Superadmin and Sub Admin can approve
     if (!['super_admin', 'sub_admin'].includes(req.user.role)) {
@@ -265,191 +453,34 @@ exports.approveApplication = async (req, res) => {
       });
     }
 
-    const application = await EmployeeApplication.findById(req.params.id);
-
-    if (!application) {
-      return res.status(404).json({
-        success: false,
-        message: 'Employee application not found',
-      });
-    }
-
-    if (application.status !== 'pending') {
-      return res.status(400).json({
-        success: false,
-        message: `Application is already ${application.status}`,
-      });
-    }
-
-    // Use approvedSalary if provided, otherwise use proposedSalary
-    const finalSalary = approvedSalary !== undefined ? approvedSalary : application.proposedSalary;
-
-    if (!finalSalary || finalSalary <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Valid approved salary is required',
-      });
-    }
-
-    // Determine DOJ: use provided doj, or default to current date
-    const finalDOJ = doj ? new Date(doj) : new Date();
-
-    // Set approval data but DON'T SAVE YET
-    application.status = 'approved';
-    application.approvedSalary = finalSalary; // Store approved salary
-    application.doj = finalDOJ;
-    application.approvedBy = req.user._id;
-    application.approvalComments = comments || null;
-    application.approvedAt = new Date();
-
-    // Normalize employee allowances and deductions from request (if provided) or use from application
-    const normalizeOverrides = (list) =>
-      Array.isArray(list)
-        ? list
-          .filter((item) => item && (item.masterId || item.name))
-          .map((item) => ({
-            masterId: item.masterId || null,
-            code: item.code || null,
-            name: item.name || '',
-            category: item.category || null,
-            type: item.type || null,
-            amount: item.amount ?? item.overrideAmount ?? null,
-            percentage: item.percentage ?? null,
-            percentageBase: item.percentageBase ?? null,
-            minAmount: item.minAmount ?? null,
-            maxAmount: item.maxAmount ?? null,
-            basedOnPresentDays: item.basedOnPresentDays ?? false,
-            isOverride: true,
-          }))
-        : [];
-
-    // Use provided overrides from request (from approval dialog) or fall back to application
-    let finalEmployeeAllowances = employeeAllowances ? normalizeOverrides(employeeAllowances) : (application.employeeAllowances || []);
-    let finalEmployeeDeductions = employeeDeductions ? normalizeOverrides(employeeDeductions) : (application.employeeDeductions || []);
-
-    // Use provided calculated salaries from request (from approval dialog) or calculate them
-    let finalCtcSalary = ctcSalary !== undefined && ctcSalary !== null ? ctcSalary : null;
-    let finalCalculatedSalary = calculatedSalary !== undefined && calculatedSalary !== null ? calculatedSalary : null;
-
-    // If calculated salaries not provided, calculate them from allowances/deductions
-    if ((finalCtcSalary === null || finalCalculatedSalary === null) && (finalEmployeeAllowances.length > 0 || finalEmployeeDeductions.length > 0)) {
-      const totalAllowances = (finalEmployeeAllowances || []).reduce((sum, a) => sum + (a.amount || 0), 0);
-      const totalDeductions = (finalEmployeeDeductions || []).reduce((sum, d) => sum + (d.amount || 0), 0);
-      if (finalCtcSalary === null) {
-        finalCtcSalary = finalSalary + totalAllowances; // CTC = Gross + Allowances
-      }
-      if (finalCalculatedSalary === null) {
-        finalCalculatedSalary = finalSalary + totalAllowances - totalDeductions; // Net = Gross + Allowances - Deductions
-      }
-    }
-
-    // Update application with the final values (for reference)
-    application.employeeAllowances = finalEmployeeAllowances;
-    application.employeeDeductions = finalEmployeeDeductions;
-    application.ctcSalary = finalCtcSalary;
-    application.calculatedSalary = finalCalculatedSalary;
-
-    // Transform application to employee data using field mapping service
-    // This automatically extracts all permanent fields and dynamicFields
-    const { permanentFields, dynamicFields } = transformApplicationToEmployee(
-      application.toObject(),
-      {
-        gross_salary: finalSalary, // approvedSalary → gross_salary for employee
-        doj: finalDOJ, // Override with approved DOJ
-        ctcSalary: finalCtcSalary, // Include calculated CTC
-        calculatedSalary: finalCalculatedSalary, // Include calculated net salary
-      }
-    );
-
-    // Combine permanent fields and dynamicFields
-    const employeeData = {
-      ...permanentFields,
-      dynamicFields: dynamicFields || {},
-      // Carry over employee-level allowances/deductions overrides
-      employeeAllowances: finalEmployeeAllowances,
-      employeeDeductions: finalEmployeeDeductions,
-      // Ensure calculated salaries are included
-      ctcSalary: finalCtcSalary,
-      calculatedSalary: finalCalculatedSalary,
+    const results = {
+      successCount: 0,
+      failCount: 0,
+      errors: [],
     };
 
-    const results = { mongodb: false, mssql: false };
-
-    // Generate password
-    const password = await generatePassword(employeeData, null);
-    employeeData.password = password;
-
-    // Create in MongoDB
-    try {
-      console.log(`[ApproveApplication] Attempting to create employee ${employeeData.emp_no} in MongoDB...`);
-      const newEmployee = await Employee.create(employeeData);
-      results.mongodb = true;
-      console.log(`[ApproveApplication] Employee ${employeeData.emp_no} created successfully in MongoDB. ID: ${newEmployee._id}`);
-
-      // NOW save the application status since employee creation succeeded
-      await application.save();
-      console.log(`[ApproveApplication] Application ${application._id} status updated to 'approved'.`);
-    } catch (mongoError) {
-      console.error(`[ApproveApplication] MongoDB create error for ${employeeData.emp_no}:`, mongoError);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to create employee record in MongoDB. Application status remains pending.',
-        error: mongoError.message
-      });
-    }
-
-    // Create in MSSQL (OPTIONAL/FAIL-SAFE)
-    if (isHRMSConnected()) {
+    // Process applications one by one (to avoid too much concurrent load and handle individual errors)
+    for (const id of applicationIds) {
       try {
-        console.log(`[ApproveApplication] Syncing employee ${employeeData.emp_no} to MSSQL...`);
-        // Check if employee exists in MSSQL
-        const existsInMSSQL = await employeeExistsMSSQL(employeeData.emp_no);
-        if (!existsInMSSQL) {
-          await createEmployeeMSSQL(employeeData);
-          results.mssql = true;
-          console.log(`[ApproveApplication] Employee ${employeeData.emp_no} created in MSSQL.`);
-        } else {
-          console.log(`[ApproveApplication] Employee ${employeeData.emp_no} already exists in MSSQL`);
-        }
-      } catch (mssqlError) {
-        console.error(`[ApproveApplication] MSSQL sync error (non-blocking) for ${employeeData.emp_no}:`, mssqlError.message);
+        await approveSingleApplicationInternal(id, bulkSettings || {}, req.user._id);
+        results.successCount++;
+      } catch (error) {
+        results.failCount++;
+        results.errors.push({ id, message: error.message });
+        console.error(`Bulk approval failed for application ${id}:`, error.message);
       }
-    } else {
-      console.warn(`[ApproveApplication] MSSQL not connected, skipping employee sync (non-blocking) for ${employeeData.emp_no}`);
     }
-
-    // Send credentials notification
-    let notificationResults = null;
-    if (results.mongodb) {
-      console.log(`[ApproveApplication] Sending credentials notification for ${employeeData.emp_no}...`);
-      notificationResults = await sendCredentials(
-        employeeData,
-        password,
-        { email: true, sms: true }
-      );
-    }
-
-    await application.populate([
-      { path: 'createdBy', select: 'name email' },
-      { path: 'approvedBy', select: 'name email' },
-      { path: 'department_id', select: 'name code' },
-      { path: 'designation_id', select: 'name code' },
-    ]);
 
     res.status(200).json({
-      success: true,
-      message: results.mssql
-        ? 'Employee application approved and employee created successfully in both databases'
-        : 'Employee application approved and employee created successfully in MongoDB. MSSQL sync skipped/failed.',
-      data: application,
-      savedTo: results,
-      notificationResults
+      success: results.failCount === 0,
+      message: `Bulk approval completed: ${results.successCount} succeeded, ${results.failCount} failed.`,
+      data: results,
     });
   } catch (error) {
-    console.error('Error approving employee application:', error);
+    console.error('Error in bulk approving applications:', error);
     res.status(500).json({
       success: false,
-      message: error.message || 'Failed to approve employee application',
+      message: error.message || 'Error occurred during bulk approval',
     });
   }
 };
@@ -515,5 +546,6 @@ exports.rejectApplication = async (req, res) => {
     });
   }
 };
+
 
 

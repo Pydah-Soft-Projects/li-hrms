@@ -45,7 +45,7 @@ const employeeApplicationSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
-    
+
     // Salary Fields
     proposedSalary: {
       type: Number,
@@ -59,7 +59,7 @@ const employeeApplicationSchema = new mongoose.Schema(
       type: Number,
       default: null, // Will be set to approvedSalary on approval
     },
-    
+
     // Personal Information
     gender: {
       type: String,
@@ -77,8 +77,7 @@ const employeeApplicationSchema = new mongoose.Schema(
       default: null,
     },
     qualifications: {
-      type: String,
-      trim: true,
+      type: mongoose.Schema.Types.Mixed,
       default: null,
     },
     experience: {
