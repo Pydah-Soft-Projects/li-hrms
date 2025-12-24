@@ -3,6 +3,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { initializeAllDatabases } = require('./config/init');
+const { checkConnection: checkS3Connection } = require('./shared/services/s3UploadService');
 
 const app = express();
 module.exports = app;
@@ -146,6 +147,9 @@ const startServer = async () => {
   try {
     // Initialize database connections
     await initializeAllDatabases();
+
+    // Check S3 Connection
+    await checkS3Connection();
 
     // Start attendance sync job
     const { startSyncJob } = require('./attendance/services/attendanceSyncJob');

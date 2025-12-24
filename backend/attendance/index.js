@@ -6,6 +6,7 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const { protect, authorize } = require('../authentication/middleware/authMiddleware');
+const { applyScopeFilter } = require('../shared/middleware/dataScopeMiddleware');
 
 // Controllers
 const attendanceController = require('./controllers/attendanceController');
@@ -24,8 +25,8 @@ const upload = multer({
   },
   fileFilter: (req, file, cb) => {
     if (file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-        file.mimetype === 'application/vnd.ms-excel' ||
-        file.mimetype === 'text/csv') {
+      file.mimetype === 'application/vnd.ms-excel' ||
+      file.mimetype === 'text/csv') {
       cb(null, true);
     } else {
       cb(new Error('Only Excel files (.xlsx, .xls) and CSV files are allowed'), false);
@@ -36,12 +37,12 @@ const upload = multer({
 // All routes require authentication
 router.use(protect);
 
-// Attendance Data Routes
-router.get('/calendar', attendanceController.getAttendanceCalendar);
-router.get('/list', attendanceController.getAttendanceList);
-router.get('/detail', attendanceController.getAttendanceDetail);
-router.get('/employees', attendanceController.getEmployeesWithAttendance);
-router.get('/monthly', attendanceController.getMonthlyAttendance);
+// Attendance Data Routes (with scope filtering)
+router.get('/calendar', applyScopeFilter, attendanceController.getAttendanceCalendar);
+router.get('/list', applyScopeFilter, attendanceController.getAttendanceList);
+router.get('/detail', applyScopeFilter, attendanceController.getAttendanceDetail);
+router.get('/employees', applyScopeFilter, attendanceController.getEmployeesWithAttendance);
+router.get('/monthly', applyScopeFilter, attendanceController.getMonthlyAttendance);
 router.get('/:employeeNumber/:date/available-shifts', attendanceController.getAvailableShifts);
 
 // Update outTime for PARTIAL attendance (Super Admin, Sub Admin, HR, HOD)

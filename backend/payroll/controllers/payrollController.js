@@ -6,6 +6,8 @@ const Settings = require('../../settings/model/Settings');
 const Loan = require('../../loans/model/Loan');
 const payrollCalculationService = require('../services/payrollCalculationService');
 const XLSX = require('xlsx');
+const PayRegisterSummary = require('../../pay-register/model/PayRegisterSummary');
+const MonthlyAttendanceSummary = require('../../attendance/model/MonthlyAttendanceSummary');
 
 /**
  * Payroll Controller
@@ -485,14 +487,15 @@ exports.exportPayrollExcel = async (req, res) => {
         const { payslip } = await buildPayslipData(pr.employeeId, pr.month);
         payslips.push(payslip);
       } catch (err) {
-        console.error('Error building payslip for export:', err);
+        console.error(`Error building payslip for export (Emp: ${pr.employeeId}, Month: ${pr.month}):`, err);
       }
     }
 
     if (payslips.length === 0) {
+      console.warn(`[Export Excel] Valid PayrollRecords found (${payrollRecords.length}) but ZERO payslips built. Check 'Error building payslip' logs above.`);
       return res.status(404).json({
         success: false,
-        message: 'No payslip data available to export.',
+        message: 'No payslip data available to export. (Internal generation failure)',
       });
     }
 

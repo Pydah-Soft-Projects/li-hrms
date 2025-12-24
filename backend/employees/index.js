@@ -2,7 +2,9 @@ const express = require('express');
 const router = express.Router();
 const employeeController = require('./controllers/employeeController');
 const { protect, authorize } = require('../authentication/middleware/authMiddleware');
-const { roleBasedFilter } = require('../shared/middleware/roleBasedFilter');
+const { applyScopeFilter } = require('../shared/middleware/dataScopeMiddleware');
+const multer = require('multer');
+const upload = multer({ storage: multer.memoryStorage() });
 
 // All routes are protected
 router.use(protect);
@@ -14,16 +16,16 @@ router.get('/settings', employeeController.getSettings);
 router.get('/components/defaults', employeeController.getAllowanceDeductionDefaults);
 
 // Get employee count
-router.get('/count', employeeController.getEmployeeCount);
+router.get('/count', applyScopeFilter, employeeController.getEmployeeCount);
 
-// Get all employees (with role-based filtering)
-router.get('/', roleBasedFilter('employees'), employeeController.getAllEmployees);
+// Get all employees (with data scope filtering)
+router.get('/', applyScopeFilter, employeeController.getAllEmployees);
 
 // Get single employee
 router.get('/:empNo', employeeController.getEmployee);
 
 // Create employee (Super Admin, Sub Admin, HR)
-router.post('/', authorize('super_admin', 'sub_admin', 'hr'), employeeController.createEmployee);
+router.post('/', authorize('super_admin', 'sub_admin', 'hr'), upload.any(), employeeController.createEmployee);
 
 // Resend credentials (Super Admin)
 router.post('/:empNo/resend-credentials', authorize('super_admin'), employeeController.resendEmployeePassword);
@@ -32,7 +34,7 @@ router.post('/:empNo/resend-credentials', authorize('super_admin'), employeeCont
 router.post('/bulk-export-passwords', authorize('super_admin'), employeeController.bulkExportEmployeePasswords);
 
 // Update employee (Super Admin, Sub Admin, HR)
-router.put('/:empNo', authorize('super_admin', 'sub_admin', 'hr'), employeeController.updateEmployee);
+router.put('/:empNo', authorize('super_admin', 'sub_admin', 'hr'), upload.any(), employeeController.updateEmployee);
 
 // Set employee left date (Super Admin, Sub Admin, HR)
 router.put('/:empNo/left-date', authorize('super_admin', 'sub_admin', 'hr'), employeeController.setLeftDate);

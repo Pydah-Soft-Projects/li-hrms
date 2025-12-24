@@ -11,6 +11,7 @@ export interface User {
   departments?: { _id: string; name: string; code?: string }[];
   employeeId?: string;
   employeeRef?: string;
+  featureControl?: string[];
 }
 
 export const auth = {

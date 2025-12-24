@@ -7,6 +7,7 @@ import { toast, ToastContainer } from 'react-toastify';
 import Swal from 'sweetalert2';
 import 'react-toastify/dist/ReactToastify.css';
 
+
 // Icons
 const PlusIcon = () => (
   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -53,6 +54,13 @@ const SearchIcon = () => (
 const UserIcon = () => (
   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+  </svg>
+);
+
+const SettingsIcon = () => (
+  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
   </svg>
 );
 
@@ -116,11 +124,11 @@ const getEmployeeInitials = (emp: Employee) => {
 
 interface LeaveApplication {
   _id: string;
-  employeeId?: { 
-    _id: string; 
-    employee_name?: string; 
-    first_name?: string; 
-    last_name?: string; 
+  employeeId?: {
+    _id: string;
+    employee_name?: string;
+    first_name?: string;
+    last_name?: string;
     emp_no: string;
   };
   emp_no?: string;
@@ -167,11 +175,11 @@ interface LeaveApplication {
 
 interface ODApplication {
   _id: string;
-  employeeId?: { 
+  employeeId?: {
     _id?: string;
-    employee_name?: string; 
-    first_name?: string; 
-    last_name?: string; 
+    employee_name?: string;
+    first_name?: string;
+    last_name?: string;
     emp_no: string;
   };
   emp_no?: string;
@@ -438,7 +446,7 @@ export default function LeavesPage() {
       if (leaveSettingsRes.success && leaveSettingsRes.data?.types) {
         fetchedLeaveTypes = leaveSettingsRes.data.types.filter((t: any) => t.isActive !== false);
       }
-      
+
       // Extract OD types from settings (field is 'types' not 'odTypes')
       let fetchedODTypes: any[] = [];
       if (odSettingsRes.success && odSettingsRes.data?.types) {
@@ -522,7 +530,7 @@ export default function LeavesPage() {
     if (approvedRecordsInfo) {
       const hasFullDayLeave = approvedRecordsInfo.hasLeave && !approvedRecordsInfo.leaveInfo?.isHalfDay;
       const hasFullDayOD = approvedRecordsInfo.hasOD && !approvedRecordsInfo.odInfo?.isHalfDay;
-      
+
       if (hasFullDayLeave || hasFullDayOD) {
         toast.error('Cannot create request - Employee has an approved full-day record on this date');
         return;
@@ -530,10 +538,10 @@ export default function LeavesPage() {
 
       // Check if trying to select the same half that's already approved
       if (formData.isHalfDay) {
-        const approvedHalf = approvedRecordsInfo.hasLeave 
-          ? approvedRecordsInfo.leaveInfo?.halfDayType 
+        const approvedHalf = approvedRecordsInfo.hasLeave
+          ? approvedRecordsInfo.leaveInfo?.halfDayType
           : approvedRecordsInfo.odInfo?.halfDayType;
-        
+
         if (approvedHalf === formData.halfDayType) {
           toast.error(`Cannot create request - Employee already has ${approvedHalf === 'first_half' ? 'First Half' : 'Second Half'} approved on this date`);
           return;
@@ -552,7 +560,7 @@ export default function LeavesPage() {
 
       let response;
       const contactNum = formData.contactNumber || selectedEmployee.phone_number || '';
-      
+
       if (applyType === 'leave') {
         response = await api.applyLeave({
           empNo: selectedEmployee.emp_no, // Use emp_no as primary identifier
@@ -704,36 +712,36 @@ export default function LeavesPage() {
 
           if (response.success && response.data) {
             setApprovedRecordsInfo(response.data);
-            
+
             // Auto-select opposite half if approved half-day exists
             if (response.data.hasLeave && response.data.leaveInfo?.isHalfDay) {
               const approvedHalf = response.data.leaveInfo.halfDayType;
               if (approvedHalf === 'first_half') {
-                setFormData(prev => ({ 
-                  ...prev, 
-                  isHalfDay: true, 
-                  halfDayType: 'second_half' 
+                setFormData(prev => ({
+                  ...prev,
+                  isHalfDay: true,
+                  halfDayType: 'second_half'
                 }));
               } else if (approvedHalf === 'second_half') {
-                setFormData(prev => ({ 
-                  ...prev, 
-                  isHalfDay: true, 
-                  halfDayType: 'first_half' 
+                setFormData(prev => ({
+                  ...prev,
+                  isHalfDay: true,
+                  halfDayType: 'first_half'
                 }));
               }
             } else if (response.data.hasOD && response.data.odInfo?.isHalfDay) {
               const approvedHalf = response.data.odInfo.halfDayType;
               if (approvedHalf === 'first_half') {
-                setFormData(prev => ({ 
-                  ...prev, 
-                  isHalfDay: true, 
-                  halfDayType: 'second_half' 
+                setFormData(prev => ({
+                  ...prev,
+                  isHalfDay: true,
+                  halfDayType: 'second_half'
                 }));
               } else if (approvedHalf === 'second_half') {
-                setFormData(prev => ({ 
-                  ...prev, 
-                  isHalfDay: true, 
-                  halfDayType: 'first_half' 
+                setFormData(prev => ({
+                  ...prev,
+                  isHalfDay: true,
+                  halfDayType: 'first_half'
                 }));
               }
             }
@@ -756,7 +764,7 @@ export default function LeavesPage() {
 
   const openApplyDialog = (type: 'leave' | 'od') => {
     setApplyType(type);
-    
+
     // Reset form first
     setFormData({
       leaveType: '',
@@ -776,14 +784,14 @@ export default function LeavesPage() {
     setSelectedEmployee(null);
     setEmployeeSearch('');
     setShowEmployeeDropdown(false);
-    
+
     // Auto-select if only one type available
     if (type === 'leave' && leaveTypes.length === 1) {
       setFormData(prev => ({ ...prev, leaveType: leaveTypes[0].code }));
     } else if (type === 'od' && odTypes.length === 1) {
       setFormData(prev => ({ ...prev, odType: odTypes[0].code }));
     }
-    
+
     setShowApplyDialog(true);
   };
 
@@ -849,7 +857,7 @@ export default function LeavesPage() {
       setSelectedItem(enrichedItem);
       setDetailType(type);
       setShowDetailDialog(true);
-      
+
       // Check if revocation is possible (within 3 hours)
       if (enrichedItem.status === 'approved' || enrichedItem.status === 'hod_approved' || enrichedItem.status === 'hr_approved') {
         const approvalTime = (enrichedItem as LeaveApplication).approvals?.hr?.approvedAt || (enrichedItem as LeaveApplication).approvals?.hod?.approvedAt;
@@ -914,7 +922,7 @@ export default function LeavesPage() {
   const saveSplits = async () => {
     if (detailType !== 'leave' || !selectedItem) return false;
     const validation = await validateSplitsForLeave();
-      if (!validation || (validation as any).isValid === false) {
+    if (!validation || (validation as any).isValid === false) {
       return false;
     }
 
@@ -945,7 +953,7 @@ export default function LeavesPage() {
 
   const handleDetailAction = async (action: 'approve' | 'reject' | 'forward' | 'cancel') => {
     if (!selectedItem) return;
-    
+
     try {
       if (detailType === 'leave' && action === 'approve' && splitMode) {
         setSplitSaving(true);
@@ -957,7 +965,7 @@ export default function LeavesPage() {
       }
 
       let response;
-      
+
       if (action === 'cancel') {
         if (detailType === 'leave') {
           response = await api.cancelLeave(selectedItem._id);
@@ -1111,11 +1119,10 @@ export default function LeavesPage() {
         <div className="flex gap-2 border-b border-slate-200 dark:border-slate-700">
           <button
             onClick={() => setActiveTab('leaves')}
-            className={`px-4 py-2.5 font-medium text-sm transition-all border-b-2 -mb-px ${
-              activeTab === 'leaves'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-slate-500 hover:text-slate-700'
-            }`}
+            className={`px-4 py-2.5 font-medium text-sm transition-all border-b-2 -mb-px ${activeTab === 'leaves'
+              ? 'border-blue-500 text-blue-600'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
           >
             <span className="flex items-center gap-2">
               <CalendarIcon />
@@ -1124,11 +1131,10 @@ export default function LeavesPage() {
           </button>
           <button
             onClick={() => setActiveTab('od')}
-            className={`px-4 py-2.5 font-medium text-sm transition-all border-b-2 -mb-px ${
-              activeTab === 'od'
-                ? 'border-purple-500 text-purple-600'
-                : 'border-transparent text-slate-500 hover:text-slate-700'
-            }`}
+            className={`px-4 py-2.5 font-medium text-sm transition-all border-b-2 -mb-px ${activeTab === 'od'
+              ? 'border-purple-500 text-purple-600'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
           >
             <span className="flex items-center gap-2">
               <BriefcaseIcon />
@@ -1137,11 +1143,10 @@ export default function LeavesPage() {
           </button>
           <button
             onClick={() => setActiveTab('pending')}
-            className={`px-4 py-2.5 font-medium text-sm transition-all border-b-2 -mb-px ${
-              activeTab === 'pending'
-                ? 'border-yellow-500 text-yellow-600'
-                : 'border-transparent text-slate-500 hover:text-slate-700'
-            }`}
+            className={`px-4 py-2.5 font-medium text-sm transition-all border-b-2 -mb-px ${activeTab === 'pending'
+              ? 'border-yellow-500 text-yellow-600'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
           >
             <span className="flex items-center gap-2">
               <ClockIcon />
@@ -1169,8 +1174,8 @@ export default function LeavesPage() {
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
                 {leaves.map((leave) => (
-                  <tr 
-                    key={leave._id} 
+                  <tr
+                    key={leave._id}
                     className="hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer transition-colors"
                     onClick={() => openDetailDialog(leave, 'leave')}
                   >
@@ -1230,8 +1235,8 @@ export default function LeavesPage() {
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
                 {ods.map((od) => (
-                  <tr 
-                    key={od._id} 
+                  <tr
+                    key={od._id}
                     className="hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer transition-colors"
                     onClick={() => openDetailDialog(od, 'od')}
                   >
@@ -1381,6 +1386,8 @@ export default function LeavesPage() {
             )}
           </div>
         )}
+
+
       </div>
 
       {/* Apply Leave/OD Dialog */}
@@ -1392,11 +1399,10 @@ export default function LeavesPage() {
             <div className="flex gap-2 mb-6">
               <button
                 onClick={() => setApplyType('leave')}
-                className={`flex-1 py-3 rounded-xl font-medium text-sm transition-all ${
-                  applyType === 'leave'
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
-                }`}
+                className={`flex-1 py-3 rounded-xl font-medium text-sm transition-all ${applyType === 'leave'
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                  }`}
               >
                 <span className="flex items-center justify-center gap-2">
                   <CalendarIcon />
@@ -1405,11 +1411,10 @@ export default function LeavesPage() {
               </button>
               <button
                 onClick={() => setApplyType('od')}
-                className={`flex-1 py-3 rounded-xl font-medium text-sm transition-all ${
-                  applyType === 'od'
-                    ? 'bg-purple-500 text-white'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
-                }`}
+                className={`flex-1 py-3 rounded-xl font-medium text-sm transition-all ${applyType === 'od'
+                  ? 'bg-purple-500 text-white'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                  }`}
               >
                 <span className="flex items-center justify-center gap-2">
                   <BriefcaseIcon />
@@ -1483,7 +1488,7 @@ export default function LeavesPage() {
                         placeholder="Search by name, emp no, or department..."
                         className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20"
                       />
-                      
+
                       {/* Employee Dropdown */}
                       {showEmployeeDropdown && (
                         <div className="absolute z-10 w-full mt-1 max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-800">
@@ -1534,8 +1539,8 @@ export default function LeavesPage() {
                 {((applyType === 'leave' && leaveTypes.length === 1) || (applyType === 'od' && odTypes.length === 1)) ? (
                   <div className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-700 dark:text-white">
                     <span className="font-medium">
-                      {applyType === 'leave' 
-                        ? leaveTypes[0]?.name || leaveTypes[0]?.code 
+                      {applyType === 'leave'
+                        ? leaveTypes[0]?.name || leaveTypes[0]?.code
                         : odTypes[0]?.name || odTypes[0]?.code}
                     </span>
                     <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">(Only type available)</span>
@@ -1569,33 +1574,30 @@ export default function LeavesPage() {
                     <button
                       type="button"
                       onClick={() => setFormData({ ...formData, odType_extended: 'full_day', isHalfDay: false })}
-                      className={`flex-1 py-2.5 px-3 rounded-lg text-sm font-medium transition-all ${
-                        formData.odType_extended === 'full_day'
-                          ? 'bg-purple-500 text-white shadow-md'
-                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300'
-                      }`}
+                      className={`flex-1 py-2.5 px-3 rounded-lg text-sm font-medium transition-all ${formData.odType_extended === 'full_day'
+                        ? 'bg-purple-500 text-white shadow-md'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300'
+                        }`}
                     >
                       Full Day
                     </button>
                     <button
                       type="button"
                       onClick={() => setFormData({ ...formData, odType_extended: 'half_day', isHalfDay: true, halfDayType: formData.halfDayType || 'first_half', odStartTime: null, odEndTime: null })}
-                      className={`flex-1 py-2.5 px-3 rounded-lg text-sm font-medium transition-all ${
-                        formData.odType_extended === 'half_day'
-                          ? 'bg-purple-500 text-white shadow-md'
-                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300'
-                      }`}
+                      className={`flex-1 py-2.5 px-3 rounded-lg text-sm font-medium transition-all ${formData.odType_extended === 'half_day'
+                        ? 'bg-purple-500 text-white shadow-md'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300'
+                        }`}
                     >
                       Half Day
                     </button>
                     <button
                       type="button"
                       onClick={() => setFormData({ ...formData, odType_extended: 'hours', isHalfDay: false, halfDayType: null })}
-                      className={`flex-1 py-2.5 px-3 rounded-lg text-sm font-medium transition-all ${
-                        formData.odType_extended === 'hours'
-                          ? 'bg-fuchsia-500 text-white shadow-md'
-                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300'
-                      }`}
+                      className={`flex-1 py-2.5 px-3 rounded-lg text-sm font-medium transition-all ${formData.odType_extended === 'hours'
+                        ? 'bg-fuchsia-500 text-white shadow-md'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300'
+                        }`}
                     >
                       Specific Hours
                     </button>
@@ -1635,19 +1637,19 @@ export default function LeavesPage() {
                         const [endH, endM] = formData.odEndTime.split(':').map(Number);
                         const startMin = startH * 60 + startM;
                         const endMin = endH * 60 + endM;
-                        
+
                         if (startMin >= endMin) {
                           return <p className="text-sm text-red-600 dark:text-red-400">⚠️ End time must be after start time</p>;
                         }
-                        
+
                         const durationMin = endMin - startMin;
                         const hours = Math.floor(durationMin / 60);
                         const mins = durationMin % 60;
-                        
+
                         if (durationMin > 480) {
                           return <p className="text-sm text-red-600 dark:text-red-400">⚠️ Maximum duration is 8 hours</p>;
                         }
-                        
+
                         return (
                           <p className="text-sm font-medium text-fuchsia-700 dark:text-fuchsia-300">
                             ✓ Duration: {hours}h {mins}m
@@ -1704,20 +1706,20 @@ export default function LeavesPage() {
                   </p>
                   {approvedRecordsInfo.hasLeave && approvedRecordsInfo.leaveInfo && (
                     <div className="text-xs text-amber-700 dark:text-amber-400 mb-1">
-                      <strong>Leave:</strong> {approvedRecordsInfo.leaveInfo.isHalfDay 
+                      <strong>Leave:</strong> {approvedRecordsInfo.leaveInfo.isHalfDay
                         ? `${approvedRecordsInfo.leaveInfo.halfDayType === 'first_half' ? 'First Half' : 'Second Half'} Leave`
                         : 'Full Day Leave'}
                     </div>
                   )}
                   {approvedRecordsInfo.hasOD && approvedRecordsInfo.odInfo && (
                     <div className="text-xs text-amber-700 dark:text-amber-400">
-                      <strong>OD:</strong> {approvedRecordsInfo.odInfo.isHalfDay 
+                      <strong>OD:</strong> {approvedRecordsInfo.odInfo.isHalfDay
                         ? `${approvedRecordsInfo.odInfo.halfDayType === 'first_half' ? 'First Half' : 'Second Half'} OD`
                         : 'Full Day OD'}
                     </div>
                   )}
                   {(approvedRecordsInfo.hasLeave && approvedRecordsInfo.leaveInfo?.isHalfDay) ||
-                   (approvedRecordsInfo.hasOD && approvedRecordsInfo.odInfo?.isHalfDay) ? (
+                    (approvedRecordsInfo.hasOD && approvedRecordsInfo.odInfo?.isHalfDay) ? (
                     <p className="text-xs text-amber-600 dark:text-amber-500 mt-2">
                       ✓ Opposite half has been auto-selected for you
                     </p>
@@ -1745,7 +1747,7 @@ export default function LeavesPage() {
                     disabled={
                       approvedRecordsInfo
                         ? ((approvedRecordsInfo.hasLeave && !approvedRecordsInfo.leaveInfo?.isHalfDay) ||
-                       (approvedRecordsInfo.hasOD && !approvedRecordsInfo.odInfo?.isHalfDay))
+                          (approvedRecordsInfo.hasOD && !approvedRecordsInfo.odInfo?.isHalfDay))
                         : undefined
                     }
                     className="w-4 h-4 rounded border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1759,8 +1761,8 @@ export default function LeavesPage() {
                     disabled={
                       approvedRecordsInfo
                         ? ((approvedRecordsInfo.hasLeave && approvedRecordsInfo.leaveInfo?.isHalfDay &&
-                            approvedRecordsInfo.leaveInfo.halfDayType === formData.halfDayType) ||
-                       (approvedRecordsInfo.hasOD && approvedRecordsInfo.odInfo?.isHalfDay && 
+                          approvedRecordsInfo.leaveInfo.halfDayType === formData.halfDayType) ||
+                          (approvedRecordsInfo.hasOD && approvedRecordsInfo.odInfo?.isHalfDay &&
                             approvedRecordsInfo.odInfo.halfDayType === formData.halfDayType))
                         : undefined
                     }
@@ -1836,11 +1838,10 @@ export default function LeavesPage() {
                 </button>
                 <button
                   type="submit"
-                  className={`flex-1 px-4 py-2.5 text-sm font-semibold text-white rounded-xl ${
-                    applyType === 'leave'
-                      ? 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600'
-                      : 'bg-gradient-to-r from-purple-500 to-red-500 hover:from-purple-600 hover:to-red-600'
-                  }`}
+                  className={`flex-1 px-4 py-2.5 text-sm font-semibold text-white rounded-xl ${applyType === 'leave'
+                    ? 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600'
+                    : 'bg-gradient-to-r from-purple-500 to-red-500 hover:from-purple-600 hover:to-red-600'
+                    }`}
                 >
                   Apply {applyType === 'leave' ? 'Leave' : 'OD'}
                 </button>
@@ -1855,11 +1856,10 @@ export default function LeavesPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="w-full max-w-3xl max-h-[95vh] overflow-y-auto rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-800">
             {/* Header */}
-            <div className={`px-6 py-4 border-b border-slate-200 dark:border-slate-700 ${
-              detailType === 'leave' 
-                ? 'bg-gradient-to-r from-blue-500 to-indigo-500' 
-                : 'bg-gradient-to-r from-purple-500 to-red-500'
-            }`}>
+            <div className={`px-6 py-4 border-b border-slate-200 dark:border-slate-700 ${detailType === 'leave'
+              ? 'bg-gradient-to-r from-blue-500 to-indigo-500'
+              : 'bg-gradient-to-r from-purple-500 to-red-500'
+              }`}>
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold text-white flex items-center gap-2">
                   {detailType === 'leave' ? (
@@ -1892,13 +1892,13 @@ export default function LeavesPage() {
               <div className="flex flex-wrap items-center justify-between gap-4 pb-6 border-b border-slate-200 dark:border-slate-700">
                 <div className="flex items-center gap-3">
                   <span className={`px-5 py-2.5 text-sm font-bold rounded-2xl capitalize shadow-sm ${getStatusColor(selectedItem.status)}`}>
-                  {selectedItem.status?.replace('_', ' ') || 'Unknown'}
-                </span>
+                    {selectedItem.status?.replace('_', ' ') || 'Unknown'}
+                  </span>
                   <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
-                  <span>Created: {formatDate((selectedItem as any).createdAt || selectedItem.appliedAt)}</span>
+                    <span>Created: {formatDate((selectedItem as any).createdAt || selectedItem.appliedAt)}</span>
                   </div>
                 </div>
               </div>
@@ -1906,11 +1906,10 @@ export default function LeavesPage() {
               {/* Employee Info Card */}
               <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-900 p-6 shadow-lg border border-slate-200 dark:border-slate-700">
                 <div className="flex items-center gap-5">
-                  <div className={`w-16 h-16 rounded-2xl flex items-center justify-center text-white font-bold text-xl flex-shrink-0 shadow-lg ${
-                    detailType === 'leave' 
-                      ? 'bg-gradient-to-br from-blue-500 to-indigo-600' 
-                      : 'bg-gradient-to-br from-purple-500 to-red-600'
-                  }`}>
+                  <div className={`w-16 h-16 rounded-2xl flex items-center justify-center text-white font-bold text-xl flex-shrink-0 shadow-lg ${detailType === 'leave'
+                    ? 'bg-gradient-to-br from-blue-500 to-indigo-600'
+                    : 'bg-gradient-to-br from-purple-500 to-red-600'
+                    }`}>
                     {(selectedItem.employeeId?.employee_name?.[0] || selectedItem.emp_no?.[0] || 'E').toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -1947,11 +1946,10 @@ export default function LeavesPage() {
                 {/* Leave/OD Type */}
                 <div className="group relative overflow-hidden rounded-2xl bg-white dark:bg-slate-800 p-5 shadow-md hover:shadow-lg transition-all duration-300 border border-slate-200 dark:border-slate-700">
                   <div className="flex items-center gap-3 mb-2">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                      detailType === 'leave' 
-                        ? 'bg-blue-100 dark:bg-blue-900/30' 
-                        : 'bg-purple-100 dark:bg-purple-900/30'
-                    }`}>
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${detailType === 'leave'
+                      ? 'bg-blue-100 dark:bg-blue-900/30'
+                      : 'bg-purple-100 dark:bg-purple-900/30'
+                      }`}>
                       {detailType === 'leave' ? (
                         <CalendarIcon />
                       ) : (
@@ -1959,12 +1957,12 @@ export default function LeavesPage() {
                       )}
                     </div>
                     <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                    {detailType === 'leave' ? 'Leave Type' : 'OD Type'}
-                  </p>
+                      {detailType === 'leave' ? 'Leave Type' : 'OD Type'}
+                    </p>
                   </div>
                   <p className="text-lg font-bold text-slate-900 dark:text-white capitalize ml-14">
-                    {(detailType === 'leave' 
-                      ? (selectedItem as LeaveApplication).leaveType 
+                    {(detailType === 'leave'
+                      ? (selectedItem as LeaveApplication).leaveType
                       : (selectedItem as ODApplication).odType
                     )?.replace('_', ' ') || '-'}
                   </p>
@@ -2420,44 +2418,43 @@ export default function LeavesPage() {
                     {selectedItem.workflow.history
                       .filter((entry: any, idx: number, arr: any[]) => {
                         // Remove duplicates - check if same action, same timestamp, same person
-                        return idx === arr.findIndex((e: any) => 
-                          e.action === entry.action && 
+                        return idx === arr.findIndex((e: any) =>
+                          e.action === entry.action &&
                           e.actionBy?.toString() === entry.actionBy?.toString() &&
                           Math.abs(new Date(e.timestamp).getTime() - new Date(entry.timestamp).getTime()) < 1000
                         );
                       })
                       .map((entry: any, idx: number) => (
-                      <div key={idx} className="flex items-start gap-3 text-sm">
-                        <div className={`w-2 h-2 mt-1.5 rounded-full ${
-                          entry.action === 'approved' ? 'bg-green-500' :
-                          entry.action === 'rejected' ? 'bg-red-500' :
-                          entry.action === 'forwarded' ? 'bg-blue-500' :
-                          entry.action === 'revoked' ? 'bg-orange-500' :
-                          entry.action === 'status_changed' ? 'bg-purple-500' :
-                          'bg-slate-400'
-                        }`} />
-                        <div>
-                          <span className="font-medium text-slate-900 dark:text-white capitalize">
-                            {entry.action?.replace('_', ' ')}
-                          </span>
-                          <span className="text-slate-500"> by {entry.actionByName || 'Unknown'}</span>
-                          <p className="text-xs text-slate-400 mt-0.5">
-                            {new Date(entry.timestamp).toLocaleString()}
-                          </p>
-                          {entry.comments && (
-                            <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 italic">
-                              "{entry.comments}"
+                        <div key={idx} className="flex items-start gap-3 text-sm">
+                          <div className={`w-2 h-2 mt-1.5 rounded-full ${entry.action === 'approved' ? 'bg-green-500' :
+                            entry.action === 'rejected' ? 'bg-red-500' :
+                              entry.action === 'forwarded' ? 'bg-blue-500' :
+                                entry.action === 'revoked' ? 'bg-orange-500' :
+                                  entry.action === 'status_changed' ? 'bg-purple-500' :
+                                    'bg-slate-400'
+                            }`} />
+                          <div>
+                            <span className="font-medium text-slate-900 dark:text-white capitalize">
+                              {entry.action?.replace('_', ' ')}
+                            </span>
+                            <span className="text-slate-500"> by {entry.actionByName || 'Unknown'}</span>
+                            <p className="text-xs text-slate-400 mt-0.5">
+                              {new Date(entry.timestamp).toLocaleString()}
                             </p>
-                          )}
+                            {entry.comments && (
+                              <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 italic">
+                                "{entry.comments}"
+                              </p>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      ))}
                   </div>
                 </div>
               )}
 
               {/* Action Section */}
-                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-4">
+              <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-4">
                 {/* Revoke Button (if within 3 hours) */}
                 {canRevoke && (selectedItem.status === 'approved' || selectedItem.status === 'hod_approved' || selectedItem.status === 'hr_approved') && (
                   <div className="p-3 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800">
@@ -2477,7 +2474,7 @@ export default function LeavesPage() {
                           const response = detailType === 'leave'
                             ? await api.revokeLeaveApproval(selectedItem._id, revokeReason)
                             : await api.revokeODApproval(selectedItem._id, revokeReason);
-                          
+
                           if (response.success) {
                             Swal.fire({
                               icon: 'success',
@@ -2545,40 +2542,40 @@ export default function LeavesPage() {
                 {/* Approval Actions */}
                 {!['approved', 'rejected', 'cancelled'].includes(selectedItem.status) && (
                   <>
-                  <p className="text-xs text-slate-500 uppercase font-semibold">Take Action</p>
-                  
-                  {/* Comment */}
-                  <textarea
-                    value={actionComment}
-                    onChange={(e) => setActionComment(e.target.value)}
-                    placeholder="Add a comment (optional)..."
-                    rows={2}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                  />
-                  
-                  {/* Action Buttons */}
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      onClick={() => handleDetailAction('approve')}
-                      className="px-4 py-2 text-sm font-semibold text-white bg-green-500 rounded-xl hover:bg-green-600 transition-colors flex items-center gap-2"
-                    >
-                      <CheckIcon /> Approve
-                    </button>
-                    <button
-                      onClick={() => handleDetailAction('reject')}
-                      className="px-4 py-2 text-sm font-semibold text-white bg-red-500 rounded-xl hover:bg-red-600 transition-colors flex items-center gap-2"
-                    >
-                      <XIcon /> Reject
-                    </button>
-                    <button
-                      onClick={() => handleDetailAction('forward')}
-                      className="px-4 py-2 text-sm font-semibold text-white bg-blue-500 rounded-xl hover:bg-blue-600 transition-colors"
-                    >
-                      Forward to HR
-                    </button>
-                  </div>
+                    <p className="text-xs text-slate-500 uppercase font-semibold">Take Action</p>
+
+                    {/* Comment */}
+                    <textarea
+                      value={actionComment}
+                      onChange={(e) => setActionComment(e.target.value)}
+                      placeholder="Add a comment (optional)..."
+                      rows={2}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                    />
+
+                    {/* Action Buttons */}
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => handleDetailAction('approve')}
+                        className="px-4 py-2 text-sm font-semibold text-white bg-green-500 rounded-xl hover:bg-green-600 transition-colors flex items-center gap-2"
+                      >
+                        <CheckIcon /> Approve
+                      </button>
+                      <button
+                        onClick={() => handleDetailAction('reject')}
+                        className="px-4 py-2 text-sm font-semibold text-white bg-red-500 rounded-xl hover:bg-red-600 transition-colors flex items-center gap-2"
+                      >
+                        <XIcon /> Reject
+                      </button>
+                      <button
+                        onClick={() => handleDetailAction('forward')}
+                        className="px-4 py-2 text-sm font-semibold text-white bg-blue-500 rounded-xl hover:bg-blue-600 transition-colors"
+                      >
+                        Forward to HR
+                      </button>
+                    </div>
                   </>
-              )}
+                )}
               </div>
 
               {/* Close Button */}
@@ -2610,20 +2607,20 @@ export default function LeavesPage() {
               e.preventDefault();
               try {
                 const user = auth.getUser();
-                
+
                 // Clean up data before sending - convert empty strings to null for enum fields
                 const cleanedData: any = {
                   ...editFormData,
                   // Fix halfDayType - must be null if not half day, or valid enum value
-                  halfDayType: editFormData.isHalfDay 
-                    ? (editFormData.halfDayType || 'first_half') 
+                  halfDayType: editFormData.isHalfDay
+                    ? (editFormData.halfDayType || 'first_half')
                     : (editFormData.halfDayType === '' || editFormData.halfDayType === null ? null : editFormData.halfDayType),
                   // For hour-based OD, ensure times are properly set
-                  odStartTime: (detailType === 'od' && editFormData.odType_extended === 'hours') 
-                    ? (editFormData.odStartTime || null) 
+                  odStartTime: (detailType === 'od' && editFormData.odType_extended === 'hours')
+                    ? (editFormData.odStartTime || null)
                     : (editFormData.odStartTime === '' ? null : editFormData.odStartTime),
-                  odEndTime: (detailType === 'od' && editFormData.odType_extended === 'hours') 
-                    ? (editFormData.odEndTime || null) 
+                  odEndTime: (detailType === 'od' && editFormData.odType_extended === 'hours')
+                    ? (editFormData.odEndTime || null)
                     : (editFormData.odEndTime === '' ? null : editFormData.odEndTime),
                   changeReason: `Edited by ${user?.name || 'Admin'}`,
                 };
@@ -2750,11 +2747,10 @@ export default function LeavesPage() {
                     <button
                       type="button"
                       onClick={() => setEditFormData({ ...editFormData, odType_extended: 'full_day', isHalfDay: false, halfDayType: null, odStartTime: null, odEndTime: null })}
-                      className={`p-3 rounded-lg border-2 transition-all ${
-                        editFormData.odType_extended === 'full_day'
-                          ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
-                          : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
-                      }`}
+                      className={`p-3 rounded-lg border-2 transition-all ${editFormData.odType_extended === 'full_day'
+                        ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
+                        : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                        }`}
                     >
                       <div className="text-sm font-semibold text-slate-900 dark:text-white">Full Day</div>
                     </button>
@@ -2762,21 +2758,20 @@ export default function LeavesPage() {
                       type="button"
                       onClick={() => {
                         const endDate = editFormData.fromDate || editFormData.toDate;
-                        setEditFormData({ 
-                          ...editFormData, 
-                          odType_extended: 'half_day', 
+                        setEditFormData({
+                          ...editFormData,
+                          odType_extended: 'half_day',
                           isHalfDay: true,
-                          halfDayType: editFormData.halfDayType || 'first_half', 
-                          odStartTime: null, 
+                          halfDayType: editFormData.halfDayType || 'first_half',
+                          odStartTime: null,
                           odEndTime: null,
                           toDate: endDate || editFormData.fromDate
                         });
                       }}
-                      className={`p-3 rounded-lg border-2 transition-all ${
-                        editFormData.odType_extended === 'half_day'
-                          ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
-                          : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
-                      }`}
+                      className={`p-3 rounded-lg border-2 transition-all ${editFormData.odType_extended === 'half_day'
+                        ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
+                        : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                        }`}
                     >
                       <div className="text-sm font-semibold text-slate-900 dark:text-white">Half Day</div>
                     </button>
@@ -2784,19 +2779,18 @@ export default function LeavesPage() {
                       type="button"
                       onClick={() => {
                         const endDate = editFormData.fromDate || editFormData.toDate;
-                        setEditFormData({ 
-                          ...editFormData, 
-                          odType_extended: 'hours', 
+                        setEditFormData({
+                          ...editFormData,
+                          odType_extended: 'hours',
                           isHalfDay: false,
                           halfDayType: null,
                           toDate: endDate || editFormData.fromDate
                         });
                       }}
-                      className={`p-3 rounded-lg border-2 transition-all ${
-                        editFormData.odType_extended === 'hours'
-                          ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
-                          : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
-                      }`}
+                      className={`p-3 rounded-lg border-2 transition-all ${editFormData.odType_extended === 'hours'
+                        ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
+                        : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                        }`}
                     >
                       <div className="text-sm font-semibold text-slate-900 dark:text-white">Specific Hours</div>
                     </button>
@@ -2815,9 +2809,9 @@ export default function LeavesPage() {
                         value={editFormData.odStartTime || ''}
                         onChange={(e) => setEditFormData({ ...editFormData, odStartTime: e.target.value })}
                         required={editFormData.odType_extended === 'hours'}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  />
-                </div>
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      />
+                    </div>
                     <div>
                       <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">End Time *</label>
                       <input
@@ -2827,7 +2821,7 @@ export default function LeavesPage() {
                         required={editFormData.odType_extended === 'hours'}
                         className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                       />
-              </div>
+                    </div>
                   </div>
                   {editFormData.odStartTime && editFormData.odEndTime && (
                     <div className="p-3 bg-white dark:bg-slate-800 rounded-lg border border-purple-300 dark:border-purple-600">
@@ -2838,18 +2832,18 @@ export default function LeavesPage() {
                           const startMinutes = startHour * 60 + startMin;
                           const endMinutes = endHour * 60 + endMin;
                           const durationMinutes = endMinutes - startMinutes;
-                          
+
                           if (durationMinutes <= 0) {
                             return <span className="text-red-600 dark:text-red-400">❌ End time must be after start time</span>;
                           }
-                          
+
                           const hours = Math.floor(durationMinutes / 60);
                           const mins = durationMinutes % 60;
-                          
+
                           if (durationMinutes > 480) {
                             return <span className="text-red-600 dark:text-red-400">❌ Maximum duration is 8 hours</span>;
                           }
-                          
+
                           return (
                             <span className="text-green-600 dark:text-green-400">
                               ✓ Duration: {hours}h {mins}m
@@ -2864,27 +2858,27 @@ export default function LeavesPage() {
 
               {/* Half Day (for non-hour-based OD) */}
               {!(detailType === 'od' && editFormData.odType_extended === 'hours') && (
-              <div className="flex items-center gap-4">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={editFormData.isHalfDay}
+                <div className="flex items-center gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editFormData.isHalfDay}
                       onChange={(e) => setEditFormData({ ...editFormData, isHalfDay: e.target.checked, halfDayType: e.target.checked ? (editFormData.halfDayType || 'first_half') : null })}
-                    className="w-4 h-4 rounded border-slate-300"
-                  />
-                  <span className="text-sm text-slate-700 dark:text-slate-300">Half Day</span>
-                </label>
-                {editFormData.isHalfDay && (
-                  <select
-                    value={editFormData.halfDayType || ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, halfDayType: e.target.value as 'first_half' | 'second_half' | null || null })}
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  >
-                    <option value="first_half">First Half</option>
-                    <option value="second_half">Second Half</option>
-                  </select>
-                )}
-              </div>
+                      className="w-4 h-4 rounded border-slate-300"
+                    />
+                    <span className="text-sm text-slate-700 dark:text-slate-300">Half Day</span>
+                  </label>
+                  {editFormData.isHalfDay && (
+                    <select
+                      value={editFormData.halfDayType || ''}
+                      onChange={(e) => setEditFormData({ ...editFormData, halfDayType: e.target.value as 'first_half' | 'second_half' | null || null })}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    >
+                      <option value="first_half">First Half</option>
+                      <option value="second_half">Second Half</option>
+                    </select>
+                  )}
+                </div>
               )}
 
               {/* Purpose */}

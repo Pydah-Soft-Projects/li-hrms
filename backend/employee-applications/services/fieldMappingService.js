@@ -74,7 +74,7 @@ const getPermanentFieldNames = () => {
   try {
     const schema = Employee.schema;
     const paths = schema.paths;
-    
+
     // Get all field names from schema
     const allFields = Object.keys(paths).filter((key) => {
       // Exclude virtuals, internal fields, and dynamicFields
@@ -87,10 +87,10 @@ const getPermanentFieldNames = () => {
         !EXCLUDED_FIELDS.includes(key)
       );
     });
-    
+
     // Merge with predefined list to ensure we don't miss any
     const mergedFields = [...new Set([...PERMANENT_FIELDS, ...allFields])];
-    
+
     return mergedFields.filter((field) => !EXCLUDED_FIELDS.includes(field));
   } catch (error) {
     console.error('Error getting permanent field names:', error);
@@ -110,21 +110,21 @@ const getPermanentFieldNames = () => {
 exports.extractPermanentFields = (sourceData, overrides = {}) => {
   const permanentFieldNames = getPermanentFieldNames();
   const permanentFields = {};
-  
+
   // Extract all permanent fields
   permanentFieldNames.forEach((fieldName) => {
     if (sourceData[fieldName] !== undefined && sourceData[fieldName] !== null) {
       permanentFields[fieldName] = sourceData[fieldName];
     }
   });
-  
+
   // Apply overrides (e.g., approvedSalary -> gross_salary)
   Object.keys(overrides).forEach((overrideKey) => {
     if (overrides[overrideKey] !== undefined && overrides[overrideKey] !== null) {
       permanentFields[overrideKey] = overrides[overrideKey];
     }
   });
-  
+
   return permanentFields;
 };
 
@@ -141,10 +141,10 @@ exports.extractDynamicFields = (sourceData, permanentFields = null) => {
   if (!permanentFields) {
     permanentFields = exports.extractPermanentFields(sourceData);
   }
-  
+
   const permanentFieldNames = Object.keys(permanentFields);
   const dynamicFields = {};
-  
+
   // Extract all non-permanent fields
   Object.keys(sourceData).forEach((key) => {
     if (
@@ -156,7 +156,7 @@ exports.extractDynamicFields = (sourceData, permanentFields = null) => {
       dynamicFields[key] = sourceData[key];
     }
   });
-  
+
   return dynamicFields;
 };
 
@@ -171,21 +171,21 @@ exports.extractDynamicFields = (sourceData, permanentFields = null) => {
 exports.transformApplicationToEmployee = (applicationData, overrides = {}) => {
   // Extract permanent fields
   const permanentFields = exports.extractPermanentFields(applicationData, overrides);
-  
+
   // Extract dynamic fields (from dynamicFields or from root level)
   let dynamicFields = {};
-  
+
   // If dynamicFields exists in application, use it
   if (applicationData.dynamicFields && typeof applicationData.dynamicFields === 'object') {
     dynamicFields = { ...applicationData.dynamicFields };
   }
-  
+
   // Also check for any fields in root that should be dynamic
   const rootDynamicFields = exports.extractDynamicFields(applicationData, permanentFields);
   if (Object.keys(rootDynamicFields).length > 0) {
     dynamicFields = { ...dynamicFields, ...rootDynamicFields };
   }
-  
+
   return {
     permanentFields,
     dynamicFields: Object.keys(dynamicFields).length > 0 ? dynamicFields : {},
@@ -196,4 +196,52 @@ exports.transformApplicationToEmployee = (applicationData, overrides = {}) => {
  * Get permanent field names (for reference)
  */
 exports.getPermanentFieldNames = getPermanentFieldNames;
+
+/**
+ * Resolve qualification field IDs to Labels
+ * 
+ * @param {Array} qualifications - Array of qualification objects
+ * @param {Object} settings - EmployeeApplicationFormSettings object
+ * @returns {Array} Qualifications with resolved labels
+ */
+exports.resolveQualificationLabels = (qualifications, settings) => {
+  if (!qualifications || !Array.isArray(qualifications) || qualifications.length === 0) {
+    return [];
+  }
+
+  if (!settings || !settings.qualifications || !settings.qualifications.fields) {
+    console.log('[resolveQualificationLabels] No qualifications config in settings');
+    return qualifications;
+  }
+
+  // Create ID -> Label map
+  const fieldMap = {};
+  settings.qualifications.fields.forEach(field => {
+    if (field.id && field.label) {
+      fieldMap[field.id] = field.label;
+    }
+  });
+
+  console.log('[resolveQualificationLabels] Field Mapping:', JSON.stringify(fieldMap));
+  console.log('[resolveQualificationLabels] Input Qualifications:', JSON.stringify(qualifications));
+
+  const resolved = qualifications.map((qual, index) => {
+    const resolvedQual = {};
+
+    Object.keys(qual).forEach(key => {
+      // If key matches a field ID, use the label
+      if (fieldMap[key]) {
+        resolvedQual[fieldMap[key]] = qual[key];
+      } else {
+        // Otherwise keep original key (e.g. for certificate URLs or unknown fields)
+        resolvedQual[key] = qual[key];
+      }
+    });
+
+    console.log(`[resolveQualificationLabels] Resolved [${index}]:`, JSON.stringify(resolvedQual));
+    return resolvedQual;
+  });
+
+  return resolved;
+};
 

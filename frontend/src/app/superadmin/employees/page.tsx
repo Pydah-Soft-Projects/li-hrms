@@ -120,7 +120,7 @@ const initialFormState: Partial<Employee> = {
   gender: '',
   marital_status: '',
   blood_group: '',
-  qualifications: '',
+  qualifications: [],
   experience: undefined,
   address: '',
   location: '',
@@ -154,9 +154,11 @@ export default function EmployeesPage() {
   const [showApprovalDialog, setShowApprovalDialog] = useState(false);
   const [selectedApplication, setSelectedApplication] = useState<EmployeeApplication | null>(null);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  const [editingApplicationID, setEditingApplicationID] = useState<string | null>(null); // Track ID of application being edited
   const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
   const [showViewDialog, setShowViewDialog] = useState(false);
   const [formData, setFormData] = useState<Partial<Employee>>(initialFormState);
+  const [formSettings, setFormSettings] = useState<any>(null); // To store dynamic settings for mapping
   const [applicationFormData, setApplicationFormData] = useState<Partial<EmployeeApplication & { proposedSalary: number }>>({ ...initialFormState, proposedSalary: 0 });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [approvalData, setApprovalData] = useState({ approvedSalary: 0, doj: '', comments: '' });
@@ -174,6 +176,13 @@ export default function EmployeesPage() {
   const [passwordMode, setPasswordMode] = useState<'random' | 'phone_empno'>('random');
   const [notificationChannels, setNotificationChannels] = useState({ email: true, sms: true });
   const [isResending, setIsResending] = useState<string | null>(null);
+  const [selectedApplicationIds, setSelectedApplicationIds] = useState<string[]>([]);
+
+  const [dynamicTemplate, setDynamicTemplate] = useState<{ headers: string[]; sample: any[]; columns: any[] }>({
+    headers: EMPLOYEE_TEMPLATE_HEADERS,
+    sample: EMPLOYEE_TEMPLATE_SAMPLE,
+    columns: [],
+  });
 
   // Allowance/Deduction defaults & overrides
   const [componentDefaults, setComponentDefaults] = useState<{ allowances: any[]; deductions: any[] }>({
@@ -472,6 +481,7 @@ export default function EmployeesPage() {
     }
     loadEmployees();
     loadDepartments();
+    loadFormSettings();
     if (activeTab === 'applications') {
       loadApplications();
     }
@@ -558,6 +568,181 @@ export default function EmployeesPage() {
     }
   }, [applicationFormData.department_id, applicationFormData.designation_id, designations]);
 
+  const loadFormSettings = async () => {
+    try {
+      const response = await api.getFormSettings();
+      if (response.success && response.data) {
+        setFormSettings(response.data);
+        generateDynamicTemplate(response.data);
+      }
+    } catch (err) {
+      console.error('Error loading form settings:', err);
+    }
+  };
+
+  const generateDynamicTemplate = (settings: any) => {
+    if (!settings || !settings.groups) return;
+
+    const headers: string[] = [];
+    const sample: any = {};
+    const columns: any[] = [];
+
+    // Permanent fields that must always be there
+    const permanentFields = [
+      { id: 'emp_no', label: 'Emp No', sample: 'EMP001', width: '100px' },
+      { id: 'employee_name', label: 'Name', sample: 'John Doe', width: '150px' },
+      { id: 'proposedSalary', label: 'Proposed Salary', sample: 50000, width: '120px', type: 'number' },
+    ];
+
+    permanentFields.forEach(f => {
+      headers.push(f.id);
+      sample[f.id] = f.sample;
+      columns.push({ key: f.id, label: f.label, width: f.width, type: f.type || 'text' });
+    });
+
+    // Department and Designation names (for matching)
+    headers.push('department_name');
+    sample['department_name'] = 'Information Technology';
+    columns.push({ key: 'department_name', label: 'Department' });
+
+    headers.push('designation_name');
+    sample['designation_name'] = 'Software Developer';
+    columns.push({ key: 'designation_name', label: 'Designation' });
+
+    // Add fields from settings
+    settings.groups.forEach((group: any) => {
+      if (!group.isEnabled) return;
+      group.fields.forEach((field: any) => {
+        if (!field.isEnabled) return;
+        // Skip already added permanent fields
+        if (headers.includes(field.id)) return;
+
+        headers.push(field.id);
+
+        // Value placeholder/sample
+        if (field.type === 'date') {
+          sample[field.id] = '2024-01-01';
+          columns.push({ key: field.id, label: field.label, type: 'date' });
+        } else if (field.type === 'number') {
+          sample[field.id] = 0;
+          columns.push({ key: field.id, label: field.label, type: 'number' });
+        } else if (field.type === 'select') {
+          sample[field.id] = field.options?.[0]?.value || '';
+          columns.push({ key: field.id, label: field.label, type: 'select', options: field.options });
+        } else if (field.type === 'array' || field.type === 'object') {
+          sample[field.id] = field.type === 'array' ? 'item1, item2' : 'key1:val1|key2:val2';
+          columns.push({ key: field.id, label: field.label });
+        } else {
+          sample[field.id] = '';
+          columns.push({ key: field.id, label: field.label });
+        }
+      });
+    });
+
+    // Special handling for qualifications if enabled
+    if (settings.qualifications?.isEnabled) {
+      if (!headers.includes('qualifications')) {
+        headers.push('qualifications');
+        sample['qualifications'] = 'Degree:Year, Degree:Year';
+        columns.push({ key: 'qualifications', label: 'Qualifications' });
+      }
+    }
+
+    setDynamicTemplate({
+      headers,
+      sample: [sample],
+      columns: columns.map(c => ({ ...c, width: c.width || '150px' }))
+    });
+  };
+
+  const toggleSelectApplication = (id: string) => {
+    setSelectedApplicationIds(prev =>
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleBulkApprove = async () => {
+    if (selectedApplicationIds.length === 0) return;
+
+    if (!confirm(`Are you sure you want to approve ${selectedApplicationIds.length} selected applications using their proposed salaries?`)) {
+      return;
+    }
+
+    try {
+      setLoadingApplications(true);
+      setError('');
+      setSuccess('');
+
+      // Simple bulk settings: proposed salary for all, today's DOJ
+      const bulkSettings = {
+        doj: new Date().toISOString().split('T')[0],
+        comments: 'Bulk approved',
+      };
+
+      const response = await api.bulkApproveEmployeeApplications(selectedApplicationIds, bulkSettings);
+
+      if (response.success) {
+        setSuccess(`Bulk approval completed! Succeeded: ${response.data.successCount}, Failed: ${response.data.failCount}`);
+      } else {
+        setError(response.message || 'Bulk approval failed or partially failed');
+        if (response.data?.successCount > 0) {
+          setSuccess(`Partially completed. Succeeded: ${response.data.successCount}`);
+        }
+      }
+
+      setSelectedApplicationIds([]);
+      loadApplications();
+      loadEmployees();
+    } catch (err: any) {
+      setError(err.message || 'An error occurred during bulk approval');
+      console.error(err);
+    } finally {
+      setLoadingApplications(false);
+    }
+  };
+
+  const parseDynamicField = (value: any, fieldDef: any) => {
+    if (value === undefined || value === null || value === '') return undefined;
+
+    if (fieldDef.type === 'array') {
+      if (fieldDef.dataType === 'object' || fieldDef.itemType === 'object') {
+        return String(value).split(',').map((item: string) => {
+          const obj: any = {};
+          if (item.includes('|')) {
+            item.split('|').forEach(part => {
+              const [k, v] = part.split(':').map(s => s.trim());
+              if (k && v) obj[k] = v;
+            });
+          } else if (item.includes(':')) {
+            const [v1, v2] = item.split(':').map(s => s.trim());
+            const fields = fieldDef.itemSchema?.fields || fieldDef.fields || [];
+            if (fields[0]) obj[fields[0].id] = v1;
+            if (fields[1]) obj[fields[1].id] = v2;
+          } else {
+            const fields = fieldDef.itemSchema?.fields || fieldDef.fields || [];
+            if (fields[0]) obj[fields[0].id] = item.trim();
+          }
+          return obj;
+        });
+      } else {
+        return String(value).split(',').map((item: string) => item.trim());
+      }
+    }
+
+    if (fieldDef.type === 'object') {
+      const obj: any = {};
+      String(value).split('|').forEach((part: string) => {
+        const [k, v] = part.split(':').map((s: string) => s.trim());
+        if (k && v) obj[k] = v;
+      });
+      return obj;
+    }
+
+    if (fieldDef.type === 'number') return Number(value);
+
+    return value;
+  };
+
   const loadEmployees = async () => {
     try {
       setLoading(true);
@@ -632,6 +817,7 @@ export default function EmployeesPage() {
       const response = await api.getEmployeeApplications();
       if (response.success) {
         setApplications(response.data || []);
+        setSelectedApplicationIds([]); // Reset selection on reload
       }
     } catch (err) {
       console.error('Error loading applications:', err);
@@ -690,7 +876,7 @@ export default function EmployeesPage() {
     }
 
     try {
-      // Ensure paidLeaves is always sent (even if 0)
+      // Clean up enum fields - convert empty strings to null/undefined
       const submitData = {
         ...formData,
         employeeAllowances: buildOverridePayload(componentDefaults.allowances, overrideAllowances, overrideAllowancesBasedOnPresentDays, 'allowance'),
@@ -701,11 +887,68 @@ export default function EmployeesPage() {
         calculatedSalary: salarySummary.netSalary,
       };
 
+      const enumFields = ['gender', 'marital_status', 'blood_group'];
+      enumFields.forEach(field => {
+        if ((submitData as any)[field] === '' || (submitData as any)[field] === undefined) {
+          (submitData as any)[field] = null;
+        }
+      });
+      // Convert empty strings to undefined for other optional fields
+      Object.keys(submitData).forEach(key => {
+        if ((submitData as any)[key] === '' && !enumFields.includes(key) && key !== 'qualifications') {
+          (submitData as any)[key] = undefined;
+        }
+      });
+
+      // Construct FormData for multipart/form-data submission
+      const payload = new FormData();
+
+      // Append standard fields
+      Object.entries(submitData).forEach(([key, value]) => {
+        if (key === 'qualifications') return; // Handle separately
+        if (value === undefined || value === null) return;
+
+        if (typeof value === 'object' && !(value instanceof Date)) {
+          payload.append(key, JSON.stringify(value));
+        } else {
+          payload.append(key, String(value));
+        }
+      });
+
+      // Handle Qualifications - Map Field IDs to Labels
+      const qualities = Array.isArray(formData.qualifications) ? formData.qualifications : [];
+
+      // Create a mapping from Field ID -> Label using formSettings
+      const fieldIdToLabelMap: Record<string, string> = {};
+      if (formSettings?.qualifications?.fields) {
+        formSettings.qualifications.fields.forEach((f: any) => {
+          fieldIdToLabelMap[f.id] = f.label;
+        });
+      }
+
+      const cleanQualifications = qualities.map((q: any, index: number) => {
+        const { certificateFile, ...rest } = q;
+
+        // Transform keys from Field ID to Label (e.g. key "degree" -> "Degree")
+        const transformedQ: any = {};
+        Object.entries(rest).forEach(([key, val]) => {
+          // If key matches a known field ID, use its label; otherwise keep key
+          const label = fieldIdToLabelMap[key] || key;
+          transformedQ[label] = val;
+        });
+
+        if (certificateFile instanceof File) {
+          payload.append(`qualification_cert_${index}`, certificateFile);
+        }
+        return transformedQ;
+      });
+      payload.append('qualifications', JSON.stringify(cleanQualifications));
+
       let response;
       if (editingEmployee) {
-        response = await api.updateEmployee(editingEmployee.emp_no, submitData);
+        response = await api.updateEmployee(editingEmployee.emp_no, payload as any);
       } else {
-        response = await api.createEmployee(submitData);
+        response = await api.createEmployee(payload as any);
       }
 
       if (response.success) {
@@ -730,10 +973,73 @@ export default function EmployeesPage() {
     }
   };
 
-  const handleEdit = (employee: Employee) => {
-    setEditingEmployee(employee);
+  const handleEdit = (record: any) => {
+    // Determine if we are editing an Employee or an Application based on activeTab
+    if (activeTab === 'applications') {
+      // --- APPLICATION EDIT LOGIC ---
+      setEditingApplicationID(record._id);
 
-    // Extract paidLeaves - check multiple possible locations
+      // Clone data to avoid mutation
+      const appData = { ...record };
+
+      // Reverse Map Qualification Labels -> Field IDs
+      if (appData.qualifications && Array.isArray(appData.qualifications) && formSettings?.qualifications?.fields) {
+        appData.qualifications = appData.qualifications.map((q: any) => {
+          const newQ: any = {};
+          // Preserve certificate meta
+          if (q.certificateUrl) newQ.certificateUrl = q.certificateUrl;
+
+          // Map fields
+          Object.entries(q).forEach(([key, val]) => {
+            if (key === 'certificateUrl') return;
+
+            // Find field definition where label matches key
+            const fieldDef = formSettings.qualifications.fields.find((f: any) => f.label === key);
+            if (fieldDef) {
+              newQ[fieldDef.id] = val;
+            } else {
+              // Keep original if no match (fallback)
+              newQ[key] = val;
+            }
+          });
+          return newQ;
+        });
+      }
+
+      setApplicationFormData(appData);
+      setShowApplicationDialog(true);
+      return;
+    }
+
+    // --- EMPLOYEE EDIT LOGIC (Existing) ---
+    const employee = record as Employee;
+
+    // Clone employee to avoid mutation during transformation
+    const empData = { ...employee };
+
+    // Reverse Map Qualification Labels -> Field IDs (Fix for Missing Values on Edit)
+    if (empData.qualifications && Array.isArray(empData.qualifications) && formSettings?.qualifications?.fields) {
+      empData.qualifications = empData.qualifications.map((q: any) => {
+        const newQ: any = {};
+        if (q.certificateUrl) newQ.certificateUrl = q.certificateUrl;
+
+        Object.entries(q).forEach(([key, val]) => {
+          if (key === 'certificateUrl') return;
+          const fieldDef = formSettings.qualifications.fields.find((f: any) => f.label === key);
+          if (fieldDef) {
+            newQ[fieldDef.id] = val;
+          } else {
+            newQ[key] = val;
+          }
+        });
+        return newQ;
+      });
+    }
+
+    setEditingEmployee(empData as Employee); // Use transform data
+    setEditingApplicationID(null);
+
+    // Extract paidLeaves
     let paidLeavesValue = 0;
     if (employee.paidLeaves !== undefined && employee.paidLeaves !== null) {
       paidLeavesValue = Number(employee.paidLeaves);
@@ -746,7 +1052,7 @@ export default function EmployeesPage() {
       }
     }
 
-    // Extract allottedLeaves - check multiple possible locations
+    // Extract allottedLeaves
     let allottedLeavesValue = 0;
     if (employee.allottedLeaves !== undefined && employee.allottedLeaves !== null) {
       allottedLeavesValue = Number(employee.allottedLeaves);
@@ -766,7 +1072,7 @@ export default function EmployeesPage() {
         qualificationsValue = employee.qualifications;
       } else if (typeof employee.qualifications === 'string') {
         // Old format - convert to array if needed
-        qualificationsValue = [];
+        qualificationsValue = employee.qualifications.split(',').map(s => ({ degree: s.trim() }));
       }
     }
     // Also check in dynamicFields
@@ -995,54 +1301,96 @@ export default function EmployeesPage() {
     setFormErrors({});
 
     try {
-      // Clean up enum fields - convert empty strings to null/undefined
-      const cleanedData: any = { ...applicationFormData };
-      const enumFields = ['gender', 'marital_status', 'blood_group'];
-      enumFields.forEach(field => {
-        if (cleanedData[field] === '' || cleanedData[field] === undefined) {
-          cleanedData[field] = null;
-        }
-      });
-      // Convert empty strings to undefined for other optional fields
-      Object.keys(cleanedData).forEach(key => {
-        if (cleanedData[key] === '' && !enumFields.includes(key)) {
-          cleanedData[key] = undefined;
-        }
-      });
-
-      // Normalize qualifications for backend (expects string)
-      const qualificationsPayload = Array.isArray(applicationFormData.qualifications)
-        ? JSON.stringify(applicationFormData.qualifications)
-        : applicationFormData.qualifications;
-
-      const response = await api.createEmployeeApplication({
-        ...cleanedData,
-        proposedSalary: applicationFormData.proposedSalary,
-        qualifications: qualificationsPayload,
+      // 1. Clean up enum fields & Prepare Submit Data
+      console.log('Submitting Application Payload:', applicationFormData); // DEBUG
+      const submitData = {
+        ...applicationFormData,
         employeeAllowances: buildOverridePayload(componentDefaults.allowances, overrideAllowances, overrideAllowancesBasedOnPresentDays, 'allowance'),
         employeeDeductions: buildOverridePayload(componentDefaults.deductions, overrideDeductions, overrideDeductionsBasedOnPresentDays, 'deduction'),
         ctcSalary: applicationSalarySummary.ctcSalary,
         calculatedSalary: applicationSalarySummary.netSalary,
+      };
+
+      const enumFields = ['gender', 'marital_status', 'blood_group'];
+      enumFields.forEach(field => {
+        if ((submitData as any)[field] === '' || (submitData as any)[field] === undefined) {
+          (submitData as any)[field] = null;
+        }
+      });
+      // Convert empty strings to undefined for other optional fields
+      Object.keys(submitData).forEach(key => {
+        if ((submitData as any)[key] === '' && !enumFields.includes(key) && key !== 'qualifications') {
+          (submitData as any)[key] = undefined;
+        }
       });
 
+      // 2. Construct FormData
+      const payload = new FormData();
+
+      // Append standard fields
+      Object.entries(submitData).forEach(([key, value]) => {
+        if (key === 'qualifications') return; // Handle separately
+        if (value === undefined || value === null) return;
+
+        if (typeof value === 'object' && !(value instanceof Date)) {
+          payload.append(key, JSON.stringify(value));
+        } else {
+          payload.append(key, String(value));
+        }
+      });
+
+      // 3. Handle Qualifications (Label Mapping & Files)
+      const qualities = Array.isArray(applicationFormData.qualifications) ? applicationFormData.qualifications : [];
+
+      // Create a mapping from Field ID -> Label using formSettings
+      const fieldIdToLabelMap: Record<string, string> = {};
+      if (formSettings?.qualifications?.fields) {
+        formSettings.qualifications.fields.forEach((f: any) => {
+          fieldIdToLabelMap[f.id] = f.label;
+        });
+      }
+
+      const cleanQualifications = qualities.map((q: any, index: number) => {
+        const { certificateFile, ...rest } = q;
+
+        // Transform keys from Field ID to Label
+        const transformedQ: any = {};
+        Object.entries(rest).forEach(([key, val]) => {
+          const label = fieldIdToLabelMap[key] || key;
+          transformedQ[label] = val;
+        });
+
+        if (certificateFile instanceof File) {
+          payload.append(`qualification_cert_${index}`, certificateFile);
+        }
+        return transformedQ;
+      });
+      payload.append('qualifications', JSON.stringify(cleanQualifications));
+
+      // 4. Submit
+      let response;
+      if (editingApplicationID) {
+        response = await api.updateEmployeeApplication(editingApplicationID, payload as any);
+      } else {
+        response = await api.createEmployeeApplication(payload as any);
+      }
+
       if (response.success) {
-        setSuccess('Employee application created successfully!');
+        setSuccess(editingApplicationID ? 'Application updated successfully!' : 'Application created successfully!');
         setShowApplicationDialog(false);
-        setApplicationFormData({ ...initialFormState, proposedSalary: 0 });
-        setFormErrors({});
+        setApplicationFormData({ ...initialFormState, qualifications: [], employeeAllowances: [], employeeDeductions: [] });
+        setEditingApplicationID(null);
+        // Refresh list
         loadApplications();
       } else {
-        // Handle validation errors
-        if ((response as any).errors) {
-          setFormErrors((response as any).errors);
-          setError('Please fix the errors below');
-        } else {
-          setError(response.message || 'Failed to create application');
-        }
+        // ... error handling
+        const errorMsg = response.message || 'Operation failed';
+        const errorDetails = (response as any).errors ? Object.values((response as any).errors).join(', ') : '';
+        setError(errorDetails ? `${errorMsg}: ${errorDetails}` : errorMsg);
       }
     } catch (err) {
+      console.error('Submit error:', err);
       setError('An error occurred');
-      console.error(err);
     }
   };
 
@@ -1169,6 +1517,15 @@ export default function EmployeesPage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={() => activeTab === 'employees' ? loadEmployees() : loadApplications()}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-all dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Refresh
+            </button>
             <Link
               href="/superadmin/employees/form-settings"
               className="flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-all hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-blue-500 dark:hover:bg-blue-900/30 dark:hover:text-blue-400"
@@ -1183,19 +1540,19 @@ export default function EmployeesPage() {
               onClick={() => setShowBulkUpload(true)}
               className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
             >
-              <svg className="mr-2 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="mr-2 inline h-4 w-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
               </svg>
               Bulk Upload
             </button>
             <button
-              onClick={openCreateDialog}
+              onClick={() => setShowApplicationDialog(true)}
               className="rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
             >
               <svg className="mr-2 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
-              Add Employee
+              New Application
             </button>
           </div>
         </div>
@@ -1244,17 +1601,14 @@ export default function EmployeesPage() {
           <>
             {/* Applications Header */}
             <div className="mb-6 flex items-center justify-between">
-              <div className="flex gap-3">
-                {(userRole === 'hr' || userRole === 'super_admin' || userRole === 'sub_admin') && (
-                  <button
-                    onClick={openApplicationDialog}
-                    className="group relative inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-green-500 to-green-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600 hover:shadow-xl hover:shadow-green-500/40"
-                  >
-                    <span className="text-lg">+</span>
-                    <span>New Application</span>
-                  </button>
-                )}
-              </div>
+              {selectedApplicationIds.length > 0 && (userRole === 'super_admin' || userRole === 'sub_admin') && (
+                <button
+                  onClick={handleBulkApprove}
+                  className="group relative inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-700 hover:to-indigo-700 hover:shadow-xl hover:shadow-blue-500/40"
+                >
+                  <span>Approve Selected ({selectedApplicationIds.length})</span>
+                </button>
+              )}
               <input
                 type="text"
                 placeholder="Search applications..."
@@ -1292,6 +1646,20 @@ export default function EmployeesPage() {
                       <table className="w-full">
                         <thead>
                           <tr className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-green-50/30 dark:border-slate-700 dark:from-slate-900 dark:to-green-900/10">
+                            <th className="px-6 py-4 text-left">
+                              <input
+                                type="checkbox"
+                                checked={selectedApplicationIds.length === pendingApplications.length && pendingApplications.length > 0}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedApplicationIds(pendingApplications.map(app => app._id));
+                                  } else {
+                                    setSelectedApplicationIds([]);
+                                  }
+                                }}
+                                className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500 dark:border-slate-700 dark:bg-slate-800"
+                              />
+                            </th>
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Emp No</th>
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Name</th>
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Department</th>
@@ -1303,6 +1671,14 @@ export default function EmployeesPage() {
                         <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                           {pendingApplications.map((app) => (
                             <tr key={app._id} className="transition-colors hover:bg-green-50/30 dark:hover:bg-green-900/10">
+                              <td className="px-6 py-4">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedApplicationIds.includes(app._id)}
+                                  onChange={() => toggleSelectApplication(app._id)}
+                                  className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500 dark:border-slate-700 dark:bg-slate-800"
+                                />
+                              </td>
                               <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-green-600 dark:text-green-400">
                                 {app.emp_no}
                               </td>
@@ -2328,6 +2704,8 @@ export default function EmployeesPage() {
                 errors={{}}
                 departments={departments}
                 designations={designations}
+                onSettingsLoaded={setFormSettings}
+                simpleUpload={true}
               />
 
               {/* Leave Settings */}
@@ -2582,19 +2960,18 @@ export default function EmployeesPage() {
       {showBulkUpload && (
         <BulkUpload
           title="Bulk Upload Employees"
-          templateHeaders={EMPLOYEE_TEMPLATE_HEADERS}
-          templateSample={EMPLOYEE_TEMPLATE_SAMPLE}
+          templateHeaders={dynamicTemplate.headers}
+          templateSample={dynamicTemplate.sample}
           templateFilename="employee_template"
-          columns={[
-            { key: 'emp_no', label: 'Emp No', width: '100px' },
-            { key: 'employee_name', label: 'Name', width: '150px' },
-            { key: 'department_name', label: 'Department', type: 'select', options: departments.map(d => ({ value: d.name, label: d.name })), width: '150px' },
-            { key: 'designation_name', label: 'Designation', width: '150px' },
-            { key: 'doj', label: 'DOJ', type: 'date', width: '120px' },
-            { key: 'gender', label: 'Gender', type: 'select', options: [{ value: 'Male', label: 'Male' }, { value: 'Female', label: 'Female' }, { value: 'Other', label: 'Other' }], width: '100px' },
-            { key: 'phone_number', label: 'Phone', width: '120px' },
-            { key: 'email', label: 'Email', width: '180px' },
-          ]}
+          columns={dynamicTemplate.columns.map(col => {
+            if (col.key === 'department_name') {
+              return { ...col, type: 'select', options: departments.map(d => ({ value: d.name, label: d.name })) };
+            }
+            if (col.key === 'gender') {
+              return { ...col, type: 'select', options: [{ value: 'Male', label: 'Male' }, { value: 'Female', label: 'Female' }, { value: 'Other', label: 'Other' }] };
+            }
+            return col;
+          })}
           validateRow={(row) => {
             const result = validateEmployeeRow(row, departments, designations);
             return { isValid: result.isValid, errors: result.errors };
@@ -2613,43 +2990,45 @@ export default function EmployeesPage() {
                   d.department === deptId
                 )?._id;
 
-                const employeeData = {
-                  emp_no: row.emp_no,
-                  employee_name: row.employee_name,
+                const payload: any = {
+                  ...row,
                   department_id: deptId || undefined,
                   designation_id: desigId || undefined,
-                  doj: row.doj || undefined,
-                  dob: row.dob || undefined,
-                  gross_salary: row.gross_salary ? Number(row.gross_salary) : undefined,
-                  gender: row.gender || undefined,
-                  marital_status: row.marital_status || undefined,
-                  blood_group: row.blood_group || undefined,
-                  qualifications: row.qualifications || undefined,
-                  experience: row.experience ? Number(row.experience) : undefined,
-                  address: row.address || undefined,
-                  location: row.location || undefined,
-                  aadhar_number: row.aadhar_number || undefined,
-                  phone_number: row.phone_number || undefined,
-                  alt_phone_number: row.alt_phone_number || undefined,
-                  email: row.email || undefined,
-                  pf_number: row.pf_number || undefined,
-                  esi_number: row.esi_number || undefined,
-                  bank_account_no: row.bank_account_no || undefined,
-                  bank_name: row.bank_name || undefined,
-                  bank_place: row.bank_place || undefined,
-                  ifsc_code: row.ifsc_code || undefined,
+                  proposedSalary: row.proposedSalary || row.gross_salary || 0
                 };
 
-                const response = await api.createEmployee(employeeData);
+                // Handle dynamic fields based on form settings
+                if (formSettings?.groups) {
+                  const dynamicFields: any = {};
+                  formSettings.groups.forEach((group: any) => {
+                    group.fields.forEach((field: any) => {
+                      if (row[field.id] !== undefined) {
+                        dynamicFields[field.id] = parseDynamicField(row[field.id], field);
+                        // Clear from root payload if it's a dynamic field
+                        if (!['emp_no', 'employee_name', 'proposedSalary', 'gross_salary', 'department_id', 'designation_id', 'doj', 'dob', 'gender', 'marital_status', 'blood_group', 'qualifications', 'experience', 'address', 'location', 'aadhar_number', 'phone_number', 'alt_phone_number', 'email', 'pf_number', 'esi_number', 'bank_account_no', 'bank_name', 'bank_place', 'ifsc_code'].includes(field.id)) {
+                          delete payload[field.id];
+                        }
+                      }
+                    });
+                  });
+                  payload.dynamicFields = dynamicFields;
+                }
+
+                // Handle special case for qualifications if enabled
+                if (formSettings?.qualifications?.isEnabled && row.qualifications) {
+                  payload.qualifications = parseDynamicField(row.qualifications, { type: 'array', dataType: 'object' });
+                }
+
+                const response = await api.createEmployeeApplication(payload);
                 if (response.success) {
                   successCount++;
                 } else {
                   failCount++;
-                  errors.push(`${row.emp_no}: ${response.message}`);
+                  errors.push(`${row.emp_no}: ${response.message || 'Unknown error'}`);
                 }
-              } catch (err) {
+              } catch (err: any) {
                 failCount++;
-                errors.push(`${row.emp_no}: Failed to create`);
+                errors.push(`${row.emp_no}: ${err.message || 'System error'}`);
               }
             }
 

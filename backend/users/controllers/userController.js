@@ -45,6 +45,8 @@ exports.registerUser = async (req, res) => {
       autoGeneratePassword,
       assignWorkspace,
       scope,
+      departmentType,
+      featureControl,
     } = req.body;
 
     // Validate required fields
@@ -65,7 +67,7 @@ exports.registerUser = async (req, res) => {
     }
 
     // Generate or use provided password
-    const userPassword = autoGeneratePassword ? await generatePassword(employeeId ? { _id: employeeId } : null) : password;
+    const userPassword = autoGeneratePassword ? await generatePassword() : password;
     if (!userPassword) {
       return res.status(400).json({
         success: false,
@@ -81,11 +83,12 @@ exports.registerUser = async (req, res) => {
       });
     }
 
+
     // Build roles array
     const userRoles = roles && roles.length > 0 ? roles : [role];
 
-    // Create user
-    const user = await User.create({
+    // Build user object conditionally to avoid null values on unique sparse fields
+    const userData = {
       email: email.toLowerCase(),
       password: userPassword,
       name,
@@ -93,11 +96,18 @@ exports.registerUser = async (req, res) => {
       roles: userRoles,
       department: department || null,
       departments: departments || (department ? [department] : []),
-      employeeId: employeeId || null,
-      employeeRef: employeeRef || null,
       scope: scope || 'global',
+      departmentType: departmentType || 'single',
+      featureControl: featureControl || [],
       createdBy: req.user?._id,
-    });
+    };
+
+    // Only add employeeId and employeeRef if they have values (sparse index)
+    if (employeeId) userData.employeeId = employeeId;
+    if (employeeRef) userData.employeeRef = employeeRef;
+
+    // Create user
+    const user = await User.create(userData);
 
     // Valid HOD Sync: Update Department with HOD ID
     if (role === 'hod' && department) {
@@ -163,6 +173,7 @@ exports.registerUser = async (req, res) => {
         employeeId: user.employeeId,
         employeeRef: user.employeeRef,
         scope: user.scope,
+        departmentType: user.departmentType,
         isActive: user.isActive,
         createdAt: user.createdAt,
       },
@@ -203,10 +214,13 @@ exports.createUserFromEmployee = async (req, res) => {
       departments, // For HR: multiple departments
       autoGeneratePassword,
       scope,
+      departmentType,
+      featureControl,
     } = req.body;
 
-    // Find employee
+    // Find employee (including password for inheritance)
     const employee = await Employee.findOne({ emp_no: employeeId })
+      .select('+password')
       .populate('department_id', 'name')
       .populate('designation_id', 'name');
 
@@ -252,12 +266,20 @@ exports.createUserFromEmployee = async (req, res) => {
       });
     }
 
-    // Generate or use provided password
-    const userPassword = autoGeneratePassword ? await generatePassword(employee) : password;
+    // Generate, inherit, or use provided password
+    let userPassword = password;
+    if (autoGeneratePassword) {
+      userPassword = await generatePassword(employee);
+    } else if (!userPassword && employee.password) {
+      // INHERIT PASSWORD FROM EMPLOYEE If none provided
+      console.log(`[UserController] Inheriting password from employee ${employeeId}`);
+      userPassword = employee.password;
+    }
+
     if (!userPassword) {
       return res.status(400).json({
         success: false,
-        message: 'Password is required',
+        message: 'Password is required. No password provided and employee has no password.',
       });
     }
 
@@ -286,6 +308,8 @@ exports.createUserFromEmployee = async (req, res) => {
       employeeId: employee.emp_no,
       employeeRef: employee._id,
       scope: scope || 'global',
+      departmentType: departmentType || (role === 'hr' ? 'multiple' : 'single'),
+      featureControl: featureControl || [],
       createdBy: req.user?._id,
     });
 
@@ -356,6 +380,7 @@ exports.createUserFromEmployee = async (req, res) => {
         employeeId: user.employeeId,
         employeeRef: user.employeeRef,
         scope: user.scope,
+        departmentType: user.departmentType,
         isActive: user.isActive,
       },
       employee: {
@@ -496,7 +521,7 @@ exports.getUser = async (req, res) => {
 // @access  Private (Super Admin, Sub Admin, HR)
 exports.updateUser = async (req, res) => {
   try {
-    const { name, role, roles, department, departments, isActive, employeeId, employeeRef, scope } = req.body;
+    const { name, role, roles, department, departments, isActive, employeeId, employeeRef, scope, departmentType, featureControl } = req.body;
 
     const user = await User.findById(req.params.id);
     if (!user) {
@@ -533,6 +558,8 @@ exports.updateUser = async (req, res) => {
     if (employeeId !== undefined) user.employeeId = employeeId;
     if (employeeRef !== undefined) user.employeeRef = employeeRef;
     if (scope !== undefined) user.scope = scope;
+    if (departmentType !== undefined) user.departmentType = departmentType;
+    if (featureControl !== undefined) user.featureControl = featureControl;
 
     await user.save();
 

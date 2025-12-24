@@ -66,8 +66,14 @@ router.delete('/form-settings/qualifications/fields/:fieldId', authorize('super_
 // APPLICATION ROUTES
 // ==========================================
 
-// Create application (HR)
-router.post('/', createApplication);
+const multer = require('multer');
+const upload = multer({ storage: multer.memoryStorage() });
+
+// Create application (HR) - handle file uploads
+router.post('/', upload.any(), createApplication);
+
+// Update application (HR/Admin) - handle file uploads
+router.put('/:id', upload.any(), require('./controllers/employeeApplicationController').updateApplication);
 
 // Get all applications
 router.get('/', getApplications);

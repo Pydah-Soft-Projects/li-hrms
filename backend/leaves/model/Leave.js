@@ -87,27 +87,67 @@ const LeaveSchema = new mongoose.Schema(
     // Current status
     status: {
       type: String,
-      enum: ['draft', 'pending', 'hod_approved', 'hod_rejected', 'hr_approved', 'hr_rejected', 'approved', 'rejected', 'cancelled'],
+      enum: ['draft', 'pending', 'hod_approved', 'hod_rejected', 'hr_approved', 'hr_rejected', 'principal_approved', 'principal_rejected', 'approved', 'rejected', 'cancelled'],
       default: 'draft',
     },
 
     // Workflow tracking
     workflow: {
-      // Current step in workflow
-      currentStep: {
+      // Current step role in workflow (e.g. 'hod', 'hr')
+      currentStepRole: {
         type: String,
-        enum: ['employee', 'hod', 'hr', 'final', 'completed'],
-        default: 'employee',
-      },
-
-      // Next approver role
-      nextApprover: {
-        type: String,
-        enum: ['hod', 'hr', 'final_authority', null],
         default: null,
       },
 
-      // Workflow history
+      // Next approver role (redundant with currentStepRole but kept for query ease)
+      nextApproverRole: {
+        type: String,
+        default: null,
+      },
+
+      // LEGACY FIELDS (Kept for backward compatibility)
+      currentStep: {
+        type: String,
+        default: 'employee'
+      },
+      nextApprover: {
+        type: String,
+        default: null
+      },
+
+      // Is the entire workflow completed?
+      isCompleted: {
+        type: Boolean,
+        default: false,
+      },
+
+      // Dynamic Approval Chain (List of steps initialized from WorkflowDefinition)
+      approvalChain: [
+        {
+          stepOrder: Number,
+          role: String,      // e.g. 'hod'
+          label: String,     // e.g. 'HOD Approval'
+          status: {
+            type: String,
+            enum: ['pending', 'approved', 'rejected', 'skipped'],
+            default: 'pending'
+          },
+          isCurrent: {
+            type: Boolean,
+            default: false
+          },
+          actionBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User'
+          },
+          actionByName: String,
+          actionByRole: String,
+          comments: String,
+          updatedAt: Date
+        }
+      ],
+
+      // Workflow history (log of all actions)
       history: [
         {
           step: String,
@@ -360,7 +400,7 @@ LeaveSchema.pre('save', function () {
     if (this.fromDate && this.toDate) {
       const diffTime = Math.abs(this.toDate - this.fromDate);
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 to include both days
-      
+
       if (this.isHalfDay) {
         this.numberOfDays = 0.5;
       } else {
@@ -368,12 +408,12 @@ LeaveSchema.pre('save', function () {
       }
     }
   }
-  
+
   // Preserve original leave type on first save if not set
   if (this.isNew && !this.originalLeaveType && this.leaveType) {
     this.originalLeaveType = this.leaveType;
   }
-  
+
   // No need to call next() - Mongoose handles this automatically for synchronous middleware
 });
 
@@ -422,7 +462,7 @@ LeaveSchema.statics.getPendingForRole = async function (role, departmentIds = []
 };
 
 // Post-save hook to update monthly attendance summary and leave records when leave status changes
-LeaveSchema.post('save', async function() {
+LeaveSchema.post('save', async function () {
   try {
     // Update monthly attendance summary when leave is approved
     if (this.status === 'approved' && this.isModified('status')) {
@@ -434,7 +474,7 @@ LeaveSchema.post('save', async function() {
     if (this.isModified('status')) {
       const { updateMonthlyRecordOnLeaveAction } = require('../services/leaveBalanceService');
       let action = null;
-      
+
       if (this.status === 'approved' || this.status === 'hod_approved' || this.status === 'hr_approved') {
         action = 'approved';
       } else if (this.status === 'rejected' || this.status === 'hod_rejected' || this.status === 'hr_rejected') {

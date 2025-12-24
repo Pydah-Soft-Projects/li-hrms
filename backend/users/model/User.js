@@ -45,6 +45,11 @@ const userSchema = new mongoose.Schema(
       ref: 'Department',
       default: null,
     },
+    departmentType: {
+      type: String,
+      enum: ['single', 'multiple'],
+      default: 'single',
+    },
 
     // Legacy field - kept for backward compatibility if any
     departments: [
@@ -63,6 +68,20 @@ const userSchema = new mongoose.Schema(
       ref: 'Employee',
       default: null,
     }, // Link to MongoDB employee
+    dataScope: {
+      type: String,
+      enum: ['own', 'department', 'departments', 'all'],
+      default: function () {
+        switch (this.role) {
+          case 'employee': return 'own';
+          case 'hod': return 'department';
+          case 'hr': return 'departments';
+          case 'sub_admin': return 'all';
+          case 'super_admin': return 'all';
+          default: return 'own';
+        }
+      }
+    }, // Data access scope
     activeWorkspaceId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Workspace',
@@ -92,6 +111,10 @@ const userSchema = new mongoose.Schema(
       ref: 'User',
       default: null,
     },
+    featureControl: {
+      type: [String],
+      default: [],
+    },
   },
   {
     timestamps: true,
@@ -102,6 +125,13 @@ const userSchema = new mongoose.Schema(
 userSchema.pre('save', async function () {
   // Only hash the password if it has been modified (or is new)
   if (!this.isModified('password')) {
+    return;
+  }
+
+  // Check if password is already a bcrypt hash (starts with $2a$ or $2b$)
+  // This is important when inheriting hashed passwords from Employee
+  if (this.password && /^\$2[aby]\$\d+\$.{53}$/.test(this.password)) {
+    console.log(`[UserModel] Password for ${this.email} already hashed, skipping.`);
     return;
   }
 

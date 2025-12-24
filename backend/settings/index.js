@@ -3,8 +3,10 @@ const router = express.Router();
 const settingsController = require('./controllers/settingsController');
 const { protect, authorize } = require('../authentication/middleware/authMiddleware');
 
-// All routes are protected
+// All routes require authentication
 router.use(protect);
+
+// Principal feature control routes (Super Admin only)
 
 // Get all settings
 router.get('/', settingsController.getAllSettings);

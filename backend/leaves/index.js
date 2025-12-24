@@ -4,6 +4,7 @@ const leaveController = require('./controllers/leaveController');
 const odController = require('./controllers/odController');
 const settingsController = require('./controllers/leaveSettingsController');
 const { protect, authorize } = require('../authentication/middleware/authMiddleware');
+const { applyScopeFilter } = require('../shared/middleware/dataScopeMiddleware');
 
 // All routes require authentication
 router.use(protect);
@@ -26,12 +27,6 @@ router.get('/types/:type', settingsController.getTypes);
 
 // Add new type
 router.post('/types/:type', authorize('super_admin'), settingsController.addType);
-
-// Get workflow
-router.get('/workflow/:type', settingsController.getWorkflow);
-
-// Update workflow
-router.put('/workflow/:type', authorize('super_admin'), settingsController.updateWorkflow);
 
 // ==========================================
 // OD (ON DUTY) ROUTES - MUST COME BEFORE /:id routes!
@@ -96,7 +91,7 @@ router.post('/:id/revoke-for-attendance', authorize('super_admin', 'sub_admin', 
 router.post('/:id/update-for-attendance', authorize('super_admin', 'sub_admin', 'hr', 'hod'), leaveController.updateLeaveForAttendance);
 
 // Get all leaves (with filters)
-router.get('/', authorize('hod', 'hr', 'sub_admin', 'super_admin'), leaveController.getLeaves);
+router.get('/', authorize('hod', 'hr', 'sub_admin', 'super_admin'), applyScopeFilter, leaveController.getLeaves);
 
 // Apply for leave
 router.post('/', leaveController.applyLeave);

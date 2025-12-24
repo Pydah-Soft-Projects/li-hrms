@@ -126,8 +126,8 @@ exports.upsertSetting = async (req, res) => {
         category:
           category ||
           (key === 'include_missing_employee_components' ||
-          key === 'enable_absent_deduction' ||
-          key === 'lop_days_per_absent'
+            key === 'enable_absent_deduction' ||
+            key === 'lop_days_per_absent'
             ? 'payroll'
             : 'general'),
       },

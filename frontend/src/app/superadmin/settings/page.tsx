@@ -1022,7 +1022,7 @@ export default function SettingsPage() {
 
         // Load users for workflow if on workflow tab
         if (loanSubTab === 'workflow') {
-          await loadWorkflowUsers();
+
         }
       } else {
         setLoanSettings(null);
@@ -1035,18 +1035,6 @@ export default function SettingsPage() {
     }
   };
 
-  const loadWorkflowUsers = async () => {
-    try {
-      const currentType = activeTab === 'loan' ? 'loan' : 'salary_advance';
-      const response = await api.getUsersForLoanWorkflow(currentType);
-      if (response.success && response.data) {
-        setWorkflowUsers(response.data.users || []);
-        setWorkflowUsersByRole(response.data.usersByRole || {});
-      }
-    } catch (err) {
-      console.error('Error loading workflow users:', err);
-    }
-  };
 
   const initializeLeaveSettings = async () => {
     try {
@@ -2338,47 +2326,38 @@ export default function SettingsPage() {
                     </div>
 
                     {/* Final Authority */}
-                    <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-green-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-green-900/10">
-                      <h3 className="mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100">Final Authority</h3>
-                      <div className="flex flex-wrap gap-4">
-                        <label className="flex items-center gap-2">
-                          <input
-                            type="radio"
-                            name="finalAuthority"
-                            checked={leaveSettings?.workflow?.finalAuthority?.role === 'hr'}
-                            onChange={() => setLeaveSettings(prev => prev ? {
-                              ...prev,
-                              workflow: { ...prev.workflow, finalAuthority: { ...(prev.workflow?.finalAuthority || {}), role: 'hr', anyHRCanApprove: prev.workflow?.finalAuthority?.anyHRCanApprove ?? true } }
-                            } : null)}
-                            className="h-4 w-4 text-blue-600 focus:ring-blue-500"
-                          />
-                          <span className="text-sm text-slate-700 dark:text-slate-300">HR</span>
-                        </label>
-                        <label className="flex items-center gap-2">
+                    <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-blue-900/10">
+                      <h3 className="mb-4 text-sm font-semibold text-slate-900 dark:text-slate-100">Final Approval Authority</h3>
+                      <div className="space-y-3">
+                        <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 transition-all hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800">
                           <input
                             type="radio"
                             name="finalAuthority"
                             checked={leaveSettings?.workflow?.finalAuthority?.role === 'super_admin'}
-                            onChange={() => setLeaveSettings(prev => prev ? {
-                              ...prev,
-                              workflow: { ...prev.workflow, finalAuthority: { ...(prev.workflow?.finalAuthority || {}), role: 'super_admin', anyHRCanApprove: prev.workflow?.finalAuthority?.anyHRCanApprove ?? true } }
-                            } : null)}
+                            onChange={() => setLeaveSettings(prev => ({
+                              ...prev!,
+                              workflow: { ...prev!.workflow, finalAuthority: { ...(prev!.workflow?.finalAuthority || {}), role: 'super_admin', anyHRCanApprove: prev!.workflow?.finalAuthority?.anyHRCanApprove ?? true } }
+                            }))}
                             className="h-4 w-4 text-blue-600 focus:ring-blue-500"
                           />
-                          <span className="text-sm text-slate-700 dark:text-slate-300">Super Admin Only</span>
+                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Super Admin</span>
                         </label>
                       </div>
-                      <label className="mt-3 flex items-center gap-2">
+                    </div>
+
+                    {/* Any HR Can Approve Toggle */}
+                    <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-blue-900/10">
+                      <label className="flex cursor-pointer items-center justify-between">
+                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Any HR Can Give Final Approval</span>
                         <input
                           type="checkbox"
                           checked={leaveSettings?.workflow?.finalAuthority?.anyHRCanApprove || false}
-                          onChange={(e) => setLeaveSettings(prev => prev ? {
-                            ...prev,
-                            workflow: { ...prev.workflow, finalAuthority: { ...(prev.workflow?.finalAuthority || {}), role: prev.workflow?.finalAuthority?.role || 'hr', anyHRCanApprove: e.target.checked } }
-                          } : null)}
-                          className="h-4 w-4 rounded text-blue-600 focus:ring-blue-500"
+                          onChange={(e) => setLeaveSettings(prev => ({
+                            ...prev!,
+                            workflow: { ...prev!.workflow, finalAuthority: { ...(prev!.workflow?.finalAuthority || {}), role: prev!.workflow?.finalAuthority?.role || 'hr', anyHRCanApprove: e.target.checked } }
+                          }))}
+                          className="h-5 w-5 rounded text-blue-600 focus:ring-blue-500"
                         />
-                        <span className="text-sm text-slate-700 dark:text-slate-300">Any HR can give final approval</span>
                       </label>
                     </div>
 
@@ -2784,7 +2763,7 @@ export default function SettingsPage() {
                           if (tab.id === 'workspacePermissions') {
                             loadWorkspaces();
                           } else if (tab.id === 'workflow') {
-                            loadWorkflowUsers();
+
                           }
                         }}
                         className={`flex-1 whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition-all ${loanSubTab === tab.id
@@ -3547,7 +3526,7 @@ export default function SettingsPage() {
           <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg dark:border-slate-800 dark:bg-slate-950/95 sm:p-8">
             <h2 className="mb-2 text-xl font-semibold text-slate-900 dark:text-slate-100">Feature Control</h2>
             <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">
-              Manage sidebar application visibility for different user roles.
+              Manage module visibility for different user roles. Modules are organized by category.
             </p>
 
             {featureControlLoading ? (
@@ -3563,24 +3542,128 @@ export default function SettingsPage() {
                 ].map((role) => (
                   <div key={role.id} className="rounded-2xl border border-slate-200 bg-slate-50/50 p-6 dark:border-slate-700 dark:bg-slate-900/50">
                     <h3 className="mb-4 text-sm font-semibold text-slate-900 dark:text-slate-100 uppercase tracking-wider">{role.label}</h3>
-                    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-                      {['DASHBOARD', 'LEAVE', 'OD', 'ATTENDANCE', 'PAYSLIPS', 'PROFILE', 'REPORTS', 'EMPLOYEES', 'OT', 'LOAN', 'PERMISSION'].map((module) => (
-                        <label key={module} className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 transition-all hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800">
-                          <input
-                            type="checkbox"
-                            checked={role.state.includes(module)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                role.setState([...role.state, module]);
-                              } else {
-                                role.setState(role.state.filter(m => m !== module));
-                              }
-                            }}
-                            className="h-4 w-4 rounded text-blue-600 focus:ring-blue-500"
-                          />
-                          <span className="text-xs font-medium text-slate-700 dark:text-slate-300 uppercase">{module}</span>
-                        </label>
-                      ))}
+
+                    {/* Categorized Modules */}
+                    <div className="space-y-6">
+                      {/* Dashboard */}
+                      <div>
+                        <h4 className="mb-3 text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">📊 Dashboard</h4>
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                          <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 transition-all hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800">
+                            <input
+                              type="checkbox"
+                              checked={role.state.includes('DASHBOARD')}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  role.setState([...role.state, 'DASHBOARD']);
+                                } else {
+                                  role.setState(role.state.filter(m => m !== 'DASHBOARD'));
+                                }
+                              }}
+                              className="h-4 w-4 rounded text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="text-xs font-medium text-slate-700 dark:text-slate-300">Dashboard</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Employee Management */}
+                      <div>
+                        <h4 className="mb-3 text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">👥 Employee Management</h4>
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                          {['EMPLOYEES', 'PROFILE'].map((module) => (
+                            <label key={module} className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 transition-all hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800">
+                              <input
+                                type="checkbox"
+                                checked={role.state.includes(module)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    role.setState([...role.state, module]);
+                                  } else {
+                                    role.setState(role.state.filter(m => m !== module));
+                                  }
+                                }}
+                                className="h-4 w-4 rounded text-blue-600 focus:ring-blue-500"
+                              />
+                              <span className="text-xs font-medium text-slate-700 dark:text-slate-300">{module === 'EMPLOYEES' ? 'Employees' : 'Profile'}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Time & Attendance */}
+                      <div>
+                        <h4 className="mb-3 text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">⏰ Time & Attendance</h4>
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                          {['LEAVE_OD', 'ATTENDANCE', 'OT_PERMISSIONS', 'SHIFTS'].map((module) => (
+                            <label key={module} className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 transition-all hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800">
+                              <input
+                                type="checkbox"
+                                checked={role.state.includes(module)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    role.setState([...role.state, module]);
+                                  } else {
+                                    role.setState(role.state.filter(m => m !== module));
+                                  }
+                                }}
+                                className="h-4 w-4 rounded text-blue-600 focus:ring-blue-500"
+                              />
+                              <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                                {module === 'LEAVE_OD' ? 'Leave & OD' : module === 'OT_PERMISSIONS' ? 'OT & Permissions' : module === 'SHIFTS' ? 'Shifts' : 'Attendance'}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Organization */}
+                      <div>
+                        <h4 className="mb-3 text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">🏢 Organization</h4>
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                          <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 transition-all hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800">
+                            <input
+                              type="checkbox"
+                              checked={role.state.includes('DEPARTMENTS')}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  role.setState([...role.state, 'DEPARTMENTS']);
+                                } else {
+                                  role.setState(role.state.filter(m => m !== 'DEPARTMENTS'));
+                                }
+                              }}
+                              className="h-4 w-4 rounded text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="text-xs font-medium text-slate-700 dark:text-slate-300">Departments</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Finance & Payroll */}
+                      <div>
+                        <h4 className="mb-3 text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">💰 Finance & Payroll</h4>
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                          {['PAYSLIPS', 'PAY_REGISTER', 'ALLOWANCES_DEDUCTIONS'].map((module) => (
+                            <label key={module} className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 transition-all hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800">
+                              <input
+                                type="checkbox"
+                                checked={role.state.includes(module)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    role.setState([...role.state, module]);
+                                  } else {
+                                    role.setState(role.state.filter(m => m !== module));
+                                  }
+                                }}
+                                className="h-4 w-4 rounded text-blue-600 focus:ring-blue-500"
+                              />
+                              <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                                {module === 'PAY_REGISTER' ? 'Pay Register' : module === 'ALLOWANCES_DEDUCTIONS' ? 'Allowances & Deductions' : 'Payslips'}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -4247,66 +4330,68 @@ export default function SettingsPage() {
       </div>
 
       {/* Edit Modal */}
-      {editingDuration && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="mx-4 w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Edit Duration</h3>
-              <button
-                onClick={() => setEditingDuration(null)}
-                className="rounded-lg p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
-              >
-                <CloseIcon />
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Duration (hours)
-                </label>
-                <input
-                  type="number"
-                  min="0.5"
-                  step="0.5"
-                  value={editDuration}
-                  onChange={(e) => setEditDuration(Number(e.target.value))}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Label
-                </label>
-                <input
-                  type="text"
-                  value={editLabel}
-                  onChange={(e) => setEditLabel(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                  placeholder="e.g., Full Day"
-                />
-              </div>
-
-              <div className="flex gap-3 pt-2">
+      {
+        editingDuration && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="mx-4 w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Edit Duration</h3>
                 <button
                   onClick={() => setEditingDuration(null)}
-                  className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                  className="rounded-lg p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
                 >
-                  Cancel
+                  <CloseIcon />
                 </button>
-                <button
-                  onClick={handleEditSave}
-                  disabled={saving || !editDuration}
-                  className="flex-1 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {saving ? 'Saving...' : 'Save'}
-                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Duration (hours)
+                  </label>
+                  <input
+                    type="number"
+                    min="0.5"
+                    step="0.5"
+                    value={editDuration}
+                    onChange={(e) => setEditDuration(Number(e.target.value))}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Label
+                  </label>
+                  <input
+                    type="text"
+                    value={editLabel}
+                    onChange={(e) => setEditLabel(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                    placeholder="e.g., Full Day"
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={() => setEditingDuration(null)}
+                    className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleEditSave}
+                    disabled={saving || !editDuration}
+                    className="flex-1 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {saving ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )
+      }
+    </div >
   );
 }

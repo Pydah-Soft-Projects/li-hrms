@@ -19,8 +19,8 @@ const uploadToS3 = async (fileBuffer, originalName, mimeType, folder = 'certific
             Bucket: BUCKET_NAME,
             Key: fileName,
             Body: fileBuffer,
-            ContentType: mimeType,
-            ACL: 'public-read' // Make files publicly accessible
+            ContentType: mimeType
+            // ACL removed to support Bucket Owner Enforced settings
         };
 
         console.log(`[S3 Upload] Uploading file: ${fileName}`);
@@ -100,9 +100,32 @@ const isS3Configured = () => {
         process.env.AWS_S3_BUCKET_NAME);
 };
 
+/**
+ * Check S3 connection and permissions
+ * @returns {Promise<Boolean>}
+ */
+const checkConnection = async () => {
+    try {
+        if (!isS3Configured()) {
+            console.warn('[S3 Check] ⚠️ S3 is not configured in environment variables.');
+            return false;
+        }
+
+        console.log(`[S3 Check] Verifying connection to bucket: ${BUCKET_NAME}...`);
+        await s3.headBucket({ Bucket: BUCKET_NAME }).promise();
+        console.log('[S3 Check] ✅ S3 Connection Successful!');
+        return true;
+    } catch (error) {
+        console.error('[S3 Check] ❌ Connection Failed:', error.message);
+        // Don't throw, just return false to avoid crashing server if S3 is optional
+        return false;
+    }
+};
+
 module.exports = {
     uploadToS3,
     deleteFromS3,
     replaceInS3,
-    isS3Configured
+    isS3Configured,
+    checkConnection
 };

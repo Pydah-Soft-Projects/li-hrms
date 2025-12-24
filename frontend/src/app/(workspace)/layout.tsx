@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { auth } from '@/lib/auth';
 import { api } from '@/lib/api';
+import { MODULE_CATEGORIES, isModuleEnabled, isCategoryEnabled } from '@/config/moduleCategories';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { WorkspaceProvider, useWorkspace, setWorkspaceDataFromLogin, Workspace } from '@/contexts/WorkspaceContext';
 
@@ -209,24 +210,26 @@ const moduleRoutes: Record<string, string> = {
   PAYSLIPS: '/payslips',
 };
 
-// Workspace type colors
-const workspaceColors: Record<string, { bg: string; text: string; border: string }> = {
-  employee: { bg: 'bg-blue-500', text: 'text-blue-600', border: 'border-blue-200' },
-  department: { bg: 'bg-orange-500', text: 'text-orange-600', border: 'border-orange-200' },
-  hr: { bg: 'bg-green-500', text: 'text-green-600', border: 'border-green-200' },
-  subadmin: { bg: 'bg-purple-500', text: 'text-purple-600', border: 'border-purple-200' },
-  superadmin: { bg: 'bg-red-500', text: 'text-red-600', border: 'border-red-200' },
-  custom: { bg: 'bg-gray-500', text: 'text-gray-600', border: 'border-gray-200' },
-};
-
 function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { workspaces, activeWorkspace, switchWorkspace, getAvailableModules, isLoading } = useWorkspace();
-  const [user, setUser] = useState<{ name: string; email: string; role: string } | null>(null);
-  const [showWorkspaceSwitcher, setShowWorkspaceSwitcher] = useState(false);
+  const { activeWorkspace, isLoading } = useWorkspace();
+  const [user, setUser] = useState<{ name: string; email: string; role: string; emp_no?: string } | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [featureControl, setFeatureControl] = useState<string[] | null>(null);
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
+
+  const toggleCategory = (categoryCode: string) => {
+    setCollapsedCategories(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(categoryCode)) {
+        newSet.delete(categoryCode);
+      } else {
+        newSet.add(categoryCode);
+      }
+      return newSet;
+    });
+  };
 
   useEffect(() => {
     const fetchFeatureControl = async () => {
@@ -246,7 +249,12 @@ function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const userData = auth.getUser();
     if (userData) {
-      setUser({ name: userData.name, email: userData.email, role: userData.role });
+      setUser({
+        name: userData.name,
+        email: userData.email,
+        role: userData.role,
+        emp_no: userData.emp_no // Include employee number if available
+      });
     }
   }, []);
 
@@ -255,103 +263,25 @@ function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {
     router.push('/login');
   };
 
-  const handleWorkspaceSwitch = async (workspace: Workspace) => {
-    await switchWorkspace(workspace._id);
-    setShowWorkspaceSwitcher(false);
-    // Navigate to dashboard of new workspace
-    router.push('/dashboard');
-  };
-
-  const availableModules = getAvailableModules().filter(m =>
-    !featureControl || featureControl.includes(m.moduleCode)
-  );
-
-  const workspaceColor = workspaceColors[activeWorkspace?.type || 'custom'];
-
-  // Navigation Items with categorization
-  const navItems: Array<{
-    href: string;
-    label: string;
-    icon: React.ComponentType<IconProps>;
-    moduleCode: string;
-    category: string;
-  }> = [];
-
-  const addNavItem = (moduleCode: string, label: string, href: string, icon: any, category: string) => {
-    if (!featureControl || featureControl.includes(moduleCode)) {
-      navItems.push({ href, label, icon, moduleCode, category });
-    }
-  };
-
-  // 1. Dashboard Category
-  addNavItem('DASHBOARD', 'Dashboard', '/dashboard', DashboardIcon, 'Main');
-
-  // 2. Attendance & Leave Category
-  const hasLeave = availableModules.some(m => m.moduleCode === 'LEAVE');
-  const hasOD = availableModules.some(m => m.moduleCode === 'OD');
-
-  if (hasLeave || hasOD) {
-    addNavItem('LEAVE_OD', 'Leave & OD', '/leaves', LeavesIcon, 'Time & Attendance');
-  }
-
-  addNavItem('ATTENDANCE', 'My Attendance', '/attendance', AttendanceIcon, 'Time & Attendance');
-
-  // 3. Finance Category
-  addNavItem('PAYSLIPS', 'My Payslips', '/payslips', PayslipsIcon, 'Finance');
-  addNavItem('LOANS', 'Loans & Advances', '/loans', LoansIcon, 'Finance');
-
-  // 4. Other Modules from workspace (filtered by feature control and not already added)
-  availableModules.forEach((module) => {
-    if (['DASHBOARD', 'LEAVE', 'OD', 'ATTENDANCE', 'PAYSLIPS', 'LOANS', 'PROFILE'].includes(module.moduleCode)) return;
-
-    // Categorize based on module code or generic name
-    let category = 'Management';
-    if (module.moduleCode === 'EMPLOYEES') category = 'HR Management';
-    if (module.moduleCode === 'REPORTS') category = 'Reports';
-
-    navItems.push({
-      href: moduleRoutes[module.moduleCode] || `/${module.moduleCode.toLowerCase()}`,
-      label: module.moduleId?.name || module.moduleCode,
-      icon: moduleIcons[module.moduleCode] || DashboardIcon,
-      moduleCode: module.moduleCode,
-      category
-    });
-  });
-
-  // 5. Account/Profile Category
-  addNavItem('PROFILE', 'My Profile', '/profile', ProfileIcon, 'Account');
+  // No workspace switcher needed anymore
+  // Unified Theme Colors (Slate/Blue)
+  const themeColor = { bg: 'bg-slate-800', text: 'text-slate-900', border: 'border-slate-200' };
 
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-gray-500">Loading workspace...</p>
+          <p className="text-gray-500">Loading modules...</p>
         </div>
       </div>
     );
   }
 
+  // Fallback if no workspace context is loaded yet (should be rare with new context)
   if (!activeWorkspace) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center max-w-md p-8">
-          <div className="w-16 h-16 mx-auto mb-4 bg-yellow-100 rounded-full flex items-center justify-center">
-            <svg className="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-          </div>
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">No Workspace Assigned</h2>
-          <p className="text-gray-500 mb-6">You don't have access to any workspace. Please contact your administrator.</p>
-          <button
-            onClick={handleLogout}
-            className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
-          >
-            Logout
-          </button>
-        </div>
-      </div>
-    );
+    // We can just render a skeleton or minimal state
+    // But strictly speaking, with the new plan, activeWorkspace should always be present as a dummy
   }
 
   return (
@@ -374,62 +304,82 @@ function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {
         </button>
 
         <div className="flex flex-col h-full">
-          {/* Workspace Header */}
+          {/* Workspace Header - Simplified */}
           <div className={`p-4 border-b border-gray-200 ${sidebarCollapsed ? 'flex justify-center' : ''}`}>
-            {!sidebarCollapsed ? (
-              <div className="flex items-center gap-3">
-                <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center shadow-sm">
-                  <span className="text-sm font-bold text-white">H</span>
-                </div>
+            <div className="flex items-center gap-3 justify-center w-full">
+              <div className="h-8 w-8 rounded-lg bg-blue-600 flex items-center justify-center shadow-sm text-white font-bold">
+                L
+              </div>
+              {!sidebarCollapsed && (
                 <div className="flex-1 min-w-0">
-                  <h2 className="text-base font-semibold text-slate-900">HRMS</h2>
+                  <h2 className="text-base font-bold text-slate-900">Li-HRMS</h2>
                 </div>
-              </div>
-            ) : (
-              <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center shadow-sm">
-                <span className="text-sm font-bold text-white">H</span>
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
-          {/* Navigation */}
-          <nav className="flex-1 overflow-y-auto py-4 space-y-4">
-            {Array.from(new Set(navItems.map(i => i.category))).map(category => {
-              const categoryItems = navItems.filter(i => i.category === category);
-              const showHeader = categoryItems.length > 1;
+          {/* Navigation - Categorized */}
+          <nav className="flex-1 overflow-y-auto py-4 space-y-2">
+            {MODULE_CATEGORIES.map(category => {
+              // Check if category has any enabled modules
+              if (!isCategoryEnabled(category.code, featureControl)) {
+                return null;
+              }
+
+              const isCategoryCollapsed = collapsedCategories.has(category.code);
+              const enabledModules = category.modules.filter(module =>
+                isModuleEnabled(module.code, featureControl)
+              );
+
+              if (enabledModules.length === 0) return null;
 
               return (
-                <div key={category} className="space-y-1">
-                  {!sidebarCollapsed && showHeader && (
-                    <h3 className="px-5 text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">
-                      {category}
-                    </h3>
+                <div key={category.code} className="space-y-1">
+                  {/* Category Header */}
+                  {!sidebarCollapsed && (
+                    <button
+                      onClick={() => toggleCategory(category.code)}
+                      className="w-full px-4 py-2 flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-gray-500 hover:text-gray-700 transition-colors"
+                    >
+                      <span className="flex items-center gap-2">
+                        <span>{category.icon}</span>
+                        <span>{category.name}</span>
+                      </span>
+                      <ChevronDownIcon
+                        className={`w-4 h-4 transition-transform ${isCategoryCollapsed ? '-rotate-90' : ''}`}
+                      />
+                    </button>
                   )}
-                  <ul className="space-y-1 px-2">
-                    {categoryItems.map((item) => {
-                      const Icon = item.icon;
-                      // For combined Leave & OD, check both /leaves and /od paths
-                      const isActive = item.moduleCode === 'LEAVE_OD'
-                        ? (pathname === '/leaves' || pathname === '/od')
-                        : pathname === item.href;
 
-                      return (
-                        <li key={item.href}>
-                          <Link
-                            href={item.href}
-                            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${isActive
-                              ? `bg-gray-100 ${workspaceColor.text} font-medium`
-                              : 'text-gray-700 hover:bg-gray-50'
-                              } ${sidebarCollapsed ? 'justify-center' : ''}`}
-                            title={sidebarCollapsed ? item.label : undefined}
-                          >
-                            <Icon className={`h-5 w-5 flex-shrink-0 ${isActive ? workspaceColor.text : 'text-gray-500'}`} />
-                            {!sidebarCollapsed && <span className="text-sm">{item.label}</span>}
-                          </Link>
-                        </li>
-                      );
-                    })}
-                  </ul>
+                  {/* Category Modules */}
+                  {(!isCategoryCollapsed || sidebarCollapsed) && (
+                    <ul className="space-y-1 px-2">
+                      {enabledModules.map(module => {
+                        const isActive = pathname === module.href ||
+                          (module.code === 'LEAVE_OD' && (pathname === '/leaves' || pathname === '/od'));
+
+                        const Icon = moduleIcons[module.code] || DashboardIcon;
+
+                        return (
+                          <li key={module.code}>
+                            <Link
+                              href={module.href}
+                              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${isActive
+                                ? 'bg-blue-50 text-blue-600 font-medium shadow-sm'
+                                : 'text-gray-700 hover:bg-gray-100'
+                                } ${sidebarCollapsed ? 'justify-center' : ''}`}
+                              title={sidebarCollapsed ? module.label : ''}
+                            >
+                              <Icon className="w-5 h-5 flex-shrink-0" />
+                              {!sidebarCollapsed && (
+                                <span className="text-sm">{module.label}</span>
+                              )}
+                            </Link>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
                 </div>
               );
             })}
@@ -437,26 +387,27 @@ function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {
 
           {/* User Section & Logout */}
           <div className="border-t border-gray-200 p-3 space-y-2">
-            {/* User Info */}
             <div className={`flex items-center gap-3 px-3 py-2 ${sidebarCollapsed ? 'justify-center' : ''}`}>
               {!sidebarCollapsed && user ? (
                 <>
-                  <div className={`w-8 h-8 rounded-full ${workspaceColor.bg} flex items-center justify-center text-white font-semibold text-sm flex-shrink-0`}>
+                  <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-700 font-semibold text-sm flex-shrink-0">
                     {user.name?.[0]?.toUpperCase() || 'U'}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-900 truncate">{user.name}</p>
                     <p className="text-xs text-gray-500 truncate">{user.email}</p>
+                    {user.emp_no && (
+                      <p className="text-xs text-blue-600 font-medium">ID: {user.emp_no}</p>
+                    )}
                   </div>
                 </>
               ) : (
-                <div className={`w-8 h-8 rounded-full ${workspaceColor.bg} flex items-center justify-center text-white font-semibold text-sm`}>
+                <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-700 font-semibold text-sm">
                   {user?.name?.[0]?.toUpperCase() || 'U'}
                 </div>
               )}
             </div>
 
-            {/* Logout Button */}
             <button
               onClick={handleLogout}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-red-600 hover:bg-red-50 ${sidebarCollapsed ? 'justify-center' : ''
@@ -472,85 +423,14 @@ function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {
 
       {/* Main Content */}
       <div className={`transition-all duration-300 ${sidebarCollapsed ? 'ml-[70px]' : 'ml-64'}`}>
-        {/* Top Header with Workspace Switcher */}
-        <header className="sticky top-0 z-30 bg-white border-b border-gray-200">
-          <div className="flex items-center justify-between px-6 py-3">
-            <div>
-              {/* Breadcrumb or Page Title can go here */}
-            </div>
-
-            {/* Right side - Workspace Switcher (if multiple workspaces) */}
-            <div className="flex items-center gap-4">
-              {workspaces.length > 1 && (
-                <div className="relative">
-                  <button
-                    onClick={() => setShowWorkspaceSwitcher(!showWorkspaceSwitcher)}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg border ${workspaceColor.border} bg-white hover:bg-gray-50 transition-colors`}
-                  >
-                    <div className={`w-6 h-6 rounded ${workspaceColor.bg} flex items-center justify-center text-white text-xs font-bold`}>
-                      {activeWorkspace.name[0]}
-                    </div>
-                    <span className="text-sm font-medium text-gray-700">{activeWorkspace.name}</span>
-                    <ChevronDownIcon className={`w-4 h-4 text-gray-500 transition-transform ${showWorkspaceSwitcher ? 'rotate-180' : ''}`} />
-                  </button>
-
-                  {/* Dropdown */}
-                  {showWorkspaceSwitcher && (
-                    <>
-                      <div
-                        className="fixed inset-0 z-40"
-                        onClick={() => setShowWorkspaceSwitcher(false)}
-                      />
-                      <div className="absolute right-0 mt-2 w-64 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50">
-                        <div className="px-4 py-2 border-b border-gray-100">
-                          <p className="text-xs font-medium text-gray-500 uppercase">Switch Workspace</p>
-                        </div>
-                        {workspaces.map((ws) => {
-                          const wsColor = workspaceColors[ws.type || 'custom'];
-                          const isActive = ws._id === activeWorkspace._id;
-
-                          return (
-                            <button
-                              key={ws._id}
-                              onClick={() => handleWorkspaceSwitch(ws)}
-                              className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors ${isActive ? 'bg-gray-50' : ''
-                                }`}
-                            >
-                              <div className={`w-8 h-8 rounded-lg ${wsColor.bg} flex items-center justify-center text-white font-bold text-sm`}>
-                                {ws.name[0]}
-                              </div>
-                              <div className="flex-1 text-left">
-                                <p className="text-sm font-medium text-gray-900">{ws.name}</p>
-                                <p className="text-xs text-gray-500 capitalize">{ws.type} Portal</p>
-                              </div>
-                              {isActive && (
-                                <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                </svg>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
-
-              {/* Single workspace indicator */}
-              {workspaces.length === 1 && (
-                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${workspaceColor.border} border bg-white`}>
-                  <div className={`w-5 h-5 rounded ${workspaceColor.bg} flex items-center justify-center text-white text-xs font-bold`}>
-                    {activeWorkspace.name[0]}
-                  </div>
-                  <span className="text-sm font-medium text-gray-700">{activeWorkspace.name}</span>
-                </div>
-              )}
-            </div>
+        <header className="sticky top-0 z-30 bg-white border-b border-gray-200 h-16 flex items-center justify-between px-6">
+          <div className="font-semibold text-gray-800">
+            {/* Dynamic Title if needed, or simple welcome */}
+            Welcome, {user?.name}
           </div>
+          <div></div>
         </header>
 
-        {/* Page Content */}
         <main className="p-6">
           {children}
         </main>

@@ -225,7 +225,7 @@ payrollBatchSchema.statics.generateBatchNumber = async function (departmentId, m
 
 // Instance method to check if recalculation permission is valid
 payrollBatchSchema.methods.hasValidRecalculationPermission = function () {
-    if (!this.recalculationPermission.granted) {
+    if (!this.recalculationPermission || !this.recalculationPermission.granted) {
         return false;
     }
 
