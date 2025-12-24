@@ -21,190 +21,140 @@ const s3UploadService = require('../../shared/services/s3UploadService');
 const { resolveQualificationLabels } = require('../services/fieldMappingService');
 
 /**
+ * Internal helper for creating a single application
+ * Used by createApplication and bulkCreateApplications
+ */
+const createApplicationInternal = async (rawData, settings, creatorId) => {
+  let applicationData = { ...rawData };
+
+  // PARSE JSON fields if they are strings (usually from FormData in single creation)
+  const jsonFields = ['dynamicFields', 'qualifications', 'employeeAllowances', 'employeeDeductions', 'department', 'designation'];
+  jsonFields.forEach(field => {
+    if (typeof applicationData[field] === 'string') {
+      try {
+        applicationData[field] = JSON.parse(applicationData[field]);
+      } catch (e) {
+        // Skip for bulk if already objects
+      }
+    }
+  });
+
+  // Basic validation if no settings
+  if (!settings) {
+    if (!applicationData.emp_no) throw new Error('Employee number (emp_no) is required');
+    if (!applicationData.employee_name) throw new Error('Employee name is required');
+    if (!applicationData.proposedSalary) throw new Error('Proposed salary is required');
+  } else {
+    const validation = await validateFormData(applicationData, settings);
+    if (!validation.isValid) {
+      throw new Error(`Validation failed: ${Object.values(validation.errors).flat().join(', ')}`);
+    }
+  }
+
+  const empNo = applicationData.emp_no.toUpperCase();
+
+  // Check if employee already exists
+  const existingEmployee = await Employee.findOne({ emp_no: empNo });
+  if (existingEmployee) {
+    throw new Error(`Employee with number ${empNo} already exists`);
+  }
+
+  // Check if pending application already exists
+  const existingApplication = await EmployeeApplication.findOne({
+    emp_no: empNo,
+    status: 'pending',
+  });
+  if (existingApplication) {
+    throw new Error(`Pending application already exists for employee number ${empNo}`);
+  }
+
+  // Transform form data
+  const { permanentFields, dynamicFields } = transformFormData(applicationData, settings);
+
+  // Ensure qualifications (if provided) are handled
+  if (applicationData.qualifications) {
+    permanentFields.qualifications = applicationData.qualifications;
+  }
+
+  const normalizeOverrides = (list) =>
+    Array.isArray(list)
+      ? list
+        .filter((item) => item && (item.masterId || item.name))
+        .map((item) => ({
+          masterId: item.masterId || null,
+          code: item.code || null,
+          name: item.name || '',
+          category: item.category || null,
+          type: item.type || null,
+          amount: item.amount ?? item.overrideAmount ?? null,
+          percentage: item.percentage ?? null,
+          percentageBase: item.percentageBase ?? null,
+          minAmount: item.minAmount ?? null,
+          maxAmount: item.maxAmount ?? null,
+          basedOnPresentDays: item.basedOnPresentDays ?? false,
+          isOverride: true,
+        }))
+      : [];
+
+  const employeeAllowances = normalizeOverrides(applicationData.employeeAllowances);
+  const employeeDeductions = normalizeOverrides(applicationData.employeeDeductions);
+
+  // Create application
+  const application = await EmployeeApplication.create({
+    ...permanentFields,
+    dynamicFields: dynamicFields,
+    emp_no: empNo,
+    employeeAllowances,
+    employeeDeductions,
+    createdBy: creatorId,
+    status: 'pending',
+  });
+
+  return application;
+};
+
+/**
  * @desc    Create employee application (HR)
  * @route   POST /api/employee-applications
  * @access  Private (HR, Sub Admin, Super Admin)
  */
 exports.createApplication = async (req, res) => {
   console.log('[CreateApplication] Received request');
-  // console.log('[CreateApplication] Body:', JSON.stringify(req.body, null, 2)); // Too verbose, log keys only
-  console.log('[CreateApplication] Body Keys:', Object.keys(req.body));
-  console.log('[CreateApplication] Files:', req.files ? req.files.map(f => f.fieldname) : 'No files');
-
   try {
     let applicationData = { ...req.body };
 
-    // PARSE JSON STRINGIFIED FIELDS (from FormData)
-    // Dynamic fields, arrays, and nested objects come as strings in FormData
-    const jsonFields = ['dynamicFields', 'qualifications', 'employeeAllowances', 'employeeDeductions', 'department', 'designation'];
-
-    jsonFields.forEach(field => {
-      if (typeof applicationData[field] === 'string') {
-        try {
-          applicationData[field] = JSON.parse(applicationData[field]);
-        } catch (e) {
-          console.warn(`[CreateApplication] Failed to parse JSON for field ${field}:`, e.message);
-        }
+    // Handle Qualifications Files (only for single creation)
+    if (req.files && applicationData.qualifications) {
+      // We need to parse it first to modify
+      if (typeof applicationData.qualifications === 'string') {
+        applicationData.qualifications = JSON.parse(applicationData.qualifications);
       }
-    });
 
-    // Handle Qualifications Files & Labels
-    if (applicationData.qualifications && Array.isArray(applicationData.qualifications)) {
-      console.log(`[CreateApplication] Processing ${applicationData.qualifications.length} qualifications`);
-
-      // Map files
-      const fileMap = {};
-      if (req.files) {
+      if (Array.isArray(applicationData.qualifications)) {
+        const fileMap = {};
         req.files.forEach(f => { fileMap[f.fieldname] = f; });
-      }
 
-      for (let i = 0; i < applicationData.qualifications.length; i++) {
-        const file = fileMap[`qualification_cert_${i}`];
-        if (file) {
-          console.log(`[CreateApplication] Uploading cert for qualification [${i}]`);
-          try {
-            const uploadResult = await s3UploadService.uploadToS3(
-              file.buffer,
-              file.originalname,
-              file.mimetype,
-              'hrms/certificates'
-            );
-            applicationData.qualifications[i].certificateUrl = uploadResult;
-            console.log(`[CreateApplication] Upload success: ${uploadResult}`);
-          } catch (err) {
-            console.error(`[CreateApplication] S3 Upload Falied for [${i}]:`, err);
+        for (let i = 0; i < applicationData.qualifications.length; i++) {
+          const file = fileMap[`qualification_cert_${i}`];
+          if (file) {
+            try {
+              const uploadResult = await s3UploadService.uploadToS3(
+                file.buffer,
+                file.originalname,
+                file.mimetype,
+                'hrms/certificates'
+              );
+              applicationData.qualifications[i].certificateUrl = uploadResult;
+            } catch (err) {
+              console.error(`[CreateApplication] S3 Upload Failed for [${i}]:`, err);
+            }
           }
         }
       }
     }
 
-    // Get form settings for validation
     const settings = await EmployeeApplicationFormSettings.getActiveSettings();
-
-    // Validate form data using form settings
-    if (settings) {
-      // Note: validateFormData expects object structure. Since we parsed everything back to objects above, it should work.
-      const validation = await validateFormData(applicationData, settings);
-      if (!validation.isValid) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation failed',
-          errors: validation.errors,
-        });
-      }
-    } else {
-      // Fallback to basic validation if settings not found
-      if (!applicationData.emp_no) {
-        return res.status(400).json({
-          success: false,
-          message: 'Employee number (emp_no) is required',
-        });
-      }
-
-      if (!applicationData.employee_name) {
-        return res.status(400).json({
-          success: false,
-          message: 'Employee name is required',
-        });
-      }
-
-      if (!applicationData.proposedSalary) {
-        return res.status(400).json({
-          success: false,
-          message: 'Proposed salary is required',
-        });
-      }
-    }
-
-    // Check if employee already exists
-    const existingEmployee = await Employee.findOne({ emp_no: applicationData.emp_no.toUpperCase() });
-    if (existingEmployee) {
-      return res.status(400).json({
-        success: false,
-        message: 'Employee with this employee number already exists',
-      });
-    }
-
-    // Check if application already exists for this emp_no
-    const existingApplication = await EmployeeApplication.findOne({
-      emp_no: applicationData.emp_no.toUpperCase(),
-      status: 'pending',
-    });
-    if (existingApplication) {
-      return res.status(400).json({
-        success: false,
-        message: 'Pending application already exists for this employee number',
-      });
-    }
-
-    // Validate department if provided
-    if (applicationData.department_id) {
-      const dept = await Department.findById(applicationData.department_id);
-      if (!dept) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid department ID',
-        });
-      }
-    }
-
-    // Validate designation if provided
-    if (applicationData.designation_id) {
-      const desig = await Designation.findById(applicationData.designation_id);
-      if (!desig) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid designation ID',
-        });
-      }
-    }
-
-    // Transform form data: separate permanent fields from dynamic fields
-    const { permanentFields, dynamicFields } = transformFormData(applicationData, settings);
-
-    // Make sure qualifications are preserved in dynamicFields or permanentFields depending on where they live.
-    // transformFormData typically puts everything not permanent into dynamicFields. 
-    // Qualifications is a permanent field in Schema? Let's check EmployeeApplication Schema if needed. 
-    // For now, assuming transformFormData handles it or we assign it explicitly.
-    // Actually, transformFormData might strip unknown fields. We should force qualifications if it's not in the result.
-
-    // Manually ensure qualifications (with URLs) are passed
-    if (applicationData.qualifications) {
-      permanentFields.qualifications = applicationData.qualifications;
-    }
-
-    const normalizeOverrides = (list) =>
-      Array.isArray(list)
-        ? list
-          .filter((item) => item && (item.masterId || item.name))
-          .map((item) => ({
-            masterId: item.masterId || null,
-            code: item.code || null,
-            name: item.name || '',
-            category: item.category || null,
-            type: item.type || null,
-            amount: item.amount ?? item.overrideAmount ?? null,
-            percentage: item.percentage ?? null,
-            percentageBase: item.percentageBase ?? null,
-            minAmount: item.minAmount ?? null,
-            maxAmount: item.maxAmount ?? null,
-            basedOnPresentDays: item.basedOnPresentDays ?? false,
-            isOverride: true,
-          }))
-        : [];
-    const employeeAllowances = normalizeOverrides(applicationData.employeeAllowances);
-    const employeeDeductions = normalizeOverrides(applicationData.employeeDeductions);
-
-    // Create application with separated fields
-    const application = await EmployeeApplication.create({
-      ...permanentFields,
-      dynamicFields: dynamicFields,
-      emp_no: applicationData.emp_no.toUpperCase(),
-      employeeAllowances,
-      employeeDeductions,
-      createdBy: req.user._id,
-      status: 'pending',
-    });
+    const application = await createApplicationInternal(applicationData, settings, req.user._id);
 
     await application.populate([
       { path: 'createdBy', select: 'name email' },
@@ -219,9 +169,63 @@ exports.createApplication = async (req, res) => {
     });
   } catch (error) {
     console.error('Error creating employee application:', error);
-    res.status(500).json({
+    res.status(400).json({
       success: false,
       message: error.message || 'Failed to create employee application',
+    });
+  }
+};
+
+/**
+ * @desc    Bulk create employee applications (HR)
+ * @route   POST /api/employee-applications/bulk
+ * @access  Private (HR, Sub Admin, Super Admin)
+ */
+exports.bulkCreateApplications = async (req, res) => {
+  console.log('[BulkCreateApplications] Received request');
+  try {
+    const applications = req.body; // Expecting an array
+
+    if (!Array.isArray(applications) || applications.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid payload: Expected a non-empty array of applications',
+      });
+    }
+
+    const settings = await EmployeeApplicationFormSettings.getActiveSettings();
+    const results = {
+      successCount: 0,
+      failCount: 0,
+      errors: [],
+    };
+
+    // Process one by one on backend for now to capture individual errors
+    for (const appData of applications) {
+      try {
+        await createApplicationInternal(appData, settings, req.user._id);
+        results.successCount++;
+      } catch (err) {
+        results.failCount++;
+        results.errors.push({
+          emp_no: appData.emp_no || 'Unknown',
+          name: appData.employee_name || 'Unknown',
+          message: err.message,
+        });
+        console.warn(`[BulkCreate] Failed for ${appData.emp_no}:`, err.message);
+      }
+    }
+
+    res.status(200).json({
+      success: results.failCount === 0,
+      message: `Bulk processing complete. ${results.successCount} succeeded, ${results.failCount} failed.`,
+      data: results,
+    });
+  } catch (error) {
+    console.error('Error in bulk creating applications:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error occurred during bulk processing',
     });
   }
 };

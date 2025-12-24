@@ -614,8 +614,12 @@ export default function EmployeesPage() {
       if (!group.isEnabled) return;
       group.fields.forEach((field: any) => {
         if (!field.isEnabled) return;
-        // Skip already added permanent fields
-        if (headers.includes(field.id)) return;
+
+        // CRITICAL CLEANUP: Skip technical ID fields and already added permanent fields
+        if (field.id.endsWith('_id') ||
+          field.id === 'department' ||
+          field.id === 'designation' ||
+          headers.includes(field.id)) return;
 
         headers.push(field.id);
 
@@ -630,6 +634,7 @@ export default function EmployeesPage() {
           sample[field.id] = field.options?.[0]?.value || '';
           columns.push({ key: field.id, label: field.label, type: 'select', options: field.options });
         } else if (field.type === 'array' || field.type === 'object') {
+          if (field.id === 'qualifications' || field.id === 'experience') return;
           sample[field.id] = field.type === 'array' ? 'item1, item2' : 'key1:val1|key2:val2';
           columns.push({ key: field.id, label: field.label });
         } else {
@@ -642,9 +647,17 @@ export default function EmployeesPage() {
     // Special handling for qualifications if enabled
     if (settings.qualifications?.isEnabled) {
       if (!headers.includes('qualifications')) {
+        const qualFields = settings.qualifications.fields || [];
+        const format = qualFields.map((f: any) => f.label || f.id).join(':');
+
         headers.push('qualifications');
-        sample['qualifications'] = 'Degree:Year, Degree:Year';
-        columns.push({ key: 'qualifications', label: 'Qualifications' });
+        sample['qualifications'] = `${format}, ${format}`;
+        columns.push({
+          key: 'qualifications',
+          label: 'Qualifications',
+          width: '300px',
+          tooltip: `Format: ${format} (Comma separated for multiple entries, colons for internal fields)`
+        });
       }
     }
 
@@ -708,19 +721,21 @@ export default function EmployeesPage() {
       if (fieldDef.dataType === 'object' || fieldDef.itemType === 'object') {
         return String(value).split(',').map((item: string) => {
           const obj: any = {};
-          if (item.includes('|')) {
-            item.split('|').forEach(part => {
+          const trimmedItem = item.trim();
+          if (trimmedItem.includes('|')) {
+            trimmedItem.split('|').forEach(part => {
               const [k, v] = part.split(':').map(s => s.trim());
               if (k && v) obj[k] = v;
             });
-          } else if (item.includes(':')) {
-            const [v1, v2] = item.split(':').map(s => s.trim());
+          } else if (trimmedItem.includes(':')) {
+            const parts = trimmedItem.split(':').map(s => s.trim());
             const fields = fieldDef.itemSchema?.fields || fieldDef.fields || [];
-            if (fields[0]) obj[fields[0].id] = v1;
-            if (fields[1]) obj[fields[1].id] = v2;
+            parts.forEach((val, idx) => {
+              if (fields[idx]) obj[fields[idx].id] = val;
+            });
           } else {
             const fields = fieldDef.itemSchema?.fields || fieldDef.fields || [];
-            if (fields[0]) obj[fields[0].id] = item.trim();
+            if (fields[0]) obj[fields[0].id] = trimmedItem;
           }
           return obj;
         });
@@ -2977,11 +2992,10 @@ export default function EmployeesPage() {
             return { isValid: result.isValid, errors: result.errors };
           }}
           onSubmit={async (data) => {
-            let successCount = 0;
-            let failCount = 0;
-            const errors: string[] = [];
+            const batchData: any[] = [];
+            const processingErrors: string[] = [];
 
-            for (const row of data) {
+            data.forEach((row) => {
               try {
                 // Map department and designation names to IDs
                 const deptId = departments.find(d => d.name.toLowerCase() === (row.department_name as string)?.toLowerCase())?._id;
@@ -2990,7 +3004,7 @@ export default function EmployeesPage() {
                   d.department === deptId
                 )?._id;
 
-                const payload: any = {
+                const employeeData: any = {
                   ...row,
                   department_id: deptId || undefined,
                   designation_id: desigId || undefined,
@@ -2998,49 +3012,74 @@ export default function EmployeesPage() {
                 };
 
                 // Handle dynamic fields based on form settings
+                const coreFields = ['emp_no', 'employee_name', 'proposedSalary', 'gross_salary', 'department_id', 'designation_id', 'department_name', 'designation_name', 'doj', 'dob', 'gender', 'marital_status', 'blood_group', 'qualifications', 'experience', 'address', 'location', 'aadhar_number', 'phone_number', 'alt_phone_number', 'email', 'pf_number', 'esi_number', 'bank_account_no', 'bank_name', 'bank_place', 'ifsc_code'];
+
                 if (formSettings?.groups) {
                   const dynamicFields: any = {};
                   formSettings.groups.forEach((group: any) => {
                     group.fields.forEach((field: any) => {
-                      if (row[field.id] !== undefined) {
-                        dynamicFields[field.id] = parseDynamicField(row[field.id], field);
-                        // Clear from root payload if it's a dynamic field
-                        if (!['emp_no', 'employee_name', 'proposedSalary', 'gross_salary', 'department_id', 'designation_id', 'doj', 'dob', 'gender', 'marital_status', 'blood_group', 'qualifications', 'experience', 'address', 'location', 'aadhar_number', 'phone_number', 'alt_phone_number', 'email', 'pf_number', 'esi_number', 'bank_account_no', 'bank_name', 'bank_place', 'ifsc_code'].includes(field.id)) {
-                          delete payload[field.id];
+                      if (row[field.id] !== undefined && row[field.id] !== null && row[field.id] !== '') {
+                        const val = parseDynamicField(row[field.id], field);
+                        if (!coreFields.includes(field.id)) {
+                          dynamicFields[field.id] = val;
+                          delete employeeData[field.id];
+                        } else {
+                          employeeData[field.id] = val;
                         }
                       }
                     });
                   });
-                  payload.dynamicFields = dynamicFields;
+                  if (Object.keys(dynamicFields).length > 0) {
+                    employeeData.dynamicFields = dynamicFields;
+                  }
                 }
 
                 // Handle special case for qualifications if enabled
                 if (formSettings?.qualifications?.isEnabled && row.qualifications) {
-                  payload.qualifications = parseDynamicField(row.qualifications, { type: 'array', dataType: 'object' });
+                  const qualDef = {
+                    type: 'array',
+                    itemType: 'object',
+                    fields: formSettings.qualifications.fields
+                  };
+                  employeeData.qualifications = parseDynamicField(row.qualifications, qualDef);
                 }
 
-                const response = await api.createEmployeeApplication(payload);
-                if (response.success) {
-                  successCount++;
-                } else {
-                  failCount++;
-                  errors.push(`${row.emp_no}: ${response.message || 'Unknown error'}`);
-                }
+                batchData.push(employeeData);
               } catch (err: any) {
-                failCount++;
-                errors.push(`${row.emp_no}: ${err.message || 'System error'}`);
+                processingErrors.push(`${row.emp_no || 'Row'}: Failed to process row data`);
               }
+            });
+
+            if (batchData.length === 0) {
+              return { success: false, message: 'No valid data to upload' };
             }
 
-            loadEmployees();
+            try {
+              const response = await api.bulkCreateEmployeeApplications(batchData);
+              loadApplications();
+              loadEmployees();
 
-            if (failCount === 0) {
-              return { success: true, message: `Successfully created ${successCount} employees` };
-            } else {
-              return { success: false, message: `Created ${successCount}, Failed ${failCount}. Errors: ${errors.slice(0, 3).join('; ')}` };
+              if (response.success) {
+                return {
+                  success: true,
+                  message: `Successfully created ${response.data?.successCount || batchData.length} applications`
+                };
+              } else {
+                const failCount = response.data?.failCount || 0;
+                const backendErrors = response.data?.errors || [];
+                const firstError = backendErrors[0]?.message || response.message;
+
+                return {
+                  success: false,
+                  message: `Completed with errors. Succeeded: ${response.data?.successCount || 0}, Failed: ${failCount}. ${firstError ? 'Error: ' + firstError : ''}`
+                };
+              }
+            } catch (err: any) {
+              console.error('Bulk upload request error:', err);
+              return { success: false, message: 'Failed to send bulk upload request' };
             }
           }}
-          onClose={() => setShowBulkUpload(false)}
+      onClose={() => setShowBulkUpload(false)}
         />
       )}
 

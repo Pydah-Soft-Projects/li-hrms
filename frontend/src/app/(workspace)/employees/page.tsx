@@ -305,8 +305,13 @@ export default function EmployeesPage() {
       if (!group.isEnabled) return;
       group.fields.forEach((field: any) => {
         if (!field.isEnabled) return;
-        // Skip already added permanent fields
-        if (headers.includes(field.id)) return;
+
+        // CRITICAL CLEANUP: Skip technical ID fields and already added permanent fields
+        // We also want to skip fields that have a corresponding '_name' field being handled manually (like department)
+        if (field.id.endsWith('_id') ||
+          field.id === 'department' ||
+          field.id === 'designation' ||
+          headers.includes(field.id)) return;
 
         headers.push(field.id);
 
@@ -321,6 +326,10 @@ export default function EmployeesPage() {
           sample[field.id] = field.options?.[0]?.value || '';
           columns.push({ key: field.id, label: field.label, type: 'select', options: field.options });
         } else if (field.type === 'array' || field.type === 'object') {
+          if (field.id === 'qualifications' || field.id === 'experience') {
+            // These might be permanent fields, skip if already handled
+            return;
+          }
           sample[field.id] = field.type === 'array' ? 'item1, item2' : 'key1:val1|key2:val2';
           columns.push({ key: field.id, label: field.label });
         } else {
@@ -333,9 +342,19 @@ export default function EmployeesPage() {
     // Special handling for qualifications if enabled
     if (settings.qualifications?.isEnabled) {
       if (!headers.includes('qualifications')) {
+        const qualFields = settings.qualifications.fields || [];
+        // Generic mapping hint: Degree:Year:OtherField1:...:OtherFieldN
+        const format = qualFields.map((f: any) => f.label || f.id).join(':');
+
         headers.push('qualifications');
-        sample['qualifications'] = 'Degree:Year, Degree:Year';
-        columns.push({ key: 'qualifications', label: 'Qualifications' });
+        // Provide a clearer sample that shows objects separated by comma and N-fields by colon
+        sample['qualifications'] = `${format}, ${format}`;
+        columns.push({
+          key: 'qualifications',
+          label: 'Qualifications',
+          width: '300px',
+          tooltip: `Format: ${format} (Comma separated for multiple entries, colons for internal fields)`
+        });
       }
     }
 
@@ -367,28 +386,32 @@ export default function EmployeesPage() {
     if (fieldDef.type === 'array') {
       if (fieldDef.dataType === 'object' || fieldDef.itemType === 'object') {
         // Format: field1:val1|field2:val2, field1:val3|field2:val4
-        // Support shorthand for qualifications if it's just Degree:Year
+        // Support shorthand for qualifications if it's just Degree:Year or Degree:Year:Marks
         return String(value).split(',').map((item: string) => {
           const obj: any = {};
-          const parts = item.split(/[|:]/);
+          const trimmedItem = item.trim();
 
           // If it's field1:val1|field2:val2 format
-          if (item.includes('|')) {
-            item.split('|').forEach(part => {
+          if (trimmedItem.includes('|')) {
+            trimmedItem.split('|').forEach(part => {
               const [k, v] = part.split(':').map(s => s.trim());
               if (k && v) obj[k] = v;
             });
-          } else if (item.includes(':')) {
-            // Shorthand Degree:Year
-            const [v1, v2] = item.split(':').map(s => s.trim());
-            // Try to map to the first two fields of the array item schema
+          } else if (trimmedItem.includes(':')) {
+            // Shorthand Degree:Year:Marks
+            const parts = trimmedItem.split(':').map(s => s.trim());
             const fields = fieldDef.itemSchema?.fields || fieldDef.fields || [];
-            if (fields[0]) obj[fields[0].id] = v1;
-            if (fields[1]) obj[fields[1].id] = v2;
+
+            // Map each part to the corresponding field in the schema
+            parts.forEach((val, idx) => {
+              if (fields[idx]) {
+                obj[fields[idx].id] = val;
+              }
+            });
           } else {
             // Just a string
             const fields = fieldDef.itemSchema?.fields || fieldDef.fields || [];
-            if (fields[0]) obj[fields[0].id] = item.trim();
+            if (fields[0]) obj[fields[0].id] = trimmedItem;
           }
           return obj;
         });
@@ -1616,11 +1639,10 @@ export default function EmployeesPage() {
             return { isValid: result.isValid, errors: result.errors };
           }}
           onSubmit={async (data) => {
-            let successCount = 0;
-            let failCount = 0;
+            const batchData: any[] = [];
             const errors: string[] = [];
 
-            for (const row of data) {
+            data.forEach((row) => {
               try {
                 const employeeData: any = {};
 
@@ -1681,26 +1703,38 @@ export default function EmployeesPage() {
                   employeeData.dynamicFields = dynamicFields;
                 }
 
-                const response = await api.createEmployeeApplication(employeeData);
-                if (response.success) {
-                  successCount++;
-                } else {
-                  failCount++;
-                  errors.push(`${row.emp_no || 'Row'}: ${response.message}`);
-                }
+                batchData.push(employeeData);
               } catch (err) {
-                failCount++;
-                errors.push(`${row.emp_no || 'Row'}: Failed to create application`);
-                console.error('Bulk upload row error:', err);
+                errors.push(`${row.emp_no || 'Row'}: Failed to process row data`);
               }
+            });
+
+            if (batchData.length === 0) {
+              return { success: false, message: 'No valid data to upload' };
             }
 
-            loadApplications();
+            try {
+              const response = await api.bulkCreateEmployeeApplications(batchData);
+              loadApplications();
 
-            if (failCount === 0) {
-              return { success: true, message: `Successfully created ${successCount} applications` };
-            } else {
-              return { success: false, message: `Created ${successCount}, Failed ${failCount}. ${errors.length > 0 ? 'First error: ' + errors[0] : ''}` };
+              if (response.success) {
+                return {
+                  success: true,
+                  message: `Successfully created ${response.data?.successCount || batchData.length} applications`
+                };
+              } else {
+                const failCount = response.data?.failCount || 0;
+                const backendErrors = response.data?.errors || [];
+                const firstError = backendErrors[0]?.message || response.message;
+
+                return {
+                  success: false,
+                  message: `Completed with errors. Succeeded: ${response.data?.successCount || 0}, Failed: ${failCount}. ${firstError ? 'Error: ' + firstError : ''}`
+                };
+              }
+            } catch (err) {
+              console.error('Bulk upload request error:', err);
+              return { success: false, message: 'Failed to send bulk upload request' };
             }
           }}
           onClose={() => setShowBulkUpload(false)}

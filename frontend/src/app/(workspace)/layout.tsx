@@ -214,7 +214,7 @@ function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const { activeWorkspace, isLoading } = useWorkspace();
-  const [user, setUser] = useState<{ name: string; email: string; role: string; emp_no?: string } | null>(null);
+  const [user, setUser] = useState<{ name: string; email: string; role: string; emp_no?: string; featureControl?: string[] | null } | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [featureControl, setFeatureControl] = useState<string[] | null>(null);
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
@@ -233,18 +233,32 @@ function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const fetchFeatureControl = async () => {
-      if (user?.role) {
+      if (!user?.role) return;
+
+      // Priority 1: Check individual user overrides from session
+      if (user.featureControl && Array.isArray(user.featureControl) && user.featureControl.length > 0) {
+        console.log(`[RBAC] Using individual overrides for user ${user.name}`);
+        setFeatureControl(user.featureControl);
+        return;
+      }
+
+      // Priority 2: Fallback to universal role-based setting from backend
+      try {
         const response = await api.getSetting(`feature_control_${user.role}`);
         if (response.success && response.data?.value?.activeModules) {
+          console.log(`[RBAC] Using universal role setting for ${user.role}`);
           setFeatureControl(response.data.value.activeModules);
         } else {
-          // Default fallback if setting not found
+          // Priority 3: Hardcoded fallback if setting is not found
           setFeatureControl(['DASHBOARD', 'LEAVE', 'OD', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS']);
         }
+      } catch (error) {
+        console.error('Error fetching RBAC settings:', error);
+        setFeatureControl(['DASHBOARD', 'LEAVE', 'OD', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS']);
       }
     };
     fetchFeatureControl();
-  }, [user?.role]);
+  }, [user?.role, user?.featureControl]);
 
   useEffect(() => {
     const userData = auth.getUser();
@@ -253,7 +267,8 @@ function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {
         name: userData.name,
         email: userData.email,
         role: userData.role,
-        emp_no: userData.emp_no // Include employee number if available
+        emp_no: userData.emp_no,
+        featureControl: userData.featureControl || null
       });
     }
   }, []);

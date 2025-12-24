@@ -1107,6 +1107,43 @@ export default function UsersPage() {
                   </div>
                 )}
 
+                {/* Feature Control */}
+                <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">
+                    Feature Access <span className="text-xs text-slate-500">(Override role defaults)</span>
+                  </label>
+                  <div className="max-h-60 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 p-3 space-y-3 bg-slate-50 dark:bg-slate-800/50">
+                    {MODULE_CATEGORIES.map((category) => (
+                      <div key={category.code}>
+                        <h4 className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase mb-2">
+                          {category.icon} {category.name}
+                        </h4>
+                        <div className="space-y-1">
+                          {category.modules.map((module) => (
+                            <label key={module.code} className="flex items-center gap-2 p-2 rounded-lg hover:bg-white dark:hover:bg-slate-700 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={employeeFormData.featureControl.includes(module.code)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setEmployeeFormData({ ...employeeFormData, featureControl: [...employeeFormData.featureControl, module.code] });
+                                  } else {
+                                    setEmployeeFormData({ ...employeeFormData, featureControl: employeeFormData.featureControl.filter(m => m !== module.code) });
+                                  }
+                                }}
+                                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                              />
+                              <span className="text-xs text-slate-700 dark:text-slate-300">
+                                {module.label}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
                   <p className="text-xs text-slate-500 dark:text-slate-400">
                     * Password will be imported from employee record or generated automatically.
@@ -1231,6 +1268,43 @@ export default function UsersPage() {
                     </select>
                   </div>
                 )}
+
+                {/* Feature Control */}
+                <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">
+                    Feature Access <span className="text-xs text-slate-500">(Override role defaults)</span>
+                  </label>
+                  <div className="max-h-60 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 p-3 space-y-3 bg-slate-50 dark:bg-slate-800/50">
+                    {MODULE_CATEGORIES.map((category) => (
+                      <div key={category.code}>
+                        <h4 className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase mb-2">
+                          {category.icon} {category.name}
+                        </h4>
+                        <div className="space-y-1">
+                          {category.modules.map((module) => (
+                            <label key={module.code} className="flex items-center gap-2 p-2 rounded-lg hover:bg-white dark:hover:bg-slate-700 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={formData.featureControl.includes(module.code)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setFormData({ ...formData, featureControl: [...formData.featureControl, module.code] });
+                                  } else {
+                                    setFormData({ ...formData, featureControl: formData.featureControl.filter(m => m !== module.code) });
+                                  }
+                                }}
+                                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                              />
+                              <span className="text-xs text-slate-700 dark:text-slate-300">
+                                {module.label}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
 
                 <div className="flex gap-3 pt-4">
                   <button

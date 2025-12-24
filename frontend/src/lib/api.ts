@@ -773,6 +773,13 @@ export const api = {
     });
   },
 
+  bulkCreateEmployeeApplications: async (data: any[]) => {
+    return apiRequest<any>('/employee-applications/bulk', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
   updateEmployeeApplication: async (id: string, data: any) => {
     return apiRequest<any>(`/employee-applications/${id}`, {
       method: 'PUT',

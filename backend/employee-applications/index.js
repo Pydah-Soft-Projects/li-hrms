@@ -12,6 +12,7 @@ const {
   approveApplication,
   rejectApplication,
   bulkApproveApplications,
+  bulkCreateApplications,
 } = require('./controllers/employeeApplicationController');
 
 const {
@@ -72,6 +73,12 @@ const upload = multer({ storage: multer.memoryStorage() });
 // Create application (HR) - handle file uploads
 router.post('/', upload.any(), createApplication);
 
+// Bulk approve applications (Superadmin)
+router.put('/bulk-approve', authorize('super_admin', 'sub_admin'), bulkApproveApplications);
+
+// Bulk create applications (HR/Admin)
+router.post('/bulk', authorize('super_admin', 'sub_admin', 'hr'), bulkCreateApplications);
+
 // Update application (HR/Admin) - handle file uploads
 router.put('/:id', upload.any(), require('./controllers/employeeApplicationController').updateApplication);
 
@@ -80,9 +87,6 @@ router.get('/', getApplications);
 
 // Get single application
 router.get('/:id', getApplication);
-
-// Bulk approve applications (Superadmin)
-router.put('/bulk-approve', authorize('super_admin', 'sub_admin'), bulkApproveApplications);
 
 // Approve application (Superadmin)
 router.put('/:id/approve', authorize('super_admin', 'sub_admin'), approveApplication);
