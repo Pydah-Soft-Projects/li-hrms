@@ -94,27 +94,20 @@ export const WorkspaceProvider: React.FC<WorkspaceProviderProps> = ({ children }
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Load workspaces from localStorage on mount
+  // Simplified: Load workspace from localStorage or create a default one
   useEffect(() => {
-    const storedWorkspaces = localStorage.getItem('hrms_workspaces');
     const storedActiveWorkspace = localStorage.getItem('hrms_active_workspace');
-    
-    if (storedWorkspaces) {
-      try {
-        setWorkspaces(JSON.parse(storedWorkspaces));
-      } catch (e) {
-        console.error('Failed to parse stored workspaces:', e);
-      }
-    }
-    
+
     if (storedActiveWorkspace) {
       try {
-        setActiveWorkspace(JSON.parse(storedActiveWorkspace));
+        const workspace = JSON.parse(storedActiveWorkspace);
+        setActiveWorkspace(workspace);
+        setWorkspaces([workspace]); // Single workspace array
       } catch (e) {
         console.error('Failed to parse stored active workspace:', e);
       }
     }
-    
+
     setIsLoading(false);
   }, []);
 
@@ -135,9 +128,9 @@ export const WorkspaceProvider: React.FC<WorkspaceProviderProps> = ({ children }
     try {
       setIsLoading(true);
       setError(null);
-      
+
       const response = await api.getMyWorkspaces();
-      
+
       if (response.success) {
         setWorkspaces(response.workspaces || []);
         setActiveWorkspace(response.activeWorkspace || response.workspaces?.[0] || null);
@@ -153,37 +146,19 @@ export const WorkspaceProvider: React.FC<WorkspaceProviderProps> = ({ children }
   }, []);
 
   const switchWorkspace = useCallback(async (workspaceId: string) => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      
-      const response = await api.switchWorkspace(workspaceId);
-      
-      if (response.success && response.workspace) {
-        setActiveWorkspace(response.workspace);
-        // Update the workspace in the list if needed
-        setWorkspaces((prev) =>
-          prev.map((w) => (w._id === workspaceId ? { ...w, ...response.workspace } : w))
-        );
-      } else {
-        setError(response.error || 'Failed to switch workspace');
-      }
-    } catch (err: any) {
-      console.error('Error switching workspace:', err);
-      setError(err.message || 'Failed to switch workspace');
-    } finally {
-      setIsLoading(false);
-    }
+    // No-op: Single workspace mode, switching is disabled
+    console.log('Workspace switching is disabled in single-workspace mode');
+    return Promise.resolve();
   }, []);
 
   const hasPermission = useCallback(
     (moduleCode: string, permission: keyof ModulePermissions): boolean => {
       if (!activeWorkspace) return false;
-      
+
       const module = activeWorkspace.modules?.find(
         (m) => m.moduleCode === moduleCode && m.isEnabled
       );
-      
+
       return module?.permissions?.[permission] === true;
     },
     [activeWorkspace]
@@ -192,7 +167,7 @@ export const WorkspaceProvider: React.FC<WorkspaceProviderProps> = ({ children }
   const getModuleConfig = useCallback(
     (moduleCode: string): WorkspaceModule | null => {
       if (!activeWorkspace) return null;
-      
+
       return activeWorkspace.modules?.find(
         (m) => m.moduleCode === moduleCode && m.isEnabled
       ) || null;
@@ -202,7 +177,7 @@ export const WorkspaceProvider: React.FC<WorkspaceProviderProps> = ({ children }
 
   const getAvailableModules = useCallback((): WorkspaceModule[] => {
     if (!activeWorkspace) return [];
-    
+
     return activeWorkspace.modules
       ?.filter((m) => m.isEnabled && m.permissions?.canView)
       .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)) || [];

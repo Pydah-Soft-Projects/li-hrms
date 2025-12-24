@@ -10,6 +10,7 @@ import {
   validateEmployeeRow,
   ParsedRow,
 } from '@/lib/bulkUpload';
+import DynamicEmployeeForm from '@/components/DynamicEmployeeForm';
 
 interface Employee {
   emp_no: string;
@@ -25,7 +26,7 @@ interface Employee {
   gender?: string;
   marital_status?: string;
   blood_group?: string;
-  qualifications?: string;
+  qualifications?: any;
   experience?: number;
   address?: string;
   location?: string;
@@ -82,7 +83,7 @@ interface EmployeeApplication {
   gender?: string;
   marital_status?: string;
   blood_group?: string;
-  qualifications?: string;
+  qualifications?: any;
   experience?: number;
   address?: string;
   location?: string;
@@ -113,7 +114,7 @@ const initialFormState: Partial<Employee> = {
   gender: '',
   marital_status: '',
   blood_group: '',
-  qualifications: '',
+  qualifications: [], // Changed from '' to []
   experience: undefined,
   address: '',
   location: '',
@@ -157,9 +158,16 @@ export default function EmployeesPage() {
   const [userRole, setUserRole] = useState<string>('');
   const [showLeftDateModal, setShowLeftDateModal] = useState(false);
   const [selectedEmployeeForLeftDate, setSelectedEmployeeForLeftDate] = useState<Employee | null>(null);
+  const [formSettings, setFormSettings] = useState<any>(null); // To store dynamic settings for mapping
   const [leftDateForm, setLeftDateForm] = useState({ leftDate: '', leftReason: '' });
   const [includeLeftEmployees, setIncludeLeftEmployees] = useState(false);
   const [selectedApplicationIds, setSelectedApplicationIds] = useState<string[]>([]);
+
+  const [dynamicTemplate, setDynamicTemplate] = useState<{ headers: string[]; sample: any[]; columns: any[] }>({
+    headers: EMPLOYEE_TEMPLATE_HEADERS,
+    sample: EMPLOYEE_TEMPLATE_SAMPLE,
+    columns: [],
+  });
 
   useEffect(() => {
     const user = auth.getUser();
@@ -168,6 +176,7 @@ export default function EmployeesPage() {
     }
     loadEmployees();
     loadDepartments();
+    loadFormSettings();
     if (activeTab === 'applications') {
       loadApplications();
     }
@@ -250,6 +259,93 @@ export default function EmployeesPage() {
     }
   };
 
+  const loadFormSettings = async () => {
+    try {
+      const response = await api.getFormSettings();
+      if (response.success && response.data) {
+        setFormSettings(response.data);
+        generateDynamicTemplate(response.data);
+      }
+    } catch (err) {
+      console.error('Error loading form settings:', err);
+    }
+  };
+
+  const generateDynamicTemplate = (settings: any) => {
+    if (!settings || !settings.groups) return;
+
+    const headers: string[] = [];
+    const sample: any = {};
+    const columns: any[] = [];
+
+    // Permanent fields that must always be there
+    const permanentFields = [
+      { id: 'emp_no', label: 'Emp No', sample: 'EMP001', width: '100px' },
+      { id: 'employee_name', label: 'Name', sample: 'John Doe', width: '150px' },
+      { id: 'proposedSalary', label: 'Proposed Salary', sample: 50000, width: '120px', type: 'number' },
+    ];
+
+    permanentFields.forEach(f => {
+      headers.push(f.id);
+      sample[f.id] = f.sample;
+      columns.push({ key: f.id, label: f.label, width: f.width, type: f.type || 'text' });
+    });
+
+    // Department and Designation names (for matching)
+    headers.push('department_name');
+    sample['department_name'] = 'Information Technology';
+    columns.push({ key: 'department_name', label: 'Department' });
+
+    headers.push('designation_name');
+    sample['designation_name'] = 'Software Developer';
+    columns.push({ key: 'designation_name', label: 'Designation' });
+
+    // Add fields from settings
+    settings.groups.forEach((group: any) => {
+      if (!group.isEnabled) return;
+      group.fields.forEach((field: any) => {
+        if (!field.isEnabled) return;
+        // Skip already added permanent fields
+        if (headers.includes(field.id)) return;
+
+        headers.push(field.id);
+
+        // Value placeholder/sample
+        if (field.type === 'date') {
+          sample[field.id] = '2024-01-01';
+          columns.push({ key: field.id, label: field.label, type: 'date' });
+        } else if (field.type === 'number') {
+          sample[field.id] = 0;
+          columns.push({ key: field.id, label: field.label, type: 'number' });
+        } else if (field.type === 'select') {
+          sample[field.id] = field.options?.[0]?.value || '';
+          columns.push({ key: field.id, label: field.label, type: 'select', options: field.options });
+        } else if (field.type === 'array' || field.type === 'object') {
+          sample[field.id] = field.type === 'array' ? 'item1, item2' : 'key1:val1|key2:val2';
+          columns.push({ key: field.id, label: field.label });
+        } else {
+          sample[field.id] = '';
+          columns.push({ key: field.id, label: field.label });
+        }
+      });
+    });
+
+    // Special handling for qualifications if enabled
+    if (settings.qualifications?.isEnabled) {
+      if (!headers.includes('qualifications')) {
+        headers.push('qualifications');
+        sample['qualifications'] = 'Degree:Year, Degree:Year';
+        columns.push({ key: 'qualifications', label: 'Qualifications' });
+      }
+    }
+
+    setDynamicTemplate({
+      headers,
+      sample: [sample],
+      columns: columns.map(c => ({ ...c, width: c.width || '150px' }))
+    });
+  };
+
   const loadApplications = async () => {
     try {
       setLoadingApplications(true);
@@ -263,6 +359,58 @@ export default function EmployeesPage() {
     } finally {
       setLoadingApplications(false);
     }
+  };
+
+  const parseDynamicField = (value: any, fieldDef: any) => {
+    if (value === undefined || value === null || value === '') return undefined;
+
+    if (fieldDef.type === 'array') {
+      if (fieldDef.dataType === 'object' || fieldDef.itemType === 'object') {
+        // Format: field1:val1|field2:val2, field1:val3|field2:val4
+        // Support shorthand for qualifications if it's just Degree:Year
+        return String(value).split(',').map((item: string) => {
+          const obj: any = {};
+          const parts = item.split(/[|:]/);
+
+          // If it's field1:val1|field2:val2 format
+          if (item.includes('|')) {
+            item.split('|').forEach(part => {
+              const [k, v] = part.split(':').map(s => s.trim());
+              if (k && v) obj[k] = v;
+            });
+          } else if (item.includes(':')) {
+            // Shorthand Degree:Year
+            const [v1, v2] = item.split(':').map(s => s.trim());
+            // Try to map to the first two fields of the array item schema
+            const fields = fieldDef.itemSchema?.fields || fieldDef.fields || [];
+            if (fields[0]) obj[fields[0].id] = v1;
+            if (fields[1]) obj[fields[1].id] = v2;
+          } else {
+            // Just a string
+            const fields = fieldDef.itemSchema?.fields || fieldDef.fields || [];
+            if (fields[0]) obj[fields[0].id] = item.trim();
+          }
+          return obj;
+        });
+      } else {
+        // Format: val1, val2
+        return String(value).split(',').map((item: string) => item.trim());
+      }
+    }
+
+    if (fieldDef.type === 'object') {
+      // Format: key1:val1|key2:val2
+      const obj: any = {};
+      String(value).split('|').forEach((part: string) => {
+        const [k, v] = part.split(':').map((s: string) => s.trim());
+        if (k && v) obj[k] = v;
+      });
+      return obj;
+    }
+
+    if (fieldDef.type === 'number') return Number(value);
+
+    return value;
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -300,11 +448,62 @@ export default function EmployeesPage() {
     }
 
     try {
+      // Construct FormData for multipart/form-data submission
+      const payload = new FormData();
+
+      // Append standard fields
+      Object.entries(formData).forEach(([key, value]) => {
+        if (key === 'qualifications') return; // Handle separately
+        if (value === undefined || value === null) return;
+
+        if (typeof value === 'object' && !(value instanceof Date)) {
+          // Stringify complex objects/arrays (except Date if it were one, but here dates are strings)
+          payload.append(key, JSON.stringify(value));
+        } else {
+          payload.append(key, String(value));
+        }
+      });
+
+      // Handle Qualifications - Map Field IDs to Labels
+      const qualities = Array.isArray(formData.qualifications) ? formData.qualifications : [];
+
+      // Create a mapping from Field ID -> Label using formSettings
+      const fieldIdToLabelMap: Record<string, string> = {};
+      if (formSettings?.qualifications?.fields) {
+        formSettings.qualifications.fields.forEach((f: any) => {
+          fieldIdToLabelMap[f.id] = f.label;
+        });
+      }
+
+      const cleanQualifications = qualities.map((q: any, index: number) => {
+        const { certificateFile, ...rest } = q;
+
+        // Transform keys from Field ID to Label (e.g. key "degree" -> "Degree")
+        const transformedQ: any = {};
+        Object.entries(rest).forEach(([key, val]) => {
+          // If key matches a known field ID, use its label; otherwise keep key (e.g. stored urls)
+          const label = fieldIdToLabelMap[key] || key;
+          transformedQ[label] = val;
+        });
+
+        if (certificateFile instanceof File) {
+          payload.append(`qualification_cert_${index}`, certificateFile);
+        }
+        return transformedQ;
+      });
+      payload.append('qualifications', JSON.stringify(cleanQualifications));
+
       let response;
+      // Note: api.createEmployee/updateEmployee argument type is likely Partial<Employee>, 
+      // but payload is FormData. We rely on api.ts handling FormData and generic T. 
+      // We might need to cast or ignore TS error if the interface is strict.
+      // Checking api.ts interface: createEmployee(data: Partial<Employee>)
+      // Ideally I should update the interface in api.ts, but standard JS/TS allows passing any if not strict.
+      // Let's cast to any to avoid build errors.
       if (editingEmployee) {
-        response = await api.updateEmployee(editingEmployee.emp_no, formData);
+        response = await api.updateEmployee(editingEmployee.emp_no, payload as any);
       } else {
-        response = await api.createEmployee(formData);
+        response = await api.createEmployee(payload as any);
       }
 
       if (response.success) {
@@ -324,12 +523,24 @@ export default function EmployeesPage() {
 
   const handleEdit = (employee: Employee) => {
     setEditingEmployee(employee);
+    let processedQualifications = employee.qualifications;
+
+    // Handle legacy string format for qualifications
+    if (typeof processedQualifications === 'string' && processedQualifications) {
+      // Assuming naive comma split for legacy data: "B.Tech, MBA" -> [{ degree: "B.Tech" }, { degree: "MBA" }]
+      // This matches the backend virtual logic but does it client-side if needed
+      processedQualifications = processedQualifications.split(',').map(s => ({ degree: s.trim() }));
+    } else if (!processedQualifications) {
+      processedQualifications = [];
+    }
+
     setFormData({
       ...employee,
       department_id: employee.department?._id || employee.department_id || '',
       designation_id: employee.designation?._id || employee.designation_id || '',
       doj: employee.doj ? new Date(employee.doj).toISOString().split('T')[0] : '',
       dob: employee.dob ? new Date(employee.dob).toISOString().split('T')[0] : '',
+      qualifications: processedQualifications, // Use processed array
     });
     setShowDialog(true);
   };
@@ -454,25 +665,72 @@ export default function EmployeesPage() {
     }
 
     try {
-      // Clean up enum fields - convert empty strings to null/undefined
-      const cleanedData: any = { ...applicationFormData };
+      // Construct FormData for multipart/form-data submission
+      const payload = new FormData();
+
+      const submitData = { ...applicationFormData };
+
+      // Clean up enum fields
       const enumFields = ['gender', 'marital_status', 'blood_group'];
       enumFields.forEach(field => {
-        if (cleanedData[field] === '' || cleanedData[field] === undefined) {
-          cleanedData[field] = null;
+        if (submitData[field] === '' || submitData[field] === undefined) {
+          submitData[field] = null;
         }
       });
       // Convert empty strings to undefined for other optional fields
-      Object.keys(cleanedData).forEach(key => {
-        if (cleanedData[key] === '' && !enumFields.includes(key)) {
-          cleanedData[key] = undefined;
+      Object.keys(submitData).forEach(key => {
+        if (submitData[key] === '' && !enumFields.includes(key) && key !== 'qualifications') {
+          submitData[key] = undefined;
         }
       });
 
-      const response = await api.createEmployeeApplication({
-        ...cleanedData,
-        proposedSalary: applicationFormData.proposedSalary,
+      // Handle Qualifications Mapping (Field ID -> Label)
+      let qualificationsToSend = submitData.qualifications;
+
+      // Only map if it's an array (Dynamic Form data)
+      if (Array.isArray(qualificationsToSend) && formSettings?.qualifications?.fields) {
+        const fieldIdToLabelMap: Record<string, string> = {};
+        formSettings.qualifications.fields.forEach((f: any) => {
+          fieldIdToLabelMap[f.id] = f.label;
+        });
+
+        qualificationsToSend = qualificationsToSend.map((q: any, index: number) => {
+          const { certificateFile, ...rest } = q;
+          const transformedQ: any = {};
+          Object.entries(rest).forEach(([key, val]) => {
+            const label = fieldIdToLabelMap[key] || key;
+            transformedQ[label] = val;
+          });
+
+          if (certificateFile instanceof File) {
+            payload.append(`qualification_cert_${index}`, certificateFile);
+          }
+          return transformedQ;
+        });
+      }
+
+      // Append fields to FormData
+      Object.entries(submitData).forEach(([key, value]) => {
+        if (key === 'qualifications') return; // Handled below
+        if (value === undefined || value === null) return;
+
+        if (typeof value === 'object' && !(value instanceof Date)) {
+          payload.append(key, JSON.stringify(value));
+        } else {
+          payload.append(key, String(value));
+        }
       });
+
+      // Append processed qualifications
+      if (qualificationsToSend) {
+        payload.append('qualifications', typeof qualificationsToSend === 'string' ? qualificationsToSend : JSON.stringify(qualificationsToSend));
+      }
+
+      // API Call
+      // Note: api.createEmployeeApplication needs to handle FormData. 
+      // Checked api.ts: apiRequest checks (options.body instanceof FormData) and sets headers accordingly.
+      // So passing payload directly is safe assuming createEmployeeApplication signature allows 'any'.
+      const response = await api.createEmployeeApplication(payload as any);
 
       if (response.success) {
         setSuccess('Employee application created successfully!');
@@ -482,8 +740,8 @@ export default function EmployeesPage() {
       } else {
         setError(response.message || 'Failed to create application');
       }
-    } catch (err) {
-      setError('An error occurred');
+    } catch (err: any) {
+      setError(err.message || 'An error occurred');
       console.error(err);
     }
   };
@@ -653,15 +911,17 @@ export default function EmployeesPage() {
               </svg>
               Bulk Upload
             </button>
-            <button
-              onClick={openCreateDialog}
-              className="rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
-            >
-              <svg className="mr-2 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Add Employee
-            </button>
+            {(userRole === 'hr' || userRole === 'super_admin' || userRole === 'sub_admin') && (
+              <button
+                onClick={openApplicationDialog}
+                className="rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
+              >
+                <svg className="mr-2 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                New Application
+              </button>
+            )}
           </div>
         </div>
 
@@ -710,15 +970,6 @@ export default function EmployeesPage() {
             {/* Applications Header */}
             <div className="mb-6 flex items-center justify-between">
               <div className="flex gap-3">
-                {(userRole === 'hr' || userRole === 'super_admin' || userRole === 'sub_admin') && (
-                  <button
-                    onClick={openApplicationDialog}
-                    className="group relative inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-green-500 to-green-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600 hover:shadow-xl hover:shadow-green-500/40"
-                  >
-                    <span className="text-lg">+</span>
-                    <span>New Application</span>
-                  </button>
-                )}
                 {selectedApplicationIds.length > 0 && (userRole === 'super_admin' || userRole === 'sub_admin') && (
                   <button
                     onClick={handleBulkApprove}
@@ -1067,311 +1318,38 @@ export default function EmployeesPage() {
             )}
 
             <form onSubmit={handleCreateApplication} className="space-y-6">
-              {/* Basic Info - Same as employee form but with Proposed Salary */}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Basic Information</h3>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Employee No *
-                    </label>
-                    <input
-                      type="text"
-                      name="emp_no"
-                      value={applicationFormData.emp_no || ''}
-                      onChange={(e) => {
-                        const value = e.target.value.toUpperCase();
-                        setApplicationFormData(prev => ({
-                          ...prev,
-                          emp_no: value,
-                        }));
-                      }}
-                      required
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm uppercase transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                      placeholder="E.g., EMP001"
-                    />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Employee Name *
-                    </label>
-                    <input
-                      type="text"
-                      name="employee_name"
-                      value={applicationFormData.employee_name || ''}
-                      onChange={handleApplicationInputChange}
-                      required
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                      placeholder="Full Name"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Department</label>
-                    <select
-                      name="department_id"
-                      value={typeof applicationFormData.department_id === 'string' ? applicationFormData.department_id : (applicationFormData.department_id?._id || '')}
-                      onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    >
-                      <option value="">Select Department</option>
-                      {departments.map((dept) => (
-                        <option key={dept._id} value={dept._id}>{dept.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Designation</label>
-                    <select
-                      name="designation_id"
-                      value={typeof applicationFormData.designation_id === 'string' ? applicationFormData.designation_id : (applicationFormData.designation_id?._id || '')}
-                      onChange={handleApplicationInputChange}
-                      disabled={!applicationFormData.department_id}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    >
-                      <option value="">Select Designation</option>
-                      {filteredApplicationDesignations.map((desig) => (
-                        <option key={desig._id} value={desig._id}>{desig.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Proposed Salary *
-                    </label>
-                    <input
-                      type="number"
-                      name="proposedSalary"
-                      value={applicationFormData.proposedSalary || ''}
-                      onChange={handleApplicationInputChange}
-                      required
-                      min="0"
-                      step="0.01"
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                      placeholder="0.00"
-                    />
-                  </div>
-                </div>
-              </div>
 
-              {/* Personal Information */}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Personal Information</h3>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Date of Birth</label>
-                    <input
-                      type="date"
-                      name="dob"
-                      value={applicationFormData.dob || ''}
-                      onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Gender</label>
-                    <select
-                      name="gender"
-                      value={applicationFormData.gender || ''}
-                      onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    >
-                      <option value="">Select</option>
-                      <option value="Male">Male</option>
-                      <option value="Female">Female</option>
-                      <option value="Other">Other</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Marital Status</label>
-                    <select
-                      name="marital_status"
-                      value={applicationFormData.marital_status || ''}
-                      onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    >
-                      <option value="">Select</option>
-                      <option value="Single">Single</option>
-                      <option value="Married">Married</option>
-                      <option value="Divorced">Divorced</option>
-                      <option value="Widowed">Widowed</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Blood Group</label>
-                    <select
-                      name="blood_group"
-                      value={applicationFormData.blood_group || ''}
-                      onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    >
-                      <option value="">Select</option>
-                      {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(bg => (
-                        <option key={bg} value={bg}>{bg}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Qualifications</label>
-                    <input
-                      type="text"
-                      name="qualifications"
-                      value={applicationFormData.qualifications || ''}
-                      onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                      placeholder="E.g., B.Tech, MBA"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Experience (Years)</label>
-                    <input
-                      type="number"
-                      name="experience"
-                      value={applicationFormData.experience || ''}
-                      onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Address</label>
-                    <input
-                      type="text"
-                      name="address"
-                      value={applicationFormData.address || ''}
-                      onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Location</label>
-                    <input
-                      type="text"
-                      name="location"
-                      value={applicationFormData.location || ''}
-                      onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Aadhar Number</label>
-                    <input
-                      type="text"
-                      name="aadhar_number"
-                      value={applicationFormData.aadhar_number || ''}
-                      onChange={handleApplicationInputChange}
-                      maxLength={12}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-                </div>
-              </div>
+              {/* Use DynamicEmployeeForm for standard employee fields */}
+              <DynamicEmployeeForm
+                formData={applicationFormData}
+                onChange={(newData) => {
+                  setApplicationFormData(prev => ({
+                    ...prev,
+                    ...newData
+                  }));
+                }}
+                onSettingsLoaded={setFormSettings} // Critical for label mapping
+                isViewMode={false}
+              />
 
-              {/* Contact & Employment */}
+              {/* Application Specific Fields */}
               <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Contact & Employment</h3>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Phone Number</label>
-                    <input
-                      type="text"
-                      name="phone_number"
-                      value={applicationFormData.phone_number || ''}
-                      onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Alt. Phone</label>
-                    <input
-                      type="text"
-                      name="alt_phone_number"
-                      value={applicationFormData.alt_phone_number || ''}
-                      onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Email</label>
-                    <input
-                      type="email"
-                      name="email"
-                      value={applicationFormData.email || ''}
-                      onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">PF Number</label>
-                    <input
-                      type="text"
-                      name="pf_number"
-                      value={applicationFormData.pf_number || ''}
-                      onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">ESI Number</label>
-                    <input
-                      type="text"
-                      name="esi_number"
-                      value={applicationFormData.esi_number || ''}
-                      onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Bank Details */}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Bank Details</h3>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Bank A/C No</label>
-                    <input
-                      type="text"
-                      name="bank_account_no"
-                      value={applicationFormData.bank_account_no || ''}
-                      onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Bank Name</label>
-                    <input
-                      type="text"
-                      name="bank_name"
-                      value={applicationFormData.bank_name || ''}
-                      onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Bank Place</label>
-                    <input
-                      type="text"
-                      name="bank_place"
-                      value={applicationFormData.bank_place || ''}
-                      onChange={handleApplicationInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">IFSC Code</label>
-                    <input
-                      type="text"
-                      name="ifsc_code"
-                      value={applicationFormData.ifsc_code || ''}
-                      onChange={(e) => {
-                        const value = e.target.value.toUpperCase();
-                        setApplicationFormData(prev => ({
-                          ...prev,
-                          ifsc_code: value,
-                        }));
-                      }}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm uppercase transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </div>
+                <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Application Details</h3>
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Proposed Salary *
+                  </label>
+                  <input
+                    type="number"
+                    name="proposedSalary"
+                    value={applicationFormData.proposedSalary || ''}
+                    onChange={handleApplicationInputChange}
+                    required
+                    min="0"
+                    step="0.01"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    placeholder="0.00"
+                  />
                 </div>
               </div>
 
@@ -1583,210 +1561,29 @@ export default function EmployeesPage() {
             )}
 
             <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Basic Info */}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Basic Information</h3>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Employee No *
-                    </label>
-                    <input
-                      type="text"
-                      name="emp_no"
-                      value={formData.emp_no || ''}
-                      onChange={handleInputChange}
-                      required
-                      disabled={!!editingEmployee}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm uppercase transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                      placeholder="E.g., EMP001"
-                    />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Employee Name *
-                    </label>
-                    <input
-                      type="text"
-                      name="employee_name"
-                      value={formData.employee_name || ''}
-                      onChange={handleInputChange}
-                      required
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                      placeholder="Full Name"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Department</label>
-                    <select
-                      name="department_id"
-                      value={formData.department_id || ''}
-                      onChange={handleInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    >
-                      <option value="">Select Department</option>
-                      {departments.map((dept) => (
-                        <option key={dept._id} value={dept._id}>{dept.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Designation</label>
-                    <select
-                      name="designation_id"
-                      value={formData.designation_id || ''}
-                      onChange={handleInputChange}
-                      disabled={!formData.department_id}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    >
-                      <option value="">Select Designation</option>
-                      {filteredDesignations.map((desig) => (
-                        <option key={desig._id} value={desig._id}>{desig.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Date of Joining</label>
-                    <input
-                      type="date"
-                      name="doj"
-                      value={formData.doj || ''}
-                      onChange={handleInputChange}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-                </div>
-              </div>
 
-              {/* Personal Info */}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Personal Information</h3>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Date of Birth</label>
-                    <input type="date" name="dob" value={formData.dob || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Gender</label>
-                    <select name="gender" value={formData.gender || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
-                      <option value="">Select</option>
-                      <option value="Male">Male</option>
-                      <option value="Female">Female</option>
-                      <option value="Other">Other</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Marital Status</label>
-                    <select name="marital_status" value={formData.marital_status || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
-                      <option value="">Select</option>
-                      <option value="Single">Single</option>
-                      <option value="Married">Married</option>
-                      <option value="Divorced">Divorced</option>
-                      <option value="Widowed">Widowed</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Blood Group</label>
-                    <select name="blood_group" value={formData.blood_group || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
-                      <option value="">Select</option>
-                      {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(bg => (
-                        <option key={bg} value={bg}>{bg}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Qualifications</label>
-                    <input type="text" name="qualifications" value={formData.qualifications || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" placeholder="E.g., B.Tech, MBA" />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Experience (Years)</label>
-                    <input type="number" name="experience" value={formData.experience || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Address</label>
-                    <input type="text" name="address" value={formData.address || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Location</label>
-                    <input type="text" name="location" value={formData.location || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Aadhar Number</label>
-                    <input type="text" name="aadhar_number" value={formData.aadhar_number || ''} onChange={handleInputChange} maxLength={12} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
-                  </div>
-                </div>
-              </div>
-
-              {/* Contact & Employment */}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Contact & Employment</h3>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Phone Number</label>
-                    <input type="text" name="phone_number" value={formData.phone_number || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Alt. Phone</label>
-                    <input type="text" name="alt_phone_number" value={formData.alt_phone_number || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Email</label>
-                    <input type="email" name="email" value={formData.email || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Gross Salary</label>
-                    <input type="number" name="gross_salary" value={formData.gross_salary || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">PF Number</label>
-                    <input type="text" name="pf_number" value={formData.pf_number || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">ESI Number</label>
-                    <input type="text" name="esi_number" value={formData.esi_number || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
-                  </div>
-                </div>
-              </div>
-
-              {/* Bank Details */}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Bank Details</h3>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Bank A/C No</label>
-                    <input type="text" name="bank_account_no" value={formData.bank_account_no || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Bank Name</label>
-                    <input type="text" name="bank_name" value={formData.bank_name || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Bank Place</label>
-                    <input type="text" name="bank_place" value={formData.bank_place || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">IFSC Code</label>
-                    <input type="text" name="ifsc_code" value={formData.ifsc_code || ''} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm uppercase transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
-                  </div>
-                </div>
-              </div>
-
-              {/* Status */}
-              <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                <input
-                  type="checkbox"
-                  id="is_active"
-                  checked={formData.is_active !== false}
-                  onChange={(e) => setFormData(prev => ({ ...prev, is_active: e.target.checked }))}
-                  className="h-4 w-4 rounded text-green-600 focus:ring-green-500"
-                />
-                <label htmlFor="is_active" className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Active Employee
-                </label>
-              </div>
+              <DynamicEmployeeForm
+                formData={formData}
+                onChange={(newData) => {
+                  // Preserve existing fields that might not be in the form (like _id)
+                  setFormData(prev => ({
+                    ...prev,
+                    ...newData,
+                    // Ensure core fields are synced if DynamicEmployeeForm updates them
+                    emp_no: newData.emp_no || prev.emp_no,
+                    employee_name: newData.employee_name || prev.employee_name,
+                  }));
+                }}
+                errors={
+                  // Convert single error string to object if needed, or pass explicit field errors if we had them
+                  error ? { form: error } : {}
+                }
+                departments={departments}
+                designations={designations}
+              />
 
               {/* Actions */}
-              <div className="flex gap-3 pt-2">
+              <div className="flex gap-3 pt-6 border-t border-slate-200 dark:border-slate-700">
                 <button
                   type="submit"
                   className="flex-1 rounded-2xl bg-gradient-to-r from-green-500 to-green-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
@@ -1809,21 +1606,11 @@ export default function EmployeesPage() {
       {/* Bulk Upload Dialog */}
       {showBulkUpload && (
         <BulkUpload
-          title="Bulk Upload Employees"
-          templateHeaders={EMPLOYEE_TEMPLATE_HEADERS}
-          templateSample={EMPLOYEE_TEMPLATE_SAMPLE}
-          templateFilename="employee_template"
-          columns={[
-            { key: 'emp_no', label: 'Emp No', width: '100px' },
-            { key: 'employee_name', label: 'Name', width: '150px' },
-            { key: 'department_name', label: 'Department', type: 'select', options: departments.map(d => ({ value: d.name, label: d.name })), width: '150px' },
-            { key: 'designation_name', label: 'Designation', width: '150px' },
-            { key: 'proposedSalary', label: 'Proposed Salary', width: '120px' },
-            { key: 'doj', label: 'DOJ', type: 'date', width: '120px' },
-            { key: 'gender', label: 'Gender', type: 'select', options: [{ value: 'Male', label: 'Male' }, { value: 'Female', label: 'Female' }, { value: 'Other', label: 'Other' }], width: '100px' },
-            { key: 'phone_number', label: 'Phone', width: '120px' },
-            { key: 'email', label: 'Email', width: '180px' },
-          ]}
+          title="Bulk Upload Employee Applications"
+          templateHeaders={dynamicTemplate.headers}
+          templateSample={dynamicTemplate.sample}
+          templateFilename="employee_application_template"
+          columns={dynamicTemplate.columns}
           validateRow={(row) => {
             const result = validateEmployeeRow(row, departments, designations);
             return { isValid: result.isValid, errors: result.errors };
@@ -1835,60 +1622,54 @@ export default function EmployeesPage() {
 
             for (const row of data) {
               try {
-                // Map department and designation names to IDs
+                const employeeData: any = {};
+
+                // 1. Mandatory Core Fields
+                employeeData.emp_no = String(row.emp_no || '').toUpperCase();
+                employeeData.employee_name = row.employee_name;
+                employeeData.proposedSalary = row.proposedSalary ? Number(row.proposedSalary) : undefined;
+
+                // 2. Department & Designation mapping
                 const deptId = departments.find(d => d.name.toLowerCase() === (row.department_name as string)?.toLowerCase())?._id;
                 const desigId = designations.find(d =>
                   d.name.toLowerCase() === (row.designation_name as string)?.toLowerCase() &&
                   d.department === deptId
                 )?._id;
+                employeeData.department_id = deptId;
+                employeeData.designation_id = desigId;
 
-                const employeeData: any = {
-                  emp_no: row.emp_no,
-                  employee_name: row.employee_name,
-                  department_id: deptId || undefined,
-                  designation_id: desigId || undefined,
-                  doj: row.doj || undefined,
-                  dob: row.dob || undefined,
-                  proposedSalary: row.proposedSalary ? Number(row.proposedSalary) : undefined,
-                  gender: row.gender || undefined,
-                  marital_status: row.marital_status || undefined,
-                  blood_group: row.blood_group || undefined,
-                  experience: row.experience ? Number(row.experience) : undefined,
-                  address: row.address || undefined,
-                  location: row.location || undefined,
-                  aadhar_number: row.aadhar_number || undefined,
-                  phone_number: row.phone_number || undefined,
-                  alt_phone_number: row.alt_phone_number || undefined,
-                  email: row.email || undefined,
-                  pf_number: row.pf_number || undefined,
-                  esi_number: row.esi_number || undefined,
-                  bank_account_no: row.bank_account_no || undefined,
-                  bank_name: row.bank_name || undefined,
-                  bank_place: row.bank_place || undefined,
-                  ifsc_code: row.ifsc_code || undefined,
-                };
+                // 3. Process fields using FormSettings
+                const processedKeys = ['emp_no', 'employee_name', 'proposedSalary', 'department_id', 'designation_id', 'department_name', 'designation_name'];
 
-                // Qualifications Parsing Logic
-                if (row.qualifications && typeof row.qualifications === 'string') {
-                  const qualParts = row.qualifications.split(',').map(s => s.trim()).filter(Boolean);
-                  const parsedQuals = qualParts.map(part => {
-                    const [degree, year] = part.split(':').map(s => s.trim());
-                    return {
-                      degree,
-                      qualified_year: year ? parseInt(year) : undefined
-                    };
+                if (formSettings?.groups) {
+                  formSettings.groups.forEach((group: any) => {
+                    group.fields.forEach((field: any) => {
+                      if (row[field.id] !== undefined && row[field.id] !== null && row[field.id] !== '') {
+                        if (processedKeys.includes(field.id)) return;
+
+                        employeeData[field.id] = parseDynamicField(row[field.id], field);
+                        processedKeys.push(field.id);
+                      }
+                    });
                   });
-                  employeeData.qualifications = parsedQuals;
                 }
 
-                // Dynamic Field Handling: Map any columns not processed above to dynamicFields
-                const processedKeys = Object.keys(employeeData);
+                // 4. Special case: Qualifications
+                if (formSettings?.qualifications?.isEnabled && row.qualifications) {
+                  const qualDef = {
+                    type: 'array',
+                    itemType: 'object',
+                    fields: formSettings.qualifications.fields
+                  };
+                  employeeData.qualifications = parseDynamicField(row.qualifications, qualDef);
+                  processedKeys.push('qualifications');
+                }
+
+                // 5. Handle leftovers as dynamicFields
                 const dynamicFields: any = {};
                 Object.keys(row).forEach(key => {
-                  // Only add keys that aren't in processedKeys and aren't noise
                   if (!processedKeys.includes(key) &&
-                    key !== 'department_name' &&
-                    key !== 'designation_name' &&
+                    key !== '_rowIndex' &&
                     row[key] !== undefined &&
                     row[key] !== null &&
                     row[key] !== '') {
@@ -1905,20 +1686,21 @@ export default function EmployeesPage() {
                   successCount++;
                 } else {
                   failCount++;
-                  errors.push(`${row.emp_no}: ${response.message}`);
+                  errors.push(`${row.emp_no || 'Row'}: ${response.message}`);
                 }
               } catch (err) {
                 failCount++;
-                errors.push(`${row.emp_no}: Failed to create application`);
+                errors.push(`${row.emp_no || 'Row'}: Failed to create application`);
+                console.error('Bulk upload row error:', err);
               }
             }
 
-            loadApplications(); // Reload applications instead of employees
+            loadApplications();
 
             if (failCount === 0) {
-              return { success: true, message: `Successfully created ${successCount} employees` };
+              return { success: true, message: `Successfully created ${successCount} applications` };
             } else {
-              return { success: false, message: `Created ${successCount}, Failed ${failCount}. Errors: ${errors.slice(0, 3).join('; ')}` };
+              return { success: false, message: `Created ${successCount}, Failed ${failCount}. ${errors.length > 0 ? 'First error: ' + errors[0] : ''}` };
             }
           }}
           onClose={() => setShowBulkUpload(false)}

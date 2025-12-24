@@ -171,9 +171,14 @@ export async function apiRequest<T>(
     headers['Authorization'] = `Bearer ${token}`;
   }
 
+  if (options.body instanceof FormData) {
+    delete headers['Content-Type'];
+  }
+
   try {
     const url = `${API_BASE_URL}${endpoint}`;
-    console.log(`[API Request] ${options.method || 'GET'} ${url}`, options.body ? JSON.parse(options.body as string) : '');
+    // console.log(`[API Request] ${options.method || 'GET'} ${url}`, options.body instanceof FormData ? 'FormData' : (options.body ? JSON.parse(options.body as string) : ''));
+
 
     const response = await fetch(url, {
       ...options,
@@ -764,7 +769,14 @@ export const api = {
   createEmployeeApplication: async (data: any) => {
     return apiRequest<any>('/employee-applications', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: data instanceof FormData ? data : JSON.stringify(data),
+    });
+  },
+
+  updateEmployeeApplication: async (id: string, data: any) => {
+    return apiRequest<any>(`/employee-applications/${id}`, {
+      method: 'PUT',
+      body: data instanceof FormData ? data : JSON.stringify(data),
     });
   },
 
@@ -919,6 +931,10 @@ export const api = {
   getWorkspaces: async () => {
     return apiRequest<any>('/workspaces', { method: 'GET' });
   },
+
+
+
+
 
   getWorkspace: async (id: string) => {
     return apiRequest<any>(`/workspaces/${id}`, { method: 'GET' });
@@ -1377,24 +1393,7 @@ export const api = {
     });
   },
 
-  // Get users for workflow configuration
-  getUsersForLoanWorkflow: async (type: 'loan' | 'salary_advance', role?: string) => {
-    const query = role ? `?role=${role}` : '';
-    return apiRequest<any>(`/loans/settings/${type}/users${query}`, { method: 'GET' });
-  },
 
-  // Get workflow configuration
-  getLoanWorkflow: async (type: 'loan' | 'salary_advance') => {
-    return apiRequest<any>(`/loans/settings/${type}/workflow`, { method: 'GET' });
-  },
-
-  // Update workflow configuration
-  updateLoanWorkflow: async (type: 'loan' | 'salary_advance', data: any) => {
-    return apiRequest<any>(`/loans/settings/${type}/workflow`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    });
-  },
 
   // Get all loans
   getLoans: async (filters?: { status?: string; employeeId?: string; department?: string; requestType?: string; page?: number; limit?: number }) => {
@@ -1503,18 +1502,7 @@ export const api = {
     });
   },
 
-  // Get workflow
-  getLeaveWorkflow: async (type: 'leave' | 'od') => {
-    return apiRequest<any>(`/leaves/workflow/${type}`, { method: 'GET' });
-  },
 
-  // Update workflow
-  updateLeaveWorkflow: async (type: 'leave' | 'od', workflow: any) => {
-    return apiRequest<any>(`/leaves/workflow/${type}`, {
-      method: 'PUT',
-      body: JSON.stringify({ workflow }),
-    });
-  },
 
   // Initialize default settings
   initializeLeaveSettings: async () => {
@@ -2355,5 +2343,7 @@ export const api = {
       body: JSON.stringify({ nextStatus, ...data }),
     });
   },
+  // Workflows
+  // (Workflow methods moved up to avoid duplicates)
 };
 

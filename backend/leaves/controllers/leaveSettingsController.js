@@ -39,37 +39,7 @@ const DEFAULT_STATUSES = [
   { code: 'cancelled', name: 'Cancelled', description: 'Cancelled by employee', color: '#6b7280', isFinal: true, sortOrder: 9 },
 ];
 
-// Default workflow
-const DEFAULT_WORKFLOW = {
-  isEnabled: true,
-  steps: [
-    {
-      stepOrder: 1,
-      stepName: 'HOD Approval',
-      approverRole: 'hod',
-      availableActions: ['approve', 'reject', 'forward', 'return'],
-      approvedStatus: 'hod_approved',
-      rejectedStatus: 'hod_rejected',
-      nextStepOnApprove: 2,
-      isActive: true,
-    },
-    {
-      stepOrder: 2,
-      stepName: 'HR Approval',
-      approverRole: 'hr',
-      availableActions: ['approve', 'reject', 'return'],
-      approvedStatus: 'approved',
-      rejectedStatus: 'hr_rejected',
-      nextStepOnApprove: null, // Final step
-      isActive: true,
-    },
-  ],
-  finalAuthority: {
-    role: 'hr',
-    anyHRCanApprove: true,
-    authorizedHRUsers: [],
-  },
-};
+
 
 // @desc    Get settings for leave or OD
 // @route   GET /api/leaves/settings/:type
@@ -77,7 +47,7 @@ const DEFAULT_WORKFLOW = {
 exports.getSettings = async (req, res) => {
   try {
     const { type } = req.params;
-    
+
     if (!['leave', 'od'].includes(type)) {
       return res.status(400).json({
         success: false,
@@ -93,7 +63,6 @@ exports.getSettings = async (req, res) => {
         type,
         types: type === 'leave' ? DEFAULT_LEAVE_TYPES : DEFAULT_OD_TYPES,
         statuses: DEFAULT_STATUSES,
-        workflow: DEFAULT_WORKFLOW,
         settings: {
           allowBackdated: false,
           maxBackdatedDays: 7,
@@ -136,7 +105,7 @@ exports.getSettings = async (req, res) => {
 exports.saveSettings = async (req, res) => {
   try {
     const { type } = req.params;
-    const { types, statuses, workflow, settings } = req.body;
+    const { types, statuses, settings } = req.body;
 
     console.log('=== Save Settings Request ===');
     console.log('Type:', type);
@@ -162,12 +131,11 @@ exports.saveSettings = async (req, res) => {
       // Update existing
       if (types) leaveSettings.types = types;
       if (statuses) leaveSettings.statuses = statuses;
-      if (workflow) leaveSettings.workflow = workflow;
       if (settings) {
         // Deep merge settings to preserve existing properties
         const existingSettings = leaveSettings.settings || {};
         const newSettings = { ...existingSettings };
-        
+
         // Merge all settings properties, including workspacePermissions
         Object.keys(settings).forEach(key => {
           if (key === 'workspacePermissions' && settings[key]) {
@@ -180,7 +148,7 @@ exports.saveSettings = async (req, res) => {
             newSettings[key] = settings[key];
           }
         });
-        
+
         leaveSettings.settings = newSettings;
         // Mark settings as modified to ensure Mongoose saves nested objects
         leaveSettings.markModified('settings');
@@ -197,7 +165,6 @@ exports.saveSettings = async (req, res) => {
         type,
         types: types || (type === 'leave' ? DEFAULT_LEAVE_TYPES : DEFAULT_OD_TYPES),
         statuses: statuses || DEFAULT_STATUSES,
-        workflow: workflow || DEFAULT_WORKFLOW,
         settings: settings || {},
         createdBy: req.user._id,
         updatedBy: req.user._id,
@@ -228,7 +195,7 @@ exports.saveSettings = async (req, res) => {
 exports.getTypes = async (req, res) => {
   try {
     const { type } = req.params;
-    
+
     if (!['leave', 'od'].includes(type)) {
       return res.status(400).json({
         success: false,
@@ -278,7 +245,6 @@ exports.addType = async (req, res) => {
         type,
         types: type === 'leave' ? [...DEFAULT_LEAVE_TYPES, typeData] : [...DEFAULT_OD_TYPES, typeData],
         statuses: DEFAULT_STATUSES,
-        workflow: DEFAULT_WORKFLOW,
         createdBy: req.user._id,
       });
     } else {
@@ -309,81 +275,9 @@ exports.addType = async (req, res) => {
   }
 };
 
-// @desc    Update workflow configuration
-// @route   PUT /api/leaves/workflow/:type
-// @access  Private (Super Admin)
-exports.updateWorkflow = async (req, res) => {
-  try {
-    const { type } = req.params;
-    const { workflow } = req.body;
 
-    if (!['leave', 'od'].includes(type)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid type',
-      });
-    }
 
-    let settings = await LeaveSettings.findOne({ type });
 
-    if (!settings) {
-      settings = new LeaveSettings({
-        type,
-        types: type === 'leave' ? DEFAULT_LEAVE_TYPES : DEFAULT_OD_TYPES,
-        statuses: DEFAULT_STATUSES,
-        workflow,
-        createdBy: req.user._id,
-      });
-    } else {
-      settings.workflow = workflow;
-      settings.updatedBy = req.user._id;
-    }
-
-    await settings.save();
-
-    res.status(200).json({
-      success: true,
-      message: 'Workflow updated successfully',
-      data: settings.workflow,
-    });
-  } catch (error) {
-    console.error('Error updating workflow:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message || 'Failed to update workflow',
-    });
-  }
-};
-
-// @desc    Get workflow for a type
-// @route   GET /api/leaves/workflow/:type
-// @access  Private
-exports.getWorkflow = async (req, res) => {
-  try {
-    const { type } = req.params;
-    
-    if (!['leave', 'od'].includes(type)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid type',
-      });
-    }
-
-    const settings = await LeaveSettings.findOne({ type, isActive: true });
-    const workflow = settings?.workflow || DEFAULT_WORKFLOW;
-
-    res.status(200).json({
-      success: true,
-      data: workflow,
-    });
-  } catch (error) {
-    console.error('Error fetching workflow:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message || 'Failed to fetch workflow',
-    });
-  }
-};
 
 // @desc    Initialize default settings
 // @route   POST /api/leaves/settings/initialize
@@ -401,7 +295,6 @@ exports.initializeSettings = async (req, res) => {
         type: 'leave',
         types: DEFAULT_LEAVE_TYPES,
         statuses: DEFAULT_STATUSES,
-        workflow: DEFAULT_WORKFLOW,
         settings: {
           allowBackdated: false,
           maxBackdatedDays: 7,
@@ -426,7 +319,6 @@ exports.initializeSettings = async (req, res) => {
         type: 'od',
         types: DEFAULT_OD_TYPES,
         statuses: DEFAULT_STATUSES,
-        workflow: DEFAULT_WORKFLOW,
         settings: {
           allowBackdated: true, // ODs are often applied after the fact
           maxBackdatedDays: 30,

@@ -15,6 +15,7 @@ const {
 const {
   extractPermanentFields,
   extractDynamicFields,
+  resolveQualificationLabels,
 } = require('../../employee-applications/services/fieldMappingService');
 const { resolveForEmployee } = require('../../payroll/services/allowanceDeductionResolverService');
 const mongoose = require('mongoose');
@@ -28,8 +29,73 @@ const {
   employeeExistsMSSQL,
 } = require('../config/sqlHelper');
 const { generatePassword, sendCredentials } = require('../../shared/services/passwordNotificationService');
+const { uploadToS3 } = require('../../shared/routes/uploadRoutes'); // Wait, direct service import is better
+const s3UploadService = require('../../shared/services/s3UploadService');
 
 // ============== Helper Functions ==============
+
+/**
+ * Process qualifications with S3 uploads and label resolution
+ */
+const processQualifications = async (req, settings) => {
+  let qualifications = [];
+  try {
+    // Parse if string (from FormData) or use as is
+    const raw = req.body.qualifications;
+    if (typeof raw === 'string') {
+      qualifications = JSON.parse(raw);
+    } else if (Array.isArray(raw)) {
+      qualifications = raw;
+    }
+  } catch (e) {
+    console.error('[EmployeeController] Error parsing qualifications:', e);
+    return [];
+  }
+
+  // Handle S3 Uploads
+  if (req.files && req.files.length > 0) {
+    console.log(`[EmployeeController] Processing ${req.files.length} files`);
+
+    // Map files for easy access
+    // Expecting fieldname "qualification_cert_{index}"
+    const fileMap = {};
+    req.files.forEach(f => {
+      fileMap[f.fieldname] = f;
+    });
+
+    for (let i = 0; i < qualifications.length; i++) {
+      const file = fileMap[`qualification_cert_${i}`];
+      if (file) {
+        console.log(`[EmployeeController] Uploading cert for qualification [${i}]`);
+        try {
+          // Pass buffer, originalname, mimetype, and specify 'hrms/certificates' folder
+          const uploadResult = await s3UploadService.uploadToS3(
+            file.buffer,
+            file.originalname,
+            file.mimetype,
+            'hrms/certificates'
+          );
+
+          // s3UploadService returns the URL directly (or check if it returns { Location })
+          // Looking at s3UploadService.js: return result.Location; 
+          // So uploadResult is the URL string.
+          qualifications[i].certificateUrl = uploadResult;
+          console.log(`[EmployeeController] Upload success: ${uploadResult}`);
+        } catch (uploadErr) {
+          console.error(`[EmployeeController] Failed to upload cert for index ${i}:`, uploadErr);
+        }
+      }
+    }
+  }
+
+  // Resolve Labels
+  if (settings && qualifications.length > 0) {
+    console.log('[EmployeeController] Resolving labels for qualifications');
+    qualifications = resolveQualificationLabels(qualifications, settings);
+  }
+
+  return qualifications;
+};
 
 /**
  * Get employee settings from database
@@ -273,13 +339,13 @@ const transformEmployeeForResponse = async (employee, populateUsers = true) => {
 exports.getAllEmployees = async (req, res) => {
   try {
     const { is_active, department_id, designation_id, includeLeft } = req.query;
-    const { roleFilter } = req; // Get role-based filter from middleware
+    const { scopeFilter } = req; // Get scope filter from data scope middleware
     const settings = await getEmployeeSettings();
 
     let employees = [];
 
-    // Build filters - merge role filter with query filters
-    const filters = { ...roleFilter };
+    // Build filters - merge scope filter with query filters
+    const filters = { ...scopeFilter };
     if (is_active !== undefined) filters.is_active = is_active === 'true';
     if (department_id) filters.department_id = department_id;
     if (designation_id) filters.designation_id = designation_id;
@@ -289,7 +355,7 @@ exports.getAllEmployees = async (req, res) => {
       filters.leftDate = null;
     }
 
-    console.log('[Employee Controller] Final filters:', filters);
+    console.log('[Employee Controller] Scope filters:', filters);
 
     // Fetch based on data source setting
     if (settings.dataSource === 'mssql' && isHRMSConnected()) {
@@ -298,10 +364,10 @@ exports.getAllEmployees = async (req, res) => {
       employees = await resolveEmployeeReferences(mssqlEmployees);
     } else {
       // Fetch from MongoDB (default)
-      const query = {};
-      if (filters.is_active !== undefined) query.is_active = filters.is_active;
-      if (filters.department_id) query.department_id = filters.department_id;
-      if (filters.designation_id) query.designation_id = filters.designation_id;
+      const query = { ...scopeFilter }; // Start with scope filter
+      if (is_active !== undefined) query.is_active = is_active === 'true';
+      if (department_id) query.department_id = department_id;
+      if (designation_id) query.designation_id = designation_id;
       if (filters.leftDate !== undefined) query.leftDate = filters.leftDate;
       if (filters.emp_no) query.emp_no = filters.emp_no; // For employee role
 
@@ -464,30 +530,49 @@ exports.createEmployee = async (req, res) => {
     const results = { mongodb: false, mssql: false };
 
     // Separate permanent fields and dynamicFields
+    // Separate permanent fields and dynamicFields
     const permanentFields = extractPermanentFields(employeeData);
-    const dynamicFields = employeeData.dynamicFields || extractDynamicFields(employeeData, permanentFields);
+    const dynamicFields = employeeData.dynamicFields ?
+      (typeof employeeData.dynamicFields === 'string' ? JSON.parse(employeeData.dynamicFields) : employeeData.dynamicFields)
+      : extractDynamicFields(employeeData, permanentFields);
 
-    const normalizeOverrides = (list) =>
-      Array.isArray(list)
-        ? list
-          .filter((item) => item && (item.masterId || item.name))
-          .map((item) => ({
-            masterId: item.masterId || null,
-            code: item.code || null,
-            name: item.name || '',
-            category: item.category || null,
-            type: item.type || null,
-            amount: item.amount ?? item.overrideAmount ?? null,
-            percentage: item.percentage ?? null,
-            percentageBase: item.percentageBase ?? null,
-            minAmount: item.minAmount ?? null,
-            maxAmount: item.maxAmount ?? null,
-            basedOnPresentDays: item.basedOnPresentDays ?? false,
-            isOverride: true,
-          }))
-        : [];
+    const normalizeOverrides = (list) => {
+      try {
+        const parsed = typeof list === 'string' ? JSON.parse(list) : (list || []);
+        return Array.isArray(parsed)
+          ? parsed
+            .filter((item) => item && (item.masterId || item.name))
+            .map((item) => ({
+              masterId: item.masterId || null,
+              code: item.code || null,
+              name: item.name || '',
+              category: item.category || null,
+              type: item.type || null,
+              amount: item.amount ?? item.overrideAmount ?? null,
+              percentage: item.percentage ?? null,
+              percentageBase: item.percentageBase ?? null,
+              minAmount: item.minAmount ?? null,
+              maxAmount: item.maxAmount ?? null,
+              basedOnPresentDays: item.basedOnPresentDays ?? false,
+              isOverride: true,
+            }))
+          : [];
+      } catch (e) { return []; }
+    };
+
     const employeeAllowances = normalizeOverrides(employeeData.employeeAllowances);
     const employeeDeductions = normalizeOverrides(employeeData.employeeDeductions);
+
+    // Resolve Qualification Labels & Uploads
+    let qualifications = [];
+    try {
+      const settings = await EmployeeApplicationFormSettings.getActiveSettings();
+      // Use helper to parse, upload, and resolve
+      qualifications = await processQualifications(req, settings);
+      console.log('[createEmployee] Final Qualifications:', JSON.stringify(qualifications));
+    } catch (err) {
+      console.error('Error processing qualifications:', err);
+    }
 
     // Generate password
     const rawPassword = await generatePassword(employeeData, passwordMode || null);
@@ -496,6 +581,7 @@ exports.createEmployee = async (req, res) => {
     try {
       const mongoEmployee = await Employee.create({
         ...permanentFields,
+        qualifications, // Explicitly save resolved qualifications
         dynamicFields: Object.keys(dynamicFields).length > 0 ? dynamicFields : {},
         emp_no: employeeData.emp_no.toUpperCase(),
         employeeAllowances,
@@ -639,33 +725,64 @@ exports.updateEmployee = async (req, res) => {
     }
 
     // Separate permanent fields and dynamicFields
+    // Separate permanent fields and dynamicFields
     const permanentFields = extractPermanentFields(employeeData);
-    const dynamicFields = employeeData.dynamicFields || extractDynamicFields(employeeData, permanentFields);
+    const dynamicFields = employeeData.dynamicFields ?
+      (typeof employeeData.dynamicFields === 'string' ? JSON.parse(employeeData.dynamicFields) : employeeData.dynamicFields)
+      : extractDynamicFields(employeeData, permanentFields);
 
     // Normalize employee allowances and deductions
-    const normalizeOverrides = (list) =>
-      Array.isArray(list)
-        ? list
-          .filter((item) => item && (item.masterId || item.name))
-          .map((item) => ({
-            masterId: item.masterId || null,
-            code: item.code || null,
-            name: item.name || '',
-            category: item.category || null,
-            type: item.type || null,
-            amount: item.amount ?? item.overrideAmount ?? null,
-            percentage: item.percentage ?? null,
-            percentageBase: item.percentageBase ?? null,
-            minAmount: item.minAmount ?? null,
-            maxAmount: item.maxAmount ?? null,
-            basedOnPresentDays: item.basedOnPresentDays ?? false,
-            isOverride: true,
-          }))
-        : [];
+    const normalizeOverrides = (list) => {
+      try {
+        const parsed = typeof list === 'string' ? JSON.parse(list) : (list || []);
+        return Array.isArray(parsed)
+          ? parsed
+            .filter((item) => item && (item.masterId || item.name))
+            .map((item) => ({
+              masterId: item.masterId || null,
+              code: item.code || null,
+              name: item.name || '',
+              category: item.category || null,
+              type: item.type || null,
+              amount: item.amount ?? item.overrideAmount ?? null,
+              percentage: item.percentage ?? null,
+              percentageBase: item.percentageBase ?? null,
+              minAmount: item.minAmount ?? null,
+              maxAmount: item.maxAmount ?? null,
+              basedOnPresentDays: item.basedOnPresentDays ?? false,
+              isOverride: true,
+            }))
+          : [];
+      } catch (e) { return []; }
+    };
+
     const employeeAllowances = normalizeOverrides(employeeData.employeeAllowances);
     const employeeDeductions = normalizeOverrides(employeeData.employeeDeductions);
     const ctcSalary = employeeData.ctcSalary ?? null;
     const calculatedSalary = employeeData.calculatedSalary ?? null;
+
+    // Resolve Qualification Labels & Uploads
+    let qualifications = [];
+    try {
+      const settings = await EmployeeApplicationFormSettings.getActiveSettings();
+      qualifications = await processQualifications(req, settings);
+
+      // If no new qualifications in request, merge with existing?
+      // Logic: if req.body.qualifications is provided (even empty array), we replace. 
+      // If it's undefined/null, we keep existing? 
+      // With FormData, missing field usually means undefined.
+      // But if user deleted all qualifications, it might send "[]". 
+      // Let's rely on what processQualifications returns. 
+      // If req.body.qualifications was undefined, helper returns [].
+      // We should check if the key existed in body to decide whether to update.
+      if (req.body.qualifications === undefined && !req.files?.length) {
+        qualifications = existingEmployee.qualifications || [];
+      }
+
+    } catch (err) {
+      console.error('Error processing qualifications:', err);
+      qualifications = existingEmployee.qualifications || [];
+    }
 
     const results = { mongodb: false, mssql: false };
 
@@ -674,6 +791,7 @@ exports.updateEmployee = async (req, res) => {
       // Ensure paidLeaves is explicitly set (even if 0)
       const updateData = {
         ...permanentFields,
+        qualifications, // Explicitly save resolved qualifications
         dynamicFields: Object.keys(dynamicFields).length > 0 ? dynamicFields : existingEmployee.dynamicFields || {},
         employeeAllowances,
         employeeDeductions,

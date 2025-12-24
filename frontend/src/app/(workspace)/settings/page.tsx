@@ -123,8 +123,8 @@ export default function SettingsPage() {
   const [leaveSettings, setLeaveSettings] = useState<LeaveSettingsData | null>(null);
   const [odSettings, setODSettings] = useState<LeaveSettingsData | null>(null);
   const [leaveSettingsLoading, setLeaveSettingsLoading] = useState(false);
-  const [leaveSubTab, setLeaveSubTab] = useState<'types' | 'statuses' | 'odTypes' | 'odStatuses' | 'workflow' | 'odWorkflow' | 'workspacePermissions' | 'general'>('types');
-  
+  const [leaveSubTab, setLeaveSubTab] = useState<'types' | 'statuses' | 'odTypes' | 'odStatuses' | 'workspacePermissions' | 'general'>('types');
+
   // Workspace permissions state
   const [workspaces, setWorkspaces] = useState<any[]>([]);
   const [workspacesLoading, setWorkspacesLoading] = useState(false);
@@ -148,12 +148,12 @@ export default function SettingsPage() {
   const [syncing, setSyncing] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
-  
+
   // New leave type form
   const [newLeaveType, setNewLeaveType] = useState({ code: '', name: '', description: '', maxDaysPerYear: 12, leaveNature: 'paid' as 'paid' | 'lop' | 'without_pay', carryForward: false, maxCarryForward: 0 });
   const [newODType, setNewODType] = useState({ code: '', name: '', description: '' });
   const [newStatus, setNewStatus] = useState({ code: '', name: '', description: '', color: '#6b7280' });
-  
+
   // Editing state
   const [editingType, setEditingType] = useState<LeaveType | null>(null);
   const [editingStatus, setEditingStatus] = useState<LeaveStatus | null>(null);
@@ -161,14 +161,13 @@ export default function SettingsPage() {
   // Loan settings state
   const [loanSettings, setLoanSettings] = useState<any>(null);
   const [loanSettingsLoading, setLoanSettingsLoading] = useState(false);
-  const [loanSubTab, setLoanSubTab] = useState<'general' | 'workflow' | 'workspacePermissions'>('general');
+  const [loanSubTab, setLoanSubTab] = useState<'general' | 'workspacePermissions'>('general');
   const [loanWorkspacePermissions, setLoanWorkspacePermissions] = useState<Record<string, {
     canApplyForSelf: boolean;
     canApplyForOthers: boolean;
   }>>({});
-  const [workflowUsers, setWorkflowUsers] = useState<any[]>([]);
-  const [workflowUsersByRole, setWorkflowUsersByRole] = useState<Record<string, any[]>>({});
-  
+
+
   // Loan general settings form state
   const [loanGeneralSettings, setLoanGeneralSettings] = useState({
     minAmount: 1000,
@@ -227,7 +226,7 @@ export default function SettingsPage() {
       loadAttendanceDeductionRules();
     }
   }, [activeTab]);
-  
+
   // Load workspaces when workspace permissions tab is selected
   useEffect(() => {
     if (activeTab === 'leaves' && leaveSubTab === 'workspacePermissions') {
@@ -239,7 +238,7 @@ export default function SettingsPage() {
     try {
       setLoading(true);
       const response = await api.getShiftDurations();
-      
+
       if (response.success) {
         const durations = response.durations || [];
         setShiftDurations(Array.isArray(durations) ? durations : []);
@@ -258,7 +257,7 @@ export default function SettingsPage() {
   const loadEmployeeSettings = async () => {
     try {
       setEmployeeSettingsLoading(true);
-      
+
       // Get current employee settings
       const empSettingsRes = await api.getEmployeeSettings();
       if (empSettingsRes.success && empSettingsRes.data) {
@@ -290,7 +289,7 @@ export default function SettingsPage() {
 
   const saveAttendanceSettings = async () => {
     if (!attendanceSettings) return;
-    
+
     try {
       setSaving(true);
       const response = await api.updateAttendanceSettings(attendanceSettings);
@@ -327,11 +326,11 @@ export default function SettingsPage() {
   const loadOTSettings = async () => {
     try {
       setOTSettingsLoading(true);
-      
+
       // Get OT Pay Per Hour setting
       const payPerHourRes = await api.getSetting('ot_pay_per_hour');
       const minHoursRes = await api.getSetting('ot_min_hours');
-      
+
       setOTSettings({
         otPayPerHour: payPerHourRes.success && payPerHourRes.data ? (payPerHourRes.data.value || 0) : 0,
         minOTHours: minHoursRes.success && minHoursRes.data ? (minHoursRes.data.value || 0) : 0,
@@ -347,7 +346,7 @@ export default function SettingsPage() {
   const saveOTSettings = async () => {
     try {
       setSaving(true);
-      
+
       // Save OT Pay Per Hour
       const payPerHourRes = await api.upsertSetting({
         key: 'ot_pay_per_hour',
@@ -355,7 +354,7 @@ export default function SettingsPage() {
         description: 'Amount per hour of overtime worked (in ₹)',
         category: 'overtime',
       });
-      
+
       // Save Minimum OT Hours
       const minHoursRes = await api.upsertSetting({
         key: 'ot_min_hours',
@@ -363,7 +362,7 @@ export default function SettingsPage() {
         description: 'Minimum overtime hours required to be eligible for overtime pay',
         category: 'overtime',
       });
-      
+
       if (payPerHourRes.success && minHoursRes.success) {
         setMessage({ type: 'success', text: 'OT settings saved successfully' });
       } else {
@@ -380,9 +379,9 @@ export default function SettingsPage() {
   const loadPermissionDeductionRules = async () => {
     try {
       setPermissionRulesLoading(true);
-      
+
       const response = await api.getPermissionDeductionSettings();
-      
+
       if (response.success && response.data) {
         const rules = response.data.deductionRules || {};
         setPermissionDeductionRules({
@@ -404,11 +403,11 @@ export default function SettingsPage() {
   const savePermissionDeductionRules = async () => {
     try {
       setSaving(true);
-      
+
       const response = await api.savePermissionDeductionSettings({
         deductionRules: permissionDeductionRules,
       });
-      
+
       if (response.success) {
         setMessage({ type: 'success', text: 'Permission deduction rules saved successfully' });
       } else {
@@ -425,9 +424,9 @@ export default function SettingsPage() {
   const loadAttendanceDeductionRules = async () => {
     try {
       setAttendanceRulesLoading(true);
-      
+
       const response = await api.getAttendanceDeductionSettings();
-      
+
       if (response.success && response.data) {
         const rules = response.data.deductionRules || {};
         setAttendanceDeductionRules({
@@ -449,11 +448,11 @@ export default function SettingsPage() {
   const saveAttendanceDeductionRules = async () => {
     try {
       setSaving(true);
-      
+
       const response = await api.saveAttendanceDeductionSettings({
         deductionRules: attendanceDeductionRules,
       });
-      
+
       if (response.success) {
         setMessage({ type: 'success', text: 'Attendance deduction rules saved successfully' });
       } else {
@@ -504,7 +503,7 @@ export default function SettingsPage() {
   const loadLeaveSettings = async () => {
     try {
       setLeaveSettingsLoading(true);
-      
+
       // Load leave settings
       const leaveRes = await api.getLeaveSettings('leave');
       console.log('[Frontend] Loaded leave settings:', leaveRes);
@@ -522,33 +521,33 @@ export default function SettingsPage() {
       } else {
         setODSettings(null);
       }
-      
+
       // Merge workspace permissions from both Leave and OD settings
       const leavePerms = leaveRes.success && leaveRes.data?.settings?.workspacePermissions ? leaveRes.data.settings.workspacePermissions : {};
       const odPerms = odRes.success && odRes.data?.settings?.workspacePermissions ? odRes.data.settings.workspacePermissions : {};
-      
+
       console.log('[Frontend] Leave workspace permissions:', leavePerms);
       console.log('[Frontend] OD workspace permissions:', odPerms);
-      
+
       // Get all unique workspace IDs from both
       const allWorkspaceIds = new Set([
         ...Object.keys(leavePerms),
         ...Object.keys(odPerms),
       ]);
-      
+
       const mergedPerms: Record<string, {
         leave?: { canApplyForSelf: boolean; canApplyForOthers: boolean };
         od?: { canApplyForSelf: boolean; canApplyForOthers: boolean };
         canApplyForSelf?: boolean;
         canApplyForOthers?: boolean;
       }> = {};
-      
+
       allWorkspaceIds.forEach(workspaceId => {
         const leavePerm = leavePerms[workspaceId];
         const odPerm = odPerms[workspaceId];
-        
+
         mergedPerms[workspaceId] = {};
-        
+
         // Process Leave permissions
         if (leavePerm) {
           if (typeof leavePerm === 'boolean') {
@@ -572,7 +571,7 @@ export default function SettingsPage() {
             };
           }
         }
-        
+
         // Process OD permissions
         if (odPerm) {
           if (typeof odPerm === 'boolean') {
@@ -599,10 +598,10 @@ export default function SettingsPage() {
           };
         }
       });
-      
+
       console.log('[Frontend] Merged workspace permissions:', mergedPerms);
       setWorkspacePermissions(mergedPerms);
-      
+
       // Load workspaces if on workspace permissions tab
       if (leaveSubTab === 'workspacePermissions') {
         await loadWorkspaces();
@@ -621,7 +620,7 @@ export default function SettingsPage() {
       const response = await api.getWorkspaces();
       if (response.success && response.data) {
         setWorkspaces(response.data);
-        
+
         // Workspace permissions are already loaded in loadLeaveSettings
         // No need to reload here
       }
@@ -639,7 +638,7 @@ export default function SettingsPage() {
       const response = await api.getLoanSettings(type);
       if (response.success && response.data) {
         setLoanSettings(response.data);
-        
+
         // Initialize form state with loaded settings
         const settings = response.data?.settings || {};
         setLoanGeneralSettings({
@@ -652,20 +651,18 @@ export default function SettingsPage() {
           maxActivePerEmployee: settings.maxActivePerEmployee || 1,
           minServicePeriod: settings.minServicePeriod || 0,
         });
-        
+
         // Load workspace permissions
         const perms = settings.workspacePermissions || {};
         setLoanWorkspacePermissions(perms);
-        
+
         // Load workspaces if on workspace permissions tab
         if (loanSubTab === 'workspacePermissions') {
           await loadWorkspaces();
         }
-        
+
         // Load users for workflow if on workflow tab
-        if (loanSubTab === 'workflow') {
-          await loadWorkflowUsers();
-        }
+        // Load users for workflow if on workflow tab
       } else {
         setLoanSettings(null);
       }
@@ -674,19 +671,6 @@ export default function SettingsPage() {
       setMessage({ type: 'error', text: 'Failed to load loan settings' });
     } finally {
       setLoanSettingsLoading(false);
-    }
-  };
-
-  const loadWorkflowUsers = async () => {
-    try {
-      const currentType = activeTab === 'loan' ? 'loan' : 'salary_advance';
-      const response = await api.getUsersForLoanWorkflow(currentType);
-      if (response.success && response.data) {
-        setWorkflowUsers(response.data.users || []);
-        setWorkflowUsersByRole(response.data.usersByRole || {});
-      }
-    } catch (err) {
-      console.error('Error loading workflow users:', err);
     }
   };
 
@@ -743,7 +727,7 @@ export default function SettingsPage() {
       const leavePermissionsToSave: Record<string, any> = {};
       // Prepare permissions for OD settings
       const odPermissionsToSave: Record<string, any> = {};
-      
+
       Object.keys(workspacePermissions).forEach(workspaceId => {
         const perm = workspacePermissions[workspaceId];
         // Save leave permissions
@@ -760,7 +744,7 @@ export default function SettingsPage() {
             },
           };
         }
-        
+
         // Save od permissions
         if (perm.od) {
           odPermissionsToSave[workspaceId] = {
@@ -815,7 +799,7 @@ export default function SettingsPage() {
       ]);
 
       console.log('[Frontend] Save responses - Leave:', leaveResponse, 'OD:', odResponse);
-      
+
       if (leaveResponse.success && odResponse.success) {
         // Reload settings to get the updated data from backend (ensures sync)
         await loadLeaveSettings();
@@ -839,20 +823,20 @@ export default function SettingsPage() {
       return;
     }
 
-    const updatedTypes = [...(leaveSettings?.types || []), { 
-      ...newLeaveType, 
+    const updatedTypes = [...(leaveSettings?.types || []), {
+      ...newLeaveType,
       isActive: true,
       color: '#3b82f6',
       sortOrder: (leaveSettings?.types?.length || 0) + 1
     }];
-    
+
     try {
       setSaving(true);
-      const response = await api.updateLeaveSettings('leave', { 
-        ...leaveSettings, 
-        types: updatedTypes 
+      const response = await api.updateLeaveSettings('leave', {
+        ...leaveSettings,
+        types: updatedTypes
       });
-      
+
       if (response.success) {
         setLeaveSettings(prev => prev ? { ...prev, types: updatedTypes } : null);
         setNewLeaveType({ code: '', name: '', description: '', maxDaysPerYear: 12, leaveNature: 'paid', carryForward: false, maxCarryForward: 0 });
@@ -869,16 +853,16 @@ export default function SettingsPage() {
 
   const handleDeleteLeaveType = async (code: string) => {
     if (!confirm('Are you sure you want to delete this leave type?')) return;
-    
+
     const updatedTypes = leaveSettings?.types?.filter(t => t.code !== code) || [];
-    
+
     try {
       setSaving(true);
-      const response = await api.updateLeaveSettings('leave', { 
-        ...leaveSettings, 
-        types: updatedTypes 
+      const response = await api.updateLeaveSettings('leave', {
+        ...leaveSettings,
+        types: updatedTypes
       });
-      
+
       if (response.success) {
         setLeaveSettings(prev => prev ? { ...prev, types: updatedTypes } : null);
         setMessage({ type: 'success', text: 'Leave type deleted' });
@@ -898,20 +882,20 @@ export default function SettingsPage() {
       return;
     }
 
-    const updatedTypes = [...(odSettings?.types || []), { 
-      ...newODType, 
+    const updatedTypes = [...(odSettings?.types || []), {
+      ...newODType,
       isActive: true,
       color: '#8b5cf6',
       sortOrder: (odSettings?.types?.length || 0) + 1
     }];
-    
+
     try {
       setSaving(true);
-      const response = await api.updateLeaveSettings('od', { 
-        ...odSettings, 
-        types: updatedTypes 
+      const response = await api.updateLeaveSettings('od', {
+        ...odSettings,
+        types: updatedTypes
       });
-      
+
       if (response.success) {
         setODSettings(prev => prev ? { ...prev, types: updatedTypes } : null);
         setNewODType({ code: '', name: '', description: '' });
@@ -928,16 +912,16 @@ export default function SettingsPage() {
 
   const handleDeleteODType = async (code: string) => {
     if (!confirm('Are you sure you want to delete this OD type?')) return;
-    
+
     const updatedTypes = odSettings?.types?.filter(t => t.code !== code) || [];
-    
+
     try {
       setSaving(true);
-      const response = await api.updateLeaveSettings('od', { 
-        ...odSettings, 
-        types: updatedTypes 
+      const response = await api.updateLeaveSettings('od', {
+        ...odSettings,
+        types: updatedTypes
       });
-      
+
       if (response.success) {
         setODSettings(prev => prev ? { ...prev, types: updatedTypes } : null);
         setMessage({ type: 'success', text: 'OD type deleted' });
@@ -958,22 +942,22 @@ export default function SettingsPage() {
     }
 
     const settings = settingsType === 'leave' ? leaveSettings : odSettings;
-    const updatedStatuses = [...(settings?.statuses || []), { 
-      ...newStatus, 
+    const updatedStatuses = [...(settings?.statuses || []), {
+      ...newStatus,
       isFinal: false,
       isApproved: false,
       canEmployeeEdit: false,
       canEmployeeCancel: false,
       sortOrder: (settings?.statuses?.length || 0) + 1
     }];
-    
+
     try {
       setSaving(true);
-      const response = await api.updateLeaveSettings(settingsType, { 
-        ...settings, 
-        statuses: updatedStatuses 
+      const response = await api.updateLeaveSettings(settingsType, {
+        ...settings,
+        statuses: updatedStatuses
       });
-      
+
       if (response.success) {
         if (settingsType === 'leave') {
           setLeaveSettings(prev => prev ? { ...prev, statuses: updatedStatuses } : null);
@@ -994,17 +978,17 @@ export default function SettingsPage() {
 
   const handleDeleteStatus = async (settingsType: 'leave' | 'od', code: string) => {
     if (!confirm('Are you sure you want to delete this status?')) return;
-    
+
     const settings = settingsType === 'leave' ? leaveSettings : odSettings;
     const updatedStatuses = settings?.statuses?.filter(s => s.code !== code) || [];
-    
+
     try {
       setSaving(true);
-      const response = await api.updateLeaveSettings(settingsType, { 
-        ...settings, 
-        statuses: updatedStatuses 
+      const response = await api.updateLeaveSettings(settingsType, {
+        ...settings,
+        statuses: updatedStatuses
       });
-      
+
       if (response.success) {
         if (settingsType === 'leave') {
           setLeaveSettings(prev => prev ? { ...prev, statuses: updatedStatuses } : null);
@@ -1024,11 +1008,11 @@ export default function SettingsPage() {
 
   const handleSaveLeaveWorkflow = async () => {
     if (!leaveSettings) return;
-    
+
     try {
       setSaving(true);
       const response = await api.updateLeaveSettings('leave', leaveSettings);
-      
+
       if (response.success) {
         setMessage({ type: 'success', text: 'Leave workflow saved successfully' });
       }
@@ -1041,11 +1025,11 @@ export default function SettingsPage() {
 
   const handleSaveODWorkflow = async () => {
     if (!odSettings) return;
-    
+
     try {
       setSaving(true);
       const response = await api.updateLeaveSettings('od', odSettings);
-      
+
       if (response.success) {
         setMessage({ type: 'success', text: 'OD workflow saved successfully' });
       }
@@ -1058,11 +1042,11 @@ export default function SettingsPage() {
 
   const handleSaveLeaveGeneralSettings = async () => {
     if (!leaveSettings) return;
-    
+
     try {
       setSaving(true);
       const response = await api.updateLeaveSettings('leave', leaveSettings);
-      
+
       if (response.success) {
         setMessage({ type: 'success', text: 'Leave settings saved successfully' });
       }
@@ -1195,8 +1179,6 @@ export default function SettingsPage() {
     { id: 'statuses', label: 'Leave Statuses' },
     { id: 'odTypes', label: 'OD Types' },
     { id: 'odStatuses', label: 'OD Statuses' },
-    { id: 'workflow', label: 'Leave Workflow' },
-    { id: 'odWorkflow', label: 'OD Workflow' },
     { id: 'workspacePermissions', label: 'Workspace Permissions' },
     { id: 'general', label: 'General' },
   ];
@@ -1230,11 +1212,10 @@ export default function SettingsPage() {
                   setActiveTab(tab.id);
                   setMessage(null);
                 }}
-                className={`flex-1 whitespace-nowrap rounded-xl px-4 py-3 text-sm font-semibold transition-all ${
-                  activeTab === tab.id
-                    ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg shadow-blue-500/30'
-                    : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
-                }`}
+                className={`flex-1 whitespace-nowrap rounded-xl px-4 py-3 text-sm font-semibold transition-all ${activeTab === tab.id
+                  ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg shadow-blue-500/30'
+                  : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
+                  }`}
               >
                 {tab.label}
               </button>
@@ -1252,11 +1233,10 @@ export default function SettingsPage() {
 
             {message && (
               <div
-                className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${
-                  message.type === 'success'
-                    ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400'
-                    : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'
-                }`}
+                className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${message.type === 'success'
+                  ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400'
+                  : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'
+                  }`}
               >
                 {message.text}
               </div>
@@ -1356,28 +1336,25 @@ export default function SettingsPage() {
 
             {message && (
               <div
-                className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${
-                  message.type === 'success'
-                    ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400'
-                    : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'
-                }`}
+                className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${message.type === 'success'
+                  ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400'
+                  : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'
+                  }`}
               >
                 {message.text}
               </div>
             )}
 
             {/* MSSQL Connection Status */}
-            <div className={`mb-6 flex items-center gap-3 rounded-2xl border p-4 ${
-              mssqlConnected 
-                ? 'border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20' 
-                : 'border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20'
-            }`}>
-              <div className={`h-3 w-3 rounded-full ${mssqlConnected ? 'bg-green-500' : 'bg-amber-500'}`}></div>
-              <span className={`text-sm font-medium ${
-                mssqlConnected 
-                  ? 'text-green-700 dark:text-green-400' 
-                  : 'text-amber-700 dark:text-amber-400'
+            <div className={`mb-6 flex items-center gap-3 rounded-2xl border p-4 ${mssqlConnected
+              ? 'border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20'
+              : 'border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20'
               }`}>
+              <div className={`h-3 w-3 rounded-full ${mssqlConnected ? 'bg-green-500' : 'bg-amber-500'}`}></div>
+              <span className={`text-sm font-medium ${mssqlConnected
+                ? 'text-green-700 dark:text-green-400'
+                : 'text-amber-700 dark:text-amber-400'
+                }`}>
                 MSSQL (HRMS Database): {mssqlConnected ? 'Connected' : 'Not Connected'}
               </span>
             </div>
@@ -1404,11 +1381,10 @@ export default function SettingsPage() {
                     ].map((option) => (
                       <label
                         key={option.value}
-                        className={`flex cursor-pointer items-center gap-3 rounded-xl border p-4 transition-all ${
-                          employeeDataSource === option.value
-                            ? 'border-blue-400 bg-blue-50 shadow-md dark:border-blue-600 dark:bg-blue-900/30'
-                            : 'border-slate-200 bg-white hover:border-blue-200 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600'
-                        }`}
+                        className={`flex cursor-pointer items-center gap-3 rounded-xl border p-4 transition-all ${employeeDataSource === option.value
+                          ? 'border-blue-400 bg-blue-50 shadow-md dark:border-blue-600 dark:bg-blue-900/30'
+                          : 'border-slate-200 bg-white hover:border-blue-200 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600'
+                          }`}
                       >
                         <input
                           type="radio"
@@ -1443,11 +1419,10 @@ export default function SettingsPage() {
                     ].map((option) => (
                       <label
                         key={option.value}
-                        className={`flex cursor-pointer items-center gap-3 rounded-xl border p-4 transition-all ${
-                          employeeDeleteTarget === option.value
-                            ? 'border-red-400 bg-red-50 shadow-md dark:border-red-600 dark:bg-red-900/30'
-                            : 'border-slate-200 bg-white hover:border-red-200 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600'
-                        }`}
+                        className={`flex cursor-pointer items-center gap-3 rounded-xl border p-4 transition-all ${employeeDeleteTarget === option.value
+                          ? 'border-red-400 bg-red-50 shadow-md dark:border-red-600 dark:bg-red-900/30'
+                          : 'border-slate-200 bg-white hover:border-red-200 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600'
+                          }`}
                       >
                         <input
                           type="radio"
@@ -1498,11 +1473,10 @@ export default function SettingsPage() {
 
             {message && (
               <div
-                className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${
-                  message.type === 'success'
-                    ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400'
-                    : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'
-                }`}
+                className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${message.type === 'success'
+                  ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400'
+                  : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'
+                  }`}
               >
                 {message.text}
               </div>
@@ -1518,11 +1492,10 @@ export default function SettingsPage() {
                       setLeaveSubTab(tab.id as typeof leaveSubTab);
                       setMessage(null);
                     }}
-                    className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition-all ${
-                      leaveSubTab === tab.id
-                        ? 'bg-white text-blue-600 shadow-sm dark:bg-slate-800 dark:text-blue-400'
-                        : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
-                    }`}
+                    className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition-all ${leaveSubTab === tab.id
+                      ? 'bg-white text-blue-600 shadow-sm dark:bg-slate-800 dark:text-blue-400'
+                      : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
+                      }`}
                   >
                     {tab.label}
                   </button>
@@ -1547,27 +1520,27 @@ export default function SettingsPage() {
                       </label>
                       <div className="space-y-3">
                         <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-                        <input
-                          type="text"
-                          value={newLeaveType.code}
-                          onChange={(e) => setNewLeaveType(prev => ({ ...prev, code: e.target.value.toUpperCase() }))}
-                          className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                          placeholder="Code (e.g., CL)"
-                        />
-                        <input
-                          type="text"
-                          value={newLeaveType.name}
-                          onChange={(e) => setNewLeaveType(prev => ({ ...prev, name: e.target.value }))}
-                          className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 sm:col-span-2"
-                          placeholder="Name (e.g., Casual Leave)"
-                        />
-                        <input
-                          type="number"
-                          value={newLeaveType.maxDaysPerYear}
-                          onChange={(e) => setNewLeaveType(prev => ({ ...prev, maxDaysPerYear: Number(e.target.value) }))}
-                          className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                          placeholder="Max Days/Year"
-                        />
+                          <input
+                            type="text"
+                            value={newLeaveType.code}
+                            onChange={(e) => setNewLeaveType(prev => ({ ...prev, code: e.target.value.toUpperCase() }))}
+                            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                            placeholder="Code (e.g., CL)"
+                          />
+                          <input
+                            type="text"
+                            value={newLeaveType.name}
+                            onChange={(e) => setNewLeaveType(prev => ({ ...prev, name: e.target.value }))}
+                            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 sm:col-span-2"
+                            placeholder="Name (e.g., Casual Leave)"
+                          />
+                          <input
+                            type="number"
+                            value={newLeaveType.maxDaysPerYear}
+                            onChange={(e) => setNewLeaveType(prev => ({ ...prev, maxDaysPerYear: Number(e.target.value) }))}
+                            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                            placeholder="Max Days/Year"
+                          />
                         </div>
                         <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
                           <select
@@ -1619,7 +1592,7 @@ export default function SettingsPage() {
                           leaveSettings.types.map((type) => (
                             <div key={type.code} className="flex items-center justify-between px-4 py-3">
                               <div className="flex items-center gap-4">
-                                <span 
+                                <span
                                   className="rounded-lg px-2.5 py-1 text-xs font-bold text-white"
                                   style={{ backgroundColor: type.color || '#3b82f6' }}
                                 >
@@ -1627,21 +1600,20 @@ export default function SettingsPage() {
                                 </span>
                                 <div>
                                   <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="font-medium text-slate-900 dark:text-slate-100">{type.name}</span>
-                                    <span className={`px-2 py-0.5 text-[10px] font-medium rounded ${
-                                      (type as any).leaveNature === 'paid' 
-                                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
-                                        : (type as any).leaveNature === 'lop'
+                                    <span className="font-medium text-slate-900 dark:text-slate-100">{type.name}</span>
+                                    <span className={`px-2 py-0.5 text-[10px] font-medium rounded ${(type as any).leaveNature === 'paid'
+                                      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                                      : (type as any).leaveNature === 'lop'
                                         ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'
                                         : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
-                                    }`}>
+                                      }`}>
                                       {(type as any).leaveNature === 'paid' ? 'Paid' : (type as any).leaveNature === 'lop' ? 'LOP' : 'Without Pay'}
                                     </span>
-                                  {type.maxDaysPerYear && (
+                                    {type.maxDaysPerYear && (
                                       <span className="text-xs text-slate-500 dark:text-slate-400">
-                                      (Max: {type.maxDaysPerYear} days/year)
-                                    </span>
-                                  )}
+                                        (Max: {type.maxDaysPerYear} days/year)
+                                      </span>
+                                    )}
                                     {type.carryForward && (
                                       <span className="px-2 py-0.5 text-[10px] font-medium rounded bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
                                         Carry Forward {type.maxCarryForward ? `(${type.maxCarryForward} days)` : ''}
@@ -1721,7 +1693,7 @@ export default function SettingsPage() {
                           odSettings.types.map((type) => (
                             <div key={type.code} className="flex items-center justify-between px-4 py-3">
                               <div className="flex items-center gap-4">
-                                <span 
+                                <span
                                   className="rounded-lg px-2.5 py-1 text-xs font-bold text-white"
                                   style={{ backgroundColor: type.color || '#8b5cf6' }}
                                 >
@@ -1807,7 +1779,7 @@ export default function SettingsPage() {
                           leaveSettings.statuses.map((status) => (
                             <div key={status.code} className="flex items-center justify-between px-4 py-3">
                               <div className="flex items-center gap-4">
-                                <span 
+                                <span
                                   className="rounded-lg px-2.5 py-1 text-xs font-bold text-white"
                                   style={{ backgroundColor: status.color || '#6b7280' }}
                                 >
@@ -1890,7 +1862,7 @@ export default function SettingsPage() {
                           odSettings.statuses.map((status) => (
                             <div key={status.code} className="flex items-center justify-between px-4 py-3">
                               <div className="flex items-center gap-4">
-                                <span 
+                                <span
                                   className="rounded-lg px-2.5 py-1 text-xs font-bold text-white"
                                   style={{ backgroundColor: status.color || '#6b7280' }}
                                 >
@@ -1923,210 +1895,15 @@ export default function SettingsPage() {
                   </div>
                 )}
 
-                {/* Leave Workflow */}
-                {leaveSubTab === 'workflow' && (
-                  <div className="space-y-6">
-                    {/* Workflow Enable Toggle */}
-                    <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-blue-900/10">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Enable Workflow</h3>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">Multi-step approval process for leave requests</p>
-                        </div>
-                        <label className="relative inline-flex cursor-pointer items-center">
-                          <input
-                            type="checkbox"
-                            checked={leaveSettings?.workflow.isEnabled || false}
-                            onChange={(e) => setLeaveSettings(prev => prev ? {
-                              ...prev,
-                              workflow: { ...prev.workflow, isEnabled: e.target.checked }
-                            } : null)}
-                            className="peer sr-only"
-                          />
-                          <div className="peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-blue-600 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-blue-800"></div>
-                        </label>
-                      </div>
-                    </div>
-
-                    {/* Workflow Steps */}
-                    <div className="rounded-2xl border border-slate-200 dark:border-slate-700">
-                      <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-800">
-                        <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Approval Flow</h3>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">Define the approval hierarchy</p>
-                      </div>
-                      <div className="p-4">
-                        <div className="flex items-center gap-4">
-                          {leaveSettings?.workflow?.steps && leaveSettings.workflow.steps.map((step, index) => (
-                            <div key={step.stepOrder} className="flex items-center gap-4">
-                              <div className="flex flex-col items-center">
-                                <div className={`flex h-12 w-12 items-center justify-center rounded-full ${
-                                  step.approverRole === 'hod' 
-                                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300'
-                                    : 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300'
-                                }`}>
-                                  <span className="text-lg font-bold">{step.stepOrder}</span>
-                                </div>
-                                <span className="mt-1 text-xs font-medium text-slate-600 dark:text-slate-400">{step.stepName}</span>
-                                <span className="text-[10px] uppercase text-slate-400">{step.approverRole}</span>
-                              </div>
-                              {index < (leaveSettings?.workflow?.steps?.length || 0) - 1 && (
-                                <div className="flex items-center">
-                                  <div className="h-0.5 w-8 bg-slate-300 dark:bg-slate-600"></div>
-                                  <span className="text-slate-400">→</span>
-                                  <div className="h-0.5 w-8 bg-slate-300 dark:bg-slate-600"></div>
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                          <div className="flex flex-col items-center">
-                            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
-                              ✓
-                            </div>
-                            <span className="mt-1 text-xs font-medium text-slate-600 dark:text-slate-400">Approved</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Final Authority */}
-                    <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-green-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-green-900/10">
-                      <h3 className="mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100">Final Authority</h3>
-                      <div className="flex flex-wrap gap-4">
-                        <label className="flex items-center gap-2">
-                          <input
-                            type="radio"
-                            name="finalAuthority"
-                            checked={leaveSettings?.workflow?.finalAuthority?.role === 'hr'}
-                            onChange={() => setLeaveSettings(prev => prev ? {
-                              ...prev,
-                              workflow: { ...prev.workflow, finalAuthority: { ...(prev.workflow?.finalAuthority || {}), role: 'hr', anyHRCanApprove: prev.workflow?.finalAuthority?.anyHRCanApprove ?? true } }
-                            } : null)}
-                            className="h-4 w-4 text-blue-600 focus:ring-blue-500"
-                          />
-                          <span className="text-sm text-slate-700 dark:text-slate-300">HR</span>
-                        </label>
-                        <label className="flex items-center gap-2">
-                          <input
-                            type="radio"
-                            name="finalAuthority"
-                            checked={leaveSettings?.workflow?.finalAuthority?.role === 'super_admin'}
-                            onChange={() => setLeaveSettings(prev => prev ? {
-                              ...prev,
-                              workflow: { ...prev.workflow, finalAuthority: { ...(prev.workflow?.finalAuthority || {}), role: 'super_admin', anyHRCanApprove: prev.workflow?.finalAuthority?.anyHRCanApprove ?? true } }
-                            } : null)}
-                            className="h-4 w-4 text-blue-600 focus:ring-blue-500"
-                          />
-                          <span className="text-sm text-slate-700 dark:text-slate-300">Super Admin Only</span>
-                        </label>
-                      </div>
-                      <label className="mt-3 flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={leaveSettings?.workflow?.finalAuthority?.anyHRCanApprove || false}
-                          onChange={(e) => setLeaveSettings(prev => prev ? {
-                            ...prev,
-                            workflow: { ...prev.workflow, finalAuthority: { ...(prev.workflow?.finalAuthority || {}), role: prev.workflow?.finalAuthority?.role || 'hr', anyHRCanApprove: e.target.checked } }
-                          } : null)}
-                          className="h-4 w-4 rounded text-blue-600 focus:ring-blue-500"
-                        />
-                        <span className="text-sm text-slate-700 dark:text-slate-300">Any HR can give final approval</span>
-                      </label>
-                    </div>
-
-                    <button
-                      onClick={handleSaveLeaveWorkflow}
-                      disabled={saving}
-                      className="w-full rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {saving ? 'Saving...' : 'Save Leave Workflow'}
-                    </button>
-                  </div>
-                )}
-
-                {/* OD Workflow */}
-                {leaveSubTab === 'odWorkflow' && (
-                  <div className="space-y-6">
-                    {/* Workflow Enable Toggle */}
-                    <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-purple-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-purple-900/10">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Enable OD Workflow</h3>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">Multi-step approval process for OD requests</p>
-                        </div>
-                        <label className="relative inline-flex cursor-pointer items-center">
-                          <input
-                            type="checkbox"
-                            checked={odSettings?.workflow.isEnabled || false}
-                            onChange={(e) => setODSettings(prev => prev ? {
-                              ...prev,
-                              workflow: { ...prev.workflow, isEnabled: e.target.checked }
-                            } : null)}
-                            className="peer sr-only"
-                          />
-                          <div className="peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-purple-600 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-purple-800"></div>
-                        </label>
-                      </div>
-                    </div>
-
-                    {/* OD Workflow Steps */}
-                    <div className="rounded-2xl border border-slate-200 dark:border-slate-700">
-                      <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-800">
-                        <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">OD Approval Flow</h3>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">Same flow as leave by default</p>
-                      </div>
-                      <div className="p-4">
-                        <div className="flex items-center gap-4">
-                          {odSettings?.workflow?.steps && odSettings.workflow.steps.map((step, index) => (
-                            <div key={step.stepOrder} className="flex items-center gap-4">
-                              <div className="flex flex-col items-center">
-                                <div className={`flex h-12 w-12 items-center justify-center rounded-full ${
-                                  step.approverRole === 'hod' 
-                                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300'
-                                    : 'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300'
-                                }`}>
-                                  <span className="text-lg font-bold">{step.stepOrder}</span>
-                                </div>
-                                <span className="mt-1 text-xs font-medium text-slate-600 dark:text-slate-400">{step.stepName}</span>
-                                <span className="text-[10px] uppercase text-slate-400">{step.approverRole}</span>
-                              </div>
-                              {index < (odSettings?.workflow?.steps?.length || 0) - 1 && (
-                                <div className="flex items-center">
-                                  <div className="h-0.5 w-8 bg-slate-300 dark:bg-slate-600"></div>
-                                  <span className="text-slate-400">→</span>
-                                  <div className="h-0.5 w-8 bg-slate-300 dark:bg-slate-600"></div>
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                          <div className="flex flex-col items-center">
-                            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300">
-                              ✓
-                            </div>
-                            <span className="mt-1 text-xs font-medium text-slate-600 dark:text-slate-400">Approved</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <button
-                      onClick={handleSaveODWorkflow}
-                      disabled={saving}
-                      className="w-full rounded-2xl bg-gradient-to-r from-purple-500 to-indigo-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-purple-500/30 transition-all hover:from-purple-600 hover:to-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {saving ? 'Saving...' : 'Save OD Workflow'}
-                    </button>
-                  </div>
-                )}
-
                 {/* Workspace Permissions */}
                 {leaveSubTab === 'workspacePermissions' && (
                   <div className="space-y-6">
                     <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-indigo-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-indigo-900/10">
                       <h3 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">Workspace Permissions</h3>
                       <p className="text-xs text-slate-500 dark:text-slate-400">
-                        Configure leave/OD application permissions for each workspace. 
-                        <strong>Apply for Self:</strong> Users can apply leave/OD for themselves. 
-                        <strong>Apply for Others:</strong> Users can apply leave/OD for employees in their department(s). 
+                        Configure leave/OD application permissions for each workspace.
+                        <strong>Apply for Self:</strong> Users can apply leave/OD for themselves.
+                        <strong>Apply for Others:</strong> Users can apply leave/OD for employees in their department(s).
                         Employee workspace users can only apply for themselves (self-only).
                       </p>
                     </div>
@@ -2144,25 +1921,24 @@ export default function SettingsPage() {
                         {workspaces.map((workspace) => {
                           const isEmployeeWorkspace = workspace.type === 'employee';
                           const permissions = workspacePermissions[workspace._id] || {};
-                          
+
                           // Get Leave permissions
                           const leavePerms = permissions.leave || { canApplyForSelf: false, canApplyForOthers: false };
                           // Fallback to legacy format if leave not specified
                           const leaveCanApplyForSelf = leavePerms.canApplyForSelf || permissions.canApplyForSelf || false;
                           const leaveCanApplyForOthers = leavePerms.canApplyForOthers || permissions.canApplyForOthers || false;
-                          
+
                           // Get OD permissions
                           const odPerms = permissions.od || { canApplyForSelf: false, canApplyForOthers: false };
                           // Fallback to legacy format if od not specified
                           const odCanApplyForSelf = odPerms.canApplyForSelf || permissions.canApplyForSelf || false;
                           const odCanApplyForOthers = odPerms.canApplyForOthers || permissions.canApplyForOthers || false;
-                          
+
                           return (
                             <div
                               key={workspace._id}
-                              className={`rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800 ${
-                                isEmployeeWorkspace ? 'opacity-60' : ''
-                              }`}
+                              className={`rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800 ${isEmployeeWorkspace ? 'opacity-60' : ''
+                                }`}
                             >
                               <div className="mb-4">
                                 <div className="flex items-center gap-3 mb-2">
@@ -2212,9 +1988,8 @@ export default function SettingsPage() {
                                         onChange={(e) => handleWorkspacePermissionToggle(workspace._id, 'leave', 'self', e.target.checked)}
                                         className="peer sr-only"
                                       />
-                                      <div className={`peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-blue-500 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-blue-800 ${
-                                        isEmployeeWorkspace ? 'opacity-50 cursor-not-allowed' : ''
-                                      }`}></div>
+                                      <div className={`peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-blue-500 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-blue-800 ${isEmployeeWorkspace ? 'opacity-50 cursor-not-allowed' : ''
+                                        }`}></div>
                                     </label>
                                   </div>
 
@@ -2236,9 +2011,8 @@ export default function SettingsPage() {
                                         onChange={(e) => handleWorkspacePermissionToggle(workspace._id, 'leave', 'others', e.target.checked)}
                                         className="peer sr-only"
                                       />
-                                      <div className={`peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-blue-500 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-blue-800 ${
-                                        isEmployeeWorkspace ? 'opacity-50 cursor-not-allowed' : ''
-                                      }`}></div>
+                                      <div className={`peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-blue-500 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-blue-800 ${isEmployeeWorkspace ? 'opacity-50 cursor-not-allowed' : ''
+                                        }`}></div>
                                     </label>
                                   </div>
                                 </div>
@@ -2271,9 +2045,8 @@ export default function SettingsPage() {
                                         onChange={(e) => handleWorkspacePermissionToggle(workspace._id, 'od', 'self', e.target.checked)}
                                         className="peer sr-only"
                                       />
-                                      <div className={`peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-purple-500 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-purple-800 ${
-                                        isEmployeeWorkspace ? 'opacity-50 cursor-not-allowed' : ''
-                                      }`}></div>
+                                      <div className={`peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-purple-500 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-purple-800 ${isEmployeeWorkspace ? 'opacity-50 cursor-not-allowed' : ''
+                                        }`}></div>
                                     </label>
                                   </div>
 
@@ -2295,9 +2068,8 @@ export default function SettingsPage() {
                                         onChange={(e) => handleWorkspacePermissionToggle(workspace._id, 'od', 'others', e.target.checked)}
                                         className="peer sr-only"
                                       />
-                                      <div className={`peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-purple-500 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-purple-800 ${
-                                        isEmployeeWorkspace ? 'opacity-50 cursor-not-allowed' : ''
-                                      }`}></div>
+                                      <div className={`peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-purple-500 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-purple-800 ${isEmployeeWorkspace ? 'opacity-50 cursor-not-allowed' : ''
+                                        }`}></div>
                                     </label>
                                   </div>
                                 </div>
@@ -2431,7 +2203,6 @@ export default function SettingsPage() {
                   <div className="flex space-x-1">
                     {[
                       { id: 'general', label: 'General Settings' },
-                      { id: 'workflow', label: 'Workflow' },
                       { id: 'workspacePermissions', label: 'Workspace Permissions' },
                     ].map((tab) => (
                       <button
@@ -2440,15 +2211,12 @@ export default function SettingsPage() {
                           setLoanSubTab(tab.id as any);
                           if (tab.id === 'workspacePermissions') {
                             loadWorkspaces();
-                          } else if (tab.id === 'workflow') {
-                            loadWorkflowUsers();
                           }
                         }}
-                        className={`flex-1 whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition-all ${
-                          loanSubTab === tab.id
-                            ? 'bg-white text-blue-600 shadow-sm dark:bg-slate-700 dark:text-blue-400'
-                            : 'text-slate-600 hover:bg-white/50 dark:text-slate-400 dark:hover:bg-slate-700/50'
-                        }`}
+                        className={`flex-1 whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition-all ${loanSubTab === tab.id
+                          ? 'bg-white text-blue-600 shadow-sm dark:bg-slate-700 dark:text-blue-400'
+                          : 'text-slate-600 hover:bg-white/50 dark:text-slate-400 dark:hover:bg-slate-700/50'
+                          }`}
                       >
                         {tab.label}
                       </button>
@@ -2609,29 +2377,7 @@ export default function SettingsPage() {
                   </div>
                 )}
 
-                {/* Workflow Sub-tab */}
-                {loanSubTab === 'workflow' && (
-                  <div className="space-y-6">
-                    <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-6 dark:border-slate-700 dark:bg-slate-800/50">
-                      <div className="mb-4 flex items-center justify-between">
-                        <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Workflow Configuration</h3>
-                        <label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
-                          <input
-                            type="checkbox"
-                            defaultChecked={loanSettings?.workflow?.useDynamicWorkflow || false}
-                            className="rounded border-slate-300"
-                          />
-                          Enable Dynamic Workflow
-                        </label>
-                      </div>
-                      <p className="mb-4 text-sm text-slate-600 dark:text-slate-400">
-                        Configure the approval workflow steps. Enable dynamic workflow to assign specific users to each step.
-                      </p>
-                      {/* Workflow steps UI will go here */}
-                      <div className="text-sm text-slate-500">Workflow configuration UI coming soon...</div>
-                    </div>
-                  </div>
-                )}
+
 
                 {/* Workspace Permissions Sub-tab */}
                 {loanSubTab === 'workspacePermissions' && (
@@ -2887,11 +2633,10 @@ export default function SettingsPage() {
                         </div>
                       </div>
                       {attendanceSettings.mssqlAvailable !== undefined && (
-                        <div className={`rounded-xl px-4 py-2 text-sm ${
-                          attendanceSettings.mssqlAvailable
-                            ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400'
-                            : 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400'
-                        }`}>
+                        <div className={`rounded-xl px-4 py-2 text-sm ${attendanceSettings.mssqlAvailable
+                          ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400'
+                          : 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400'
+                          }`}>
                           {attendanceSettings.mssqlAvailable ? '✓ MSSQL connection available' : '✗ MSSQL connection unavailable'}
                         </div>
                       )}
@@ -3092,11 +2837,10 @@ export default function SettingsPage() {
 
                   {message && (
                     <div
-                      className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${
-                        message.type === 'success'
-                          ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400'
-                          : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'
-                      }`}
+                      className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${message.type === 'success'
+                        ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400'
+                        : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'
+                        }`}
                     >
                       {message.text}
                     </div>
@@ -3174,11 +2918,10 @@ export default function SettingsPage() {
 
                   {message && (
                     <div
-                      className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${
-                        message.type === 'success'
-                          ? 'border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-900/20 dark:text-green-200'
-                          : 'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200'
-                      }`}
+                      className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${message.type === 'success'
+                        ? 'border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-900/20 dark:text-green-200'
+                        : 'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200'
+                        }`}
                     >
                       {message.text}
                     </div>
@@ -3302,11 +3045,10 @@ export default function SettingsPage() {
 
                   {message && (
                     <div
-                      className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${
-                        message.type === 'success'
-                          ? 'border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-900/20 dark:text-green-200'
-                          : 'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200'
-                      }`}
+                      className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${message.type === 'success'
+                        ? 'border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-900/20 dark:text-green-200'
+                        : 'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200'
+                        }`}
                     >
                       {message.text}
                     </div>

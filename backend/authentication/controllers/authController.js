@@ -22,30 +22,40 @@ exports.login = async (req, res) => {
       });
     }
 
-    const isEmpNo = /^[A-Z]+\d+$/i.test(identifier);
     let user = null;
     let userType = null;
 
-    if (isEmpNo) {
-      console.log(`[AuthLogin] Identifier ${identifier} looks like an EmpNo, checking Employee first...`);
-      user = await Employee.findOne({ emp_no: identifier.toUpperCase() }).select('+password');
-      if (user) userType = 'employee';
+    // 1. CHECK USER COLLECTION FIRST (Requirement: Hierarchy check validation in users first)
+    console.log(`[AuthLogin] Checking User collection for ${identifier}...`);
+    // Search by email, name (username), or employeeId (emp_no)
+    user = await User.findOne({
+      $or: [
+        { email: identifier.toLowerCase() },
+        { name: identifier },
+        { employeeId: identifier.toUpperCase() }
+      ],
+    }).select('+password');
+
+    if (user) {
+      userType = 'user';
+      console.log(`[AuthLogin] Found matched record in User collection.`);
     }
 
-    // If not found as EmpNo or not an EmpNo format, check User
+    // 2. CHECK EMPLOYEE COLLECTION AS FALLBACK
     if (!user) {
-      console.log(`[AuthLogin] Checking User collection for ${identifier}...`);
-      user = await User.findOne({
-        $or: [{ email: identifier.toLowerCase() }, { name: identifier }],
+      console.log(`[AuthLogin] Checking Employee collection for ${identifier}...`);
+      // Search by emp_no or email
+      user = await Employee.findOne({
+        $or: [
+          { emp_no: identifier.toUpperCase() },
+          { email: identifier.toLowerCase() }
+        ],
       }).select('+password');
-      if (user) userType = 'user';
-    }
 
-    // If still not found and not already checked as EmpNo, check Employee by email
-    if (!user && !isEmpNo) {
-      console.log(`[AuthLogin] Checking Employee collection by email for ${identifier}...`);
-      user = await Employee.findOne({ email: identifier.toLowerCase() }).select('+password');
-      if (user) userType = 'employee';
+      if (user) {
+        userType = 'employee';
+        console.log(`[AuthLogin] Found matched record in Employee collection.`);
+      }
     }
 
     if (!user) {
@@ -61,6 +71,7 @@ exports.login = async (req, res) => {
     // Check if user/employee is active
     const isActive = userType === 'user' ? user.isActive : user.is_active;
     if (!isActive) {
+      console.warn(`[AuthLogin] Found ${userType} is inactive: ${identifier}`);
       return res.status(401).json({
         success: false,
         message: 'Account is deactivated. Please contact administrator',
@@ -148,6 +159,7 @@ exports.login = async (req, res) => {
           department: userType === 'user' ? user.department : user.department_id,
           emp_no: userType === 'employee' ? user.emp_no : user.employeeId,
           type: userType,
+          featureControl: userType === 'user' ? user.featureControl : undefined,
         },
         workspaces,
         activeWorkspace,
@@ -248,6 +260,7 @@ exports.getMe = async (req, res) => {
           department: userType === 'user' ? user.department : user.department_id,
           emp_no: userType === 'employee' ? user.emp_no : user.employeeId,
           type: userType,
+          featureControl: userType === 'user' ? user.featureControl : undefined,
         },
         workspaces,
         activeWorkspace,

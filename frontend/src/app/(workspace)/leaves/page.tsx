@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { api } from '@/lib/api';
 import { auth } from '@/lib/auth';
+import WorkflowTimeline from '@/components/WorkflowTimeline';
+
 
 // Icons
 const PlusIcon = () => (
@@ -99,7 +101,10 @@ interface LeaveApplication {
   createdAt?: string;
   appliedBy?: { _id: string; name: string; email: string };
   workflow?: {
-    nextApprover: string;
+    nextApprover?: string;
+    approvalChain?: any[];
+    currentStepRole?: string;
+    isCompleted?: boolean;
     history: any[];
   };
 }
@@ -136,7 +141,10 @@ interface ODApplication {
   appliedBy?: { _id: string; name: string; email: string };
   assignedBy?: { name: string };
   workflow?: {
-    nextApprover: string;
+    nextApprover?: string;
+    approvalChain?: any[];
+    currentStepRole?: string;
+    isCompleted?: boolean;
     history: any[];
   };
 }
@@ -2679,34 +2687,10 @@ export default function LeavesPage() {
                 </div>
               )}
 
-              {/* Workflow History */}
-              {selectedItem.workflow?.history && selectedItem.workflow.history.length > 0 && (
+              {/* Dynamic Workflow Timeline */}
+              {selectedItem.workflow && (
                 <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-                  <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-semibold mb-3">Approval History</p>
-                  <div className="space-y-3">
-                    {selectedItem.workflow.history.map((entry: any, idx: number) => (
-                      <div key={idx} className="flex items-start gap-3 text-sm">
-                        <div className={`w-2 h-2 mt-1.5 rounded-full ${entry.action === 'approved' ? 'bg-green-500' :
-                          entry.action === 'rejected' ? 'bg-red-500' :
-                            entry.action === 'forwarded' ? 'bg-blue-500' : 'bg-slate-400'
-                          }`} />
-                        <div>
-                          <span className="font-medium text-slate-900 dark:text-white capitalize">
-                            {entry.action}
-                          </span>
-                          <span className="text-slate-500 dark:text-slate-400"> by {entry.actionByName || 'Unknown'}</span>
-                          <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                            {new Date(entry.timestamp).toLocaleString()}
-                          </p>
-                          {entry.comments && (
-                            <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 italic">
-                              "{entry.comments}"
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  <WorkflowTimeline workflow={selectedItem.workflow} />
                 </div>
               )}
 

@@ -16,10 +16,9 @@ const {
   transformApplicationToEmployee,
 } = require('../services/fieldMappingService');
 const sqlHelper = require('../../employees/config/sqlHelper');
-const {
-  generatePassword,
-  sendCredentials,
-} = require('../../shared/services/passwordNotificationService');
+const { generatePassword, sendCredentials } = require('../../shared/services/passwordNotificationService');
+const s3UploadService = require('../../shared/services/s3UploadService');
+const { resolveQualificationLabels } = require('../services/fieldMappingService');
 
 /**
  * @desc    Create employee application (HR)
@@ -27,14 +26,64 @@ const {
  * @access  Private (HR, Sub Admin, Super Admin)
  */
 exports.createApplication = async (req, res) => {
+  console.log('[CreateApplication] Received request');
+  // console.log('[CreateApplication] Body:', JSON.stringify(req.body, null, 2)); // Too verbose, log keys only
+  console.log('[CreateApplication] Body Keys:', Object.keys(req.body));
+  console.log('[CreateApplication] Files:', req.files ? req.files.map(f => f.fieldname) : 'No files');
+
   try {
-    const applicationData = req.body;
+    let applicationData = { ...req.body };
+
+    // PARSE JSON STRINGIFIED FIELDS (from FormData)
+    // Dynamic fields, arrays, and nested objects come as strings in FormData
+    const jsonFields = ['dynamicFields', 'qualifications', 'employeeAllowances', 'employeeDeductions', 'department', 'designation'];
+
+    jsonFields.forEach(field => {
+      if (typeof applicationData[field] === 'string') {
+        try {
+          applicationData[field] = JSON.parse(applicationData[field]);
+        } catch (e) {
+          console.warn(`[CreateApplication] Failed to parse JSON for field ${field}:`, e.message);
+        }
+      }
+    });
+
+    // Handle Qualifications Files & Labels
+    if (applicationData.qualifications && Array.isArray(applicationData.qualifications)) {
+      console.log(`[CreateApplication] Processing ${applicationData.qualifications.length} qualifications`);
+
+      // Map files
+      const fileMap = {};
+      if (req.files) {
+        req.files.forEach(f => { fileMap[f.fieldname] = f; });
+      }
+
+      for (let i = 0; i < applicationData.qualifications.length; i++) {
+        const file = fileMap[`qualification_cert_${i}`];
+        if (file) {
+          console.log(`[CreateApplication] Uploading cert for qualification [${i}]`);
+          try {
+            const uploadResult = await s3UploadService.uploadToS3(
+              file.buffer,
+              file.originalname,
+              file.mimetype,
+              'hrms/certificates'
+            );
+            applicationData.qualifications[i].certificateUrl = uploadResult;
+            console.log(`[CreateApplication] Upload success: ${uploadResult}`);
+          } catch (err) {
+            console.error(`[CreateApplication] S3 Upload Falied for [${i}]:`, err);
+          }
+        }
+      }
+    }
 
     // Get form settings for validation
     const settings = await EmployeeApplicationFormSettings.getActiveSettings();
 
     // Validate form data using form settings
     if (settings) {
+      // Note: validateFormData expects object structure. Since we parsed everything back to objects above, it should work.
       const validation = await validateFormData(applicationData, settings);
       if (!validation.isValid) {
         return res.status(400).json({
@@ -113,6 +162,17 @@ exports.createApplication = async (req, res) => {
     // Transform form data: separate permanent fields from dynamic fields
     const { permanentFields, dynamicFields } = transformFormData(applicationData, settings);
 
+    // Make sure qualifications are preserved in dynamicFields or permanentFields depending on where they live.
+    // transformFormData typically puts everything not permanent into dynamicFields. 
+    // Qualifications is a permanent field in Schema? Let's check EmployeeApplication Schema if needed. 
+    // For now, assuming transformFormData handles it or we assign it explicitly.
+    // Actually, transformFormData might strip unknown fields. We should force qualifications if it's not in the result.
+
+    // Manually ensure qualifications (with URLs) are passed
+    if (applicationData.qualifications) {
+      permanentFields.qualifications = applicationData.qualifications;
+    }
+
     const normalizeOverrides = (list) =>
       Array.isArray(list)
         ? list
@@ -163,6 +223,137 @@ exports.createApplication = async (req, res) => {
       success: false,
       message: error.message || 'Failed to create employee application',
     });
+  }
+};
+
+/**
+ * @desc    Update employee application (HR/Admin)
+ * @route   PUT /api/employee-applications/:id
+ * @access  Private (HR, Sub Admin, Super Admin)
+ */
+exports.updateApplication = async (req, res) => {
+  console.log('[UpdateApplication] Received request for:', req.params.id);
+  console.log('[UpdateApplication] Files:', req.files ? req.files.map(f => f.fieldname) : 'No files');
+
+  try {
+    const applicationId = req.params.id;
+    let applicationData = { ...req.body };
+
+    const existingApplication = await EmployeeApplication.findById(applicationId);
+    if (!existingApplication) {
+      return res.status(404).json({ success: false, message: 'Application not found' });
+    }
+
+    // PARSE JSON STRINGIFIED FIELDS
+    const jsonFields = ['dynamicFields', 'qualifications', 'employeeAllowances', 'employeeDeductions', 'department', 'designation'];
+    jsonFields.forEach(field => {
+      if (typeof applicationData[field] === 'string') {
+        try {
+          applicationData[field] = JSON.parse(applicationData[field]);
+        } catch (e) {
+          console.warn(`[UpdateApplication] Failed to parse JSON for field ${field}:`, e.message);
+        }
+      }
+    });
+
+    // Handle Qualifications Files (Replacement Logic)
+    if (applicationData.qualifications && Array.isArray(applicationData.qualifications)) {
+      const fileMap = {};
+      if (req.files) {
+        req.files.forEach(f => { fileMap[f.fieldname] = f; });
+      }
+
+      for (let i = 0; i < applicationData.qualifications.length; i++) {
+        const file = fileMap[`qualification_cert_${i}`];
+        // Preserve existing URL if no new file is uploaded
+        // But wait, the frontend might send the 'certificateUrl' string if it wasn't valid.
+        // If a new file is uploaded, we replace.
+
+        if (file) {
+          console.log(`[UpdateApplication] Replacing cert for qualification [${i}]`);
+
+          // Check for existing URL to delete
+          const oldUrl = existingApplication.qualifications[i]?.certificateUrl;
+
+          try {
+            // Upload new
+            const uploadResult = await s3UploadService.uploadToS3(
+              file.buffer,
+              file.originalname,
+              file.mimetype,
+              'hrms/certificates'
+            );
+
+            // Delete old if exists
+            if (oldUrl) {
+              // We perform delete asynchronously or await it. Await is safer.
+              await s3UploadService.deleteFromS3(oldUrl).catch(err => console.error('Failed to delete old cert:', err));
+            }
+
+            applicationData.qualifications[i].certificateUrl = uploadResult;
+          } catch (err) {
+            console.error(`[UpdateApplication] S3 Upload Failed for [${i}]:`, err);
+          }
+        } else {
+          // Keep existing URL if not explicitly cleared/changed
+          // The frontend should send the existing object. 
+          // If the user deleted the file on frontend, 'certificateUrl' might be null in applicationData.
+          // We trust applicationData's state (except for the file payload which is separate).
+        }
+      }
+    }
+
+    // Get form settings for validation
+    const settings = await EmployeeApplicationFormSettings.getActiveSettings();
+
+    // Validate (Optional: might skip strict validation on draft updates, but let's keep it safe)
+    if (settings) {
+      const validation = await validateFormData(applicationData, settings);
+      if (!validation.isValid) {
+        console.warn('Validation warnings on update:', validation.errors);
+        // We might allow partial updates or return error. 
+        // Let's enforce validation for consistency.
+        // return res.status(400).json({ success: false, message: 'Validation failed', errors: validation.errors });
+      }
+    }
+
+    // Update fields
+    // We explicitly map fields to avoid overwriting metadata like 'status' if not intended, 
+    // but here we are basically replacing the content.
+    // 'status' should generally remain 'pending' unless specific action taken? 
+    // Usually editing resets approvals? Let's assume status stays 'pending'.
+
+    // Transform / Separate Fields
+    const { permanentFields, dynamicFields } = transformFormData(applicationData, settings);
+
+    if (applicationData.qualifications) {
+      permanentFields.qualifications = applicationData.qualifications;
+    }
+
+    // Helper for allowances
+    const normalizeOverrides = (list) => Array.isArray(list) ? list : [];
+
+    // Update document
+    Object.assign(existingApplication, {
+      ...permanentFields,
+      dynamicFields,
+      employeeAllowances: normalizeOverrides(applicationData.employeeAllowances),
+      employeeDeductions: normalizeOverrides(applicationData.employeeDeductions),
+      // Don't update emp_no if it's unique/fixed? Usually allowed to fix typos.
+      emp_no: applicationData.emp_no || existingApplication.emp_no
+    });
+
+    await existingApplication.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Application updated successfully',
+      data: existingApplication
+    });
+
+  } catch (error) {
+    console.error('Error updating application:', error);
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 

@@ -7,7 +7,6 @@ const Settings = require('../../settings/model/Settings');
 const { isHRMSConnected, getEmployeeByIdMSSQL } = require('../../employees/config/sqlHelper');
 const { getResolvedLeaveSettings } = require('../../departments/controllers/departmentSettingsController');
 const {
-  revokeFullDayLeave,
   updateLeaveForAttendance,
   getLeaveConflicts
 } = require('../services/leaveConflictService');
@@ -495,6 +494,28 @@ exports.applyLeave = async (req, res) => {
     const warnings = [...(validation.warnings || []), ...limitWarnings];
 
     // Create leave application
+
+    // Initialize Workflow (Dynamic)
+    let workflowData = {
+      currentStepRole: 'hod',
+      nextApproverRole: 'hod',
+      currentStep: 'hod', // Legacy
+      nextApprover: 'hod', // Legacy
+      approvalChain: [], // Will be empty if service fails
+      history: [
+        {
+          step: 'employee',
+          action: 'submitted',
+          actionBy: req.user._id,
+          actionByName: req.user.name,
+          actionByRole: req.user.role,
+          comments: 'Leave application submitted',
+          timestamp: new Date(),
+        },
+      ],
+    };
+
+    // Create leave application
     const leave = new Leave({
       employeeId: employee._id,
       emp_no: employee.emp_no,
@@ -514,21 +535,7 @@ exports.applyLeave = async (req, res) => {
       appliedAt: new Date(),
       status: 'pending',
       remarks,
-      workflow: {
-        currentStep: 'hod',
-        nextApprover: 'hod',
-        history: [
-          {
-            step: 'employee',
-            action: 'submitted',
-            actionBy: req.user._id,
-            actionByName: req.user.name,
-            actionByRole: req.user.role,
-            comments: 'Leave application submitted',
-            timestamp: new Date(),
-          },
-        ],
-      },
+      workflow: workflowData
     });
 
     await leave.save();
@@ -797,13 +804,19 @@ exports.getPendingApprovals = async (req, res) => {
     // Determine what the user can approve based on their role
     if (userRole === 'hod') {
       // HOD can only see their department's leaves
-      filter['workflow.nextApprover'] = 'hod';
+      filter['$or'] = [
+        { 'workflow.nextApprover': 'hod' },
+        { 'workflow.nextApproverRole': 'hod' }
+      ];
       if (req.user.department) {
         filter.department = req.user.department;
       }
     } else if (userRole === 'hr') {
       // HR can see leaves waiting for HR approval
-      filter['workflow.nextApprover'] = { $in: ['hr', 'final_authority'] };
+      filter['$or'] = [
+        { 'workflow.nextApprover': { $in: ['hr', 'final_authority'] } },
+        { 'workflow.nextApproverRole': { $in: ['hr', 'final_authority'] } }
+      ];
     } else if (['sub_admin', 'super_admin'].includes(userRole)) {
       // Admin can see all pending
       filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
@@ -850,6 +863,7 @@ exports.processLeaveAction = async (req, res) => {
     }
 
     const userRole = req.user.role;
+
     const currentApprover = leave.workflow.nextApprover;
 
     // Validate user can perform this action

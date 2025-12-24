@@ -1,25 +1,33 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 
 interface CertificateUploadProps {
     qualificationIndex: number;
-    certificateUrl?: string;
-    onUploadSuccess: (url: string) => void;
-    onDelete: () => void;
+    certificateUrl?: string; // Existing URL from server
+    onFileChange: (file: File | null) => void; // Callback for parent
+    onDelete: () => void; // Callback to clear URL/File in parent
 }
 
 export const CertificateUpload: React.FC<CertificateUploadProps> = ({
     qualificationIndex,
     certificateUrl,
-    onUploadSuccess,
+    onFileChange,
     onDelete,
 }) => {
-    const [uploading, setUploading] = useState(false);
-    const [deleting, setDeleting] = useState(false);
+    // If certificateUrl is present, use it. Otherwise, rely on local preview.
+    const [previewUrl, setPreviewUrl] = useState<string | null>(certificateUrl || null);
+    const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
-    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Sync preview with external URL if it changes (e.g. edit mode load) and no local file is selected
+    useEffect(() => {
+        if (certificateUrl && !selectedFile) {
+            setPreviewUrl(certificateUrl);
+        }
+    }, [certificateUrl, selectedFile]);
+
+    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
@@ -36,129 +44,42 @@ export const CertificateUpload: React.FC<CertificateUploadProps> = ({
             return;
         }
 
-        try {
-            setUploading(true);
-
-            const formData = new FormData();
-            formData.append('file', file);
-
-            const token = localStorage.getItem('token');
-            const response = await fetch('/api/upload/certificate', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                },
-                body: formData,
-            });
-
-            const data = await response.json();
-
-            if (data.success && data.url) {
-                onUploadSuccess(data.url);
-                toast.success('Certificate uploaded successfully!');
-            } else {
-                toast.error(data.message || 'Failed to upload certificate');
-            }
-        } catch (error: any) {
-            console.error('Certificate upload error:', error);
-            toast.error(error.message || 'Failed to upload certificate');
-        } finally {
-            setUploading(false);
-        }
+        const objectUrl = URL.createObjectURL(file);
+        setPreviewUrl(objectUrl);
+        setSelectedFile(file);
+        onFileChange(file);
     };
 
-    const handleDelete = async () => {
-        if (!certificateUrl) return;
-
-        if (!confirm('Are you sure you want to delete this certificate?')) {
+    const handleDelete = () => {
+        if (!confirm('Are you sure you want to remove this certificate?')) {
             return;
         }
 
-        try {
-            setDeleting(true);
-
-            const token = localStorage.getItem('token');
-            const response = await fetch('/api/upload/certificate', {
-                method: 'DELETE',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ url: certificateUrl }),
-            });
-
-            const data = await response.json();
-
-            if (data.success) {
-                onDelete();
-                toast.success('Certificate deleted successfully!');
-            } else {
-                toast.error(data.message || 'Failed to delete certificate');
-            }
-        } catch (error: any) {
-            console.error('Certificate delete error:', error);
-            toast.error(error.message || 'Failed to delete certificate');
-        } finally {
-            setDeleting(false);
+        // Clean up previous object URL if needed
+        if (previewUrl && !previewUrl.startsWith('http')) {
+            URL.revokeObjectURL(previewUrl);
         }
+
+        setPreviewUrl(null);
+        setSelectedFile(null);
+        onFileChange(null);
+        onDelete();
     };
 
-    const handleReupload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
-        // Validate file type
-        const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
-        if (!allowedTypes.includes(file.type)) {
-            toast.error('Invalid file type. Only JPG, PNG, and PDF are allowed.');
-            return;
-        }
-
-        // Validate file size (5MB)
-        if (file.size > 5 * 1024 * 1024) {
-            toast.error('File size too large. Maximum size is 5MB.');
-            return;
-        }
-
-        try {
-            setUploading(true);
-
-            const formData = new FormData();
-            formData.append('file', file);
-            if (certificateUrl) {
-                formData.append('oldUrl', certificateUrl);
+    // Cleanup object URL
+    useEffect(() => {
+        return () => {
+            if (previewUrl && !previewUrl.startsWith('http')) {
+                URL.revokeObjectURL(previewUrl);
             }
+        };
+    }, [previewUrl]);
 
-            const token = localStorage.getItem('token');
-            const response = await fetch('/api/upload/certificate', {
-                method: 'PUT',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                },
-                body: formData,
-            });
-
-            const data = await response.json();
-
-            if (data.success && data.url) {
-                onUploadSuccess(data.url);
-                toast.success('Certificate replaced successfully!');
-            } else {
-                toast.error(data.message || 'Failed to replace certificate');
-            }
-        } catch (error: any) {
-            console.error('Certificate replace error:', error);
-            toast.error(error.message || 'Failed to replace certificate');
-        } finally {
-            setUploading(false);
-        }
-    };
-
-    const isPDF = certificateUrl?.toLowerCase().endsWith('.pdf');
+    const isPDF = previewUrl?.toLowerCase().endsWith('.pdf') || selectedFile?.type === 'application/pdf';
 
     return (
         <div className="mt-2 space-y-2">
-            {!certificateUrl ? (
+            {!previewUrl ? (
                 <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                         Certificate (Image/PDF) - Optional
@@ -167,18 +88,11 @@ export const CertificateUpload: React.FC<CertificateUploadProps> = ({
                         type="file"
                         accept="image/jpeg,image/png,image/jpg,application/pdf"
                         onChange={handleFileUpload}
-                        disabled={uploading}
                         className="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 dark:text-gray-400 focus:outline-none dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400"
                     />
                     <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                         JPG, PNG or PDF (Max 5MB)
                     </p>
-                    {uploading && (
-                        <div className="mt-2 flex items-center gap-2 text-sm text-blue-600">
-                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-600 border-t-transparent"></div>
-                            Uploading...
-                        </div>
-                    )}
                 </div>
             ) : (
                 <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 bg-gray-50 dark:bg-gray-800">
@@ -191,10 +105,10 @@ export const CertificateUpload: React.FC<CertificateUploadProps> = ({
                             </div>
                         ) : (
                             <img
-                                src={certificateUrl}
+                                src={previewUrl}
                                 alt="Certificate"
                                 className="flex-shrink-0 w-16 h-16 object-cover rounded cursor-pointer hover:opacity-80 transition-opacity"
-                                onClick={() => window.open(certificateUrl, '_blank')}
+                                onClick={() => window.open(previewUrl, '_blank')}
                             />
                         )}
                         <div className="flex-1 min-w-0">
@@ -203,29 +117,19 @@ export const CertificateUpload: React.FC<CertificateUploadProps> = ({
                             </p>
                             <div className="mt-2 flex flex-wrap gap-2">
                                 <a
-                                    href={certificateUrl}
+                                    href={previewUrl}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
                                 >
                                     View Full Size
                                 </a>
-                                <label className="text-xs text-green-600 dark:text-green-400 hover:underline cursor-pointer">
-                                    Re-upload
-                                    <input
-                                        type="file"
-                                        accept="image/jpeg,image/png,image/jpg,application/pdf"
-                                        onChange={handleReupload}
-                                        disabled={uploading}
-                                        className="hidden"
-                                    />
-                                </label>
                                 <button
                                     onClick={handleDelete}
-                                    disabled={deleting}
-                                    className="text-xs text-red-600 dark:text-red-400 hover:underline disabled:opacity-50"
+                                    type="button"
+                                    className="text-xs text-red-600 dark:text-red-400 hover:underline"
                                 >
-                                    {deleting ? 'Deleting...' : 'Delete'}
+                                    Remove/Delete
                                 </button>
                             </div>
                         </div>

@@ -78,6 +78,8 @@ interface DynamicEmployeeFormProps {
   errors?: Record<string, string>;
   departments?: Array<{ _id: string; name: string }>;
   designations?: Array<{ _id: string; name: string; department: string }>;
+  onSettingsLoaded?: (settings: FormSettings) => void;
+  simpleUpload?: boolean;
 }
 
 export default function DynamicEmployeeForm({
@@ -86,6 +88,8 @@ export default function DynamicEmployeeForm({
   errors = {},
   departments = [],
   designations = [],
+  onSettingsLoaded,
+  simpleUpload = false,
 }: DynamicEmployeeFormProps) {
   const [settings, setSettings] = useState<FormSettings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -112,11 +116,13 @@ export default function DynamicEmployeeForm({
       const response = await api.getFormSettings();
       if (response.success) {
         setSettings(response.data);
+        if (onSettingsLoaded) onSettingsLoaded(response.data);
       } else {
         // Try to initialize if settings don't exist
         const initResponse = await api.initializeFormSettings();
         if (initResponse.success) {
           setSettings(initResponse.data);
+          if (onSettingsLoaded) onSettingsLoaded(initResponse.data);
         }
       }
     } catch (error) {
@@ -966,16 +972,42 @@ export default function DynamicEmployeeForm({
               {/* Certificate Upload - Only show if enabled in settings */}
               {settings.qualifications?.enableCertificateUpload && (
                 <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
-                  <CertificateUpload
-                    qualificationIndex={index}
-                    certificateUrl={qualifications[index]?.certificateUrl}
-                    onUploadSuccess={(url) => {
-                      handleQualificationChange(index, 'certificateUrl', url);
-                    }}
-                    onDelete={() => {
-                      handleQualificationChange(index, 'certificateUrl', undefined);
-                    }}
-                  />
+                  {simpleUpload ? (
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                        Certificate (Image/PDF)
+                      </label>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/jpg,application/pdf"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null;
+                          handleQualificationChange(index, 'certificateFile', file);
+                        }}
+                        className="block w-full text-sm text-slate-500
+                          file:mr-4 file:py-2 file:px-4
+                          file:rounded-full file:border-0
+                          file:text-sm file:font-semibold
+                          file:bg-green-50 file:text-green-700
+                          hover:file:bg-green-100 dark:file:bg-green-900/20 dark:file:text-green-400"
+                      />
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        Upload qualification certificate
+                      </p>
+                    </div>
+                  ) : (
+                    <CertificateUpload
+                      qualificationIndex={index}
+                      certificateUrl={qualifications[index]?.certificateUrl}
+                      onFileChange={(file) => {
+                        handleQualificationChange(index, 'certificateFile', file);
+                      }}
+                      onDelete={() => {
+                        handleQualificationChange(index, 'certificateFile', null);
+                        handleQualificationChange(index, 'certificateUrl', null);
+                      }}
+                    />
+                  )}
                 </div>
               )}
             </div>

@@ -219,47 +219,58 @@ const PaymentsIcon = ({ className, ...props }: IconProps) => (
   </svg>
 );
 
+
+
+import { isModuleEnabled } from '@/config/moduleCategories';
+import { User } from '@/lib/auth';
+
 export type NavItem = {
   href: string;
   label: string;
   icon: React.ComponentType<IconProps>;
   category: string;
+  moduleCode: string;
 };
 
 const navItems: NavItem[] = [
-  { href: '/superadmin/dashboard', label: 'Dashboard', icon: DashboardIcon, category: 'Main' },
-  { href: '/superadmin/employees', label: 'Employees', icon: EmployeesIcon, category: 'Employee Management' },
-  { href: '/superadmin/employees/form-settings', label: 'Form Settings', icon: FormSettingsIcon, category: 'Employee Management' },
-  { href: '/superadmin/attendance', label: 'Attendance', icon: AttendanceIcon, category: 'Time & Attendance' },
-  { href: '/superadmin/ot-permissions', label: 'OT & Permissions', icon: OTPermissionIcon, category: 'Time & Attendance' },
-  { href: '/superadmin/confused-shifts', label: 'Confused Shifts', icon: ConfusedShiftIcon, category: 'Time & Attendance' },
-  { href: '/superadmin/shift-roster', label: 'Shift Roster', icon: ClockIcon, category: 'Time & Attendance' },
-  { href: '/superadmin/leaves', label: 'Leave & OD', icon: LeaveIcon, category: 'Time & Attendance' },
-  { href: '/superadmin/shifts', label: 'Shifts', icon: ClockIcon, category: 'Time & Attendance' },
-  { href: '/superadmin/departments', label: 'Departments', icon: BuildingIcon, category: 'Organization' },
-  { href: '/superadmin/settings/departmental', label: 'Departmental Settings', icon: DepartmentSettingsIcon, category: 'Organization' },
-  { href: '/superadmin/users', label: 'Users', icon: UsersIcon, category: 'Administration' },
-  { href: '/superadmin/reports', label: 'Reports', icon: ReportsIcon, category: 'Administration' },
-  { href: '/superadmin/payments', label: 'Payments', icon: PaymentsIcon, category: 'Finance & Payroll' },
-  { href: '/superadmin/pay-register', label: 'Pay Register', icon: PayRegisterIcon, category: 'Finance & Payroll' },
-  { href: '/superadmin/payslips', label: 'Payslips', icon: PayslipsIcon, category: 'Finance & Payroll' },
-  { href: '/superadmin/arrears', label: 'Arrears', icon: ArrearsIcon, category: 'Finance & Payroll' },
-  { href: '/superadmin/allowances-deductions', label: 'Allowances & Deductions', icon: AllowancesDeductionsIcon, category: 'Finance & Payroll' },
-  { href: '/superadmin/settings', label: 'General Settings', icon: SettingsIcon, category: 'Settings' },
+  { href: '/superadmin/dashboard', label: 'Dashboard', icon: DashboardIcon, category: 'Main', moduleCode: 'DASHBOARD' },
+  { href: '/superadmin/employees', label: 'Employees', icon: EmployeesIcon, category: 'Employee Management', moduleCode: 'EMPLOYEES' },
+  { href: '/superadmin/employees/form-settings', label: 'Form Settings', icon: FormSettingsIcon, category: 'Employee Management', moduleCode: 'EMPLOYEES' },
+  { href: '/superadmin/attendance', label: 'Attendance', icon: AttendanceIcon, category: 'Time & Attendance', moduleCode: 'ATTENDANCE' },
+  { href: '/superadmin/ot-permissions', label: 'OT & Permissions', icon: OTPermissionIcon, category: 'Time & Attendance', moduleCode: 'OT_PERMISSIONS' },
+  { href: '/superadmin/confused-shifts', label: 'Confused Shifts', icon: ConfusedShiftIcon, category: 'Time & Attendance', moduleCode: 'CONFUSED_SHIFTS' },
+  { href: '/superadmin/shift-roster', label: 'Shift Roster', icon: ClockIcon, category: 'Time & Attendance', moduleCode: 'SHIFT_ROSTER' },
+  { href: '/superadmin/leaves', label: 'Leave & OD', icon: LeaveIcon, category: 'Time & Attendance', moduleCode: 'LEAVE_OD' },
+  { href: '/superadmin/shifts', label: 'Shifts', icon: ClockIcon, category: 'Time & Attendance', moduleCode: 'SHIFTS' },
+  { href: '/superadmin/departments', label: 'Departments', icon: BuildingIcon, category: 'Organization', moduleCode: 'DEPARTMENTS' },
+  { href: '/superadmin/settings/departmental', label: 'Departmental Settings', icon: DepartmentSettingsIcon, category: 'Organization', moduleCode: 'DEPARTMENTAL_SETTINGS' },
+  { href: '/superadmin/users', label: 'Users', icon: UsersIcon, category: 'Administration', moduleCode: 'USERS' },
+  { href: '/superadmin/reports', label: 'Reports', icon: ReportsIcon, category: 'Administration', moduleCode: 'REPORTS' },
+  { href: '/superadmin/payments', label: 'Payments', icon: PaymentsIcon, category: 'Finance & Payroll', moduleCode: 'PAYMENTS' },
+  { href: '/superadmin/pay-register', label: 'Pay Register', icon: PayRegisterIcon, category: 'Finance & Payroll', moduleCode: 'PAY_REGISTER' },
+  { href: '/superadmin/payslips', label: 'Payslips', icon: PayslipsIcon, category: 'Finance & Payroll', moduleCode: 'PAYSLIPS' },
+  { href: '/superadmin/arrears', label: 'Arrears', icon: ArrearsIcon, category: 'Finance & Payroll', moduleCode: 'ARREARS' },
+  { href: '/superadmin/allowances-deductions', label: 'Allowances & Deductions', icon: AllowancesDeductionsIcon, category: 'Finance & Payroll', moduleCode: 'ALLOWANCES_DEDUCTIONS' },
+  { href: '/superadmin/settings', label: 'General Settings', icon: SettingsIcon, category: 'Settings', moduleCode: 'GENERAL_SETTINGS' },
 ];
 
 export default function Sidebar() {
   const { isCollapsed, toggleSidebar } = useSidebar();
   const pathname = usePathname();
   const router = useRouter();
-  const [user, setUser] = useState<{ name: string; email: string; role: string } | null>(null);
+  const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
     const userData = auth.getUser();
     if (userData) {
-      setUser({ name: userData.name, email: userData.email, role: userData.role });
+      setUser(userData);
     }
   }, []);
+
+  // Filter items based on user permissions
+  const filteredNavItems = user?.role === 'super_admin'
+    ? navItems
+    : navItems.filter(item => isModuleEnabled(item.moduleCode, user?.featureControl || null));
 
   const handleLogout = () => {
     auth.logout();
@@ -316,8 +327,8 @@ export default function Sidebar() {
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-4">
-          {Array.from(new Set(navItems.map(i => i.category))).map(category => {
-            const categoryItems = navItems.filter(i => i.category === category);
+          {Array.from(new Set(filteredNavItems.map(i => i.category))).map(category => {
+            const categoryItems = filteredNavItems.filter(i => i.category === category);
             const showHeader = categoryItems.length > 1;
 
             return (

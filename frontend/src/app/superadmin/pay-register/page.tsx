@@ -721,12 +721,14 @@ export default function PayRegisterPage() {
           router.push('/superadmin/payments');
         }, 1500);
       }
-      else {
-        // No batches or calculation failed/legacy -> Download Excel
+      else if (successCount > 0) {
+        // No batches but legacy/success -> Download Excel
         const listedEmployeeIds = payRegisters.map((pr) =>
           typeof pr.employeeId === 'object' ? pr.employeeId._id : pr.employeeId
         );
         await downloadPayrollExcel(listedEmployeeIds);
+      } else {
+        toast.warning('Calculation failed for all employees. Nothing to export.');
       }
 
     } catch (error) {

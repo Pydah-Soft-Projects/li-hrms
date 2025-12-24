@@ -463,6 +463,26 @@ exports.applyOD = async (req, res) => {
     // Store warnings to include in success response
     const warnings = validation.warnings || [];
 
+    // Initialize Workflow (Dynamic)
+    let workflowData = {
+      currentStepRole: 'hod',
+      nextApproverRole: 'hod',
+      currentStep: 'hod', // Legacy
+      nextApprover: 'hod', // Legacy
+      approvalChain: [],
+      history: [
+        {
+          step: 'employee',
+          action: isAssigned ? 'assigned' : 'submitted',
+          actionBy: req.user._id,
+          actionByName: req.user.name,
+          actionByRole: req.user.role,
+          comments: isAssigned ? 'OD assigned by manager' : 'OD application submitted',
+          timestamp: new Date(),
+        },
+      ],
+    };
+
     // Create OD application
     const od = new OD({
       employeeId: employee._id,
@@ -493,21 +513,7 @@ exports.applyOD = async (req, res) => {
       odStartTime: odStartTime || null,
       odEndTime: odEndTime || null,
       durationHours: durationHours,
-      workflow: {
-        currentStep: 'hod',
-        nextApprover: 'hod',
-        history: [
-          {
-            step: 'employee',
-            action: isAssigned ? 'assigned' : 'submitted',
-            actionBy: req.user._id,
-            actionByName: req.user.name,
-            actionByRole: req.user.role,
-            comments: isAssigned ? 'OD assigned by manager' : 'OD application submitted',
-            timestamp: new Date(),
-          },
-        ],
-      },
+      workflow: workflowData,
     });
 
     await od.save();
@@ -860,12 +866,18 @@ exports.getPendingApprovals = async (req, res) => {
     let filter = { isActive: true };
 
     if (userRole === 'hod') {
-      filter['workflow.nextApprover'] = 'hod';
+      filter['$or'] = [
+        { 'workflow.nextApprover': 'hod' },
+        { 'workflow.nextApproverRole': 'hod' }
+      ];
       if (req.user.department) {
         filter.department = req.user.department;
       }
     } else if (userRole === 'hr') {
-      filter['workflow.nextApprover'] = { $in: ['hr', 'final_authority'] };
+      filter['$or'] = [
+        { 'workflow.nextApprover': { $in: ['hr', 'final_authority'] } },
+        { 'workflow.nextApproverRole': { $in: ['hr', 'final_authority'] } }
+      ];
     } else if (['sub_admin', 'super_admin'].includes(userRole)) {
       filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
     } else {
@@ -912,6 +924,7 @@ exports.processODAction = async (req, res) => {
     }
 
     const userRole = req.user.role;
+
     const currentApprover = od.workflow.nextApprover;
 
     // Validate user can perform this action

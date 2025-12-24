@@ -22,7 +22,7 @@ const generatePassword = async (employee, mode = null) => {
     }
   }
 
-  if (mode === 'phone_empno') {
+  if (mode === 'phone_empno' && employee) {
     const phone = employee.phone_number || '';
     const last4 = phone.slice(-4).padStart(4, '0');
     // Ensure emp_no is clean

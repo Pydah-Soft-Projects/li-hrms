@@ -154,19 +154,59 @@ const ODSchema = new mongoose.Schema(
 
     // Workflow tracking
     workflow: {
-      // Current step in workflow
-      currentStep: {
+      // Current step role in workflow
+      currentStepRole: {
         type: String,
-        enum: ['employee', 'hod', 'hr', 'final', 'completed'],
-        default: 'employee',
+        default: null,
       },
 
       // Next approver role
-      nextApprover: {
+      nextApproverRole: {
         type: String,
-        enum: ['hod', 'hr', 'final_authority', null],
         default: null,
       },
+
+      // LEGACY FIELDS (Kept for backward compatibility)
+      currentStep: {
+        type: String,
+        default: 'employee'
+      },
+      nextApprover: {
+        type: String,
+        default: null
+      },
+
+      // Is the entire workflow completed?
+      isCompleted: {
+        type: Boolean,
+        default: false,
+      },
+
+      // Dynamic Approval Chain
+      approvalChain: [
+        {
+          stepOrder: Number,
+          role: String,
+          label: String,
+          status: {
+            type: String,
+            enum: ['pending', 'approved', 'rejected', 'skipped'],
+            default: 'pending'
+          },
+          isCurrent: {
+            type: Boolean,
+            default: false
+          },
+          actionBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User'
+          },
+          actionByName: String,
+          actionByRole: String,
+          comments: String,
+          updatedAt: Date
+        }
+      ],
 
       // Workflow history
       history: [
@@ -363,7 +403,7 @@ ODSchema.pre('save', function () {
     if (this.fromDate && this.toDate) {
       const diffTime = Math.abs(this.toDate - this.fromDate);
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-      
+
       if (this.isHalfDay) {
         this.numberOfDays = 0.5;
       } else {
@@ -420,7 +460,7 @@ ODSchema.statics.getPendingForRole = async function (role, departmentIds = []) {
 };
 
 // Post-save hook to update monthly attendance summary when OD is approved
-ODSchema.post('save', async function() {
+ODSchema.post('save', async function () {
   try {
     // Only update if status is 'approved' and this is a new approval
     if (this.status === 'approved' && this.isModified('status')) {
