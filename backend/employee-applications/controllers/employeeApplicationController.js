@@ -71,9 +71,13 @@ const createApplicationInternal = async (rawData, settings, creatorId) => {
   // Transform form data
   const { permanentFields, dynamicFields } = transformFormData(applicationData, settings);
 
-  // Ensure qualifications (if provided) are handled
+  // Ensure qualifications (if provided) are handled and labels are resolved
   if (applicationData.qualifications) {
-    permanentFields.qualifications = applicationData.qualifications;
+    if (settings && Array.isArray(applicationData.qualifications)) {
+      permanentFields.qualifications = resolveQualificationLabels(applicationData.qualifications, settings);
+    } else {
+      permanentFields.qualifications = applicationData.qualifications;
+    }
   }
 
   const normalizeOverrides = (list) =>
@@ -330,8 +334,13 @@ exports.updateApplication = async (req, res) => {
     // Transform / Separate Fields
     const { permanentFields, dynamicFields } = transformFormData(applicationData, settings);
 
+    // Resolve labels for qualifications
     if (applicationData.qualifications) {
-      permanentFields.qualifications = applicationData.qualifications;
+      if (settings && Array.isArray(applicationData.qualifications)) {
+        permanentFields.qualifications = resolveQualificationLabels(applicationData.qualifications, settings);
+      } else {
+        permanentFields.qualifications = applicationData.qualifications;
+      }
     }
 
     // Helper for allowances
@@ -517,8 +526,17 @@ const approveSingleApplicationInternal = async (applicationId, approvalData, app
   application.ctcSalary = finalCtcSalary;
   application.calculatedSalary = finalCalculatedSalary;
 
+  // Resolve Qualification Labels if stored as IDs (for existing applications or robustness)
+  const appObj = application.toObject();
+  if (appObj.qualifications && Array.isArray(appObj.qualifications)) {
+    const settings = await EmployeeApplicationFormSettings.getActiveSettings();
+    if (settings) {
+      appObj.qualifications = resolveQualificationLabels(appObj.qualifications, settings);
+    }
+  }
+
   const { permanentFields, dynamicFields } = transformApplicationToEmployee(
-    application.toObject(),
+    appObj,
     {
       gross_salary: finalSalary,
       doj: finalDOJ,

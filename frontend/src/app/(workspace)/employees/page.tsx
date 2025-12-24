@@ -405,13 +405,17 @@ export default function EmployeesPage() {
             // Map each part to the corresponding field in the schema
             parts.forEach((val, idx) => {
               if (fields[idx]) {
-                obj[fields[idx].id] = val;
+                const key = fields[idx].label || fields[idx].id;
+                obj[key] = val;
               }
             });
           } else {
             // Just a string
             const fields = fieldDef.itemSchema?.fields || fieldDef.fields || [];
-            if (fields[0]) obj[fields[0].id] = trimmedItem;
+            if (fields[0]) {
+              const key = fields[0].label || fields[0].id;
+              obj[key] = trimmedItem;
+            }
           }
           return obj;
         });

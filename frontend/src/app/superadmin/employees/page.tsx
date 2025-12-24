@@ -729,13 +729,21 @@ export default function EmployeesPage() {
             });
           } else if (trimmedItem.includes(':')) {
             const parts = trimmedItem.split(':').map(s => s.trim());
+            // Map each part to the corresponding field in the schema
             const fields = fieldDef.itemSchema?.fields || fieldDef.fields || [];
             parts.forEach((val, idx) => {
-              if (fields[idx]) obj[fields[idx].id] = val;
+              if (fields[idx]) {
+                const key = fields[idx].label || fields[idx].id;
+                obj[key] = val;
+              }
             });
           } else {
+            // Just a string
             const fields = fieldDef.itemSchema?.fields || fieldDef.fields || [];
-            if (fields[0]) obj[fields[0].id] = trimmedItem;
+            if (fields[0]) {
+              const key = fields[0].label || fields[0].id;
+              obj[key] = trimmedItem;
+            }
           }
           return obj;
         });
@@ -2389,16 +2397,19 @@ export default function EmployeesPage() {
                               {/* Card Content Area */}
                               <div className="flex flex-1 flex-col p-5">
                                 <div className="space-y-3">
-                                  {displayEntries.length > 0 ? displayEntries.map(([key, value]) => (
-                                    <div key={key} className="flex flex-col border-b border-slate-100 pb-2 last:border-0 last:pb-0 dark:border-slate-800">
-                                      <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 dark:text-slate-500 mb-0.5">
-                                        {key.replace(/_/g, ' ')}
-                                      </span>
-                                      <span className="text-sm font-medium text-slate-900 dark:text-slate-100 line-clamp-1" title={String(value)}>
-                                        {String(value)}
-                                      </span>
-                                    </div>
-                                  )) : <span className="text-sm italic text-slate-400">No Qualification Details</span>}
+                                  {displayEntries.length > 0 ? displayEntries.map(([key, value]) => {
+                                    const fieldLabel = formSettings?.qualifications?.fields?.find((f: any) => f.id === key)?.label || key.replace(/_/g, ' ');
+                                    return (
+                                      <div key={key} className="flex flex-col border-b border-slate-100 pb-2 last:border-0 last:pb-0 dark:border-slate-800">
+                                        <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 dark:text-slate-500 mb-0.5">
+                                          {fieldLabel}
+                                        </span>
+                                        <span className="text-sm font-medium text-slate-900 dark:text-slate-100 line-clamp-1" title={String(value)}>
+                                          {String(value)}
+                                        </span>
+                                      </div>
+                                    );
+                                  }) : <span className="text-sm italic text-slate-400">No Qualification Details</span>}
                                 </div>
                               </div>
                             </div>
@@ -3079,7 +3090,7 @@ export default function EmployeesPage() {
               return { success: false, message: 'Failed to send bulk upload request' };
             }
           }}
-      onClose={() => setShowBulkUpload(false)}
+          onClose={() => setShowBulkUpload(false)}
         />
       )}
 
@@ -3285,16 +3296,19 @@ export default function EmployeesPage() {
                                     {/* Card Content Area */}
                                     <div className="flex flex-1 flex-col p-5">
                                       <div className="space-y-3">
-                                        {displayEntries.length > 0 ? displayEntries.map(([key, value]) => (
-                                          <div key={key} className="flex flex-col border-b border-slate-100 pb-2 last:border-0 last:pb-0 dark:border-slate-800">
-                                            <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 dark:text-slate-500 mb-0.5">
-                                              {key.replace(/_/g, ' ')}
-                                            </span>
-                                            <span className="text-sm font-medium text-slate-900 dark:text-slate-100 line-clamp-1" title={String(value)}>
-                                              {String(value)}
-                                            </span>
-                                          </div>
-                                        )) : <span className="text-sm italic text-slate-400">No Qualification Details</span>}
+                                        {displayEntries.length > 0 ? displayEntries.map(([key, value]) => {
+                                          const fieldLabel = formSettings?.qualifications?.fields?.find((f: any) => f.id === key)?.label || key.replace(/_/g, ' ');
+                                          return (
+                                            <div key={key} className="flex flex-col border-b border-slate-100 pb-2 last:border-0 last:pb-0 dark:border-slate-800">
+                                              <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 dark:text-slate-500 mb-0.5">
+                                                {fieldLabel}
+                                              </span>
+                                              <span className="text-sm font-medium text-slate-900 dark:text-slate-100 line-clamp-1" title={String(value)}>
+                                                {String(value)}
+                                              </span>
+                                            </div>
+                                          );
+                                        }) : <span className="text-sm italic text-slate-400">No Qualification Details</span>}
                                       </div>
                                     </div>
                                   </div>
