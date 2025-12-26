@@ -700,14 +700,14 @@ export default function EmployeesPage() {
       // Clean up enum fields
       const enumFields = ['gender', 'marital_status', 'blood_group'];
       enumFields.forEach(field => {
-        if (submitData[field] === '' || submitData[field] === undefined) {
-          submitData[field] = null;
+        if ((submitData as any)[field] === '' || (submitData as any)[field] === undefined) {
+          (submitData as any)[field] = null;
         }
       });
       // Convert empty strings to undefined for other optional fields
       Object.keys(submitData).forEach(key => {
-        if (submitData[key] === '' && !enumFields.includes(key) && key !== 'qualifications') {
-          submitData[key] = undefined;
+        if ((submitData as any)[key] === '' && !enumFields.includes(key) && key !== 'qualifications') {
+          (submitData as any)[key] = undefined;
         }
       });
 
