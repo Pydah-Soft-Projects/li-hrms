@@ -80,6 +80,7 @@ interface DynamicEmployeeFormProps {
   designations?: Array<{ _id: string; name: string; department: string }>;
   onSettingsLoaded?: (settings: FormSettings) => void;
   simpleUpload?: boolean;
+  isViewMode?: boolean;
 }
 
 export default function DynamicEmployeeForm({
@@ -90,6 +91,7 @@ export default function DynamicEmployeeForm({
   designations = [],
   onSettingsLoaded,
   simpleUpload = false,
+  isViewMode = false,
 }: DynamicEmployeeFormProps) {
   const [settings, setSettings] = useState<FormSettings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -182,6 +184,7 @@ export default function DynamicEmployeeForm({
             value={value || ''}
             onChange={(e) => handleFieldChange(field.id, e.target.value)}
             required={field.isRequired}
+            disabled={isViewMode}
             className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
               }`}
           >
@@ -210,7 +213,7 @@ export default function DynamicEmployeeForm({
             value={value || ''}
             onChange={(e) => handleFieldChange(field.id, e.target.value)}
             required={field.isRequired}
-            disabled={!formData.department_id}
+            disabled={!formData.department_id || isViewMode}
             className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
               }`}
           >
@@ -245,6 +248,7 @@ export default function DynamicEmployeeForm({
               placeholder={field.placeholder}
               required={field.isRequired}
               maxLength={field.validation?.maxLength}
+              disabled={isViewMode}
               className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
                 } ${field.id === 'emp_no' || field.id === 'ifsc_code' ? 'uppercase' : ''}`}
             />
@@ -265,6 +269,7 @@ export default function DynamicEmployeeForm({
               required={field.isRequired}
               rows={3}
               maxLength={field.validation?.maxLength}
+              disabled={isViewMode}
               className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
                 }`}
             />
@@ -287,6 +292,7 @@ export default function DynamicEmployeeForm({
               min={field.validation?.min}
               max={field.validation?.max}
               step={field.id === 'proposedSalary' ? '0.01' : '1'}
+              disabled={isViewMode}
               className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
                 }`}
             />
@@ -344,13 +350,15 @@ export default function DynamicEmployeeForm({
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
                 {field.label} {field.isRequired && '*'}
               </label>
-              <button
-                type="button"
-                onClick={() => handleArrayItemAdd(field.id, field.itemSchema)}
-                className="rounded-lg bg-green-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-green-600"
-              >
-                + Add
-              </button>
+              {!isViewMode && (
+                <button
+                  type="button"
+                  onClick={() => handleArrayItemAdd(field.id, field.itemSchema)}
+                  className="rounded-lg bg-green-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-green-600"
+                >
+                  + Add
+                </button>
+              )}
             </div>
 
             {arrayValue.map((item: any, index: number) => (
@@ -362,15 +370,17 @@ export default function DynamicEmployeeForm({
                   <span className="text-sm font-medium text-slate-600 dark:text-slate-400">
                     {field.label} #{index + 1}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => handleArrayItemRemove(field.id, index)}
-                    className="rounded-lg p-1 text-red-500 transition hover:bg-red-50 dark:hover:bg-red-900/30"
-                  >
-                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
+                  {!isViewMode && (
+                    <button
+                      type="button"
+                      onClick={() => handleArrayItemRemove(field.id, index)}
+                      className="rounded-lg p-1 text-red-500 transition hover:bg-red-50 dark:hover:bg-red-900/30"
+                    >
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
                 </div>
 
                 {field.itemType === 'object' && field.itemSchema ? (
@@ -394,6 +404,7 @@ export default function DynamicEmployeeForm({
                                 placeholder={nestedField.placeholder}
                                 required={nestedField.isRequired}
                                 rows={3}
+                                disabled={isViewMode}
                                 className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${nestedError ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
                                   }`}
                               />
@@ -407,6 +418,7 @@ export default function DynamicEmployeeForm({
                                 }}
                                 placeholder={nestedField.placeholder}
                                 required={nestedField.isRequired}
+                                disabled={isViewMode}
                                 className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${nestedError ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
                                   }`}
                               />
@@ -423,6 +435,7 @@ export default function DynamicEmployeeForm({
                               required={nestedField.isRequired}
                               min={nestedField.validation?.min}
                               max={nestedField.validation?.max}
+                              disabled={isViewMode}
                               className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${nestedError ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
                                 }`}
                             />
@@ -434,6 +447,7 @@ export default function DynamicEmployeeForm({
                                 handleArrayItemChange(field.id, index, newItem);
                               }}
                               required={nestedField.isRequired}
+                              disabled={isViewMode}
                               className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${nestedError ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
                                 }`}
                             >
@@ -459,6 +473,7 @@ export default function DynamicEmployeeForm({
                       handleArrayItemChange(field.id, index, newValue);
                     }}
                     placeholder={field.placeholder}
+                    disabled={isViewMode}
                     className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                   />
                 )}
@@ -560,6 +575,7 @@ export default function DynamicEmployeeForm({
                         }
                         handleFieldChange(field.id, newValue);
                       }}
+                      disabled={isViewMode}
                       className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500"
                     />
                     <span className="text-sm text-slate-700 dark:text-slate-300">{opt.label}</span>
@@ -609,6 +625,7 @@ export default function DynamicEmployeeForm({
                           }}
                           placeholder={nestedField.placeholder}
                           required={nestedField.isRequired}
+                          disabled={isViewMode}
                           className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${nestedError ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
                             }`}
                         />
@@ -624,6 +641,7 @@ export default function DynamicEmployeeForm({
                           placeholder={nestedField.placeholder}
                           required={nestedField.isRequired}
                           rows={3}
+                          disabled={isViewMode}
                           className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${nestedError ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
                             }`}
                         />
@@ -641,6 +659,7 @@ export default function DynamicEmployeeForm({
                           required={nestedField.isRequired}
                           min={nestedField.validation?.min}
                           max={nestedField.validation?.max}
+                          disabled={isViewMode}
                           className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${nestedError ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
                             }`}
                         />
@@ -730,7 +749,7 @@ export default function DynamicEmployeeForm({
                         }
                         handleFieldChange(field.id, newValue);
                       }}
-                      disabled={!canSelect}
+                      disabled={!canSelect || isViewMode}
                       className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500 disabled:opacity-50"
                     />
                     <div className="flex-1">
@@ -856,16 +875,18 @@ export default function DynamicEmployeeForm({
                   placeholder={field.placeholder}
                   required={field.isRequired}
                   rows={3}
+                  disabled={isViewMode}
                   className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
                     }`}
                 />
               ) : (
                 <input
-                  type="text"
+                  type={field.type}
                   value={value}
                   onChange={(e) => handleQualificationChange(qualIndex, field.id, e.target.value)}
                   placeholder={field.placeholder}
                   required={field.isRequired}
+                  disabled={isViewMode}
                   className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
                     }`}
                 />
@@ -888,6 +909,7 @@ export default function DynamicEmployeeForm({
                 required={field.isRequired}
                 min={field.validation?.min}
                 max={field.validation?.max}
+                disabled={isViewMode}
                 className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
                   }`}
               />
@@ -906,6 +928,7 @@ export default function DynamicEmployeeForm({
                 value={value}
                 onChange={(e) => handleQualificationChange(qualIndex, field.id, e.target.value)}
                 required={field.isRequired}
+                disabled={isViewMode}
                 className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
                   }`}
               />
@@ -923,6 +946,7 @@ export default function DynamicEmployeeForm({
                 value={value}
                 onChange={(e) => handleQualificationChange(qualIndex, field.id, e.target.value)}
                 required={field.isRequired}
+                disabled={isViewMode}
                 className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
                   }`}
               >
@@ -957,13 +981,15 @@ export default function DynamicEmployeeForm({
                 <h4 className="text-sm font-medium text-slate-700 dark:text-slate-300">
                   Qualification {index + 1}
                 </h4>
-                <button
-                  type="button"
-                  onClick={() => handleRemoveQualification(index)}
-                  className="rounded-lg px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
-                >
-                  Remove
-                </button>
+                {!isViewMode && (
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveQualification(index)}
+                    className="rounded-lg px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
+                  >
+                    Remove
+                  </button>
+                )}
               </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {qualFields.map((field) => renderQualificationField(field, index))}
@@ -984,6 +1010,7 @@ export default function DynamicEmployeeForm({
                           const file = e.target.files?.[0] || null;
                           handleQualificationChange(index, 'certificateFile', file);
                         }}
+                        disabled={isViewMode}
                         className="block w-full text-sm text-slate-500
                           file:mr-4 file:py-2 file:px-4
                           file:rounded-full file:border-0
@@ -996,32 +1023,36 @@ export default function DynamicEmployeeForm({
                       </p>
                     </div>
                   ) : (
-                    <CertificateUpload
-                      qualificationIndex={index}
-                      certificateUrl={qualifications[index]?.certificateUrl}
-                      onFileChange={(file) => {
-                        handleQualificationChange(index, 'certificateFile', file);
-                      }}
-                      onDelete={() => {
-                        handleQualificationChange(index, 'certificateFile', null);
-                        handleQualificationChange(index, 'certificateUrl', null);
-                      }}
-                    />
+                    <div className={isViewMode ? 'pointer-events-none opacity-75' : ''}>
+                      <CertificateUpload
+                        qualificationIndex={index}
+                        certificateUrl={qualifications[index]?.certificateUrl}
+                        onFileChange={(file) => {
+                          handleQualificationChange(index, 'certificateFile', file);
+                        }}
+                        onDelete={() => {
+                          handleQualificationChange(index, 'certificateFile', null);
+                          handleQualificationChange(index, 'certificateUrl', null);
+                        }}
+                      />
+                    </div>
                   )}
                 </div>
               )}
             </div>
           ))}
-          <button
-            type="button"
-            onClick={handleAddQualification}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-600 transition-colors hover:border-green-400 hover:bg-green-50 hover:text-green-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:border-green-500 dark:hover:bg-green-900/20 dark:hover:text-green-400"
-          >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Add Qualification
-          </button>
+          {!isViewMode && (
+            <button
+              type="button"
+              onClick={handleAddQualification}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-600 transition-colors hover:border-green-400 hover:bg-green-50 hover:text-green-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:border-green-500 dark:hover:bg-green-900/20 dark:hover:text-green-400"
+            >
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Add Qualification
+            </button>
+          )}
         </div>
       </div>
     );
