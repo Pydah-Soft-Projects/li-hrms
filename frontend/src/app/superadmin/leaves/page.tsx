@@ -1640,7 +1640,7 @@ export default function LeavesPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setFormData({ ...formData, odType_extended: 'half_day', isHalfDay: true, halfDayType: formData.halfDayType || 'first_half', odStartTime: null, odEndTime: null })}
+                      onClick={() => setFormData({ ...formData, odType_extended: 'half_day', isHalfDay: true, halfDayType: formData.halfDayType || 'first_half', odStartTime: null, odEndTime: null, toDate: formData.fromDate })}
                       className={`flex-1 py-2.5 px-3 rounded-lg text-sm font-medium transition-all ${formData.odType_extended === 'half_day'
                         ? 'bg-purple-500 text-white shadow-md'
                         : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300'
@@ -1650,7 +1650,7 @@ export default function LeavesPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setFormData({ ...formData, odType_extended: 'hours', isHalfDay: false, halfDayType: null })}
+                      onClick={() => setFormData({ ...formData, odType_extended: 'hours', isHalfDay: false, halfDayType: null, toDate: formData.fromDate })}
                       className={`flex-1 py-2.5 px-3 rounded-lg text-sm font-medium transition-all ${formData.odType_extended === 'hours'
                         ? 'bg-fuchsia-500 text-white shadow-md'
                         : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300'
@@ -1732,28 +1732,45 @@ export default function LeavesPage() {
                   </select>
                 </div>
               )}
-              <div className="grid grid-cols-2 gap-4">
+              {/* Date Selection Logic */}
+              {((applyType === 'leave' && formData.isHalfDay) ||
+                (applyType === 'od' && (formData.odType_extended === 'half_day' || formData.odType_extended === 'hours'))) ? (
+                /* Single Date Input for Half Day / Specific Hours */
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">From Date *</label>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Date *</label>
                   <input
                     type="date"
-                    value={formData.fromDate}
-                    onChange={(e) => setFormData({ ...formData, fromDate: e.target.value })}
+                    value={formData.fromDate} // Use fromDate as the single source of truth
+                    onChange={(e) => setFormData({ ...formData, fromDate: e.target.value, toDate: e.target.value })}
                     required
                     className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">To Date *</label>
-                  <input
-                    type="date"
-                    value={formData.toDate}
-                    onChange={(e) => setFormData({ ...formData, toDate: e.target.value })}
-                    required
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  />
+              ) : (
+                /* Two Date Inputs for Full Day */
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">From Date *</label>
+                    <input
+                      type="date"
+                      value={formData.fromDate}
+                      onChange={(e) => setFormData({ ...formData, fromDate: e.target.value })}
+                      required
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">To Date *</label>
+                    <input
+                      type="date"
+                      value={formData.toDate}
+                      onChange={(e) => setFormData({ ...formData, toDate: e.target.value })}
+                      required
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Approved Records Info */}
               {approvedRecordsInfo && (approvedRecordsInfo.hasLeave || approvedRecordsInfo.hasOD) && (
@@ -1798,7 +1815,7 @@ export default function LeavesPage() {
                       if (!e.target.checked) {
                         setFormData({ ...formData, isHalfDay: false, halfDayType: null });
                       } else {
-                        setFormData({ ...formData, isHalfDay: true, halfDayType: formData.halfDayType || 'first_half' });
+                        setFormData({ ...formData, isHalfDay: true, halfDayType: formData.halfDayType || 'first_half', toDate: formData.fromDate });
                       }
                     }}
                     disabled={
@@ -1928,8 +1945,13 @@ export default function LeavesPage() {
 
       {/* Detail Dialog */}
       {showDetailDialog && selectedItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="w-full max-w-3xl max-h-[95vh] overflow-y-auto rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-800">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => {
+            setShowDetailDialog(false);
+            setSelectedItem(null);
+            setIsChangeHistoryExpanded(false);
+          }} />
+          <div className="relative z-50 w-full max-w-3xl max-h-[95vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-800">
             {/* Header */}
             <div className={`px-6 py-4 border-b border-slate-200 dark:border-slate-700 ${detailType === 'leave'
               ? 'bg-gradient-to-r from-blue-500 to-indigo-500'
@@ -2662,7 +2684,7 @@ export default function LeavesPage() {
                           });
                         }
                       }}
-                      className="px-3 py-1.5 text-xs font-semibold text-white bg-orange-500 rounded-lg hover:bg-orange-600 transition-colors"
+                      className="px-4 py-2.5 text-xs font-semibold text-white bg-orange-500 rounded-xl hover:bg-orange-600 transition-colors"
                     >
                       Revoke Approval
                     </button>
@@ -2693,7 +2715,7 @@ export default function LeavesPage() {
                       });
                       setShowEditDialog(true);
                     }}
-                    className="w-full px-4 py-2 text-sm font-semibold text-white bg-blue-500 rounded-xl hover:bg-blue-600 transition-colors"
+                    className="w-full px-4 py-2.5 text-sm font-semibold text-white bg-blue-500 rounded-xl hover:bg-blue-600 transition-colors"
                   >
                     Edit {detailType === 'leave' ? 'Leave' : 'OD'}
                   </button>
@@ -2717,19 +2739,19 @@ export default function LeavesPage() {
                     <div className="flex flex-wrap gap-2">
                       <button
                         onClick={() => handleDetailAction('approve')}
-                        className="px-4 py-2 text-sm font-semibold text-white bg-green-500 rounded-xl hover:bg-green-600 transition-colors flex items-center gap-2"
+                        className="px-4 py-2.5 text-sm font-semibold text-white bg-green-500 rounded-xl hover:bg-green-600 transition-colors flex items-center gap-2"
                       >
                         <CheckIcon /> Approve
                       </button>
                       <button
                         onClick={() => handleDetailAction('reject')}
-                        className="px-4 py-2 text-sm font-semibold text-white bg-red-500 rounded-xl hover:bg-red-600 transition-colors flex items-center gap-2"
+                        className="px-4 py-2.5 text-sm font-semibold text-white bg-red-500 rounded-xl hover:bg-red-600 transition-colors flex items-center gap-2"
                       >
                         <XIcon /> Reject
                       </button>
                       <button
                         onClick={() => handleDetailAction('forward')}
-                        className="px-4 py-2 text-sm font-semibold text-white bg-blue-500 rounded-xl hover:bg-blue-600 transition-colors"
+                        className="px-4 py-2.5 text-sm font-semibold text-white bg-blue-500 rounded-xl hover:bg-blue-600 transition-colors"
                       >
                         Forward to HR
                       </button>
@@ -2751,388 +2773,391 @@ export default function LeavesPage() {
             </div>
           </div>
         </div>
-      )}
+      )
+      }
 
       {/* Edit Dialog */}
-      {showEditDialog && selectedItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowEditDialog(false)} />
-          <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-6">
-              Edit {detailType === 'leave' ? 'Leave' : 'OD'}
-            </h2>
+      {
+        showEditDialog && selectedItem && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowEditDialog(false)} />
+            <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-6">
+                Edit {detailType === 'leave' ? 'Leave' : 'OD'}
+              </h2>
 
-            <form onSubmit={async (e) => {
-              e.preventDefault();
-              try {
-                const user = auth.getUser();
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                try {
+                  const user = auth.getUser();
 
-                // Clean up data before sending - convert empty strings to null for enum fields
-                const cleanedData: any = {
-                  ...editFormData,
-                  // Fix halfDayType - must be null if not half day, or valid enum value
-                  halfDayType: editFormData.isHalfDay
-                    ? (editFormData.halfDayType || 'first_half')
-                    : (editFormData.halfDayType === '' || editFormData.halfDayType === null ? null : editFormData.halfDayType),
-                  // For hour-based OD, ensure times are properly set
-                  odStartTime: (detailType === 'od' && editFormData.odType_extended === 'hours')
-                    ? (editFormData.odStartTime || null)
-                    : (editFormData.odStartTime === '' ? null : editFormData.odStartTime),
-                  odEndTime: (detailType === 'od' && editFormData.odType_extended === 'hours')
-                    ? (editFormData.odEndTime || null)
-                    : (editFormData.odEndTime === '' ? null : editFormData.odEndTime),
-                  changeReason: `Edited by ${user?.name || 'Admin'}`,
-                };
+                  // Clean up data before sending - convert empty strings to null for enum fields
+                  const cleanedData: any = {
+                    ...editFormData,
+                    // Fix halfDayType - must be null if not half day, or valid enum value
+                    halfDayType: editFormData.isHalfDay
+                      ? (editFormData.halfDayType || 'first_half')
+                      : (editFormData.halfDayType === '' || editFormData.halfDayType === null ? null : editFormData.halfDayType),
+                    // For hour-based OD, ensure times are properly set
+                    odStartTime: (detailType === 'od' && editFormData.odType_extended === 'hours')
+                      ? (editFormData.odStartTime || null)
+                      : (editFormData.odStartTime === '' ? null : editFormData.odStartTime),
+                    odEndTime: (detailType === 'od' && editFormData.odType_extended === 'hours')
+                      ? (editFormData.odEndTime || null)
+                      : (editFormData.odEndTime === '' ? null : editFormData.odEndTime),
+                    changeReason: `Edited by ${user?.name || 'Admin'}`,
+                  };
 
-                // If Super Admin is changing status, include statusChangeReason
-                if (isSuperAdmin && editFormData.status && editFormData.status !== selectedItem.status) {
-                  cleanedData.statusChangeReason = `Status changed from ${selectedItem.status} to ${editFormData.status}`;
-                }
+                  // If Super Admin is changing status, include statusChangeReason
+                  if (isSuperAdmin && editFormData.status && editFormData.status !== selectedItem.status) {
+                    cleanedData.statusChangeReason = `Status changed from ${selectedItem.status} to ${editFormData.status}`;
+                  }
 
-                const response = detailType === 'leave'
-                  ? await api.updateLeave(selectedItem._id, cleanedData)
-                  : await api.updateOD(selectedItem._id, cleanedData);
+                  const response = detailType === 'leave'
+                    ? await api.updateLeave(selectedItem._id, cleanedData)
+                    : await api.updateOD(selectedItem._id, cleanedData);
 
-                if (response.success) {
-                  Swal.fire({
-                    icon: 'success',
-                    title: 'Success!',
-                    text: `${detailType === 'leave' ? 'Leave' : 'OD'} updated successfully`,
-                    timer: 2000,
-                    showConfirmButton: false,
-                  });
-                  setShowEditDialog(false);
-                  setShowDetailDialog(false);
-                  setSelectedItem(null);
-                  setIsChangeHistoryExpanded(false);
-                  loadData();
-                } else {
+                  if (response.success) {
+                    Swal.fire({
+                      icon: 'success',
+                      title: 'Success!',
+                      text: `${detailType === 'leave' ? 'Leave' : 'OD'} updated successfully`,
+                      timer: 2000,
+                      showConfirmButton: false,
+                    });
+                    setShowEditDialog(false);
+                    setShowDetailDialog(false);
+                    setSelectedItem(null);
+                    setIsChangeHistoryExpanded(false);
+                    loadData();
+                  } else {
+                    Swal.fire({
+                      icon: 'error',
+                      title: 'Failed',
+                      text: response.error || 'Failed to update',
+                    });
+                  }
+                } catch (err: any) {
                   Swal.fire({
                     icon: 'error',
-                    title: 'Failed',
-                    text: response.error || 'Failed to update',
+                    title: 'Error',
+                    text: err.message || 'Failed to update',
                   });
                 }
-              } catch (err: any) {
-                Swal.fire({
-                  icon: 'error',
-                  title: 'Error',
-                  text: err.message || 'Failed to update',
-                });
-              }
-            }} className="space-y-4">
-              {/* Type */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  {detailType === 'leave' ? 'Leave Type' : 'OD Type'} *
-                </label>
-                <input
-                  type="text"
-                  value={detailType === 'leave' ? editFormData.leaveType : editFormData.odType}
-                  onChange={(e) => setEditFormData({
-                    ...editFormData,
-                    [detailType === 'leave' ? 'leaveType' : 'odType']: e.target.value,
-                  })}
-                  required
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                />
-              </div>
-
-              {/* Dates */}
-              <div className="grid grid-cols-2 gap-4">
+              }} className="space-y-4">
+                {/* Type */}
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">From Date *</label>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    {detailType === 'leave' ? 'Leave Type' : 'OD Type'} *
+                  </label>
                   <input
-                    type="date"
-                    value={editFormData.fromDate}
-                    onChange={(e) => {
-                      const newFromDate = e.target.value;
-                      // Auto-set end date = start date for half-day and hour-based OD
-                      const newToDate = (detailType === 'od' && (editFormData.odType_extended === 'half_day' || editFormData.odType_extended === 'hours'))
-                        ? newFromDate
-                        : editFormData.toDate;
-                      setEditFormData({ ...editFormData, fromDate: newFromDate, toDate: newToDate });
-                    }}
+                    type="text"
+                    value={detailType === 'leave' ? editFormData.leaveType : editFormData.odType}
+                    onChange={(e) => setEditFormData({
+                      ...editFormData,
+                      [detailType === 'leave' ? 'leaveType' : 'odType']: e.target.value,
+                    })}
                     required
                     className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    To Date *
-                    {/* Today button for hour-based OD */}
-                    {detailType === 'od' && editFormData.odType_extended === 'hours' && (
+
+                {/* Dates */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">From Date *</label>
+                    <input
+                      type="date"
+                      value={editFormData.fromDate}
+                      onChange={(e) => {
+                        const newFromDate = e.target.value;
+                        // Auto-set end date = start date for half-day and hour-based OD
+                        const newToDate = (detailType === 'od' && (editFormData.odType_extended === 'half_day' || editFormData.odType_extended === 'hours'))
+                          ? newFromDate
+                          : editFormData.toDate;
+                        setEditFormData({ ...editFormData, fromDate: newFromDate, toDate: newToDate });
+                      }}
+                      required
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      To Date *
+                      {/* Today button for hour-based OD */}
+                      {detailType === 'od' && editFormData.odType_extended === 'hours' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const today = new Date().toISOString().split('T')[0];
+                            setEditFormData({ ...editFormData, fromDate: today, toDate: today });
+                          }}
+                          className="ml-2 text-xs px-2 py-1 rounded-lg bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50 transition-colors"
+                        >
+                          Today
+                        </button>
+                      )}
+                    </label>
+                    <input
+                      type="date"
+                      value={editFormData.toDate}
+                      onChange={(e) => {
+                        // For half-day and hour-based OD, prevent changing end date separately
+                        if (detailType === 'od' && (editFormData.odType_extended === 'half_day' || editFormData.odType_extended === 'hours')) {
+                          // Auto-set to start date
+                          setEditFormData({ ...editFormData, toDate: editFormData.fromDate });
+                        } else {
+                          setEditFormData({ ...editFormData, toDate: e.target.value });
+                        }
+                      }}
+                      required
+                      disabled={detailType === 'od' && (editFormData.odType_extended === 'half_day' || editFormData.odType_extended === 'hours')}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white disabled:bg-slate-100 dark:disabled:bg-slate-700 disabled:cursor-not-allowed"
+                    />
+                    {detailType === 'od' && (editFormData.odType_extended === 'half_day' || editFormData.odType_extended === 'hours') && (
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        End date is automatically set to start date for {editFormData.odType_extended === 'half_day' ? 'half-day' : 'hour-based'} OD
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* OD Duration Type (OD only) */}
+                {detailType === 'od' && (
+                  <div className="space-y-3">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">OD Duration Type *</label>
+                    <div className="grid grid-cols-3 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setEditFormData({ ...editFormData, odType_extended: 'full_day', isHalfDay: false, halfDayType: null, odStartTime: null, odEndTime: null })}
+                        className={`p-3 rounded-lg border-2 transition-all ${editFormData.odType_extended === 'full_day'
+                          ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
+                          : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                          }`}
+                      >
+                        <div className="text-sm font-semibold text-slate-900 dark:text-white">Full Day</div>
+                      </button>
                       <button
                         type="button"
                         onClick={() => {
-                          const today = new Date().toISOString().split('T')[0];
-                          setEditFormData({ ...editFormData, fromDate: today, toDate: today });
+                          const endDate = editFormData.fromDate || editFormData.toDate;
+                          setEditFormData({
+                            ...editFormData,
+                            odType_extended: 'half_day',
+                            isHalfDay: true,
+                            halfDayType: editFormData.halfDayType || 'first_half',
+                            odStartTime: null,
+                            odEndTime: null,
+                            toDate: endDate || editFormData.fromDate
+                          });
                         }}
-                        className="ml-2 text-xs px-2 py-1 rounded-lg bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50 transition-colors"
+                        className={`p-3 rounded-lg border-2 transition-all ${editFormData.odType_extended === 'half_day'
+                          ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
+                          : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                          }`}
                       >
-                        Today
+                        <div className="text-sm font-semibold text-slate-900 dark:text-white">Half Day</div>
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const endDate = editFormData.fromDate || editFormData.toDate;
+                          setEditFormData({
+                            ...editFormData,
+                            odType_extended: 'hours',
+                            isHalfDay: false,
+                            halfDayType: null,
+                            toDate: endDate || editFormData.fromDate
+                          });
+                        }}
+                        className={`p-3 rounded-lg border-2 transition-all ${editFormData.odType_extended === 'hours'
+                          ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
+                          : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                          }`}
+                      >
+                        <div className="text-sm font-semibold text-slate-900 dark:text-white">Specific Hours</div>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Hour Input (for hour-based OD) */}
+                {detailType === 'od' && editFormData.odType_extended === 'hours' && (
+                  <div className="space-y-4 p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-700">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Start Time *</label>
+                        <input
+                          type="time"
+                          value={editFormData.odStartTime || ''}
+                          onChange={(e) => setEditFormData({ ...editFormData, odStartTime: e.target.value })}
+                          required={editFormData.odType_extended === 'hours'}
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">End Time *</label>
+                        <input
+                          type="time"
+                          value={editFormData.odEndTime || ''}
+                          onChange={(e) => setEditFormData({ ...editFormData, odEndTime: e.target.value })}
+                          required={editFormData.odType_extended === 'hours'}
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                        />
+                      </div>
+                    </div>
+                    {editFormData.odStartTime && editFormData.odEndTime && (
+                      <div className="p-3 bg-white dark:bg-slate-800 rounded-lg border border-purple-300 dark:border-purple-600">
+                        <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                          {(() => {
+                            const [startHour, startMin] = editFormData.odStartTime.split(':').map(Number);
+                            const [endHour, endMin] = editFormData.odEndTime.split(':').map(Number);
+                            const startMinutes = startHour * 60 + startMin;
+                            const endMinutes = endHour * 60 + endMin;
+                            const durationMinutes = endMinutes - startMinutes;
+
+                            if (durationMinutes <= 0) {
+                              return <span className="text-red-600 dark:text-red-400">❌ End time must be after start time</span>;
+                            }
+
+                            const hours = Math.floor(durationMinutes / 60);
+                            const mins = durationMinutes % 60;
+
+                            if (durationMinutes > 480) {
+                              return <span className="text-red-600 dark:text-red-400">❌ Maximum duration is 8 hours</span>;
+                            }
+
+                            return (
+                              <span className="text-green-600 dark:text-green-400">
+                                ✓ Duration: {hours}h {mins}m
+                              </span>
+                            );
+                          })()}
+                        </p>
+                      </div>
                     )}
-                  </label>
-                  <input
-                    type="date"
-                    value={editFormData.toDate}
-                    onChange={(e) => {
-                      // For half-day and hour-based OD, prevent changing end date separately
-                      if (detailType === 'od' && (editFormData.odType_extended === 'half_day' || editFormData.odType_extended === 'hours')) {
-                        // Auto-set to start date
-                        setEditFormData({ ...editFormData, toDate: editFormData.fromDate });
-                      } else {
-                        setEditFormData({ ...editFormData, toDate: e.target.value });
-                      }
-                    }}
-                    required
-                    disabled={detailType === 'od' && (editFormData.odType_extended === 'half_day' || editFormData.odType_extended === 'hours')}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white disabled:bg-slate-100 dark:disabled:bg-slate-700 disabled:cursor-not-allowed"
-                  />
-                  {detailType === 'od' && (editFormData.odType_extended === 'half_day' || editFormData.odType_extended === 'hours') && (
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      End date is automatically set to start date for {editFormData.odType_extended === 'half_day' ? 'half-day' : 'hour-based'} OD
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {/* OD Duration Type (OD only) */}
-              {detailType === 'od' && (
-                <div className="space-y-3">
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">OD Duration Type *</label>
-                  <div className="grid grid-cols-3 gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setEditFormData({ ...editFormData, odType_extended: 'full_day', isHalfDay: false, halfDayType: null, odStartTime: null, odEndTime: null })}
-                      className={`p-3 rounded-lg border-2 transition-all ${editFormData.odType_extended === 'full_day'
-                        ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
-                        : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
-                        }`}
-                    >
-                      <div className="text-sm font-semibold text-slate-900 dark:text-white">Full Day</div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const endDate = editFormData.fromDate || editFormData.toDate;
-                        setEditFormData({
-                          ...editFormData,
-                          odType_extended: 'half_day',
-                          isHalfDay: true,
-                          halfDayType: editFormData.halfDayType || 'first_half',
-                          odStartTime: null,
-                          odEndTime: null,
-                          toDate: endDate || editFormData.fromDate
-                        });
-                      }}
-                      className={`p-3 rounded-lg border-2 transition-all ${editFormData.odType_extended === 'half_day'
-                        ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
-                        : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
-                        }`}
-                    >
-                      <div className="text-sm font-semibold text-slate-900 dark:text-white">Half Day</div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const endDate = editFormData.fromDate || editFormData.toDate;
-                        setEditFormData({
-                          ...editFormData,
-                          odType_extended: 'hours',
-                          isHalfDay: false,
-                          halfDayType: null,
-                          toDate: endDate || editFormData.fromDate
-                        });
-                      }}
-                      className={`p-3 rounded-lg border-2 transition-all ${editFormData.odType_extended === 'hours'
-                        ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
-                        : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
-                        }`}
-                    >
-                      <div className="text-sm font-semibold text-slate-900 dark:text-white">Specific Hours</div>
-                    </button>
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* Hour Input (for hour-based OD) */}
-              {detailType === 'od' && editFormData.odType_extended === 'hours' && (
-                <div className="space-y-4 p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-700">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Start Time *</label>
+                {/* Half Day (for non-hour-based OD) */}
+                {!(detailType === 'od' && editFormData.odType_extended === 'hours') && (
+                  <div className="flex items-center gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
                       <input
-                        type="time"
-                        value={editFormData.odStartTime || ''}
-                        onChange={(e) => setEditFormData({ ...editFormData, odStartTime: e.target.value })}
-                        required={editFormData.odType_extended === 'hours'}
-                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                        type="checkbox"
+                        checked={editFormData.isHalfDay}
+                        onChange={(e) => setEditFormData({ ...editFormData, isHalfDay: e.target.checked, halfDayType: e.target.checked ? (editFormData.halfDayType || 'first_half') : null })}
+                        className="w-4 h-4 rounded border-slate-300"
                       />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">End Time *</label>
-                      <input
-                        type="time"
-                        value={editFormData.odEndTime || ''}
-                        onChange={(e) => setEditFormData({ ...editFormData, odEndTime: e.target.value })}
-                        required={editFormData.odType_extended === 'hours'}
-                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                      />
-                    </div>
+                      <span className="text-sm text-slate-700 dark:text-slate-300">Half Day</span>
+                    </label>
+                    {editFormData.isHalfDay && (
+                      <select
+                        value={editFormData.halfDayType || ''}
+                        onChange={(e) => setEditFormData({ ...editFormData, halfDayType: e.target.value as 'first_half' | 'second_half' | null || null })}
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      >
+                        <option value="first_half">First Half</option>
+                        <option value="second_half">Second Half</option>
+                      </select>
+                    )}
                   </div>
-                  {editFormData.odStartTime && editFormData.odEndTime && (
-                    <div className="p-3 bg-white dark:bg-slate-800 rounded-lg border border-purple-300 dark:border-purple-600">
-                      <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                        {(() => {
-                          const [startHour, startMin] = editFormData.odStartTime.split(':').map(Number);
-                          const [endHour, endMin] = editFormData.odEndTime.split(':').map(Number);
-                          const startMinutes = startHour * 60 + startMin;
-                          const endMinutes = endHour * 60 + endMin;
-                          const durationMinutes = endMinutes - startMinutes;
+                )}
 
-                          if (durationMinutes <= 0) {
-                            return <span className="text-red-600 dark:text-red-400">❌ End time must be after start time</span>;
-                          }
-
-                          const hours = Math.floor(durationMinutes / 60);
-                          const mins = durationMinutes % 60;
-
-                          if (durationMinutes > 480) {
-                            return <span className="text-red-600 dark:text-red-400">❌ Maximum duration is 8 hours</span>;
-                          }
-
-                          return (
-                            <span className="text-green-600 dark:text-green-400">
-                              ✓ Duration: {hours}h {mins}m
-                            </span>
-                          );
-                        })()}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Half Day (for non-hour-based OD) */}
-              {!(detailType === 'od' && editFormData.odType_extended === 'hours') && (
-                <div className="flex items-center gap-4">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={editFormData.isHalfDay}
-                      onChange={(e) => setEditFormData({ ...editFormData, isHalfDay: e.target.checked, halfDayType: e.target.checked ? (editFormData.halfDayType || 'first_half') : null })}
-                      className="w-4 h-4 rounded border-slate-300"
-                    />
-                    <span className="text-sm text-slate-700 dark:text-slate-300">Half Day</span>
-                  </label>
-                  {editFormData.isHalfDay && (
-                    <select
-                      value={editFormData.halfDayType || ''}
-                      onChange={(e) => setEditFormData({ ...editFormData, halfDayType: e.target.value as 'first_half' | 'second_half' | null || null })}
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                    >
-                      <option value="first_half">First Half</option>
-                      <option value="second_half">Second Half</option>
-                    </select>
-                  )}
-                </div>
-              )}
-
-              {/* Purpose */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Purpose *</label>
-                <textarea
-                  value={editFormData.purpose}
-                  onChange={(e) => setEditFormData({ ...editFormData, purpose: e.target.value })}
-                  required
-                  rows={3}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                />
-              </div>
-
-              {/* Place Visited (OD only) */}
-              {detailType === 'od' && (
+                {/* Purpose */}
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Place Visited *</label>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Purpose *</label>
+                  <textarea
+                    value={editFormData.purpose}
+                    onChange={(e) => setEditFormData({ ...editFormData, purpose: e.target.value })}
+                    required
+                    rows={3}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  />
+                </div>
+
+                {/* Place Visited (OD only) */}
+                {detailType === 'od' && (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Place Visited *</label>
+                    <input
+                      type="text"
+                      value={editFormData.placeVisited}
+                      onChange={(e) => setEditFormData({ ...editFormData, placeVisited: e.target.value })}
+                      required
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    />
+                  </div>
+                )}
+
+                {/* Contact Number */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Contact Number *</label>
+                  <input
+                    type="tel"
+                    value={editFormData.contactNumber}
+                    onChange={(e) => setEditFormData({ ...editFormData, contactNumber: e.target.value })}
+                    required
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  />
+                </div>
+
+                {/* Remarks */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Remarks</label>
                   <input
                     type="text"
-                    value={editFormData.placeVisited}
-                    onChange={(e) => setEditFormData({ ...editFormData, placeVisited: e.target.value })}
-                    required
+                    value={editFormData.remarks}
+                    onChange={(e) => setEditFormData({ ...editFormData, remarks: e.target.value })}
                     className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   />
                 </div>
-              )}
 
-              {/* Contact Number */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Contact Number *</label>
-                <input
-                  type="tel"
-                  value={editFormData.contactNumber}
-                  onChange={(e) => setEditFormData({ ...editFormData, contactNumber: e.target.value })}
-                  required
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                />
-              </div>
+                {/* Status (Super Admin only) */}
+                {isSuperAdmin && (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Status (Super Admin)
+                    </label>
+                    <select
+                      value={editFormData.status || selectedItem.status}
+                      onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    >
+                      <option value="pending">Pending</option>
+                      <option value="hod_approved">HOD Approved</option>
+                      <option value="hr_approved">HR Approved</option>
+                      <option value="approved">Approved</option>
+                      <option value="hod_rejected">HOD Rejected</option>
+                      <option value="hr_rejected">HR Rejected</option>
+                      <option value="rejected">Rejected</option>
+                      <option value="cancelled">Cancelled</option>
+                    </select>
+                  </div>
+                )}
 
-              {/* Remarks */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Remarks</label>
-                <input
-                  type="text"
-                  value={editFormData.remarks}
-                  onChange={(e) => setEditFormData({ ...editFormData, remarks: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                />
-              </div>
-
-              {/* Status (Super Admin only) */}
-              {isSuperAdmin && (
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Status (Super Admin)
-                  </label>
-                  <select
-                    value={editFormData.status || selectedItem.status}
-                    onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                {/* Buttons */}
+                <div className="flex gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowEditDialog(false)}
+                    className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
                   >
-                    <option value="pending">Pending</option>
-                    <option value="hod_approved">HOD Approved</option>
-                    <option value="hr_approved">HR Approved</option>
-                    <option value="approved">Approved</option>
-                    <option value="hod_rejected">HOD Rejected</option>
-                    <option value="hr_rejected">HR Rejected</option>
-                    <option value="rejected">Rejected</option>
-                    <option value="cancelled">Cancelled</option>
-                  </select>
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 px-4 py-2.5 text-sm font-semibold text-white rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600"
+                  >
+                    Save Changes
+                  </button>
                 </div>
-              )}
-
-              {/* Buttons */}
-              <div className="flex gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowEditDialog(false)}
-                  className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 px-4 py-2.5 text-sm font-semibold text-white rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600"
-                >
-                  Save Changes
-                </button>
-              </div>
-            </form>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
-    </div>
+        )
+      }
+    </div >
   );
 }
 
