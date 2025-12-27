@@ -592,6 +592,7 @@ export default function EmployeesPage() {
     const permanentFields = [
       { id: 'emp_no', label: 'Emp No', sample: 'EMP001', width: '100px' },
       { id: 'employee_name', label: 'Name', sample: 'John Doe', width: '150px' },
+      { id: 'doj', label: 'Date of Joining', sample: '2024-01-01', width: '120px', type: 'date' },
       { id: 'proposedSalary', label: 'Proposed Salary', sample: 50000, width: '120px', type: 'number' },
     ];
 
@@ -631,9 +632,12 @@ export default function EmployeesPage() {
         } else if (field.type === 'number') {
           sample[field.id] = 0;
           columns.push({ key: field.id, label: field.label, type: 'number' });
-        } else if (field.type === 'select') {
+        } else if (field.type === 'select' || field.type === 'multiselect') {
           sample[field.id] = field.options?.[0]?.value || '';
           columns.push({ key: field.id, label: field.label, type: 'select', options: field.options });
+        } else if (field.type === 'userselect') {
+          sample[field.id] = 'Employee Name';
+          columns.push({ key: field.id, label: field.label, type: 'select' }); // Type select for mapping
         } else if (field.type === 'array' || field.type === 'object') {
           if (field.id === 'qualifications' || field.id === 'experience') return;
           sample[field.id] = field.type === 'array' ? 'item1, item2' : 'key1:val1|key2:val2';
@@ -1489,11 +1493,22 @@ export default function EmployeesPage() {
 
   const openApprovalDialog = (application: EmployeeApplication) => {
     setSelectedApplication(application);
-    // Default DOJ to today's date if not provided
-    const today = new Date().toISOString().split('T')[0];
+    // Use application DOJ if available, otherwise default to today
+    let dojValue = '';
+    if (application.doj) {
+      try {
+        dojValue = new Date(application.doj).toISOString().split('T')[0];
+      } catch (e) {
+        console.error('Error parsing application DOJ:', e);
+        dojValue = new Date().toISOString().split('T')[0];
+      }
+    } else {
+      dojValue = new Date().toISOString().split('T')[0];
+    }
+
     setApprovalData({
       approvedSalary: application.approvedSalary || application.proposedSalary,
-      doj: today,
+      doj: dojValue,
       comments: '',
     });
     setApprovalComponentDefaults({ allowances: [], deductions: [] });
@@ -2997,11 +3012,28 @@ export default function EmployeesPage() {
             if (col.key === 'gender') {
               return { ...col, type: 'select', options: [{ value: 'Male', label: 'Male' }, { value: 'Female', label: 'Female' }, { value: 'Other', label: 'Other' }] };
             }
+            if (col.key === 'marital_status') {
+              return { ...col, type: 'select', options: [{ value: 'Single', label: 'Single' }, { value: 'Married', label: 'Married' }, { value: 'Divorced', label: 'Divorced' }, { value: 'Widowed', label: 'Widowed' }] };
+            }
+            if (col.key === 'blood_group') {
+              return { ...col, type: 'select', options: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(bg => ({ value: bg, label: bg })) };
+            }
+
+            // Handle userselect fields (like reporting_to)
+            const field = formSettings?.groups?.flatMap((g: any) => g.fields).find((f: any) => f.id === col.key);
+            if (field?.type === 'userselect' || col.key === 'reporting_to') {
+              return {
+                ...col,
+                type: 'select',
+                options: employees.map(e => ({ value: e._id, label: e.employee_name }))
+              };
+            }
             return col;
           })}
           validateRow={(row) => {
-            const result = validateEmployeeRow(row, departments, designations);
-            return { isValid: result.isValid, errors: result.errors };
+            const mappedUsers = employees.map(e => ({ _id: e._id, name: e.employee_name }));
+            const result = validateEmployeeRow(row, departments, designations, mappedUsers);
+            return { isValid: result.isValid, errors: result.errors, mappedRow: result.mappedRow };
           }}
           onSubmit={async (data) => {
             const batchData: any[] = [];

@@ -16,7 +16,7 @@ interface BulkUploadProps {
     options?: { value: string; label: string }[];
     width?: string;
   }[];
-  validateRow?: (row: ParsedRow, index: number) => { isValid: boolean; errors: string[] };
+  validateRow?: (row: ParsedRow, index: number) => { isValid: boolean; errors: string[]; mappedRow?: ParsedRow };
   onSubmit: (data: ParsedRow[]) => Promise<{ success: boolean; message?: string }>;
   onClose: () => void;
 }
@@ -57,13 +57,17 @@ export default function BulkUpload({
     // Validate each row if validator provided
     const rowErrors: { [key: number]: string[] } = {};
     const processedData = result.data.map((row, index) => {
+      let finalRow = row;
       if (validateRow) {
         const validation = validateRow(row, index);
         if (!validation.isValid) {
           rowErrors[index] = validation.errors;
         }
+        if (validation.mappedRow) {
+          finalRow = validation.mappedRow;
+        }
       }
-      return row;
+      return finalRow;
     });
 
     setData(processedData);
@@ -179,11 +183,10 @@ export default function BulkUpload({
         <div className="overflow-y-auto p-6" style={{ maxHeight: 'calc(95vh - 180px)' }}>
           {message && (
             <div
-              className={`mb-4 rounded-xl border px-4 py-3 text-sm ${
-                message.type === 'success'
-                  ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400'
-                  : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'
-              }`}
+              className={`mb-4 rounded-xl border px-4 py-3 text-sm ${message.type === 'success'
+                ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400'
+                : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'
+                }`}
             >
               {message.text}
             </div>
@@ -313,11 +316,10 @@ export default function BulkUpload({
                       return (
                         <tr
                           key={rowIndex}
-                          className={`${
-                            hasRowError
-                              ? 'bg-red-50/50 dark:bg-red-900/10'
-                              : 'bg-white dark:bg-slate-950'
-                          }`}
+                          className={`${hasRowError
+                            ? 'bg-red-50/50 dark:bg-red-900/10'
+                            : 'bg-white dark:bg-slate-950'
+                            }`}
                         >
                           <td className="whitespace-nowrap px-3 py-2 text-slate-500 dark:text-slate-400">
                             {rowIndex + 1}

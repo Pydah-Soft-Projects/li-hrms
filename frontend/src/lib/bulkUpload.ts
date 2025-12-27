@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 // ============== Types ==============
 
 export interface ParsedRow {
-  [key: string]: string | number | boolean | null;
+  [key: string]: string | number | boolean | null | string[];
 }
 
 export interface BulkUploadResult {
@@ -163,10 +163,41 @@ export const parseFile = (file: File): Promise<BulkUploadResult> => {
             if (typeof value === 'string') {
               value = value.trim();
             }
+
+            // More robust date helper
+            const isDateField = key.toLowerCase().includes('dob') || key.toLowerCase().includes('doj');
+
             // Handle dates (xlsx may return Date objects)
             if (value && typeof value === 'object' && Object.prototype.toString.call(value) === '[object Date]') {
               value = (value as unknown as Date).toISOString().split('T')[0];
+            } else if (isDateField && typeof value === 'string' && value) {
+              // Try to parse string dates if Excel didn't treat them as dates
+              try {
+                // Handle DD/MM/YYYY or DD-MM-YYYY
+                if (value.includes('/') || (value.includes('-') && value.split('-')[0].length < 4)) {
+                  const parts = value.split(/[/-]/);
+                  if (parts.length === 3) {
+                    // Assume DD/MM/YYYY
+                    const d = parseInt(parts[0]);
+                    const m = parseInt(parts[1]) - 1;
+                    const y = parseInt(parts[2]);
+                    const date = new Date(y, m, d);
+                    if (!isNaN(date.getTime())) {
+                      value = date.toISOString().split('T')[0];
+                    }
+                  }
+                } else {
+                  // Fallback to standard Date parsing
+                  const date = new Date(value);
+                  if (!isNaN(date.getTime())) {
+                    value = date.toISOString().split('T')[0];
+                  }
+                }
+              } catch (e) {
+                console.warn(`Failed to parse date for ${key}: ${value}`);
+              }
             }
+
             cleanedRow[key] = value === '' ? null : value;
           }
           return cleanedRow;
@@ -258,12 +289,28 @@ export const matchDesignationByName = (
 };
 
 /**
+ * Match user name to user ID
+ */
+export const matchUserByName = (
+  name: string | null,
+  users: { _id: string; name: string; email?: string }[]
+): string | null => {
+  if (!name) return null;
+  const normalizedName = name.toString().toLowerCase().trim();
+  const match = users.find(
+    (u) => u.name.toLowerCase().trim() === normalizedName
+  );
+  return match?._id || null;
+};
+
+/**
  * Validate employee row
  */
 export const validateEmployeeRow = (
   row: ParsedRow,
   departments: { _id: string; name: string }[],
-  designations: { _id: string; name: string; department: string }[]
+  designations: { _id: string; name: string; department: string }[],
+  users: { _id: string; name: string; email?: string }[] = []
 ): { isValid: boolean; errors: string[]; mappedRow: ParsedRow } => {
   const errors: string[] = [];
   const mappedRow: ParsedRow = { ...row };
@@ -294,9 +341,39 @@ export const validateEmployeeRow = (
     mappedRow.designation_id = desigId;
   }
 
+  // Map reporting_to (if provided by name)
+  if (row.reporting_to && typeof row.reporting_to === 'string' && users.length > 0) {
+    // If it's a comma separated list of names
+    const names = row.reporting_to.split(',').map(n => n.trim());
+    const ids: string[] = [];
+    names.forEach(name => {
+      const id = matchUserByName(name, users);
+      if (id) {
+        ids.push(id);
+      } else if (name.length > 24 && /^[0-9a-fA-F]{24}$/.test(name)) {
+        // Assume it's already an ID
+        ids.push(name);
+      } else {
+        errors.push(`Reporting manager "${name}" not found`);
+      }
+    });
+    mappedRow.reporting_to = ids.length > 0 ? ids : null;
+  } else if (row.reporting_to && Array.isArray(row.reporting_to)) {
+    // Already an array of IDs
+    mappedRow.reporting_to = row.reporting_to;
+  }
+
   // Validate gender
   if (row.gender && !['Male', 'Female', 'Other'].includes(row.gender as string)) {
     errors.push('Gender must be Male, Female, or Other');
+  }
+
+  // Validate dates
+  if (row.dob && isNaN(new Date(row.dob as string).getTime())) {
+    errors.push('Invalid Date of Birth format');
+  }
+  if (row.doj && isNaN(new Date(row.doj as string).getTime())) {
+    errors.push('Invalid Date of Joining format');
   }
 
   // Validate marital status

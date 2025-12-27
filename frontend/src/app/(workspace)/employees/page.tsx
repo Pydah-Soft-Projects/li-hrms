@@ -592,6 +592,7 @@ export default function EmployeesPage() {
     const permanentFields = [
       { id: 'emp_no', label: 'Emp No', sample: 'EMP001', width: '100px' },
       { id: 'employee_name', label: 'Name', sample: 'John Doe', width: '150px' },
+      { id: 'doj', label: 'Date of Joining', sample: '2024-01-01', width: '120px', type: 'date' },
       { id: 'proposedSalary', label: 'Proposed Salary', sample: 50000, width: '120px', type: 'number' },
     ];
 
@@ -1489,11 +1490,22 @@ export default function EmployeesPage() {
 
   const openApprovalDialog = (application: EmployeeApplication) => {
     setSelectedApplication(application);
-    // Default DOJ to today's date if not provided
-    const today = new Date().toISOString().split('T')[0];
+    // Use application DOJ if available, otherwise default to today
+    let dojValue = '';
+    if (application.doj) {
+      try {
+        dojValue = new Date(application.doj).toISOString().split('T')[0];
+      } catch (e) {
+        console.error('Error parsing application DOJ:', e);
+        dojValue = new Date().toISOString().split('T')[0];
+      }
+    } else {
+      dojValue = new Date().toISOString().split('T')[0];
+    }
+
     setApprovalData({
       approvedSalary: application.approvedSalary || application.proposedSalary,
-      doj: today,
+      doj: dojValue,
       comments: '',
     });
     setApprovalComponentDefaults({ allowances: [], deductions: [] });

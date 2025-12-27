@@ -21,9 +21,36 @@ exports.getSettings = async (req, res) => {
       });
     }
 
+    const settingsObj = settings.toObject();
+
+    // Ensure DOJ is present in basic_info for existing settings
+    const basicInfoGroup = settingsObj.groups.find((g) => g.id === 'basic_info');
+    if (basicInfoGroup && !basicInfoGroup.fields.some((f) => f.id === 'doj')) {
+      const dojField = {
+        id: 'doj',
+        label: 'Date of Joining',
+        type: 'date',
+        dataType: 'date',
+        isRequired: false,
+        isSystem: true,
+        dateFormat: 'dd-mm-yyyy',
+        order: 5,
+        isEnabled: true,
+      };
+
+      // Find proposedSalary to adjust its order
+      const proposedSalary = basicInfoGroup.fields.find((f) => f.id === 'proposedSalary');
+      if (proposedSalary && proposedSalary.order <= 5) {
+        proposedSalary.order = 6;
+      }
+
+      basicInfoGroup.fields.push(dojField);
+      basicInfoGroup.fields.sort((a, b) => (a.order || 0) - (b.order || 0));
+    }
+
     res.status(200).json({
       success: true,
-      data: settings,
+      data: settingsObj,
     });
   } catch (error) {
     console.error('Error fetching form settings:', error);
