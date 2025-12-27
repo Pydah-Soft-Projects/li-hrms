@@ -16,21 +16,19 @@
   --status-negative: #B91C1C;
 }
 
-@media (prefers-color-scheme: dark) {
+/* @media (prefers-color-scheme: dark) {
   :root {
-    /* Dark Mode - System Preference Fallback */
     --bg-base: #000000;
     --bg-surface: #0f172a;
     --border-base: rgba(255, 255, 255, 0.08);
     --text-primary: #F8FAFC;
     --text-secondary: #94A3B8;
     --color-accent: #16A34A;
-    /* green-600 */
     --status-positive: #16A34A;
     --status-warning: #D97706;
     --status-negative: #DC2626;
   }
-}
+} */
 
 .dark {
   /* Dark Mode - Manual Toggle */
@@ -85,12 +83,11 @@ body {
   border-radius: 9999px;
 }
 
-@media (prefers-color-scheme: dark) {
+/* @media (prefers-color-scheme: dark) {
   ::-webkit-scrollbar-thumb {
     background: #475569;
-    /* slate-600 */
   }
-}
+} */
 
 .dark ::-webkit-scrollbar-thumb {
   background: #475569;
