@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { api, apiRequest } from '@/lib/api';
 import { toast } from 'react-toastify';
 import ArrearsPayrollSection from '@/components/Arrears/ArrearsPayrollSection';
+import Spinner from '@/components/Spinner';
 
 interface Employee {
   _id: string;
@@ -1137,7 +1138,7 @@ export default function PayRegisterPage() {
         {/* Grid Table View - Similar to Attendance Page */}
         {loading ? (
           <div className="flex items-center justify-center min-h-[400px]">
-            <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+            <Spinner />
           </div>
         ) : (
           <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-xl dark:border-slate-700 dark:bg-slate-900/80">

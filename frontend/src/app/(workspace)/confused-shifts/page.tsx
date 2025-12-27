@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
+import Spinner from '@/components/Spinner';
 
 interface ConfusedShift {
   _id: string;
@@ -340,11 +341,10 @@ export default function ConfusedShiftsPage() {
 
         {/* Messages */}
         {(error || success) && (
-          <div className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${
-            success
+          <div className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${success
               ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400'
               : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'
-          }`}>
+            }`}>
             {success || error}
           </div>
         )}
@@ -352,7 +352,7 @@ export default function ConfusedShiftsPage() {
         {/* Confused Shifts List */}
         {loading ? (
           <div className="flex flex-col items-center justify-center rounded-3xl border border-slate-200 bg-white/95 py-16 shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
-            <div className="h-10 w-10 animate-spin rounded-full border-2 border-green-500 border-t-transparent"></div>
+            <Spinner />
             <p className="mt-4 text-sm font-medium text-slate-600 dark:text-slate-400">Loading confused shifts...</p>
           </div>
         ) : confusedShifts.length === 0 ? (
@@ -418,8 +418,8 @@ export default function ConfusedShiftsPage() {
                           record.allAvailableShifts.map((shift, idx) => {
                             const isPossible = record.possibleShifts.some(
                               ps => {
-                                const psShiftId = typeof ps.shiftId === 'string' 
-                                  ? ps.shiftId 
+                                const psShiftId = typeof ps.shiftId === 'string'
+                                  ? ps.shiftId
                                   : (ps.shiftId as any)?._id;
                                 return psShiftId?.toString() === shift._id?.toString();
                               }
@@ -427,11 +427,10 @@ export default function ConfusedShiftsPage() {
                             return (
                               <div
                                 key={shift._id || idx}
-                                className={`rounded-xl border p-3 ${
-                                  isPossible
+                                className={`rounded-xl border p-3 ${isPossible
                                     ? 'border-blue-300 bg-blue-50/50 dark:border-blue-700 dark:bg-blue-900/30'
                                     : 'border-slate-200 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-900/50'
-                                }`}
+                                  }`}
                               >
                                 <div className="flex items-center justify-between">
                                   <div>
@@ -451,8 +450,8 @@ export default function ConfusedShiftsPage() {
                                 {isPossible && (
                                   <p className="mt-1 text-xs text-blue-600 dark:text-blue-400">
                                     {record.possibleShifts.find(ps => {
-                                      const psShiftId = typeof ps.shiftId === 'string' 
-                                        ? ps.shiftId 
+                                      const psShiftId = typeof ps.shiftId === 'string'
+                                        ? ps.shiftId
                                         : (ps.shiftId as any)?._id;
                                       return psShiftId?.toString() === shift._id?.toString();
                                     })?.matchReason}

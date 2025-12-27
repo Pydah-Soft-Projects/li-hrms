@@ -6,6 +6,7 @@ import { auth } from '@/lib/auth';
 import { toast, ToastContainer } from 'react-toastify';
 import Swal from 'sweetalert2';
 import 'react-toastify/dist/ReactToastify.css';
+import Spinner from '@/components/Spinner';
 import LocationPhotoCapture from '@/components/LocationPhotoCapture';
 
 
@@ -1080,7 +1081,7 @@ export default function LeavesPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent"></div>
+        <Spinner />
       </div>
     );
   }

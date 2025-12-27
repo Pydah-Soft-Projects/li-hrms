@@ -48,7 +48,6 @@ function RosterPage() {
   const [savingProgress, setSavingProgress] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<'roster' | 'assigned'>('roster');
 
-  // Weekly off modal state
   const [showWeekOff, setShowWeekOff] = useState(false);
   const [weekOffDays, setWeekOffDays] = useState<Record<string, boolean>>(
     weekdays.reduce((acc, w) => ({ ...acc, [w]: false }), {})

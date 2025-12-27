@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { QRCodeSVG } from 'qrcode.react';
 import LocationPhotoCapture from '@/components/LocationPhotoCapture';
+import Spinner from '@/components/Spinner';
 
 // Toast Notification Component
 interface Toast {
@@ -861,7 +862,7 @@ export default function OTAndPermissionsPage() {
         {/* Content */}
         {loading ? (
           <div className="flex items-center justify-center py-12">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
+            <Spinner />
           </div>
         ) : activeTab === 'ot' ? (
           <div className="rounded-xl border border-slate-200 bg-white/80 backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/80">

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { api, Department } from '@/lib/api';
 import { MODULE_CATEGORIES } from '@/config/moduleCategories';
+import Spinner from '@/components/Spinner';
 
 // Icons
 const PlusIcon = () => (
@@ -504,7 +505,7 @@ export default function UsersPage() {
   if (loading && users.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent"></div>
+        <Spinner />
       </div>
     );
   }

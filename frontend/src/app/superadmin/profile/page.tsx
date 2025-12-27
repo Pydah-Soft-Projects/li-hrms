@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { auth } from '@/lib/auth';
+import Spinner from '@/components/Spinner';
 
 interface UserProfile {
   _id: string;
@@ -180,7 +181,7 @@ export default function ProfilePage() {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          <Spinner />
           <p className="text-gray-500">Loading profile...</p>
         </div>
       </div>
@@ -208,11 +209,10 @@ export default function ProfilePage() {
       {/* Toast Notification */}
       {toast && (
         <div
-          className={`fixed top-4 right-4 z-50 px-6 py-4 rounded-lg shadow-xl animate-slide-in ${
-            toast.type === 'success'
+          className={`fixed top-4 right-4 z-50 px-6 py-4 rounded-lg shadow-xl animate-slide-in ${toast.type === 'success'
               ? 'bg-green-600 text-white'
               : 'bg-red-600 text-white'
-          }`}
+            }`}
         >
           <div className="flex items-center gap-3">
             {toast.type === 'success' ? (
@@ -242,7 +242,7 @@ export default function ProfilePage() {
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
               {/* Profile Header with Gradient */}
               <div className="h-24 bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-600" />
-              
+
               {/* Avatar */}
               <div className="relative flex justify-center -mt-12">
                 <div className="w-24 h-24 rounded-full bg-white border-4 border-white shadow-lg flex items-center justify-center text-3xl font-bold text-blue-600">
@@ -254,7 +254,7 @@ export default function ProfilePage() {
               <div className="p-6 pt-4 text-center">
                 <h2 className="text-xl font-semibold text-gray-900">{user.name}</h2>
                 <p className="text-gray-500 text-sm mt-1">{user.email}</p>
-                
+
                 {/* Role Badge */}
                 <div className="mt-4">
                   <span className={`inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium border ${getRoleBadgeColor(user.role)}`}>
@@ -373,7 +373,7 @@ export default function ProfilePage() {
             {/* Account Information */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-6">Account Information</h3>
-              
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Role */}
                 <div>
@@ -386,11 +386,10 @@ export default function ProfilePage() {
                 {/* Account Status */}
                 <div>
                   <label className="block text-sm font-medium text-gray-500 mb-1.5">Account Status</label>
-                  <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium ${
-                    user.isActive 
-                      ? 'bg-green-100 text-green-800' 
+                  <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium ${user.isActive
+                      ? 'bg-green-100 text-green-800'
                       : 'bg-red-100 text-red-800'
-                  }`}>
+                    }`}>
                     <span className={`w-2 h-2 rounded-full ${user.isActive ? 'bg-green-500' : 'bg-red-500'}`} />
                     {user.isActive ? 'Active' : 'Inactive'}
                   </span>

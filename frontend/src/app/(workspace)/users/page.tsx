@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { api, Department } from '@/lib/api';
+import { MODULE_CATEGORIES } from '@/config/moduleCategories';
+import Spinner from '@/components/Spinner';
 
 // Icons
 const PlusIcon = () => (
@@ -66,6 +68,7 @@ interface User {
   departmentType?: 'single' | 'multiple';
   lastLogin?: string;
   createdAt: string;
+  featureControl?: string[];
 }
 
 interface Employee {
@@ -88,7 +91,6 @@ interface UserStats {
 const ROLES = [
   { value: 'super_admin', label: 'Super Admin', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
   { value: 'sub_admin', label: 'Sub Admin', color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' },
-  { value: 'principal', label: 'Principal', color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' },
   { value: 'hr', label: 'HR', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
   { value: 'hod', label: 'HOD', color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' },
   { value: 'employee', label: 'Employee', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
@@ -129,11 +131,12 @@ export default function UsersPage() {
     email: '',
     name: '',
     role: 'employee',
+    departmentType: 'single' as 'single' | 'multiple',
     department: '',
     departments: [] as string[],
-    departmentType: 'single',
     password: '',
     autoGeneratePassword: true,
+    featureControl: [] as string[],
   });
 
   // Form state for create from employee
@@ -141,9 +144,10 @@ export default function UsersPage() {
     employeeId: '',
     email: '',
     role: 'employee',
+    departmentType: 'single' as 'single' | 'multiple',
     departments: [] as string[],
-    departmentType: 'single',
     autoGeneratePassword: true,
+    featureControl: [] as string[],
   });
 
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -203,6 +207,34 @@ export default function UsersPage() {
     }
   }, [error, success]);
 
+  // Load default feature controls when role changes (not on every formData change)
+  const previousRoleRef = useRef<string>('');
+
+  useEffect(() => {
+    const loadRoleDefaults = async () => {
+      // Only load if role actually changed (not just formData update)
+      if (!formData.role || formData.role === previousRoleRef.current) return;
+
+      previousRoleRef.current = formData.role;
+
+      try {
+        const settingKey = `feature_control_${formData.role === 'hod' ? 'hod' : formData.role === 'hr' ? 'hr' : 'employee'}`;
+        const res = await api.getSetting(settingKey);
+
+        if (res.success && res.data?.value?.activeModules) {
+          setFormData(prev => ({
+            ...prev,
+            featureControl: res.data?.value?.activeModules || []
+          }));
+        }
+      } catch (err) {
+        console.error('Failed to load role defaults:', err);
+      }
+    };
+
+    loadRoleDefaults();
+  }, [formData.role]);
+
   // Handle create user
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -210,10 +242,10 @@ export default function UsersPage() {
 
     try {
       const payload: any = {
+        email: formData.email,
         name: formData.name,
         role: formData.role,
         autoGeneratePassword: formData.autoGeneratePassword,
-        departmentType: formData.departmentType,
         assignWorkspace: true,
       };
 
@@ -227,6 +259,9 @@ export default function UsersPage() {
       } else {
         payload.departments = formData.departments || [];
       }
+
+      // Add feature control (always send to ensure overrides work)
+      payload.featureControl = formData.featureControl;
 
       const res = await api.createUser(payload);
 
@@ -258,7 +293,6 @@ export default function UsersPage() {
         employeeId: employeeFormData.employeeId,
         role: employeeFormData.role,
         autoGeneratePassword: employeeFormData.autoGeneratePassword,
-        departmentType: employeeFormData.departmentType,
       };
 
       if (employeeFormData.email) {
@@ -273,6 +307,9 @@ export default function UsersPage() {
       } else {
         payload.departments = employeeFormData.departments || [];
       }
+
+      // Add feature control (always send to ensure overrides work)
+      payload.featureControl = employeeFormData.featureControl;
 
       const res = await api.createUserFromEmployee(payload);
 
@@ -304,7 +341,6 @@ export default function UsersPage() {
       const payload: any = {
         name: formData.name,
         role: formData.role,
-        departmentType: formData.departmentType,
       };
 
       // Handle department assignment based on departmentType
@@ -314,7 +350,9 @@ export default function UsersPage() {
         payload.departments = formData.departments || [];
       }
 
-      console.log(`[UsersPage] Updating user ${selectedUser._id} with payload:`, payload);
+      // Add feature control (always send to ensure overrides work)
+      payload.featureControl = formData.featureControl;
+
       const res = await api.updateUser(selectedUser._id, payload);
 
       if (res.success) {
@@ -392,12 +430,15 @@ export default function UsersPage() {
       email: user.email,
       name: user.name,
       role: user.role,
+      departmentType: user.departmentType || (user.departments && user.departments.length > 1 ? 'multiple' : 'single'),
       department: user.department?._id || '',
       departments: user.departments?.map((d) => d._id) || [],
-      departmentType: user.departmentType || 'single',
       password: '',
       autoGeneratePassword: false,
+      featureControl: user.featureControl || [],
     });
+    // Prevent useEffect from reloading defaults and overwriting user data
+    previousRoleRef.current = user.role;
     setShowEditDialog(true);
   };
 
@@ -419,12 +460,14 @@ export default function UsersPage() {
       email: '',
       name: '',
       role: 'employee',
+      departmentType: 'single',
       department: '',
       departments: [],
-      departmentType: 'single',
       password: '',
       autoGeneratePassword: true,
+      featureControl: [],
     });
+    previousRoleRef.current = '';
   };
 
   const resetEmployeeForm = () => {
@@ -432,10 +475,12 @@ export default function UsersPage() {
       employeeId: '',
       email: '',
       role: 'employee',
-      departments: [],
       departmentType: 'single',
+      departments: [],
       autoGeneratePassword: true,
+      featureControl: [],
     });
+    previousRoleRef.current = '';
   };
 
   // Handle department multi-select for HR
@@ -460,7 +505,7 @@ export default function UsersPage() {
   if (loading && users.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent"></div>
+        <Spinner />
       </div>
     );
   }
@@ -488,7 +533,7 @@ export default function UsersPage() {
               onClick={openFromEmployeeDialog}
               className="flex items-center gap-2 px-4 py-2 rounded-xl border border-green-200 bg-green-50 text-green-700 hover:bg-green-100 dark:border-green-800 dark:bg-green-900/30 dark:text-green-400"
             >
-              <PlusIcon />
+              <UserIcon />
               Update User
             </button>
             <button
@@ -517,30 +562,28 @@ export default function UsersPage() {
       {/* Stats */}
       {stats && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800 transition-all hover:bg-slate-50 dark:hover:bg-slate-800/80">
             <div className="text-3xl font-bold text-slate-900 dark:text-white">{stats.totalUsers}</div>
             <div className="text-sm text-slate-500 dark:text-slate-400">Total Users</div>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800 transition-all hover:bg-slate-50 dark:hover:bg-slate-800/80">
             <div className="text-3xl font-bold text-green-600">{stats.activeUsers}</div>
             <div className="text-sm text-slate-500 dark:text-slate-400">Active</div>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800 transition-all hover:bg-slate-50 dark:hover:bg-slate-800/80">
             <div className="text-3xl font-bold text-red-600">{stats.inactiveUsers}</div>
             <div className="text-sm text-slate-500 dark:text-slate-400">Inactive</div>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800 transition-all hover:bg-slate-50 dark:hover:bg-slate-800/80">
             <div className="text-3xl font-bold text-purple-600">{stats.byRole?.hod || 0}</div>
             <div className="text-sm text-slate-500 dark:text-slate-400">HODs</div>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800 transition-all hover:bg-slate-50 dark:hover:bg-slate-800/80">
             <div className="text-3xl font-bold text-green-600">{stats.byRole?.hr || 0}</div>
             <div className="text-sm text-slate-500 dark:text-slate-400">HRs</div>
           </div>
         </div>
       )}
-
-      {/* Tables & Other Content ... */}
 
       {/* Password Success Modal */}
       {showSuccessModal && (
@@ -804,7 +847,7 @@ export default function UsersPage() {
                         role,
                         department: '',
                         departments: [],
-                        departmentType: role === 'hr' ? 'multiple' : 'single'
+                        departmentType: ['hr'].includes(role) ? 'multiple' : 'single'
                       });
                     }}
                     className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
@@ -841,12 +884,11 @@ export default function UsersPage() {
                 ) : (
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Department * <span className="text-xs text-slate-500">(User is assigned to one department)</span>
+                      Department <span className="text-xs text-slate-500">(User is assigned to one department)</span>
                     </label>
                     <select
                       value={formData.department}
                       onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                      required
                       className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                     >
                       <option value="">Select Department</option>
@@ -858,6 +900,43 @@ export default function UsersPage() {
                     </select>
                   </div>
                 )}
+
+                {/* Feature Control */}
+                <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">
+                    Feature Access <span className="text-xs text-slate-500">(Override role defaults)</span>
+                  </label>
+                  <div className="max-h-60 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 p-3 space-y-3 bg-slate-50 dark:bg-slate-800/50">
+                    {MODULE_CATEGORIES.map((category) => (
+                      <div key={category.code}>
+                        <h4 className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase mb-2">
+                          {category.icon} {category.name}
+                        </h4>
+                        <div className="space-y-1">
+                          {category.modules.map((module) => (
+                            <label key={module.code} className="flex items-center gap-2 p-2 rounded-lg hover:bg-white dark:hover:bg-slate-700 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={formData.featureControl.includes(module.code)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setFormData({ ...formData, featureControl: [...formData.featureControl, module.code] });
+                                  } else {
+                                    setFormData({ ...formData, featureControl: formData.featureControl.filter(m => m !== module.code) });
+                                  }
+                                }}
+                                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                              />
+                              <span className="text-xs text-slate-700 dark:text-slate-300">
+                                {module.label}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
 
                 {/* Password Options */}
                 <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
@@ -909,15 +988,15 @@ export default function UsersPage() {
         )
       }
 
-      {/* Create from Employee Dialog */}
+      {/* Update User Dialog */}
       {
         showFromEmployeeDialog && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowFromEmployeeDialog(false)} />
             <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
-              <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">Create User from Employee</h2>
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">Update User from Employee</h2>
               <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
-                Select an employee to create a user account for them
+                Select an employee to create or update their user account
               </p>
 
               <form onSubmit={handleCreateFromEmployee} className="space-y-4">
@@ -975,7 +1054,7 @@ export default function UsersPage() {
                         ...employeeFormData,
                         role,
                         departments: [],
-                        departmentType: role === 'hr' ? 'multiple' : 'single'
+                        departmentType: ['hr'].includes(role) ? 'multiple' : 'single'
                       });
                     }}
                     className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
@@ -993,7 +1072,7 @@ export default function UsersPage() {
                 {employeeFormData.departmentType === 'multiple' ? (
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Departments <span className="text-xs text-slate-500">(User can manage multiple departments)</span>
+                      Departments to Manage
                     </label>
                     <div className="max-h-40 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 p-2 space-y-2">
                       {departments.map((dept) => (
@@ -1012,7 +1091,7 @@ export default function UsersPage() {
                 ) : (
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Department <span className="text-xs text-slate-500">(Optional - will use employee department if empty)</span>
+                      Department <span className="text-xs text-slate-500">(User is assigned to one department)</span>
                     </label>
                     <select
                       value={employeeFormData.departments[0] || ''}
@@ -1028,6 +1107,43 @@ export default function UsersPage() {
                     </select>
                   </div>
                 )}
+
+                {/* Feature Control */}
+                <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">
+                    Feature Access <span className="text-xs text-slate-500">(Override role defaults)</span>
+                  </label>
+                  <div className="max-h-60 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 p-3 space-y-3 bg-slate-50 dark:bg-slate-800/50">
+                    {MODULE_CATEGORIES.map((category) => (
+                      <div key={category.code}>
+                        <h4 className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase mb-2">
+                          {category.icon} {category.name}
+                        </h4>
+                        <div className="space-y-1">
+                          {category.modules.map((module) => (
+                            <label key={module.code} className="flex items-center gap-2 p-2 rounded-lg hover:bg-white dark:hover:bg-slate-700 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={employeeFormData.featureControl.includes(module.code)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setEmployeeFormData({ ...employeeFormData, featureControl: [...employeeFormData.featureControl, module.code] });
+                                  } else {
+                                    setEmployeeFormData({ ...employeeFormData, featureControl: employeeFormData.featureControl.filter(m => m !== module.code) });
+                                  }
+                                }}
+                                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                              />
+                              <span className="text-xs text-slate-700 dark:text-slate-300">
+                                {module.label}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
 
                 <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
                   <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -1099,7 +1215,7 @@ export default function UsersPage() {
                       setFormData({
                         ...formData,
                         role,
-                        departmentType: ['hr', 'principal'].includes(role) ? 'multiple' : 'single'
+                        departmentType: ['hr'].includes(role) ? 'multiple' : 'single'
                       });
                     }}
                     disabled={selectedUser.role === 'super_admin'}
@@ -1153,6 +1269,43 @@ export default function UsersPage() {
                     </select>
                   </div>
                 )}
+
+                {/* Feature Control */}
+                <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">
+                    Feature Access <span className="text-xs text-slate-500">(Override role defaults)</span>
+                  </label>
+                  <div className="max-h-60 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 p-3 space-y-3 bg-slate-50 dark:bg-slate-800/50">
+                    {MODULE_CATEGORIES.map((category) => (
+                      <div key={category.code}>
+                        <h4 className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase mb-2">
+                          {category.icon} {category.name}
+                        </h4>
+                        <div className="space-y-1">
+                          {category.modules.map((module) => (
+                            <label key={module.code} className="flex items-center gap-2 p-2 rounded-lg hover:bg-white dark:hover:bg-slate-700 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={formData.featureControl.includes(module.code)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setFormData({ ...formData, featureControl: [...formData.featureControl, module.code] });
+                                  } else {
+                                    setFormData({ ...formData, featureControl: formData.featureControl.filter(m => m !== module.code) });
+                                  }
+                                }}
+                                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                              />
+                              <span className="text-xs text-slate-700 dark:text-slate-300">
+                                {module.label}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
 
                 <div className="flex gap-3 pt-4">
                   <button
