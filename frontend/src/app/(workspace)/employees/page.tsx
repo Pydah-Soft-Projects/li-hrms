@@ -1122,11 +1122,13 @@ export default function EmployeesPage() {
             });
           }
 
-          // Always preserve certificate fields
+          // Always preserve certificate fields and normalize casing
           Object.keys(qual).forEach(key => {
             const lowerKey = key.toLowerCase();
-            if (lowerKey === 'certificateurl' || lowerKey === 'certificatefile') {
-              normalized[key] = qual[key];
+            if (lowerKey === 'certificateurl') {
+              normalized.certificateUrl = qual[key];
+            } else if (lowerKey === 'certificatefile') {
+              normalized.certificateFile = qual[key];
             }
           });
 

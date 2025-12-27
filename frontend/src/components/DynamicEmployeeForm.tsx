@@ -1032,7 +1032,8 @@ export default function DynamicEmployeeForm({
                       }}
                       onDelete={() => {
                         handleQualificationChange(index, 'certificateFile', null);
-                        handleQualificationChange(index, 'certificateUrl', null);
+                        // Also clear the URL so it doesn't show up again
+                        handleQualificationChange(index, 'certificateUrl', '');
                       }}
                       isViewMode={isViewMode}
                     />

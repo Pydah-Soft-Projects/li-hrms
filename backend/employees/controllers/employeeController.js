@@ -16,6 +16,7 @@ const {
   extractPermanentFields,
   extractDynamicFields,
   resolveQualificationLabels,
+  mapQualificationsLabelsToIds,
 } = require('../../employee-applications/services/fieldMappingService');
 const { resolveForEmployee } = require('../../payroll/services/allowanceDeductionResolverService');
 const mongoose = require('mongoose');
@@ -54,6 +55,7 @@ const processQualifications = async (req, settings) => {
   // Handle S3 Uploads
   if (req.files && req.files.length > 0) {
     console.log(`[EmployeeController] Processing ${req.files.length} files`);
+    console.log('[EmployeeController] Files received:', req.files.map(f => f.fieldname));
 
     // Map files for easy access
     // Expecting fieldname "qualification_cert_{index}"
@@ -65,7 +67,7 @@ const processQualifications = async (req, settings) => {
     for (let i = 0; i < qualifications.length; i++) {
       const file = fileMap[`qualification_cert_${i}`];
       if (file) {
-        console.log(`[EmployeeController] Uploading cert for qualification [${i}]`);
+        console.log(`[EmployeeController] Found file for qualification index [${i}]`);
         try {
           // Pass buffer, originalname, mimetype, and specify 'hrms/certificates' folder
           const uploadResult = await s3UploadService.uploadToS3(
@@ -79,18 +81,22 @@ const processQualifications = async (req, settings) => {
           // Looking at s3UploadService.js: return result.Location; 
           // So uploadResult is the URL string.
           qualifications[i].certificateUrl = uploadResult;
-          console.log(`[EmployeeController] Upload success: ${uploadResult}`);
+          console.log(`[EmployeeController] Upload success for index ${i}: ${uploadResult}`);
         } catch (uploadErr) {
           console.error(`[EmployeeController] Failed to upload cert for index ${i}:`, uploadErr);
         }
+      } else {
+        console.log(`[EmployeeController] No file for qualification index [${i}]`);
       }
     }
+  } else {
+    console.log('[EmployeeController] No files received in request');
   }
 
-  // Resolve Labels
+  // Resolve Labels -> Field IDs for Robust Storage (Reverse Mapping)
   if (settings && qualifications.length > 0) {
-    console.log('[EmployeeController] Resolving labels for qualifications');
-    qualifications = resolveQualificationLabels(qualifications, settings);
+    console.log('[EmployeeController] Reversing labels to Field IDs for storage');
+    qualifications = mapQualificationsLabelsToIds(qualifications, settings);
   }
 
   return qualifications;

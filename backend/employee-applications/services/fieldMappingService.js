@@ -223,17 +223,27 @@ exports.resolveQualificationLabels = (qualifications, settings) => {
   });
 
   console.log('[resolveQualificationLabels] Field Mapping:', JSON.stringify(fieldMap));
-  console.log('[resolveQualificationLabels] Input Qualifications:', JSON.stringify(qualifications));
 
   const resolved = qualifications.map((qual, index) => {
     const resolvedQual = {};
 
     Object.keys(qual).forEach(key => {
+      const lowerKey = key.toLowerCase();
+      // Explicitly preserve certificate fields with correct camelCase
+      if (lowerKey === 'certificateurl') {
+        resolvedQual['certificateUrl'] = qual[key];
+        return;
+      }
+      if (lowerKey === 'certificatefile') {
+        resolvedQual['certificateFile'] = qual[key];
+        return;
+      }
+
       // If key matches a field ID, use the label
       if (fieldMap[key]) {
         resolvedQual[fieldMap[key]] = qual[key];
       } else {
-        // Otherwise keep original key (e.g. for certificate URLs or unknown fields)
+        // Otherwise check if it's already a label (or unknown key) and keep it
         resolvedQual[key] = qual[key];
       }
     });
@@ -243,5 +253,63 @@ exports.resolveQualificationLabels = (qualifications, settings) => {
   });
 
   return resolved;
+};
+
+/**
+ * Map Qualification Labels back to Field IDs for robust storage
+ * 
+ * @param {Array} qualifications - Array of qualification objects (with Labels as keys)
+ * @param {Object} settings - EmployeeApplicationFormSettings object
+ * @returns {Array} Qualifications with Field IDs as keys
+ */
+exports.mapQualificationsLabelsToIds = (qualifications, settings) => {
+  if (!qualifications || !Array.isArray(qualifications) || qualifications.length === 0) {
+    return [];
+  }
+
+  if (!settings || !settings.qualifications || !settings.qualifications.fields) {
+    console.log('[mapQualificationsLabelsToIds] No qualifications config in settings');
+    return qualifications;
+  }
+
+  // Create Label -> ID map (Case-insensitive for robustness)
+  const labelToIdMap = {};
+  settings.qualifications.fields.forEach(field => {
+    if (field.id && field.label) {
+      labelToIdMap[field.label.toLowerCase()] = field.id;
+    }
+  });
+
+  console.log('[mapQualificationsLabelsToIds] Label To ID Mapping:', JSON.stringify(labelToIdMap));
+
+  const mapped = qualifications.map((qual, index) => {
+    const mappedQual = {};
+
+    Object.keys(qual).forEach(key => {
+      const lowerKey = key.toLowerCase();
+
+      // Explicitly preserve certificate fields
+      if (lowerKey === 'certificateurl') {
+        mappedQual['certificateUrl'] = qual[key];
+        return;
+      }
+      if (lowerKey === 'certificatefile') {
+        mappedQual['certificateFile'] = qual[key];
+        return;
+      }
+
+      // Check if key is a known Label
+      if (labelToIdMap[lowerKey]) {
+        mappedQual[labelToIdMap[lowerKey]] = qual[key];
+      } else {
+        // Otherwise keep original key (e.g. certificateUrl, or already an ID)
+        mappedQual[key] = qual[key];
+      }
+    });
+
+    return mappedQual;
+  });
+
+  return mapped;
 };
 

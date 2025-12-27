@@ -946,6 +946,7 @@ export default function EmployeesPage() {
 
       // Handle Qualifications - Map Field IDs to Labels
       const qualities = Array.isArray(formData.qualifications) ? formData.qualifications : [];
+      console.log('Skills/Qualities before processing:', qualities);
 
       // Create a mapping from Field ID -> Label using formSettings
       const fieldIdToLabelMap: Record<string, string> = {};
@@ -957,6 +958,8 @@ export default function EmployeesPage() {
 
       const cleanQualifications = qualities.map((q: any, index: number) => {
         const { certificateFile, ...rest } = q;
+        console.log(`Processing qual ${index}, has certificate file?`, !!certificateFile);
+        if (certificateFile) console.log('File details:', certificateFile.name, certificateFile.type, certificateFile.size);
 
         // Transform keys from Field ID to Label (e.g. key "degree" -> "Degree")
         const transformedQ: any = {};
@@ -967,7 +970,10 @@ export default function EmployeesPage() {
         });
 
         if (certificateFile instanceof File) {
+          console.log(`Appending file for qual ${index}`);
           payload.append(`qualification_cert_${index}`, certificateFile);
+        } else {
+          console.log(`Certificate file for qual ${index} is not a File instance:`, certificateFile);
         }
         return transformedQ;
       });
@@ -1122,11 +1128,13 @@ export default function EmployeesPage() {
           });
         }
 
-        // Always preserve certificate fields
+        // Always preserve certificate fields and normalize casing
         Object.keys(qual).forEach(key => {
           const lowerKey = key.toLowerCase();
-          if (lowerKey === 'certificateurl' || lowerKey === 'certificatefile') {
-            normalized[key] = qual[key];
+          if (lowerKey === 'certificateurl') {
+            normalized.certificateUrl = qual[key];
+          } else if (lowerKey === 'certificatefile') {
+            normalized.certificateFile = qual[key];
           }
         });
 

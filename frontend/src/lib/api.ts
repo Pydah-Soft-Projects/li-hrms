@@ -723,7 +723,7 @@ export const api = {
   updateEmployee: async (empNo: string, data: any) => {
     return apiRequest<any>(`/employees/${empNo}`, {
       method: 'PUT',
-      body: JSON.stringify(data),
+      body: data instanceof FormData ? data : JSON.stringify(data),
     });
   },
 
