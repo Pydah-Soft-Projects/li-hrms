@@ -6,6 +6,7 @@ import { auth } from '@/lib/auth';
 import { toast, ToastContainer } from 'react-toastify';
 import Swal from 'sweetalert2';
 import 'react-toastify/dist/ReactToastify.css';
+import LocationPhotoCapture from '@/components/LocationPhotoCapture';
 
 
 // Icons
@@ -406,6 +407,15 @@ export default function LeavesPage() {
   } | null>(null);
   const [checkingApprovedRecords, setCheckingApprovedRecords] = useState(false);
 
+  // Photo Evidence & Location State
+  const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
+  const [locationData, setLocationData] = useState<{
+    latitude: number;
+    longitude: number;
+    address?: string;
+    capturedAt: Date;
+  } | null>(null);
+
   useEffect(() => {
     loadData();
     loadTypes();
@@ -550,10 +560,47 @@ export default function LeavesPage() {
     }
 
     try {
+
       // Validate hour-based OD
       if (applyType === 'od' && formData.odType_extended === 'hours') {
         if (!formData.odStartTime || !formData.odEndTime) {
           toast.error('Please provide start and end times for hour-based OD');
+          return;
+        }
+      }
+
+      // Check Photo Evidence for OD
+      let uploadedEvidence = undefined;
+      let geoData = undefined;
+
+      if (applyType === 'od') {
+        if (!evidenceFile) {
+          toast.error('Photo evidence is required for OD applications');
+          return;
+        }
+
+        // Lazy Upload
+        try {
+          const uploadRes = await api.uploadEvidence(evidenceFile) as any;
+          if (!uploadRes.success) throw new Error('Upload failed');
+
+          uploadedEvidence = {
+            url: uploadRes.url,
+            key: uploadRes.key,
+            filename: uploadRes.filename
+          };
+
+          if (locationData) {
+            geoData = {
+              latitude: locationData.latitude,
+              longitude: locationData.longitude,
+              capturedAt: locationData.capturedAt,
+              address: locationData.address || ''
+            };
+          }
+        } catch (uploadError) {
+          console.error("Evidence upload failed:", uploadError);
+          toast.error("Failed to upload photo evidence");
           return;
         }
       }
@@ -589,6 +636,8 @@ export default function LeavesPage() {
           halfDayType: formData.isHalfDay ? formData.halfDayType : null,
           remarks: formData.remarks,
           isAssigned: true, // Mark as assigned by admin
+          photoEvidence: uploadedEvidence,
+          geoLocation: geoData,
         });
       }
 
@@ -677,6 +726,8 @@ export default function LeavesPage() {
     setSelectedEmployee(null);
     setEmployeeSearch('');
     setShowEmployeeDropdown(false);
+    setEvidenceFile(null);
+    setLocationData(null);
   };
 
   const handleSelectEmployee = (employee: Employee) => {
@@ -852,6 +903,11 @@ export default function LeavesPage() {
         setSplitDrafts(initialSplits);
         const leaveItem = enrichedItem as LeaveApplication;
         setSplitMode((leaveItem.splits && leaveItem.splits.length > 0) || false);
+      } else {
+        const response = await api.getOD(item._id);
+        if (response?.success && response.data) {
+          enrichedItem = response.data;
+        }
       }
 
       setSelectedItem(enrichedItem);
@@ -1827,6 +1883,24 @@ export default function LeavesPage() {
                 />
               </div>
 
+              {/* Photo Evidence (OD Only) */}
+              {applyType === 'od' && (
+                <div className="pt-2 border-t border-slate-100 dark:border-slate-700/50">
+                  <LocationPhotoCapture
+                    label="Live Photo Evidence"
+                    onCapture={(loc, photo) => {
+                      setEvidenceFile(photo.file);
+                      setLocationData(loc);
+                      (photo.file as any).exifLocation = photo.exifLocation;
+                    }}
+                    onClear={() => {
+                      setEvidenceFile(null);
+                      setLocationData(null);
+                    }}
+                  />
+                </div>
+              )}
+
               {/* Buttons */}
               <div className="flex gap-3 pt-4">
                 <button
@@ -2114,6 +2188,91 @@ export default function LeavesPage() {
                   <p className="text-base font-medium text-slate-700 dark:text-slate-300 ml-14">
                     {selectedItem.contactNumber}
                   </p>
+                </div>
+              )}
+
+
+              {/* Photo Evidence & Location */}
+              {detailType === 'od' && ((selectedItem as any).photoEvidence || (selectedItem as any).geoLocation) && (
+                <div className="rounded-2xl bg-white dark:bg-slate-800 p-6 shadow-md border border-slate-200 dark:border-slate-700">
+                  {/* Header */}
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-sky-100 dark:bg-sky-900/30">
+                      <svg className="w-5 h-5 text-sky-600 dark:text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                    </div>
+                    <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                      Evidence & Location
+                    </p>
+                  </div>
+
+                  <div className="ml-14 space-y-4">
+                    {/* Photo */}
+                    {(selectedItem as any).photoEvidence && (
+                      <div className="flex items-start gap-4">
+                        <a
+                          href={(selectedItem as any).photoEvidence.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="relative group block shrink-0"
+                        >
+                          <img
+                            src={(selectedItem as any).photoEvidence.url}
+                            alt="Evidence"
+                            className="w-24 h-24 rounded-lg object-cover border border-slate-200 dark:border-slate-700 shadow-sm transition-transform group-hover:scale-105"
+                          />
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/20 transition-colors rounded-lg">
+                            <svg className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                          </div>
+                        </a>
+                        <div>
+                          <p className="text-sm font-medium text-slate-900 dark:text-white">Photo Evidence</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Uploaded at application time</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Location */}
+                    {(selectedItem as any).geoLocation && (
+                      <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800">
+                        <div className="flex items-center gap-2 mb-2">
+                          <svg className="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                          <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Location Data</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                          <div>
+                            <span className="text-slate-500">Latitude:</span>
+                            <span className="ml-1 font-mono text-slate-700 dark:text-slate-300">{(selectedItem as any).geoLocation.latitude?.toFixed(6)}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500">Longitude:</span>
+                            <span className="ml-1 font-mono text-slate-700 dark:text-slate-300">{(selectedItem as any).geoLocation.longitude?.toFixed(6)}</span>
+                          </div>
+                          {(selectedItem as any).geoLocation.address && (
+                            <div className="col-span-2 pt-2 border-t border-slate-100 dark:border-slate-800 mt-1">
+                              <span className="block text-slate-500 mb-0.5">Address:</span>
+                              <p className="text-slate-700 dark:text-slate-300 leading-tight">
+                                {(selectedItem as any).geoLocation.address}
+                              </p>
+                            </div>
+                          )}
+                          <div className="col-span-2 mt-1">
+                            <a
+                              href={`https://www.google.com/maps?q=${(selectedItem as any).geoLocation.latitude},${(selectedItem as any).geoLocation.longitude}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 font-medium"
+                            >
+                              View on Google Maps
+                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                            </a>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -2587,7 +2746,6 @@ export default function LeavesPage() {
                 }}
                 className="w-full px-4 py-3 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600"
               >
-                Close
               </button>
             </div>
           </div>

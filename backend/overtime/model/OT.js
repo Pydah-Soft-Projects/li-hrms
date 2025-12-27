@@ -169,6 +169,24 @@ const otSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+
+    // Geo Location Data
+    geoLocation: {
+      latitude: { type: Number },
+      longitude: { type: Number },
+      address: { type: String },
+      capturedAt: { type: Date }
+    },
+
+    // Photo Evidence
+    photoEvidence: {
+      url: { type: String },
+      key: { type: String },
+      exifLocation: {
+        latitude: { type: Number },
+        longitude: { type: Number }
+      }
+    },
   },
   {
     timestamps: true,
@@ -185,7 +203,7 @@ otSchema.index({ convertedFromAttendance: 1 });
 otSchema.index({ source: 1 });
 
 // Method to calculate OT hours
-otSchema.methods.calculateOTHours = function() {
+otSchema.methods.calculateOTHours = function () {
   if (this.otInTime && this.otOutTime) {
     const diffMs = this.otOutTime.getTime() - this.otInTime.getTime();
     const diffHours = diffMs / (1000 * 60 * 60);
@@ -196,14 +214,14 @@ otSchema.methods.calculateOTHours = function() {
 };
 
 // Pre-save hook to calculate OT hours
-otSchema.pre('save', function() {
+otSchema.pre('save', function () {
   if (this.otInTime && this.otOutTime && !this.otHours) {
     this.calculateOTHours();
   }
 });
 
 // Post-save hook to auto-sync pay register when OT is approved
-otSchema.post('save', async function() {
+otSchema.post('save', async function () {
   try {
     // Auto-sync pay register when OT is approved/rejected
     if (this.isModified('status') && (this.status === 'approved' || this.status === 'rejected')) {

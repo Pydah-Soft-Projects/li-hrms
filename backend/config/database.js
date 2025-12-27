@@ -20,7 +20,7 @@ let sqlPool = null;
 // MongoDB Connection
 const connectMongoDB = async () => {
   try {
-    const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/hrms';
+    const mongoURI = process.env.MONGODB_URI || 'mongodb://192.168.3.147:27017/hrms';
     await mongoose.connect(mongoURI);
     console.log('✅ MongoDB connected successfully');
   } catch (error) {

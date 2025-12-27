@@ -5,6 +5,7 @@ import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { api } from '@/lib/api';
 import { auth } from '@/lib/auth';
 import WorkflowTimeline from '@/components/WorkflowTimeline';
+import LocationPhotoCapture from '@/components/LocationPhotoCapture';
 
 
 // Icons
@@ -345,6 +346,11 @@ export default function LeavesPage() {
     odStartTime: '',
     odEndTime: '',
   });
+
+  // Evidence State
+  const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
+  const [locationData, setLocationData] = useState<any | null>(null);
+  const [evidencePreview, setEvidencePreview] = useState<string | null>(null);
 
   // Types from settings
   const [leaveTypes, setLeaveTypes] = useState<any[]>([]);
@@ -699,10 +705,6 @@ export default function LeavesPage() {
             // Existing logic: if (departmentIds.length > 0) ... else setEmployees([]) 
             // The previous logic relied on `activeWorkspace` departments. 
 
-            // If Global HR, maybe we fetch all? Or fetch nothing and rely on search API?
-            // For now, let's fetch based on workspace config if available, or just fetch all active.
-            // Given the previous code, let's check workspace config.
-
             // If it's a "Global" view, we might want to fetch all.
             const response = await api.getEmployees({ is_active: true });
             if (response.success && response.data) {
@@ -804,6 +806,9 @@ export default function LeavesPage() {
       odStartTime: '',
       odEndTime: '',
     });
+    setEvidenceFile(null);
+    setLocationData(null);
+    setEvidencePreview(null); // Reset preview
 
     // Reset employee selection
     setSelectedEmployee(null);
@@ -833,6 +838,7 @@ export default function LeavesPage() {
   const handleApply = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setLoading(true);
 
     // Check permissions based on apply type
     const canApplySelf = applyType === 'leave' ? canApplyLeaveForSelf : canApplyODForSelf;
@@ -842,37 +848,43 @@ export default function LeavesPage() {
     // If only canApplyForSelf is enabled, don't require employee selection (applies for self)
     if (canApplyOthers && !canApplySelf && !selectedEmployee) {
       setError('Please select an employee');
+      setLoading(false);
       return;
     }
     // If both are enabled, employee selection is optional (can apply for self or others)
 
     try {
-      let response;
       // Send empNo only if:
       // 1. canApplyForOthers is enabled AND
       // 2. An employee is selected
       // Otherwise, backend will use the logged-in user's employee
       const empNo = (canApplyOthers && selectedEmployee) ? selectedEmployee.emp_no : undefined;
 
+      let submitData: any = {
+        empNo,
+        fromDate: formData.fromDate,
+        toDate: formData.toDate,
+        purpose: formData.purpose,
+        contactNumber: formData.contactNumber,
+        remarks: formData.remarks,
+      };
+
       if (applyType === 'leave') {
         if (!formData.leaveType || !formData.fromDate || !formData.toDate || !formData.purpose) {
           setError('Please fill all required fields');
+          setLoading(false);
           return;
         }
-        response = await api.applyLeave({
-          ...(empNo && { empNo }), // Only send empNo if applying for others
+        submitData = {
+          ...submitData,
           leaveType: formData.leaveType,
-          fromDate: formData.fromDate,
-          toDate: formData.toDate,
-          purpose: formData.purpose,
-          contactNumber: formData.contactNumber,
           isHalfDay: formData.isHalfDay,
           halfDayType: formData.isHalfDay ? formData.halfDayType : null,
-          remarks: formData.remarks,
-        });
-      } else {
+        };
+      } else { // applyType === 'od'
         if (!formData.odType || !formData.fromDate || !formData.toDate || !formData.purpose || !formData.placeVisited) {
           setError('Please fill all required fields');
+          setLoading(false);
           return;
         }
 
@@ -880,26 +892,86 @@ export default function LeavesPage() {
         if (formData.odType_extended === 'hours') {
           if (!formData.odStartTime || !formData.odEndTime) {
             setError('Please select start and end times for OD');
+            setLoading(false);
+            return;
+          }
+          const [startHour, startMin] = formData.odStartTime.split(':').map(Number);
+          const [endHour, endMin] = formData.odEndTime.split(':').map(Number);
+          const startMinutes = startHour * 60 + startMin;
+          const endMinutes = endHour * 60 + endMin;
+          if (endMinutes <= startMinutes) {
+            setError('End time must be after start time for hour-based OD');
+            setLoading(false);
+            return;
+          }
+          if (endMinutes - startMinutes > 480) { // Max 8 hours
+            setError('Maximum duration for hour-based OD is 8 hours');
+            setLoading(false);
             return;
           }
         }
 
-        response = await api.applyOD({
-          ...(empNo && { empNo }), // Only send empNo if applying for others
+        submitData = {
+          ...submitData,
           odType: formData.odType,
-          fromDate: formData.fromDate,
-          toDate: formData.toDate,
-          purpose: formData.purpose,
           placeVisited: formData.placeVisited,
-          contactNumber: formData.contactNumber,
-          isHalfDay: formData.isHalfDay,
-          halfDayType: formData.isHalfDay ? formData.halfDayType : null,
-          remarks: formData.remarks,
-          // NEW: Hour-based OD fields
           odType_extended: formData.odType_extended,
           odStartTime: formData.odType_extended === 'hours' ? formData.odStartTime : null,
           odEndTime: formData.odType_extended === 'hours' ? formData.odEndTime : null,
-        });
+          isHalfDay: formData.odType_extended === 'half_day',
+          halfDayType: formData.odType_extended === 'half_day' ? formData.halfDayType : null,
+        };
+
+        // If OD requires photo evidence and it's not provided
+        if ((odModuleConfig as any)?.settings?.requirePhotoEvidence && !evidenceFile) {
+          setError('Photo evidence is required for OD applications.');
+          setLoading(false);
+          return;
+        }
+      }
+
+      // 3. Create Request
+      let payload: any = { ...submitData };
+
+      // Handle Evidence Upload (Lazy Upload)
+      if (evidenceFile) {
+        try {
+          console.log('Uploading evidence...');
+          const uploadRes = await api.uploadEvidence(evidenceFile);
+          if (uploadRes.success && uploadRes.data) {
+            payload.photoEvidence = {
+              url: uploadRes.data.url,
+              key: uploadRes.data.key,
+              exifLocation: (evidenceFile as any).exifLocation
+            };
+          }
+        } catch (uploadErr) {
+          console.error("Upload failed", uploadErr);
+          setError('Failed to upload evidence photo');
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Add Location Data
+      if (locationData) {
+        payload.geoLocation = locationData;
+      }
+
+      let response;
+      if (applyType === 'leave') {
+        const { odType, placeVisited, odType_extended, odStartTime, odEndTime, ...leavePayload } = payload;
+        response = await api.applyLeave(leavePayload);
+      } else {
+        // OD Logic
+        const { leaveType, isHalfDay, halfDayType, ...odPayload } = payload;
+
+        // Ensure OD Type is set
+        if (!odPayload.odType && odTypes.length > 0) {
+          odPayload.odType = odTypes[0].code;
+        }
+
+        response = await api.applyOD(odPayload);
       }
 
       if (response.success) {
@@ -915,8 +987,8 @@ export default function LeavesPage() {
           purpose: '',
           contactNumber: '',
           placeVisited: '',
-          isHalfDay: false,
-          halfDayType: '',
+          isHalfDay: false, // Reset to default
+          halfDayType: '', // Reset to default
           remarks: '',
           // NEW
           odType_extended: 'full_day',
@@ -926,12 +998,17 @@ export default function LeavesPage() {
         setSelectedEmployee(null);
         setEmployeeSearch('');
         setShowEmployeeDropdown(false);
+        setEvidenceFile(null);
+        setLocationData(null);
+        setEvidencePreview(null);
         loadData();
       } else {
         setError(response.error || 'Failed to apply');
       }
     } catch (err: any) {
       setError(err.message || 'Failed to apply');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -1252,13 +1329,8 @@ export default function LeavesPage() {
         </div>
         <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-5">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-yellow-100 dark:bg-yellow-900/50 flex items-center justify-center text-yellow-600 dark:text-yellow-300">
-              <ClockIcon />
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{totalPending}</div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">Pending Approvals</div>
-            </div>
+            <div className="w-12 h-12 rounded-xl bg-yellow-100 dark:bg-yellow-900/50 flex items-center justify-center text-yellow-600 dark:text-yellow-400">{totalPending}</div>
+            <div className="text-sm text-gray-500 dark:text-gray-400">Pending Approvals</div>
           </div>
         </div>
         <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-5">
@@ -2053,28 +2125,30 @@ export default function LeavesPage() {
                 </div>
               </div>
 
-              {/* Half Day */}
-              <div className="flex items-center gap-4">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={formData.isHalfDay}
-                    onChange={(e) => setFormData({ ...formData, isHalfDay: e.target.checked })}
-                    className="w-4 h-4 rounded border-slate-300"
-                  />
-                  <span className="text-sm text-slate-700 dark:text-slate-300">Half Day</span>
-                </label>
-                {formData.isHalfDay && (
-                  <select
-                    value={formData.halfDayType || 'first_half'}
-                    onChange={(e) => setFormData({ ...formData, halfDayType: e.target.value })}
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  >
-                    <option value="first_half">First Half</option>
-                    <option value="second_half">Second Half</option>
-                  </select>
-                )}
-              </div>
+              {/* Half Day (for Leave only) */}
+              {applyType === 'leave' && (
+                <div className="flex items-center gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.isHalfDay}
+                      onChange={(e) => setFormData({ ...formData, isHalfDay: e.target.checked })}
+                      className="w-4 h-4 rounded border-slate-300"
+                    />
+                    <span className="text-sm text-slate-700 dark:text-slate-300">Half Day</span>
+                  </label>
+                  {formData.isHalfDay && (
+                    <select
+                      value={formData.halfDayType || 'first_half'}
+                      onChange={(e) => setFormData({ ...formData, halfDayType: e.target.value })}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    >
+                      <option value="first_half">First Half</option>
+                      <option value="second_half">Second Half</option>
+                    </select>
+                  )}
+                </div>
+              )}
 
               {/* OD Type Selection (Full Day / Half Day / Hours) - NEW */}
               {applyType === 'od' && (
@@ -2223,18 +2297,62 @@ export default function LeavesPage() {
                 />
               </div>
 
-              {/* Place Visited (OD only) */}
+              {/* OD Specific Fields */}
               {applyType === 'od' && (
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Place to Visit *</label>
-                  <input
-                    type="text"
-                    value={formData.placeVisited}
-                    onChange={(e) => setFormData({ ...formData, placeVisited: e.target.value })}
-                    required
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                    placeholder="Location/Place name"
-                  />
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">OD Type *</label>
+                    {odTypes.length === 1 ? (
+                      <div className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-700 dark:text-white">
+                        <span className="font-medium">
+                          {odTypes[0]?.name || odTypes[0]?.code}
+                        </span>
+                        <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">(Only type available)</span>
+                      </div>
+                    ) : (
+                      <select
+                        value={formData.odType}
+                        onChange={(e) => setFormData({ ...formData, odType: e.target.value })}
+                        required
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      >
+                        <option value="">Select OD type</option>
+                        {odTypes.map((type) => (
+                          <option key={type.code} value={type.code}>{type.name}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Place to Visit *</label>
+                    <input
+                      type="text"
+                      value={formData.placeVisited}
+                      onChange={(e) => setFormData({ ...formData, placeVisited: e.target.value })}
+                      required
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      placeholder="Location/Place name"
+                    />
+                  </div>
+
+                  {/* Photo & Location Capture */}
+                  <div className="pt-2 border-t border-slate-100 dark:border-slate-700/50">
+                    <LocationPhotoCapture
+                      required={(odModuleConfig?.settings as any)?.requirePhotoEvidence || false}
+                      label="Live Photo Evidence"
+                      onCapture={(loc, photo) => {
+                        setEvidenceFile(photo.file);
+                        setLocationData(loc);
+                        // Store extra exif if needed in file object for later retrieval
+                        (photo.file as any).exifLocation = photo.exifLocation;
+                      }}
+                      onClear={() => {
+                        setEvidenceFile(null);
+                        setLocationData(null);
+                      }}
+                    />
+                  </div>
                 </div>
               )}
 

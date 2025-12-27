@@ -145,6 +145,54 @@ router.put('/certificate', protect, upload.single('file'), async (req, res) => {
     }
 });
 
+/**
+ * @desc    Upload evidence file (OD/OT/Permission)
+ * @route   POST /api/upload/evidence
+ * @access  Private
+ */
+router.post('/evidence', protect, upload.single('file'), async (req, res) => {
+    try {
+        if (!isS3Configured()) {
+            return res.status(500).json({
+                success: false,
+                message: 'S3 storage is not configured.'
+            });
+        }
+
+        if (!req.file) {
+            return res.status(400).json({
+                success: false,
+                message: 'No file uploaded'
+            });
+        }
+
+        const date = new Date();
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+
+        const fileUrl = await uploadToS3(
+            req.file.buffer,
+            req.file.originalname,
+            req.file.mimetype,
+            `evidence/${year}/${month}`
+        );
+
+        res.json({
+            success: true,
+            url: fileUrl,
+            key: `evidence/${year}/${month}`, // Returning partial key if needed
+            filename: req.file.originalname
+        });
+    } catch (error) {
+        console.error('Evidence upload error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to upload evidence',
+            error: error.message
+        });
+    }
+});
+
 // Error handling middleware for multer
 router.use((error, req, res, next) => {
     if (error instanceof multer.MulterError) {

@@ -382,6 +382,24 @@ const ODSchema = new mongoose.Schema(
         reason: String, // Optional reason for change
       },
     ],
+
+    // Geo Location Data
+    geoLocation: {
+      latitude: { type: Number },
+      longitude: { type: Number },
+      address: { type: String },
+      capturedAt: { type: Date }
+    },
+
+    // Photo Evidence
+    photoEvidence: {
+      url: { type: String },
+      key: { type: String },
+      exifLocation: {
+        latitude: { type: Number },
+        longitude: { type: Number }
+      }
+    },
   },
   {
     timestamps: true,

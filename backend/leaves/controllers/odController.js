@@ -266,6 +266,8 @@ exports.applyOD = async (req, res) => {
       odType_extended, // NEW: Type of OD (full_day, half_day, hours)
       odStartTime, // NEW: OD start time (HH:MM format)
       odEndTime, // NEW: OD end time (HH:MM format)
+      photoEvidence, // ADDED
+      geoLocation, // ADDED
     } = req.body;
 
     // Get employee
@@ -514,6 +516,8 @@ exports.applyOD = async (req, res) => {
       odEndTime: odEndTime || null,
       durationHours: durationHours,
       workflow: workflowData,
+      photoEvidence: photoEvidence || null, // ADDED
+      geoLocation: geoLocation || null, // ADDED
     });
 
     await od.save();
@@ -581,7 +585,8 @@ exports.updateOD = async (req, res) => {
     const allowedUpdates = [
       'odType', 'fromDate', 'toDate', 'purpose', 'placeVisited', 'placesVisited',
       'contactNumber', 'isHalfDay', 'halfDayType', 'expectedOutcome', 'travelDetails', 'remarks',
-      'odType_extended', 'odStartTime', 'odEndTime', 'durationHours' // NEW: Hour-based OD fields
+      'odType_extended', 'odStartTime', 'odEndTime', 'durationHours', // NEW: Hour-based OD fields
+      'photoEvidence', 'geoLocation' // ADDED
     ];
 
     // Super Admin can also change status

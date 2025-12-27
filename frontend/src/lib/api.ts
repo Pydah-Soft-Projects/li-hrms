@@ -1,6 +1,6 @@
 import { auth } from './auth';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://192.168.3.147:5000/api';
 
 // Workspace types - defined first as they're used in ApiResponse
 export interface WorkspaceModule {
@@ -1760,7 +1760,7 @@ export const api = {
   },
 
   // Create OT request
-  createOT: async (data: { employeeId: string; employeeNumber: string; date: string; otOutTime: string; shiftId?: string; manuallySelectedShiftId?: string; comments?: string }) => {
+  createOT: async (data: { employeeId: string; employeeNumber: string; date: string; otOutTime: string; shiftId?: string; manuallySelectedShiftId?: string; comments?: string; photoEvidence?: any; geoLocation?: any }) => {
     return apiRequest<any>('/ot', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -1817,7 +1817,7 @@ export const api = {
   },
 
   // Create permission request
-  createPermission: async (data: { employeeId: string; employeeNumber: string; date: string; permissionStartTime: string; permissionEndTime: string; purpose: string; comments?: string }) => {
+  createPermission: async (data: { employeeId: string; employeeNumber: string; date: string; permissionStartTime: string; permissionEndTime: string; purpose: string; comments?: string; photoEvidence?: any; geoLocation?: any }) => {
     return apiRequest<any>('/permissions', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -2340,6 +2340,16 @@ export const api = {
     return apiRequest<any>(`/arrears/${id}/edit`, {
       method: 'PUT',
       body: JSON.stringify(data),
+    });
+  },
+
+  // Uploads
+  uploadEvidence: async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return apiRequest<{ url: string; key: string; filename: string }>('/upload/evidence', {
+      method: 'POST',
+      body: formData,
     });
   },
 

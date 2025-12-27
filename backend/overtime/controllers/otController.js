@@ -16,7 +16,17 @@ const { createOTRequest, approveOTRequest, rejectOTRequest, convertExtraHoursToO
  */
 exports.createOT = async (req, res) => {
   try {
-    const { employeeId, employeeNumber, date, otOutTime, shiftId, manuallySelectedShiftId, comments } = req.body;
+    const {
+      employeeId,
+      employeeNumber,
+      date,
+      otOutTime,
+      shiftId,
+      manuallySelectedShiftId,
+      comments,
+      photoEvidence,
+      geoLocation
+    } = req.body;
 
     if (!employeeId || !employeeNumber || !date || !otOutTime) {
       return res.status(400).json({
@@ -26,7 +36,17 @@ exports.createOT = async (req, res) => {
     }
 
     const result = await createOTRequest(
-      { employeeId, employeeNumber, date, otOutTime, shiftId, manuallySelectedShiftId, comments },
+      {
+        employeeId,
+        employeeNumber,
+        date,
+        otOutTime,
+        shiftId,
+        manuallySelectedShiftId,
+        comments,
+        photoEvidence,
+        geoLocation
+      },
       req.user?.userId || req.user?._id
     );
 

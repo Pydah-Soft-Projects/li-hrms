@@ -151,6 +151,24 @@ const permissionSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+
+    // Geo Location Data
+    geoLocation: {
+      latitude: { type: Number },
+      longitude: { type: Number },
+      address: { type: String },
+      capturedAt: { type: Date }
+    },
+
+    // Photo Evidence
+    photoEvidence: {
+      url: { type: String },
+      key: { type: String },
+      exifLocation: {
+        latitude: { type: Number },
+        longitude: { type: Number }
+      }
+    },
   },
   {
     timestamps: true,
@@ -165,7 +183,7 @@ permissionSchema.index({ date: 1 });
 permissionSchema.index({ qrCode: 1 });
 
 // Method to calculate permission hours
-permissionSchema.methods.calculatePermissionHours = function() {
+permissionSchema.methods.calculatePermissionHours = function () {
   if (this.permissionStartTime && this.permissionEndTime) {
     const diffMs = this.permissionEndTime.getTime() - this.permissionStartTime.getTime();
     const diffHours = diffMs / (1000 * 60 * 60);
@@ -176,24 +194,24 @@ permissionSchema.methods.calculatePermissionHours = function() {
 };
 
 // Method to generate QR code
-permissionSchema.methods.generateQRCode = function() {
+permissionSchema.methods.generateQRCode = function () {
   // Generate unique QR code using crypto
   const randomBytes = crypto.randomBytes(16);
   this.qrCode = randomBytes.toString('hex');
-  
+
   // Set outpass URL (will be set by controller based on app URL)
   // Format: /api/permissions/outpass/{qrCode}
-  
+
   // Set expiry to end of permission day
   const permissionDate = new Date(this.date);
   permissionDate.setHours(23, 59, 59, 999);
   this.qrExpiry = permissionDate;
-  
+
   return this.qrCode;
 };
 
 // Pre-save hook to calculate permission hours
-permissionSchema.pre('save', function() {
+permissionSchema.pre('save', function () {
   if (this.permissionStartTime && this.permissionEndTime && !this.permissionHours) {
     this.calculatePermissionHours();
   }

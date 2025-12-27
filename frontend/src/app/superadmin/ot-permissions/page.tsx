@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { QRCodeSVG } from 'qrcode.react';
+import LocationPhotoCapture from '@/components/LocationPhotoCapture';
 
 // Toast Notification Component
 interface Toast {
@@ -116,6 +117,21 @@ interface OTRequest {
   approvedAt?: string;
   rejectedAt?: string;
   comments?: string;
+  photoEvidence?: {
+    url: string;
+    key: string;
+    filename?: string;
+    exifLocation?: {
+      latitude: number;
+      longitude: number;
+    };
+  };
+  geoLocation?: {
+    latitude: number;
+    longitude: number;
+    address?: string;
+    capturedAt: string;
+  };
 }
 
 interface PermissionRequest {
@@ -137,6 +153,21 @@ interface PermissionRequest {
   qrCode?: string;
   outpassUrl?: string;
   comments?: string;
+  photoEvidence?: {
+    url: string;
+    key: string;
+    filename?: string;
+    exifLocation?: {
+      latitude: number;
+      longitude: number;
+    };
+  };
+  geoLocation?: {
+    latitude: number;
+    longitude: number;
+    address?: string;
+    capturedAt: string;
+  };
 }
 
 export default function OTAndPermissionsPage() {
@@ -146,30 +177,30 @@ export default function OTAndPermissionsPage() {
   const [permissions, setPermissions] = useState<PermissionRequest[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [shifts, setShifts] = useState<Shift[]>([]);
-  
+
   // Filters
   const [otFilters, setOTFilters] = useState({ status: '', employeeNumber: '', startDate: '', endDate: '' });
   const [permissionFilters, setPermissionFilters] = useState({ status: '', employeeNumber: '', startDate: '', endDate: '' });
-  
+
   // Dialogs
   const [showOTDialog, setShowOTDialog] = useState(false);
   const [showPermissionDialog, setShowPermissionDialog] = useState(false);
   const [showQRDialog, setShowQRDialog] = useState(false);
   const [selectedQR, setSelectedQR] = useState<PermissionRequest | null>(null);
-  
+
   // Toast notifications
   const [toasts, setToasts] = useState<Toast[]>([]);
-  
+
   // Toast helper functions
   const showToast = (message: string, type: 'success' | 'error' | 'info' | 'warning' = 'info') => {
     const id = Date.now().toString() + Math.random().toString(36).substr(2, 9);
     setToasts(prev => [...prev, { id, message, type }]);
   };
-  
+
   const removeToast = (id: string) => {
     setToasts(prev => prev.filter(toast => toast.id !== id));
   };
-  
+
   // Form data
   const [otFormData, setOTFormData] = useState({
     employeeId: '',
@@ -180,7 +211,7 @@ export default function OTAndPermissionsPage() {
     manuallySelectedShiftId: '',
     comments: '',
   });
-  
+
   const [permissionFormData, setPermissionFormData] = useState({
     employeeId: '',
     employeeNumber: '',
@@ -190,7 +221,7 @@ export default function OTAndPermissionsPage() {
     purpose: '',
     comments: '',
   });
-  
+
   const [confusedShift, setConfusedShift] = useState<ConfusedShift | null>(null);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
@@ -198,6 +229,38 @@ export default function OTAndPermissionsPage() {
   const [attendanceLoading, setAttendanceLoading] = useState(false);
   const [validationError, setValidationError] = useState<string>('');
   const [permissionValidationError, setPermissionValidationError] = useState<string>('');
+
+  // Photo Evidence & Location State (Shared for both dialogs since only one is open at a time)
+  const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
+  const [locationData, setLocationData] = useState<{
+    latitude: number;
+    longitude: number;
+    address?: string;
+    capturedAt: Date;
+  } | null>(null);
+
+  // View Evidence State
+  const [showEvidenceDialog, setShowEvidenceDialog] = useState(false);
+  const [selectedEvidenceItem, setSelectedEvidenceItem] = useState<{
+    type: 'ot' | 'permission';
+    photoEvidence?: {
+      url: string;
+      key: string;
+      filename?: string;
+      exifLocation?: {
+        latitude: number;
+        longitude: number;
+      };
+    };
+    geoLocation?: {
+      latitude: number;
+      longitude: number;
+      address?: string;
+      capturedAt: Date | string;
+    };
+    employeeName: string;
+    date: string;
+  } | null>(null);
 
   useEffect(() => {
     loadData();
@@ -225,13 +288,13 @@ export default function OTAndPermissionsPage() {
           setPermissions(permRes.data || []);
         }
       }
-      
+
       // Load employees and shifts
       const [employeesRes, shiftsRes] = await Promise.all([
         api.getEmployees({ is_active: true }),
         api.getShifts(),
       ]);
-      
+
       if (employeesRes.success) {
         const employeesList = employeesRes.data || [];
         console.log('Loaded employees:', employeesList.length, employeesList);
@@ -240,7 +303,7 @@ export default function OTAndPermissionsPage() {
         console.error('Failed to load employees:', employeesRes);
         showToast('Failed to load employees', 'error');
       }
-      
+
       if (shiftsRes.success) {
         setShifts(shiftsRes.data || []);
       }
@@ -259,7 +322,7 @@ export default function OTAndPermissionsPage() {
     setAttendanceData(null);
     setConfusedShift(null);
     setSelectedShift(null);
-    
+
     if (!employeeId || !employeeNumber || !date) {
       return;
     }
@@ -268,11 +331,11 @@ export default function OTAndPermissionsPage() {
     try {
       // Fetch attendance detail for the selected employee and date
       const attendanceRes = await api.getAttendanceDetail(employeeNumber, date);
-      
+
       if (attendanceRes.success && attendanceRes.data) {
         const attendance = attendanceRes.data;
         setAttendanceData(attendance);
-        
+
         // Check for ConfusedShift
         const confusedRes = await api.checkConfusedShift(employeeNumber, date);
         if (confusedRes.success && (confusedRes as any).hasConfusedShift) {
@@ -286,7 +349,7 @@ export default function OTAndPermissionsPage() {
             if (shift) {
               setSelectedShift(shift);
               setOTFormData(prev => ({ ...prev, employeeId, employeeNumber, date, shiftId: shift._id }));
-              
+
               // Auto-suggest OT out time (shift end time + 1 hour as default)
               const [endHour, endMin] = shift.endTime.split(':').map(Number);
               const suggestedOutTime = new Date(date);
@@ -305,7 +368,7 @@ export default function OTAndPermissionsPage() {
                   duration: shiftData.duration || 0,
                 });
                 setOTFormData(prev => ({ ...prev, employeeId, employeeNumber, date, shiftId: shiftData._id }));
-                
+
                 // Auto-suggest OT out time
                 if (shiftData.endTime) {
                   const [endHour, endMin] = shiftData.endTime.split(':').map(Number);
@@ -355,10 +418,54 @@ export default function OTAndPermissionsPage() {
       return;
     }
 
+    // Photo Evidence Check
+    if (!evidenceFile) {
+      const errorMsg = 'Photo evidence is required for OT requests';
+      setValidationError(errorMsg);
+      showToast(errorMsg, 'error');
+      return;
+    }
+
     setLoading(true);
     setValidationError('');
     try {
-      const res = await api.createOT(otFormData);
+      // Upload Evidence
+      let uploadedEvidence = undefined;
+      let geoData = undefined;
+
+      // Lazy Upload
+      if (evidenceFile) {
+        try {
+          const uploadRes = await api.uploadEvidence(evidenceFile) as any;
+          if (!uploadRes.success) throw new Error('Upload failed');
+
+          uploadedEvidence = {
+            url: uploadRes.url,
+            key: uploadRes.key,
+            filename: uploadRes.filename,
+            exifLocation: (evidenceFile as any).exifLocation
+          };
+
+          if (locationData) {
+            geoData = {
+              latitude: locationData.latitude,
+              longitude: locationData.longitude,
+              address: locationData.address || '',
+              capturedAt: locationData.capturedAt.toISOString()
+            };
+          }
+        } catch (uploadError) {
+          console.error('Evidence upload failed:', uploadError);
+          showToast('Failed to upload photo evidence', 'error');
+          setLoading(false);
+          return;
+        }
+      }
+      const res = await api.createOT({
+        ...otFormData,
+        photoEvidence: uploadedEvidence,
+        geoLocation: geoData
+      });
       if (res.success) {
         showToast('OT request created successfully', 'success');
         setShowOTDialog(false);
@@ -386,14 +493,14 @@ export default function OTAndPermissionsPage() {
   };
 
   const handleCreatePermission = async () => {
-    if (!permissionFormData.employeeId || !permissionFormData.employeeNumber || !permissionFormData.date || 
-        !permissionFormData.permissionStartTime || !permissionFormData.permissionEndTime || !permissionFormData.purpose) {
+    if (!permissionFormData.employeeId || !permissionFormData.employeeNumber || !permissionFormData.date ||
+      !permissionFormData.permissionStartTime || !permissionFormData.permissionEndTime || !permissionFormData.purpose) {
       const errorMsg = 'Please fill all required fields';
       setPermissionValidationError(errorMsg);
       showToast(errorMsg, 'error');
       return;
     }
-    
+
     // Additional check: verify attendance exists
     if (permissionFormData.employeeNumber && permissionFormData.date) {
       try {
@@ -413,10 +520,58 @@ export default function OTAndPermissionsPage() {
       }
     }
 
+
+
+    // Photo Evidence Check
+    if (!evidenceFile) {
+      const errorMsg = 'Photo evidence is required for Permission requests';
+      setPermissionValidationError(errorMsg);
+      showToast(errorMsg, 'error');
+      return;
+    }
+
     setLoading(true);
     setPermissionValidationError('');
     try {
-      const res = await api.createPermission(permissionFormData);
+      // Upload Evidence
+
+      let uploadedEvidence = undefined;
+      let geoData = undefined;
+
+      // Lazy Upload
+      if (evidenceFile) {
+        try {
+          const uploadRes = await api.uploadEvidence(evidenceFile) as any;
+          if (!uploadRes.success) throw new Error('Upload failed');
+
+          uploadedEvidence = {
+            url: uploadRes.url,
+            key: uploadRes.key,
+            filename: uploadRes.filename,
+            exifLocation: (evidenceFile as any).exifLocation
+          };
+
+          if (locationData) {
+            geoData = {
+              latitude: locationData.latitude,
+              longitude: locationData.longitude,
+              address: locationData.address || '',
+              capturedAt: locationData.capturedAt.toISOString()
+            };
+          }
+        } catch (uploadError) {
+          console.error('Evidence upload failed:', uploadError);
+          setPermissionValidationError('Failed to upload photo evidence');
+          showToast('Failed to upload photo evidence', 'error');
+          setLoading(false);
+          return;
+        }
+      }
+      const res = await api.createPermission({
+        ...permissionFormData,
+        photoEvidence: uploadedEvidence,
+        geoLocation: geoData
+      });
       if (res.success) {
         showToast('Permission request created successfully', 'success');
         setShowPermissionDialog(false);
@@ -454,7 +609,7 @@ export default function OTAndPermissionsPage() {
       if (res.success) {
         showToast(`${type === 'ot' ? 'OT' : 'Permission'} request approved successfully`, 'success');
         loadData();
-        
+
         // If permission, show QR code
         if (type === 'permission' && res.data?.qrCode) {
           setSelectedQR(res.data);
@@ -507,6 +662,8 @@ export default function OTAndPermissionsPage() {
     setSelectedShift(null);
     setAttendanceData(null);
     setValidationError('');
+    setEvidenceFile(null);
+    setLocationData(null);
   };
 
   const formatTime = (time: string | null) => {
@@ -530,6 +687,8 @@ export default function OTAndPermissionsPage() {
       comments: '',
     });
     setPermissionValidationError('');
+    setEvidenceFile(null);
+    setLocationData(null);
   };
 
   const getStatusColor = (status: string) => {
@@ -571,17 +730,16 @@ export default function OTAndPermissionsPage() {
             <h1 className="text-3xl font-bold text-slate-900 dark:text-white">OT & Permissions Management</h1>
             <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">Manage overtime requests and permission applications</p>
           </div>
-          
+
           <div className="flex items-center gap-3">
             {/* Tabs - Same size as attendance page toggle */}
             <div className="flex rounded-xl border border-slate-200 bg-white p-1 dark:border-slate-700 dark:bg-slate-900">
               <button
                 onClick={() => setActiveTab('ot')}
-                className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${
-                  activeTab === 'ot'
-                    ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg shadow-blue-500/30'
-                    : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
-                }`}
+                className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${activeTab === 'ot'
+                  ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg shadow-blue-500/30'
+                  : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
+                  }`}
               >
                 <svg className="mr-2 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -590,11 +748,10 @@ export default function OTAndPermissionsPage() {
               </button>
               <button
                 onClick={() => setActiveTab('permissions')}
-                className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${
-                  activeTab === 'permissions'
-                    ? 'bg-gradient-to-r from-green-500 to-green-500 text-white shadow-lg shadow-green-500/30'
-                    : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
-                }`}
+                className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${activeTab === 'permissions'
+                  ? 'bg-gradient-to-r from-green-500 to-green-500 text-white shadow-lg shadow-green-500/30'
+                  : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
+                  }`}
               >
                 <svg className="mr-2 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
@@ -602,7 +759,7 @@ export default function OTAndPermissionsPage() {
                 Permissions ({permissions.length})
               </button>
             </div>
-            
+
             <button
               onClick={() => {
                 setActiveTab('ot');
@@ -768,6 +925,24 @@ export default function OTAndPermissionsPage() {
                                 </button>
                               </>
                             )}
+                            {/* View Evidence Button */}
+                            {((ot as any).photoEvidence || (ot as any).geoLocation) && (
+                              <button
+                                onClick={() => {
+                                  setSelectedEvidenceItem({
+                                    type: 'ot',
+                                    photoEvidence: (ot as any).photoEvidence,
+                                    geoLocation: (ot as any).geoLocation,
+                                    employeeName: ot.employeeId?.employee_name || ot.employeeNumber,
+                                    date: ot.date
+                                  });
+                                  setShowEvidenceDialog(true);
+                                }}
+                                className="rounded-lg bg-sky-500 px-3 py-1 text-xs font-medium text-white hover:bg-sky-600"
+                              >
+                                Evidence
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -837,6 +1012,24 @@ export default function OTAndPermissionsPage() {
                                 </button>
                               </>
                             )}
+                            {/* View Evidence Button */}
+                            {((perm as any).photoEvidence || (perm as any).geoLocation) && (
+                              <button
+                                onClick={() => {
+                                  setSelectedEvidenceItem({
+                                    type: 'permission',
+                                    photoEvidence: (perm as any).photoEvidence,
+                                    geoLocation: (perm as any).geoLocation,
+                                    employeeName: perm.employeeId?.employee_name || perm.employeeNumber,
+                                    date: perm.date
+                                  });
+                                  setShowEvidenceDialog(true);
+                                }}
+                                className="rounded-lg bg-sky-500 px-3 py-1 text-xs font-medium text-white hover:bg-sky-600"
+                              >
+                                Evidence
+                              </button>
+                            )}
                             {perm.status === 'approved' && perm.qrCode && (
                               <button
                                 onClick={() => {
@@ -898,7 +1091,7 @@ export default function OTAndPermissionsPage() {
                     onChange={(e) => {
                       const value = e.target.value;
                       if (!value) return;
-                      
+
                       // Find employee by _id or emp_no
                       const employee = employees.find(emp => (emp._id === value) || (emp.emp_no === value));
                       if (employee && employee.emp_no) {
@@ -1010,7 +1203,7 @@ export default function OTAndPermissionsPage() {
                         onChange={(e) => {
                           const selectedShiftId = e.target.value;
                           setOTFormData(prev => ({ ...prev, manuallySelectedShiftId: selectedShiftId }));
-                          
+
                           // Find and set the selected shift
                           const selectedShiftData = confusedShift.possibleShifts.find(s => s.shiftId === selectedShiftId);
                           if (selectedShiftData) {
@@ -1027,7 +1220,7 @@ export default function OTAndPermissionsPage() {
                                 duration: 0,
                               });
                             }
-                            
+
                             // Auto-suggest OT out time based on selected shift
                             if (selectedShiftData.endTime) {
                               const [endHour, endMin] = selectedShiftData.endTime.split(':').map(Number);
@@ -1069,9 +1262,9 @@ export default function OTAndPermissionsPage() {
                       <div>
                         <span className="font-medium text-blue-800 dark:text-blue-300">Shift Time:</span>{' '}
                         <span className="text-blue-900 dark:text-blue-200">
-                          {selectedShift ? `${selectedShift.startTime} - ${selectedShift.endTime}` : 
-                           confusedShift?.possibleShifts.find(s => s.shiftId === otFormData.manuallySelectedShiftId) ? 
-                           `${confusedShift.possibleShifts.find(s => s.shiftId === otFormData.manuallySelectedShiftId)?.startTime} - ${confusedShift.possibleShifts.find(s => s.shiftId === otFormData.manuallySelectedShiftId)?.endTime}` : '-'}
+                          {selectedShift ? `${selectedShift.startTime} - ${selectedShift.endTime}` :
+                            confusedShift?.possibleShifts.find(s => s.shiftId === otFormData.manuallySelectedShiftId) ?
+                              `${confusedShift.possibleShifts.find(s => s.shiftId === otFormData.manuallySelectedShiftId)?.startTime} - ${confusedShift.possibleShifts.find(s => s.shiftId === otFormData.manuallySelectedShiftId)?.endTime}` : '-'}
                         </span>
                       </div>
                       <div className="mt-3 rounded bg-white/50 p-2 dark:bg-slate-800/50">
@@ -1102,6 +1295,22 @@ export default function OTAndPermissionsPage() {
                     onChange={(e) => setOTFormData(prev => ({ ...prev, comments: e.target.value }))}
                     rows={3}
                     className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  />
+                </div>
+
+                {/* Photo Evidence */}
+                <div className="pt-2 border-t border-slate-100 dark:border-slate-700/50">
+                  <LocationPhotoCapture
+                    label="Live Photo Evidence"
+                    onCapture={(loc, photo) => {
+                      setEvidenceFile(photo.file);
+                      setLocationData(loc);
+                      (photo.file as any).exifLocation = photo.exifLocation;
+                    }}
+                    onClear={() => {
+                      setEvidenceFile(null);
+                      setLocationData(null);
+                    }}
                   />
                 </div>
 
@@ -1174,7 +1383,7 @@ export default function OTAndPermissionsPage() {
                         setPermissionValidationError('');
                         return;
                       }
-                      
+
                       // Find employee by _id or emp_no
                       const employee = employees.find(emp => (emp._id === value) || (emp.emp_no === value));
                       if (employee && employee.emp_no) {
@@ -1185,7 +1394,7 @@ export default function OTAndPermissionsPage() {
                           employeeNumber: employee.emp_no,
                         }));
                         setPermissionValidationError('');
-                        
+
                         // Check attendance when employee is selected
                         if (permissionFormData.date) {
                           try {
@@ -1312,6 +1521,22 @@ export default function OTAndPermissionsPage() {
                   />
                 </div>
 
+                {/* Photo Evidence */}
+                <div className="pt-2 border-t border-slate-100 dark:border-slate-700/50">
+                  <LocationPhotoCapture
+                    label="Live Photo Evidence"
+                    onCapture={(loc, photo) => {
+                      setEvidenceFile(photo.file);
+                      setLocationData(loc);
+                      (photo.file as any).exifLocation = photo.exifLocation;
+                    }}
+                    onClear={() => {
+                      setEvidenceFile(null);
+                      setLocationData(null);
+                    }}
+                  />
+                </div>
+
                 <div className="flex justify-end gap-3">
                   <button
                     onClick={() => {
@@ -1330,6 +1555,109 @@ export default function OTAndPermissionsPage() {
                     {loading ? 'Creating...' : 'Create Permission'}
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Evidence Viewer Dialog */}
+        {showEvidenceDialog && selectedEvidenceItem && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">Evidence & Location</h2>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    {selectedEvidenceItem.employeeName} • {formatDate(selectedEvidenceItem.date)}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowEvidenceDialog(false)}
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                {/* Photo Section */}
+                {selectedEvidenceItem.photoEvidence ? (
+                  <div className="relative group rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 shadow-sm">
+                    <img
+                      src={selectedEvidenceItem.photoEvidence.url}
+                      alt="Evidence"
+                      className="w-full h-64 object-cover"
+                    />
+                    <a
+                      href={selectedEvidenceItem.photoEvidence.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/30 transition-all"
+                    >
+                      <div className="bg-white/90 dark:bg-slate-900/90 text-slate-800 dark:text-white px-4 py-2 rounded-full font-medium text-sm shadow-lg opacity-0 group-hover:opacity-100 transform scale-95 group-hover:scale-100 transition-all flex items-center gap-2">
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                        Open Full Size
+                      </div>
+                    </a>
+                  </div>
+                ) : (
+                  <div className="h-32 flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/50">
+                    <svg className="h-8 w-8 text-slate-300 dark:text-slate-600 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                    <span className="text-sm text-slate-400">No photo evidence</span>
+                  </div>
+                )}
+
+                {/* Location Section */}
+                {selectedEvidenceItem.geoLocation ? (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="p-1.5 rounded-lg bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400">
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                      </div>
+                      <h3 className="font-semibold text-slate-800 dark:text-slate-200 text-sm">Location Details</h3>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="block text-xs uppercase tracking-wider text-slate-500 font-bold mb-1">Coordinates</span>
+                        <span className="font-mono text-slate-700 dark:text-slate-300">
+                          {selectedEvidenceItem.geoLocation.latitude.toFixed(6)}, {selectedEvidenceItem.geoLocation.longitude.toFixed(6)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="block text-xs uppercase tracking-wider text-slate-500 font-bold mb-1">Captured At</span>
+                        <span className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
+                          <svg className="h-3.5 w-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                          {selectedEvidenceItem.geoLocation.capturedAt ? new Date(selectedEvidenceItem.geoLocation.capturedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Unknown'}
+                        </span>
+                      </div>
+                      {selectedEvidenceItem.geoLocation.address && (
+                        <div className="col-span-2 mt-1 py-2 border-t border-slate-200 dark:border-slate-700">
+                          <span className="block text-xs uppercase tracking-wider text-slate-500 font-bold mb-1">Detailed Address</span>
+                          <span className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
+                            {selectedEvidenceItem.geoLocation.address}
+                          </span>
+                        </div>
+                      )}
+                      <div className="col-span-2 mt-1">
+                        <a
+                          href={`https://www.google.com/maps?q=${selectedEvidenceItem.geoLocation.latitude},${selectedEvidenceItem.geoLocation.longitude}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline transition-colors"
+                        >
+                          Open in Google Maps
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50 text-center text-sm text-slate-400">
+                    No location data available
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1393,7 +1721,7 @@ export default function OTAndPermissionsPage() {
           </div>
         )}
       </div>
-    </div>
+    </div >
   );
 }
 

@@ -20,7 +20,17 @@ const { validateOTRequest } = require('../../shared/services/conflictValidationS
  */
 const createOTRequest = async (data, userId) => {
   try {
-    const { employeeId, employeeNumber, date, otOutTime, shiftId, manuallySelectedShiftId, comments } = data;
+    const {
+      employeeId,
+      employeeNumber,
+      date,
+      otOutTime,
+      shiftId,
+      manuallySelectedShiftId,
+      comments,
+      photoEvidence,
+      geoLocation
+    } = data;
 
     // Validate required fields
     if (!employeeId || !employeeNumber || !date || !otOutTime) {
@@ -178,13 +188,15 @@ const createOTRequest = async (data, userId) => {
       confusedShiftId: confusedShift ? confusedShift._id : null,
       manuallySelectedShiftId: manuallySelectedShiftId || null,
       comments: comments || null,
+      photoEvidence: photoEvidence || null,
+      geoLocation: geoLocation || null,
     });
 
     // If ConfusedShift exists and shift was selected, resolve it
     if (confusedShift && manuallySelectedShiftId) {
       // Update attendance record with shift
       attendanceRecord.shiftId = finalShiftId;
-      
+
       // Re-run shift detection to update late-in/early-out
       const detectionResult = await detectAndAssignShift(
         employeeNumber,

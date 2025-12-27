@@ -18,7 +18,17 @@ const { getResolvedPermissionSettings } = require('../../departments/controllers
  */
 const createPermissionRequest = async (data, userId) => {
   try {
-    const { employeeId, employeeNumber, date, permissionStartTime, permissionEndTime, purpose, comments } = data;
+    const {
+      employeeId,
+      employeeNumber,
+      date,
+      permissionStartTime,
+      permissionEndTime,
+      purpose,
+      comments,
+      photoEvidence,
+      geoLocation
+    } = data;
 
     // Validate required fields
     if (!employeeId || !employeeNumber || !date || !permissionStartTime || !permissionEndTime || !purpose) {
@@ -66,7 +76,7 @@ const createPermissionRequest = async (data, userId) => {
           status: { $in: ['pending', 'approved'] },
           isActive: true,
         });
-        
+
         if (existingPermissionsToday >= resolvedPermissionSettings.perDayLimit) {
           limitWarnings.push(`⚠️ Daily permission limit (${resolvedPermissionSettings.perDayLimit}) has been reached for this date. This is the ${existingPermissionsToday + 1} permission today.`);
         }
@@ -79,14 +89,14 @@ const createPermissionRequest = async (data, userId) => {
         const year = dateObj.getFullYear();
         const monthStart = new Date(year, month - 1, 1);
         const monthEnd = new Date(year, month, 0, 23, 59, 59);
-        
+
         const existingPermissionsThisMonth = await Permission.countDocuments({
           employeeId: employeeId,
           date: { $gte: monthStart, $lte: monthEnd },
           status: { $in: ['pending', 'approved'] },
           isActive: true,
         });
-        
+
         if (existingPermissionsThisMonth >= resolvedPermissionSettings.monthlyLimit) {
           limitWarnings.push(`⚠️ Monthly permission limit (${resolvedPermissionSettings.monthlyLimit}) has been reached for this month. This is the ${existingPermissionsThisMonth + 1} permission this month.`);
         }
@@ -138,6 +148,8 @@ const createPermissionRequest = async (data, userId) => {
       status: 'pending',
       requestedBy: userId,
       comments: comments || null,
+      photoEvidence: photoEvidence || null,
+      geoLocation: geoLocation || null,
     });
 
     return {
@@ -183,7 +195,7 @@ const approvePermissionRequest = async (permissionId, userId, baseUrl = '') => {
 
     // Generate QR code
     permissionRequest.generateQRCode();
-    
+
     // Set outpass URL (frontend route)
     permissionRequest.outpassUrl = `${baseUrl}/outpass/${permissionRequest.qrCode}`;
 
@@ -206,7 +218,7 @@ const approvePermissionRequest = async (permissionId, userId, baseUrl = '') => {
           isActive: true,
           _id: { $ne: permissionRequest._id }, // Exclude current permission
         });
-        
+
         if (existingPermissionsToday >= resolvedPermissionSettings.perDayLimit) {
           approvalWarnings.push(`⚠️ Daily permission limit (${resolvedPermissionSettings.perDayLimit}) has been reached for this date. This is the ${existingPermissionsToday + 1} approved permission today.`);
         }
@@ -219,7 +231,7 @@ const approvePermissionRequest = async (permissionId, userId, baseUrl = '') => {
         const year = dateObj.getFullYear();
         const monthStart = new Date(year, month - 1, 1);
         const monthEnd = new Date(year, month, 0, 23, 59, 59);
-        
+
         const existingPermissionsThisMonth = await Permission.countDocuments({
           employeeId: permissionRequest.employeeId,
           date: { $gte: monthStart, $lte: monthEnd },
@@ -227,7 +239,7 @@ const approvePermissionRequest = async (permissionId, userId, baseUrl = '') => {
           isActive: true,
           _id: { $ne: permissionRequest._id }, // Exclude current permission
         });
-        
+
         if (existingPermissionsThisMonth >= resolvedPermissionSettings.monthlyLimit) {
           approvalWarnings.push(`⚠️ Monthly permission limit (${resolvedPermissionSettings.monthlyLimit}) has been reached for this month. This is the ${existingPermissionsThisMonth + 1} approved permission this month.`);
         }
@@ -254,12 +266,12 @@ const approvePermissionRequest = async (permissionId, userId, baseUrl = '') => {
       // Add permission hours and count
       attendanceRecord.permissionHours = (attendanceRecord.permissionHours || 0) + permissionRequest.permissionHours;
       attendanceRecord.permissionCount = (attendanceRecord.permissionCount || 0) + 1;
-      
+
       // Store deduction amount in attendance record if applicable
       if (deductionAmount > 0) {
         attendanceRecord.permissionDeduction = (attendanceRecord.permissionDeduction || 0) + deductionAmount;
       }
-      
+
       await attendanceRecord.save();
 
       // Recalculate monthly summary

@@ -29,7 +29,6 @@ const {
   employeeExistsMSSQL,
 } = require('../config/sqlHelper');
 const { generatePassword, sendCredentials } = require('../../shared/services/passwordNotificationService');
-const { uploadToS3 } = require('../../shared/routes/uploadRoutes'); // Wait, direct service import is better
 const s3UploadService = require('../../shared/services/s3UploadService');
 
 // ============== Helper Functions ==============

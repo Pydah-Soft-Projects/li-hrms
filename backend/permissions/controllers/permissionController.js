@@ -13,7 +13,17 @@ const { createPermissionRequest, approvePermissionRequest, rejectPermissionReque
  */
 exports.createPermission = async (req, res) => {
   try {
-    const { employeeId, employeeNumber, date, permissionStartTime, permissionEndTime, purpose, comments } = req.body;
+    const {
+      employeeId,
+      employeeNumber,
+      date,
+      permissionStartTime,
+      permissionEndTime,
+      purpose,
+      comments,
+      photoEvidence,
+      geoLocation
+    } = req.body;
 
     if (!employeeId || !employeeNumber || !date || !permissionStartTime || !permissionEndTime || !purpose) {
       return res.status(400).json({
@@ -23,7 +33,17 @@ exports.createPermission = async (req, res) => {
     }
 
     const result = await createPermissionRequest(
-      { employeeId, employeeNumber, date, permissionStartTime, permissionEndTime, purpose, comments },
+      {
+        employeeId,
+        employeeNumber,
+        date,
+        permissionStartTime,
+        permissionEndTime,
+        purpose,
+        comments,
+        photoEvidence,
+        geoLocation
+      },
       req.user?.userId || req.user?._id
     );
 
@@ -160,7 +180,7 @@ exports.approvePermission = async (req, res) => {
       message: result.message,
       data: permission,
     };
-    
+
     if (result.warnings && result.warnings.length > 0) {
       response.warnings = result.warnings;
     }
