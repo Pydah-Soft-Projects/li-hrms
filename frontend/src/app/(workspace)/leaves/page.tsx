@@ -374,6 +374,9 @@ export default function LeavesPage() {
   const [splitErrors, setSplitErrors] = useState<string[]>([]);
   const [splitSaving, setSplitSaving] = useState(false);
 
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [editFormData, setEditFormData] = useState<any>({});
+
   // Leave types and OD types
   const [leaveTypes, setLeaveTypes] = useState<any[]>([]);
   const [odTypes, setODTypes] = useState<any[]>([]);
@@ -432,8 +435,22 @@ export default function LeavesPage() {
   useEffect(() => {
     loadData();
     loadTypes();
-    loadEmployees();
+    const user = auth.getUser();
+    if (user) {
+      setCurrentUser(user);
+      if (user.role === 'super_admin') {
+        setIsSuperAdmin(true);
+      }
+    }
   }, []);
+
+  // Load employees and permissions when user or workspace changes
+  useEffect(() => {
+    if (currentUser && activeWorkspace) {
+      loadEmployees();
+      checkWorkspacePermission();
+    }
+  }, [currentUser, activeWorkspace?._id]);
 
   const loadData = async () => {
     setLoading(true);
@@ -1069,17 +1086,6 @@ export default function LeavesPage() {
     checkApprovedRecords();
   }, [selectedEmployee, formData.fromDate, formData.toDate]);
 
-  const [showEditDialog, setShowEditDialog] = useState(false);
-  const [editFormData, setEditFormData] = useState<any>({});
-
-  useEffect(() => {
-    const user = auth.getUser();
-    setCurrentUser(user);
-    if (user?.role === 'super_admin') {
-      setIsSuperAdmin(true);
-    }
-  }, []);
-
   const buildInitialSplits = (leave: LeaveApplication) => {
     if (!leave) return [];
     if (leave.splits && leave.splits.length > 0) {
@@ -1314,13 +1320,15 @@ export default function LeavesPage() {
               Manage leave applications and on-duty requests
             </p>
           </div>
-          <button
-            onClick={() => openApplyDialog('leave')}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-green-500 to-green-600 text-white text-xs font-semibold shadow-sm hover:shadow-md transition-all"
-          >
-            <PlusIcon />
-            Apply Leave / OD
-          </button>
+          {(canApplyForSelf || canApplyForOthers) && (
+            <button
+              onClick={() => openApplyDialog('leave')}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-green-500 to-green-600 text-white text-xs font-semibold shadow-sm hover:shadow-md transition-all"
+            >
+              <PlusIcon />
+              Apply Leave / OD
+            </button>
+          )}
         </div>
       </div>
 
