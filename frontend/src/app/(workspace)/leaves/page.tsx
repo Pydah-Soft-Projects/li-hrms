@@ -5,6 +5,7 @@ import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { api } from '@/lib/api';
 import { auth } from '@/lib/auth';
 import WorkflowTimeline from '@/components/WorkflowTimeline';
+import Spinner from '@/components/Spinner';
 
 
 // Icons
@@ -1139,7 +1140,7 @@ export default function LeavesPage() {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          <Spinner className="w-10 h-10" />
           <p className="text-gray-500">Loading...</p>
         </div>
       </div>

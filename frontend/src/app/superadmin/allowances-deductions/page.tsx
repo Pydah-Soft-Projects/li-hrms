@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import Swal from 'sweetalert2';
+import Spinner from '@/components/Spinner';
 
 interface Department {
   _id: string;
@@ -599,7 +600,7 @@ export default function AllowancesDeductionsPage() {
         {/* Items Grid (Card-based) */}
         {loading ? (
           <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white/95 py-12 shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
-            <div className="h-8 w-8 animate-spin rounded-full border-2 border-green-500 border-t-transparent"></div>
+            <Spinner />
             <p className="mt-3 text-xs font-medium text-slate-600 dark:text-slate-400">Loading items...</p>
           </div>
         ) : filteredItems.length === 0 ? (

@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { auth } from '@/lib/auth';
 import BulkUpload from '@/components/BulkUpload';
 import DynamicEmployeeForm from '@/components/DynamicEmployeeForm';
+import Spinner from '@/components/Spinner';
 import {
   EMPLOYEE_TEMPLATE_HEADERS,
   EMPLOYEE_TEMPLATE_SAMPLE,
@@ -1855,7 +1856,7 @@ export default function EmployeesPage() {
             {/* Employee List */}
             {loading ? (
               <div className="flex flex-col items-center justify-center rounded-3xl border border-slate-200 bg-white/95 py-16 shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
-                <div className="h-10 w-10 animate-spin rounded-full border-2 border-green-500 border-t-transparent"></div>
+                <Spinner className="w-10 h-10" />
                 <p className="mt-4 text-sm font-medium text-slate-600 dark:text-slate-400">Loading employees...</p>
               </div>
             ) : filteredEmployees.length === 0 ? (

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { QRCodeSVG } from 'qrcode.react';
+import Spinner from '@/components/Spinner';
 
 // Toast Notification Component
 interface Toast {
@@ -146,30 +147,30 @@ export default function OTAndPermissionsPage() {
   const [permissions, setPermissions] = useState<PermissionRequest[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [shifts, setShifts] = useState<Shift[]>([]);
-  
+
   // Filters
   const [otFilters, setOTFilters] = useState({ status: '', employeeNumber: '', startDate: '', endDate: '' });
   const [permissionFilters, setPermissionFilters] = useState({ status: '', employeeNumber: '', startDate: '', endDate: '' });
-  
+
   // Dialogs
   const [showOTDialog, setShowOTDialog] = useState(false);
   const [showPermissionDialog, setShowPermissionDialog] = useState(false);
   const [showQRDialog, setShowQRDialog] = useState(false);
   const [selectedQR, setSelectedQR] = useState<PermissionRequest | null>(null);
-  
+
   // Toast notifications
   const [toasts, setToasts] = useState<Toast[]>([]);
-  
+
   // Toast helper functions
   const showToast = (message: string, type: 'success' | 'error' | 'info' | 'warning' = 'info') => {
     const id = Date.now().toString() + Math.random().toString(36).substr(2, 9);
     setToasts(prev => [...prev, { id, message, type }]);
   };
-  
+
   const removeToast = (id: string) => {
     setToasts(prev => prev.filter(toast => toast.id !== id));
   };
-  
+
   // Form data
   const [otFormData, setOTFormData] = useState({
     employeeId: '',
@@ -180,7 +181,7 @@ export default function OTAndPermissionsPage() {
     manuallySelectedShiftId: '',
     comments: '',
   });
-  
+
   const [permissionFormData, setPermissionFormData] = useState({
     employeeId: '',
     employeeNumber: '',
@@ -190,7 +191,7 @@ export default function OTAndPermissionsPage() {
     purpose: '',
     comments: '',
   });
-  
+
   const [confusedShift, setConfusedShift] = useState<ConfusedShift | null>(null);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
@@ -225,13 +226,13 @@ export default function OTAndPermissionsPage() {
           setPermissions(permRes.data || []);
         }
       }
-      
+
       // Load employees and shifts
       const [employeesRes, shiftsRes] = await Promise.all([
         api.getEmployees({ is_active: true }),
         api.getShifts(),
       ]);
-      
+
       if (employeesRes.success) {
         const employeesList = employeesRes.data || [];
         console.log('Loaded employees:', employeesList.length, employeesList);
@@ -240,7 +241,7 @@ export default function OTAndPermissionsPage() {
         console.error('Failed to load employees:', employeesRes);
         showToast('Failed to load employees', 'error');
       }
-      
+
       if (shiftsRes.success) {
         setShifts(shiftsRes.data || []);
       }
@@ -259,7 +260,7 @@ export default function OTAndPermissionsPage() {
     setAttendanceData(null);
     setConfusedShift(null);
     setSelectedShift(null);
-    
+
     if (!employeeId || !employeeNumber || !date) {
       return;
     }
@@ -268,11 +269,11 @@ export default function OTAndPermissionsPage() {
     try {
       // Fetch attendance detail for the selected employee and date
       const attendanceRes = await api.getAttendanceDetail(employeeNumber, date);
-      
+
       if (attendanceRes.success && attendanceRes.data) {
         const attendance = attendanceRes.data;
         setAttendanceData(attendance);
-        
+
         // Check for ConfusedShift
         const confusedRes = await api.checkConfusedShift(employeeNumber, date);
         if (confusedRes.success && (confusedRes as any).hasConfusedShift) {
@@ -286,7 +287,7 @@ export default function OTAndPermissionsPage() {
             if (shift) {
               setSelectedShift(shift);
               setOTFormData(prev => ({ ...prev, employeeId, employeeNumber, date, shiftId: shift._id }));
-              
+
               // Auto-suggest OT out time (shift end time + 1 hour as default)
               const [endHour, endMin] = shift.endTime.split(':').map(Number);
               const suggestedOutTime = new Date(date);
@@ -305,7 +306,7 @@ export default function OTAndPermissionsPage() {
                   duration: shiftData.duration || 0,
                 });
                 setOTFormData(prev => ({ ...prev, employeeId, employeeNumber, date, shiftId: shiftData._id }));
-                
+
                 // Auto-suggest OT out time
                 if (shiftData.endTime) {
                   const [endHour, endMin] = shiftData.endTime.split(':').map(Number);
@@ -386,14 +387,14 @@ export default function OTAndPermissionsPage() {
   };
 
   const handleCreatePermission = async () => {
-    if (!permissionFormData.employeeId || !permissionFormData.employeeNumber || !permissionFormData.date || 
-        !permissionFormData.permissionStartTime || !permissionFormData.permissionEndTime || !permissionFormData.purpose) {
+    if (!permissionFormData.employeeId || !permissionFormData.employeeNumber || !permissionFormData.date ||
+      !permissionFormData.permissionStartTime || !permissionFormData.permissionEndTime || !permissionFormData.purpose) {
       const errorMsg = 'Please fill all required fields';
       setPermissionValidationError(errorMsg);
       showToast(errorMsg, 'error');
       return;
     }
-    
+
     // Additional check: verify attendance exists
     if (permissionFormData.employeeNumber && permissionFormData.date) {
       try {
@@ -454,7 +455,7 @@ export default function OTAndPermissionsPage() {
       if (res.success) {
         showToast(`${type === 'ot' ? 'OT' : 'Permission'} request approved successfully`, 'success');
         loadData();
-        
+
         // If permission, show QR code
         if (type === 'permission' && res.data?.qrCode) {
           setSelectedQR(res.data);
@@ -571,17 +572,16 @@ export default function OTAndPermissionsPage() {
             <h1 className="text-3xl font-bold text-slate-900 dark:text-white">OT & Permissions Management</h1>
             <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">Manage overtime requests and permission applications</p>
           </div>
-          
+
           <div className="flex items-center gap-3">
             {/* Tabs - Same size as attendance page toggle */}
             <div className="flex rounded-xl border border-slate-200 bg-white p-1 dark:border-slate-700 dark:bg-slate-900">
               <button
                 onClick={() => setActiveTab('ot')}
-                className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${
-                  activeTab === 'ot'
-                    ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg shadow-blue-500/30'
-                    : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
-                }`}
+                className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${activeTab === 'ot'
+                  ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg shadow-blue-500/30'
+                  : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
+                  }`}
               >
                 <svg className="mr-2 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -590,11 +590,10 @@ export default function OTAndPermissionsPage() {
               </button>
               <button
                 onClick={() => setActiveTab('permissions')}
-                className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${
-                  activeTab === 'permissions'
-                    ? 'bg-gradient-to-r from-green-500 to-green-500 text-white shadow-lg shadow-green-500/30'
-                    : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
-                }`}
+                className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${activeTab === 'permissions'
+                  ? 'bg-gradient-to-r from-green-500 to-green-500 text-white shadow-lg shadow-green-500/30'
+                  : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
+                  }`}
               >
                 <svg className="mr-2 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
@@ -602,7 +601,7 @@ export default function OTAndPermissionsPage() {
                 Permissions ({permissions.length})
               </button>
             </div>
-            
+
             <button
               onClick={() => {
                 setActiveTab('ot');
@@ -704,7 +703,7 @@ export default function OTAndPermissionsPage() {
         {/* Content */}
         {loading ? (
           <div className="flex items-center justify-center py-12">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
+            <Spinner />
           </div>
         ) : activeTab === 'ot' ? (
           <div className="rounded-xl border border-slate-200 bg-white/80 backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/80">
@@ -898,7 +897,7 @@ export default function OTAndPermissionsPage() {
                     onChange={(e) => {
                       const value = e.target.value;
                       if (!value) return;
-                      
+
                       // Find employee by _id or emp_no
                       const employee = employees.find(emp => (emp._id === value) || (emp.emp_no === value));
                       if (employee && employee.emp_no) {
@@ -1010,7 +1009,7 @@ export default function OTAndPermissionsPage() {
                         onChange={(e) => {
                           const selectedShiftId = e.target.value;
                           setOTFormData(prev => ({ ...prev, manuallySelectedShiftId: selectedShiftId }));
-                          
+
                           // Find and set the selected shift
                           const selectedShiftData = confusedShift.possibleShifts.find(s => s.shiftId === selectedShiftId);
                           if (selectedShiftData) {
@@ -1027,7 +1026,7 @@ export default function OTAndPermissionsPage() {
                                 duration: 0,
                               });
                             }
-                            
+
                             // Auto-suggest OT out time based on selected shift
                             if (selectedShiftData.endTime) {
                               const [endHour, endMin] = selectedShiftData.endTime.split(':').map(Number);
@@ -1069,9 +1068,9 @@ export default function OTAndPermissionsPage() {
                       <div>
                         <span className="font-medium text-blue-800 dark:text-blue-300">Shift Time:</span>{' '}
                         <span className="text-blue-900 dark:text-blue-200">
-                          {selectedShift ? `${selectedShift.startTime} - ${selectedShift.endTime}` : 
-                           confusedShift?.possibleShifts.find(s => s.shiftId === otFormData.manuallySelectedShiftId) ? 
-                           `${confusedShift.possibleShifts.find(s => s.shiftId === otFormData.manuallySelectedShiftId)?.startTime} - ${confusedShift.possibleShifts.find(s => s.shiftId === otFormData.manuallySelectedShiftId)?.endTime}` : '-'}
+                          {selectedShift ? `${selectedShift.startTime} - ${selectedShift.endTime}` :
+                            confusedShift?.possibleShifts.find(s => s.shiftId === otFormData.manuallySelectedShiftId) ?
+                              `${confusedShift.possibleShifts.find(s => s.shiftId === otFormData.manuallySelectedShiftId)?.startTime} - ${confusedShift.possibleShifts.find(s => s.shiftId === otFormData.manuallySelectedShiftId)?.endTime}` : '-'}
                         </span>
                       </div>
                       <div className="mt-3 rounded bg-white/50 p-2 dark:bg-slate-800/50">
@@ -1174,7 +1173,7 @@ export default function OTAndPermissionsPage() {
                         setPermissionValidationError('');
                         return;
                       }
-                      
+
                       // Find employee by _id or emp_no
                       const employee = employees.find(emp => (emp._id === value) || (emp.emp_no === value));
                       if (employee && employee.emp_no) {
@@ -1185,7 +1184,7 @@ export default function OTAndPermissionsPage() {
                           employeeNumber: employee.emp_no,
                         }));
                         setPermissionValidationError('');
-                        
+
                         // Check attendance when employee is selected
                         if (permissionFormData.date) {
                           try {

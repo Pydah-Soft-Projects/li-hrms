@@ -8,6 +8,7 @@ import 'react-toastify/dist/ReactToastify.css';
 import { api } from '@/lib/api';
 import ArrearsDetailDialog from '@/components/Arrears/ArrearsDetailDialog';
 import ArrearsForm from '@/components/Arrears/ArrearsForm';
+import Spinner from '@/components/Spinner';
 
 // Icons
 const PlusIcon = () => (
@@ -97,7 +98,7 @@ export default function ArrearsPage() {
 
   const loadData = () => {
     setLoading(true);
-    
+
     Promise.resolve(api.getArrears({ limit: 100 }))
       .then((response: any) => {
         if (response.success) {
@@ -221,11 +222,10 @@ export default function ArrearsPage() {
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`flex-1 px-4 py-4 font-medium transition-all duration-200 ${
-                activeTab === tab
+              className={`flex-1 px-4 py-4 font-medium transition-all duration-200 ${activeTab === tab
                   ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400 bg-blue-50 dark:bg-blue-900/20'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-              }`}
+                }`}
             >
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
             </button>
@@ -236,7 +236,7 @@ export default function ArrearsPage() {
         <div className="overflow-x-auto">
           {loading ? (
             <div className="flex items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+              <Spinner />
             </div>
           ) : filteredArrears.length === 0 ? (
             <div className="text-center py-12">
@@ -259,11 +259,10 @@ export default function ArrearsPage() {
                 {filteredArrears.map((ar, idx) => (
                   <tr
                     key={ar._id}
-                    className={`border-b border-slate-200 dark:border-slate-700 transition-colors duration-200 ${
-                      idx % 2 === 0
+                    className={`border-b border-slate-200 dark:border-slate-700 transition-colors duration-200 ${idx % 2 === 0
                         ? 'bg-white dark:bg-slate-800'
                         : 'bg-slate-50 dark:bg-slate-900/50'
-                    } hover:bg-blue-50 dark:hover:bg-blue-900/20`}
+                      } hover:bg-blue-50 dark:hover:bg-blue-900/20`}
                   >
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
@@ -281,11 +280,10 @@ export default function ArrearsPage() {
                       ₹{ar.totalAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${
-                        ar.remainingAmount > 0
+                      <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${ar.remainingAmount > 0
                           ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
                           : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                      }`}>
+                        }`}>
                         ₹{ar.remainingAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                       </span>
                     </td>

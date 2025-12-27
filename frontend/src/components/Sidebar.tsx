@@ -5,9 +5,25 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useSidebar } from '@/contexts/SidebarContext';
 import { auth } from '@/lib/auth';
 import { useState, useEffect } from 'react';
+import { isModuleEnabled } from '@/config/moduleCategories';
+import { User } from '@/lib/auth';
+import { useTheme } from 'next-themes';
 
 // Icon Components
 type IconProps = React.SVGProps<SVGSVGElement>;
+
+const SunIcon = ({ className, ...props }: IconProps) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+    <circle cx="12" cy="12" r="5" />
+    <path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+  </svg>
+);
+
+const MoonIcon = ({ className, ...props }: IconProps) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+  </svg>
+);
 
 const DashboardIcon = ({ className, ...props }: IconProps) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
@@ -74,24 +90,6 @@ const EmployeesIcon = ({ className, ...props }: IconProps) => (
   </svg>
 );
 
-const WorkspacesIcon = ({ className, ...props }: IconProps) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
-    <path d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6z" />
-    <path d="M14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6z" />
-    <path d="M4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2z" />
-    <path d="M14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-  </svg>
-);
-
-const CalendarIcon = ({ className, ...props }: IconProps) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
-    <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-    <line x1="16" y1="2" x2="16" y2="6" />
-    <line x1="8" y1="2" x2="8" y2="6" />
-    <line x1="3" y1="10" x2="21" y2="10" />
-  </svg>
-);
-
 const AttendanceIcon = ({ className, ...props }: IconProps) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
     <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
@@ -116,12 +114,6 @@ const LeaveIcon = ({ className, ...props }: IconProps) => (
     <path d="M3 12c1 0 3-1 3-3s-2-3-3-3-3 1-3 3 2 3 3 3" />
     <path d="M12 3c0 1-1 3-3 3s-3-2-3-3 1-3 3-3 3 2 3 3" />
     <path d="M12 21c0-1 1-3 3-3s3 2 3 3-1 3-3 3-3-2-3-3" />
-  </svg>
-);
-
-const LoanIcon = ({ className, ...props }: IconProps) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
-    <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
   </svg>
 );
 
@@ -184,13 +176,6 @@ const PayslipsIcon = ({ className, ...props }: IconProps) => (
   </svg>
 );
 
-const ProfileIcon = ({ className, ...props }: IconProps) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
-    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-    <circle cx="12" cy="7" r="4" />
-  </svg>
-);
-
 const FormSettingsIcon = ({ className, ...props }: IconProps) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -210,19 +195,12 @@ const LogoutIcon = ({ className, ...props }: IconProps) => (
   </svg>
 );
 
-
-
 const PaymentsIcon = ({ className, ...props }: IconProps) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
     <rect x="2" y="5" width="20" height="14" rx="2" />
     <line x1="2" y1="10" x2="22" y2="10" />
   </svg>
 );
-
-
-
-import { isModuleEnabled } from '@/config/moduleCategories';
-import { User } from '@/lib/auth';
 
 export type NavItem = {
   href: string;
@@ -259,8 +237,12 @@ export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
     const userData = auth.getUser();
     if (userData) {
       setUser(userData);
@@ -289,126 +271,164 @@ export default function Sidebar() {
   };
 
   return (
-    <aside
-      className={`fixed top-0 left-0 h-screen bg-white border-r border-slate-200/60 transition-all duration-300 ease-in-out z-40 ${isCollapsed ? 'w-[72px]' : 'w-[260px]'
-        }`}
-    >
-      {/* Collapse/Expand Button */}
+    <>
+      {/* Mobile Toggle Button */}
       <button
-        onClick={toggleSidebar}
-        className="absolute -right-3 top-1/2 -translate-y-1/2 h-6 w-6 rounded-full bg-white border border-slate-200 shadow-sm flex items-center justify-center hover:bg-slate-50 hover:border-slate-300 transition-all z-50"
-        aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        onClick={() => setIsMobileOpen(true)}
+        type="button"
+        className="fixed top-3 left-3 z-50 inline-flex items-center p-2 text-sm text-slate-500 rounded-lg sm:hidden hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-gray-200 dark:text-slate-400 dark:hover:bg-slate-700 dark:focus:ring-gray-600"
       >
-        {isCollapsed ? (
-          <ExpandIcon className="h-3 w-3 text-slate-600" />
-        ) : (
-          <CollapseIcon className="h-3 w-3 text-slate-600" />
-        )}
+        <span className="sr-only">Open sidebar</span>
+        <svg className="w-6 h-6" aria-hidden="true" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+          <path clipRule="evenodd" fillRule="evenodd" d="M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zm0 10.5a.75.75 0 01.75-.75h7.5a.75.75 0 010 1.5h-7.5a.75.75 0 01-.75-.75zM2 10a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 10z"></path>
+        </svg>
       </button>
 
-      {/* Sidebar Content */}
-      <div className="flex flex-col h-full">
-        {/* Logo/Header */}
-        <div className={`px-4 py-4 border-b border-slate-200/60 ${isCollapsed ? 'flex justify-center' : ''}`}>
-          {!isCollapsed && (
-            <div className="flex items-center gap-2.5">
-              <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center shadow-sm">
-                <span className="text-sm font-bold text-white">H</span>
-              </div>
-              <h2 className="text-base font-semibold text-slate-900">HRMS</h2>
-            </div>
+      {/* Overlay for mobile */}
+      {isMobileOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-gray-900/50 sm:hidden backdrop-blur-sm transition-opacity"
+          onClick={() => setIsMobileOpen(false)}
+        />
+      )}
+
+      {/* Sidebar Aside */}
+      <aside
+        className={`fixed top-0 left-0 h-screen bg-white dark:bg-black border-r border-slate-200/60 dark:border-slate-800 transition-transform duration-300 ease-in-out z-40 
+          ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'} 
+          sm:translate-x-0 
+          ${isCollapsed ? 'sm:w-[72px]' : 'sm:w-[260px]'} 
+          w-64`}
+        aria-label="Sidebar"
+      >
+        {/* Collapse/Expand Button (Desktop only) */}
+        <button
+          onClick={toggleSidebar}
+          className="absolute -right-3 top-8 h-6 w-6 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm hidden sm:flex items-center justify-center hover:bg-slate-50 dark:hover:bg-slate-700 transition-all z-50 text-slate-500 dark:text-slate-400"
+          aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {isCollapsed ? (
+            <ExpandIcon className="h-3 w-3" />
+          ) : (
+            <CollapseIcon className="h-3 w-3" />
           )}
-          {isCollapsed && (
-            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center shadow-sm">
-              <span className="text-sm font-bold text-white">H</span>
-            </div>
-          )}
-        </div>
+        </button>
 
-        {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-4">
-          {Array.from(new Set(filteredNavItems.map(i => i.category))).map(category => {
-            const categoryItems = filteredNavItems.filter(i => i.category === category);
-            const showHeader = categoryItems.length > 1;
-
-            return (
-              <div key={category} className="space-y-1">
-                {!isCollapsed && showHeader && (
-                  <h3 className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                    {category}
-                  </h3>
-                )}
-                <ul className="space-y-0.5">
-                  {categoryItems.map((item) => {
-                    const Icon = item.icon;
-                    const isActive = pathname === item.href;
-
-                    return (
-                      <li key={item.href}>
-                        <Link
-                          href={item.href}
-                          className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 ${isActive
-                            ? 'bg-green-50 text-green-700 shadow-sm'
-                            : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                            } ${isCollapsed ? 'justify-center' : ''}`}
-                          title={isCollapsed ? item.label : undefined}
-                        >
-                          <Icon className={`h-[18px] w-[18px] flex-shrink-0 ${isActive ? 'text-green-600' : 'text-slate-500'}`} />
-                          {!isCollapsed && (
-                            <span className={`text-sm font-medium ${isActive ? 'text-green-700' : 'text-slate-700'}`}>{item.label}</span>
-                          )}
-                        </Link>
-                      </li>
-                    );
-                  })}
-                </ul>
+        {/* Sidebar Content */}
+        <div className="flex flex-col h-full overflow-hidden ">
+          {/* Logo/Header */}
+          <div className={`px-4 py-5 flex items-center border-b border-slate-200/60 dark:border-slate-800 ${isCollapsed ? 'flex-col gap-4 justify-center' : 'justify-between'}`}>
+            <div className={`flex items-center gap-3  ${isCollapsed ? 'justify-center w-full' : ''}`}>
+              <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center shadow-lg shadow-green-500/20 flex-shrink-0">
+                <span className="text-sm font-bold text-white">P</span>
               </div>
-            );
-          })}
-        </nav>
+              {(!isCollapsed || isMobileOpen) && (
+                <h2 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">HRMS</h2>
+              )}
+            </div>
 
-        {/* User Section & Logout */}
-        <div className="border-t border-slate-200/60 p-3 space-y-1.5">
-          {/* Profile Link */}
-          <Link
-            href="/superadmin/profile"
-            className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 ${pathname === '/superadmin/profile'
-              ? 'bg-green-50 text-green-700'
-              : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-              } ${isCollapsed ? 'justify-center' : ''}`}
-            title={isCollapsed ? 'Profile' : undefined}
-          >
-            {!isCollapsed && user ? (
-              <>
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center text-white font-semibold text-xs flex-shrink-0 shadow-sm">
-                  {user.name?.[0]?.toUpperCase() || 'U'}
+            {/* Theme Toggle & Mobile Close */}
+            <div className="flex items-center gap-2">
+
+
+              {/* Close button for mobile inside sidebar */}
+              <button
+                onClick={() => setIsMobileOpen(false)}
+                className="sm:hidden text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          {/* Navigation */}
+          <nav className="flex-1 overflow-y-auto px-3 py-2 space-y-6 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 dark:[&::-webkit-scrollbar-thumb]:bg-slate-600">
+            {Array.from(new Set(filteredNavItems.map(i => i.category))).map(category => {
+              const categoryItems = filteredNavItems.filter(i => i.category === category);
+
+              if (categoryItems.length === 0) return null;
+
+              return (
+                <div key={category}>
+                  {/* Category Header */}
+                  {(!isCollapsed || isMobileOpen) && (
+                    <h3 className="px-3 mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                      {category}
+                    </h3>
+                  )}
+
+                  <ul className="space-y-1">
+                    {categoryItems.map((item) => {
+                      const Icon = item.icon;
+                      const isActive = pathname === item.href;
+
+                      return (
+                        <li key={item.href}>
+                          <Link
+                            href={item.href}
+                            onClick={() => setIsMobileOpen(false)}
+                            className={`flex items-center px-3 py-2 rounded-xl transition-all duration-200 group relative
+                              ${isActive
+                                ? 'bg-green-50 dark:bg-green-900/10 text-green-600 dark:text-green-400 font-medium'
+                                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-200'
+                              }
+                              ${(isCollapsed && !isMobileOpen) ? 'justify-center' : ''}
+                            `}
+                            title={(isCollapsed && !isMobileOpen) ? item.label : undefined}
+                          >
+                            <Icon className={`w-5 h-5 flex-shrink-0 transition-colors duration-200 ${isActive ? 'text-green-600 dark:text-green-400' : 'text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300'}`} />
+
+                            {(!isCollapsed || isMobileOpen) && (
+                              <span className="ms-3 whitespace-nowrap">{item.label}</span>
+                            )}
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-slate-900 truncate">{user.name}</p>
-                  <p className="text-xs text-slate-500 truncate">{getRoleLabel(user.role)}</p>
-                </div>
-              </>
-            ) : (
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center text-white font-semibold text-xs shadow-sm">
+              );
+            })}
+          </nav>
+
+          {/* User Section & Logout */}
+          <div className="border-t border-slate-200/60 dark:border-slate-800 p-4 space-y-2 bg-slate-50/50 dark:bg-black/20">
+            {/* Profile Link */}
+            <Link
+              href="/superadmin/profile"
+              onClick={() => setIsMobileOpen(false)}
+              className={`flex items-center gap-3 p-2 rounded-xl transition-all duration-200 hover:bg-white dark:hover:bg-slate-800 shadow-sm border border-transparent hover:border-slate-200 dark:hover:border-slate-700
+                ${(isCollapsed && !isMobileOpen) ? 'justify-center' : ''}`}
+              title={(isCollapsed && !isMobileOpen) ? 'Profile' : undefined}
+            >
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center text-white font-semibold text-xs flex-shrink-0 shadow-sm">
                 {user?.name?.[0]?.toUpperCase() || 'U'}
               </div>
-            )}
-          </Link>
+              {(!isCollapsed || isMobileOpen) && (
+                <div className="shrink-0">
+                  <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{user?.name || 'User'}</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{user ? getRoleLabel(user.role) : '...'}</p>
+                </div>
+              )}
+            </Link>
 
-          {/* Logout Button */}
-          <button
-            onClick={handleLogout}
-            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 text-slate-600 hover:bg-red-50 hover:text-red-600 ${isCollapsed ? 'justify-center' : ''
-              }`}
-            title={isCollapsed ? 'Logout' : undefined}
-          >
-            <LogoutIcon className="h-[18px] w-[18px] flex-shrink-0" />
-            {!isCollapsed && (
-              <span className="text-sm font-medium">Logout</span>
-            )}
-          </button>
+            {/* Logout Button */}
+            <button
+              onClick={handleLogout}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-200 text-slate-500 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-900/10 hover:text-red-600 dark:hover:text-red-400
+                ${(isCollapsed && !isMobileOpen) ? 'justify-center' : ''}`}
+              title={(isCollapsed && !isMobileOpen) ? 'Logout' : undefined}
+            >
+              <LogoutIcon className="h-5 w-5 flex-shrink-0" />
+              {(!isCollapsed || isMobileOpen) && (
+                <span className="text-sm font-medium">Logout</span>
+              )}
+            </button>
+          </div>
         </div>
-      </div>
-    </aside>
+      </aside>
+    </>
   );
 }

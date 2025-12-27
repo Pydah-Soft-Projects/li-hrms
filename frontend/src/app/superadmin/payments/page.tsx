@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 import { api, PayrollBatch, PayrollBatchStatus, Department } from "@/lib/api";
 import { auth } from "@/lib/auth";
+import Spinner from "@/components/Spinner";
 
 const statusColors: Record<PayrollBatchStatus, string> = {
     pending: "bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-700",
@@ -246,7 +247,7 @@ export default function PaymentsPage() {
                                 <tr>
                                     <td colSpan={7} className="px-6 py-12 text-center text-slate-500 dark:text-slate-400">
                                         <div className="flex justify-center items-center">
-                                            <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mr-3"></div>
+                                            <Spinner />
                                             Loading batches...
                                         </div>
                                     </td>

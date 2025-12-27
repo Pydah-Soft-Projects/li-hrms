@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
+import Spinner from '@/components/Spinner';
 
 interface Department {
   _id: string;
@@ -469,7 +470,7 @@ export default function DepartmentalSettingsPage() {
 
       {loadingSettings ? (
         <div className="flex items-center justify-center py-12">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-green-500 border-t-transparent"></div>
+          <Spinner />
           <span className="ml-3 text-sm text-slate-600 dark:text-slate-400">Loading settings...</span>
         </div>
       ) : selectedDepartmentId ? (
@@ -1130,16 +1131,16 @@ export default function DepartmentalSettingsPage() {
                     onClick={() => {
                       const updated = [...(formData.attendance?.earlyOut?.deductionRanges || [])];
                       updated.splice(idx, 1);
-                    setFormData((prev) => ({
-                      ...prev,
-                      attendance: {
-                        ...prev.attendance,
-                        earlyOut: {
-                          ...(prev.attendance?.earlyOut || { isEnabled: false, allowedDurationMinutes: 0, minimumDuration: 0, deductionRanges: [] }),
-                          deductionRanges: updated,
+                      setFormData((prev) => ({
+                        ...prev,
+                        attendance: {
+                          ...prev.attendance,
+                          earlyOut: {
+                            ...(prev.attendance?.earlyOut || { isEnabled: false, allowedDurationMinutes: 0, minimumDuration: 0, deductionRanges: [] }),
+                            deductionRanges: updated,
+                          },
                         },
-                      },
-                    }));
+                      }));
                     }}
                     className="ml-auto rounded border border-red-200 px-2 py-1 text-[11px] font-semibold text-red-600 hover:border-red-400 dark:border-red-700 dark:text-red-300"
                   >
@@ -1221,26 +1222,26 @@ export default function DepartmentalSettingsPage() {
                         toast.error('Custom amount must be > 0');
                         return;
                       }
-                    const updated = [
-                      ...(formData.attendance?.earlyOut?.deductionRanges || []),
-                      {
+                      const updated = [
+                        ...(formData.attendance?.earlyOut?.deductionRanges || []),
+                        {
                           minMinutes: normalizedMin,
                           maxMinutes: normalizedMax,
-                        deductionType: newRange.deductionType,
-                        deductionAmount: newRange.deductionType === 'custom_amount' ? Number(newRange.deductionAmount) : undefined,
-                        description: newRange.description || '',
-                      },
-                    ];
-                    setFormData((prev) => ({
-                      ...prev,
-                      attendance: {
-                        ...prev.attendance,
-                        earlyOut: {
-                          ...(prev.attendance?.earlyOut || { isEnabled: false, allowedDurationMinutes: 0, minimumDuration: 0, deductionRanges: [] }),
-                          deductionRanges: updated,
+                          deductionType: newRange.deductionType,
+                          deductionAmount: newRange.deductionType === 'custom_amount' ? Number(newRange.deductionAmount) : undefined,
+                          description: newRange.description || '',
                         },
-                      },
-                    }));
+                      ];
+                      setFormData((prev) => ({
+                        ...prev,
+                        attendance: {
+                          ...prev.attendance,
+                          earlyOut: {
+                            ...(prev.attendance?.earlyOut || { isEnabled: false, allowedDurationMinutes: 0, minimumDuration: 0, deductionRanges: [] }),
+                            deductionRanges: updated,
+                          },
+                        },
+                      }));
                       setNewRange({ minMinutes: '', maxMinutes: '', deductionType: 'quarter_day', deductionAmount: '', description: '' });
                     }}
                     className="rounded bg-green-500 px-3 py-1 text-xs font-semibold text-white hover:bg-green-600"

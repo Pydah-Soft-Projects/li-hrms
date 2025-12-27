@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
+import Spinner from '@/components/Spinner';
 
 // Icon Components
 const TextIcon = ({ className }: { className?: string }) => (
@@ -430,10 +431,7 @@ export default function EmployeeFormSettingsPage() {
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <div className="text-center">
-          <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
-          <p className="mt-4 text-slate-600 dark:text-slate-400">Loading form settings...</p>
-        </div>
+        <Spinner />
       </div>
     );
   }
