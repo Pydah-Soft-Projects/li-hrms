@@ -286,33 +286,33 @@ export default function Sidebar() {
         className={`fixed top-0 left-0 h-screen bg-white dark:bg-black border-r border-slate-200/60 dark:border-slate-800 transition-transform duration-300 ease-in-out z-40 
           ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'} 
           sm:translate-x-0 
-          ${isCollapsed ? 'sm:w-[72px]' : 'sm:w-[260px]'} 
-          w-64`}
+          ${isCollapsed ? 'sm:w-[60px]' : 'sm:w-[220px]'} 
+          w-60`}
         aria-label="Sidebar"
       >
         {/* Collapse/Expand Button (Desktop only) */}
         <button
           onClick={toggleSidebar}
-          className="absolute -right-3 top-8 h-6 w-6 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm hidden sm:flex items-center justify-center hover:bg-slate-50 dark:hover:bg-slate-700 transition-all z-50 text-slate-500 dark:text-slate-400"
+          className="absolute -right-3 top-6 h-5 w-5 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm hidden sm:flex items-center justify-center hover:bg-slate-50 dark:hover:bg-slate-700 transition-all z-50 text-slate-500 dark:text-slate-400"
           aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           {isCollapsed ? (
-            <ExpandIcon className="h-3 w-3" />
+            <ExpandIcon className="h-2.5 w-2.5" />
           ) : (
-            <CollapseIcon className="h-3 w-3" />
+            <CollapseIcon className="h-2.5 w-2.5" />
           )}
         </button>
 
         {/* Sidebar Content */}
         <div className="flex flex-col h-full overflow-hidden ">
           {/* Logo/Header */}
-          <div className={`px-4 py-5 flex items-center border-b border-slate-200/60 dark:border-slate-800 ${isCollapsed ? 'flex-col gap-4 justify-center' : 'justify-between'}`}>
-            <div className={`flex items-center gap-3  ${isCollapsed ? 'justify-center w-full' : ''}`}>
-              <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center shadow-lg shadow-green-500/20 flex-shrink-0">
-                <span className="text-sm font-bold text-white">P</span>
+          <div className={`px-3 py-3 flex items-center border-b border-slate-200/60 dark:border-slate-800 ${isCollapsed ? 'flex-col gap-3 justify-center' : 'justify-between'}`}>
+            <div className={`flex items-center gap-2.5  ${isCollapsed ? 'justify-center w-full' : ''}`}>
+              <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center shadow-lg shadow-green-500/20 flex-shrink-0">
+                <span className="text-xs font-bold text-white">P</span>
               </div>
               {(!isCollapsed || isMobileOpen) && (
-                <h2 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">HRMS</h2>
+                <h2 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">HRMS</h2>
               )}
             </div>
 
@@ -325,7 +325,7 @@ export default function Sidebar() {
                 onClick={() => setIsMobileOpen(false)}
                 className="sm:hidden text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
@@ -333,7 +333,7 @@ export default function Sidebar() {
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 overflow-y-auto px-3 py-2 space-y-6 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 dark:[&::-webkit-scrollbar-thumb]:bg-slate-600">
+          <nav className="flex-1 overflow-y-auto px-2 py-2 space-y-4 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 dark:[&::-webkit-scrollbar-thumb]:bg-slate-600">
             {Array.from(new Set(filteredNavItems.map(i => i.category))).map(category => {
               const categoryItems = filteredNavItems.filter(i => i.category === category);
 
@@ -343,12 +343,12 @@ export default function Sidebar() {
                 <div key={category}>
                   {/* Category Header */}
                   {(!isCollapsed || isMobileOpen) && (
-                    <h3 className="px-3 mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                    <h3 className="px-2 mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                       {category}
                     </h3>
                   )}
 
-                  <ul className="space-y-1">
+                  <ul className="space-y-0.5">
                     {categoryItems.map((item) => {
                       const Icon = item.icon;
                       const isActive = pathname === item.href;
@@ -358,7 +358,7 @@ export default function Sidebar() {
                           <Link
                             href={item.href}
                             onClick={() => setIsMobileOpen(false)}
-                            className={`flex items-center px-3 py-2 rounded-xl transition-all duration-200 group relative
+                            className={`flex items-center px-2 py-1.5 rounded-lg transition-all duration-200 group relative
                               ${isActive
                                 ? 'bg-green-50 dark:bg-green-900/10 text-green-600 dark:text-green-400 font-medium'
                                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-200'
@@ -367,10 +367,10 @@ export default function Sidebar() {
                             `}
                             title={(isCollapsed && !isMobileOpen) ? item.label : undefined}
                           >
-                            <Icon className={`w-5 h-5 flex-shrink-0 transition-colors duration-200 ${isActive ? 'text-green-600 dark:text-green-400' : 'text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300'}`} />
+                            <Icon className={`w-4 h-4 flex-shrink-0 transition-colors duration-200 ${isActive ? 'text-green-600 dark:text-green-400' : 'text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300'}`} />
 
                             {(!isCollapsed || isMobileOpen) && (
-                              <span className="ms-3 whitespace-nowrap">{item.label}</span>
+                              <span className="ms-2.5 text-sm whitespace-nowrap">{item.label}</span>
                             )}
                           </Link>
                         </li>
@@ -383,22 +383,22 @@ export default function Sidebar() {
           </nav>
 
           {/* User Section & Logout */}
-          <div className="border-t border-slate-200/60 dark:border-slate-800 p-4 space-y-2 bg-slate-50/50 dark:bg-black/20">
+          <div className="border-t border-slate-200/60 dark:border-slate-800 p-3 space-y-1.5 bg-slate-50/50 dark:bg-black/20">
             {/* Profile Link */}
             <Link
               href="/superadmin/profile"
               onClick={() => setIsMobileOpen(false)}
-              className={`flex items-center gap-3 p-2 rounded-xl transition-all duration-200 hover:bg-white dark:hover:bg-slate-800 shadow-sm border border-transparent hover:border-slate-200 dark:hover:border-slate-700
+              className={`flex items-center gap-2.5 p-1.5 rounded-lg transition-all duration-200 hover:bg-white dark:hover:bg-slate-800 shadow-sm border border-transparent hover:border-slate-200 dark:hover:border-slate-700
                 ${(isCollapsed && !isMobileOpen) ? 'justify-center' : ''}`}
               title={(isCollapsed && !isMobileOpen) ? 'Profile' : undefined}
             >
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center text-white font-semibold text-xs flex-shrink-0 shadow-sm">
+              <div className="w-7 h-7 rounded-md bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center text-white font-semibold text-[10px] flex-shrink-0 shadow-sm">
                 {user?.name?.[0]?.toUpperCase() || 'U'}
               </div>
               {(!isCollapsed || isMobileOpen) && (
-                <div className="shrink-0">
+                <div className="shrink-0 max-w-[140px]">
                   <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{user?.name || 'User'}</p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{user ? getRoleLabel(user.role) : '...'}</p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{user ? getRoleLabel(user.role) : '...'}</p>
                 </div>
               )}
             </Link>
@@ -406,11 +406,11 @@ export default function Sidebar() {
             {/* Logout Button */}
             <button
               onClick={handleLogout}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-200 text-slate-500 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-900/10 hover:text-red-600 dark:hover:text-red-400
+              className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg transition-all duration-200 text-slate-500 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-900/10 hover:text-red-600 dark:hover:text-red-400
                 ${(isCollapsed && !isMobileOpen) ? 'justify-center' : ''}`}
               title={(isCollapsed && !isMobileOpen) ? 'Logout' : undefined}
             >
-              <LogoutIcon className="h-5 w-5 flex-shrink-0" />
+              <LogoutIcon className="h-4 w-4 flex-shrink-0" />
               {(!isCollapsed || isMobileOpen) && (
                 <span className="text-sm font-medium">Logout</span>
               )}
