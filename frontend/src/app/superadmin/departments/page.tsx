@@ -12,6 +12,7 @@ import {
   validateDesignationRow,
   ParsedRow,
 } from '@/lib/bulkUpload';
+import Spinner from '@/components/Spinner';
 
 interface Designation {
   _id: string;
@@ -387,704 +388,701 @@ export default function DepartmentsPage() {
           </div>
         </div>
 
-      {/* Create Department Dialog */}
-      {showCreateDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
-            onClick={() => {
-              setShowCreateDialog(false);
-              resetDepartmentForm();
-            }}
-          />
-          <div className="relative z-50 w-full max-w-md rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl shadow-blue-500/10 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/95">
-            <div className="mb-6 flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-                  Create New Department
-                </h2>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                  Add a new department to your organization
-                </p>
-              </div>
-              <button
-                onClick={() => {
-                  setShowCreateDialog(false);
-                  resetDepartmentForm();
-                }}
-                className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 focus:outline-none focus:ring-2 focus:ring-red-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-              >
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateDepartment} className="space-y-5">
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Department Name *
-                </label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                  placeholder="e.g., Information Technology"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Department Code
-                </label>
-                <input
-                  type="text"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value.toUpperCase())}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                  placeholder="e.g., IT, HR, FIN"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Description
-                </label>
-                <textarea
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  rows={3}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                  placeholder="Department description..."
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Head of Department (HOD)
-                </label>
-                <select
-                  value={hodId}
-                  onChange={(e) => setHodId(e.target.value)}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                >
-                  <option value="">Select HOD (Optional)</option>
-                  {hodUsers.map((user) => (
-                    <option key={user._id} value={user._id}>
-                      {user.name} ({user.email})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {error && (
-                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
-                  {error}
+        {/* Create Department Dialog */}
+        {showCreateDialog && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div
+              className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
+              onClick={() => {
+                setShowCreateDialog(false);
+                resetDepartmentForm();
+              }}
+            />
+            <div className="relative z-50 w-full max-w-md rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl shadow-blue-500/10 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/95">
+              <div className="mb-6 flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
+                    Create New Department
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    Add a new department to your organization
+                  </p>
                 </div>
-              )}
-
-              <div className="flex gap-3 pt-2">
                 <button
-                  type="submit"
-                  className="flex-1 rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 hover:shadow-xl hover:shadow-blue-500/40 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
-                >
-                  Create Department
-                </button>
-                <button
-                  type="button"
                   onClick={() => {
                     setShowCreateDialog(false);
                     resetDepartmentForm();
                   }}
-                  className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                  className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 focus:outline-none focus:ring-2 focus:ring-red-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
                 >
-                  Cancel
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
                 </button>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
 
-      {/* Edit Department Dialog */}
-      {showEditDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
-            onClick={() => {
-              setShowEditDialog(null);
-              resetDepartmentForm();
-            }}
-          />
-          <div className="relative z-50 w-full max-w-md rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl shadow-blue-500/10 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/95">
-            <div className="mb-6 flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Edit Department</h2>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                  Update department information
-                </p>
-              </div>
-              <button
-                onClick={() => {
-                  setShowEditDialog(null);
-                  resetDepartmentForm();
-                }}
-                className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 focus:outline-none focus:ring-2 focus:ring-red-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-              >
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <form onSubmit={handleUpdateDepartment} className="space-y-5">
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Department Name *
-                </label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                  placeholder="e.g., Information Technology"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Department Code
-                </label>
-                <input
-                  type="text"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value.toUpperCase())}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                  placeholder="e.g., IT, HR, FIN"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Description
-                </label>
-                <textarea
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  rows={3}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                  placeholder="Department description..."
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Head of Department (HOD)
-                </label>
-                <select
-                  value={hodId}
-                  onChange={(e) => setHodId(e.target.value)}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                >
-                  <option value="">Select HOD (Optional)</option>
-                  {hodUsers.map((user) => (
-                    <option key={user._id} value={user._id}>
-                      {user.name} ({user.email})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {error && (
-                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
-                  {error}
+              <form onSubmit={handleCreateDepartment} className="space-y-5">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Department Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    required
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    placeholder="e.g., Information Technology"
+                  />
                 </div>
-              )}
 
-              <div className="flex gap-3 pt-2">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Department Code
+                  </label>
+                  <input
+                    type="text"
+                    value={code}
+                    onChange={(e) => setCode(e.target.value.toUpperCase())}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    placeholder="e.g., IT, HR, FIN"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Description
+                  </label>
+                  <textarea
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    rows={3}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    placeholder="Department description..."
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Head of Department (HOD)
+                  </label>
+                  <select
+                    value={hodId}
+                    onChange={(e) => setHodId(e.target.value)}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  >
+                    <option value="">Select HOD (Optional)</option>
+                    {hodUsers.map((user) => (
+                      <option key={user._id} value={user._id}>
+                        {user.name} ({user.email})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {error && (
+                  <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+                    {error}
+                  </div>
+                )}
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="submit"
+                    className="flex-1 rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 hover:shadow-xl hover:shadow-blue-500/40 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
+                  >
+                    Create Department
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowCreateDialog(false);
+                      resetDepartmentForm();
+                    }}
+                    className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Edit Department Dialog */}
+        {showEditDialog && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div
+              className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
+              onClick={() => {
+                setShowEditDialog(null);
+                resetDepartmentForm();
+              }}
+            />
+            <div className="relative z-50 w-full max-w-md rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl shadow-blue-500/10 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/95">
+              <div className="mb-6 flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Edit Department</h2>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    Update department information
+                  </p>
+                </div>
                 <button
-                  type="submit"
-                  className="flex-1 rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 hover:shadow-xl hover:shadow-blue-500/40 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
-                >
-                  Update Department
-                </button>
-                <button
-                  type="button"
                   onClick={() => {
                     setShowEditDialog(null);
                     resetDepartmentForm();
                   }}
-                  className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                  className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 focus:outline-none focus:ring-2 focus:ring-red-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
                 >
-                  Cancel
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
                 </button>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
 
-      {/* Assign Shifts Dialog */}
-      {showShiftDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
-            onClick={() => {
-              setShowShiftDialog(null);
-              setSelectedShiftIds([]);
-            }}
-          />
-          <div className="relative z-50 w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl shadow-blue-500/10 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/95">
-            <div className="mb-6 flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-                  Assign Shifts to {showShiftDialog.name}
-                </h2>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                  Select shifts to assign to this department
-                </p>
-              </div>
-              <button
-                onClick={() => {
-                  setShowShiftDialog(null);
-                  setSelectedShiftIds([]);
-                }}
-                className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 focus:outline-none focus:ring-2 focus:ring-red-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-              >
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
+              <form onSubmit={handleUpdateDepartment} className="space-y-5">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Department Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    required
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    placeholder="e.g., Information Technology"
+                  />
+                </div>
 
-            <form onSubmit={handleAssignShifts} className="space-y-5">
-              <div>
-                <label className="mb-3 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Select Shifts (Multiple selection allowed)
-                </label>
-                {loadingShifts ? (
-                  <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-slate-50/50 py-12 dark:border-slate-700 dark:bg-slate-900/50">
-                    <div className="inline-block h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
-                    <p className="mt-4 text-sm text-slate-600 dark:text-slate-400">Loading shifts...</p>
-                  </div>
-                ) : shifts.length === 0 ? (
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-8 text-center dark:border-slate-700 dark:bg-slate-900/50">
-                    <p className="text-sm font-medium text-slate-600 dark:text-slate-400">No shifts available in the database.</p>
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">Please create shifts first from the Shifts page.</p>
-                  </div>
-                ) : (
-                  <div className="max-h-64 space-y-2 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50/30 p-4 dark:border-slate-700 dark:bg-slate-900/30">
-                    {shifts.map((shift) => (
-                      <label
-                        key={shift._id}
-                        className={`group flex cursor-pointer items-center gap-3 rounded-2xl border p-4 transition-all ${
-                          selectedShiftIds.includes(shift._id)
-                            ? 'border-blue-300 bg-blue-50/50 shadow-md shadow-blue-100 dark:border-blue-700 dark:bg-blue-900/20'
-                            : 'border-slate-200 bg-white hover:border-blue-200 hover:bg-blue-50/30 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600'
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedShiftIds.includes(shift._id)}
-                          onChange={() => toggleShiftSelection(shift._id)}
-                          className="h-5 w-5 rounded-lg border-slate-300 text-blue-600 transition-all focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 dark:border-slate-600"
-                        />
-                        <div className="flex-1">
-                          <div className="font-semibold text-slate-900 dark:text-slate-100">{shift.name}</div>
-                          <div className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-                            {shift.startTime} - {shift.endTime} ({shift.duration} hours)
-                          </div>
-                          {!shift.isActive && (
-                            <span className="mt-1 inline-block rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
-                              Inactive
-                            </span>
-                          )}
-                        </div>
-                      </label>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Department Code
+                  </label>
+                  <input
+                    type="text"
+                    value={code}
+                    onChange={(e) => setCode(e.target.value.toUpperCase())}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    placeholder="e.g., IT, HR, FIN"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Description
+                  </label>
+                  <textarea
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    rows={3}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    placeholder="Department description..."
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Head of Department (HOD)
+                  </label>
+                  <select
+                    value={hodId}
+                    onChange={(e) => setHodId(e.target.value)}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  >
+                    <option value="">Select HOD (Optional)</option>
+                    {hodUsers.map((user) => (
+                      <option key={user._id} value={user._id}>
+                        {user.name} ({user.email})
+                      </option>
                     ))}
+                  </select>
+                </div>
+
+                {error && (
+                  <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+                    {error}
                   </div>
                 )}
-              </div>
 
-              {selectedShiftIds.length > 0 && (
-                <div className="rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 p-4 dark:border-blue-800 dark:from-blue-900/20 dark:to-indigo-900/20">
-                  <p className="text-sm font-medium text-blue-800 dark:text-blue-300">
-                    <span className="mr-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-500 text-xs font-bold text-white">
-                      {selectedShiftIds.length}
-                    </span>
-                    shift(s) selected
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="submit"
+                    className="flex-1 rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 hover:shadow-xl hover:shadow-blue-500/40 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
+                  >
+                    Update Department
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowEditDialog(null);
+                      resetDepartmentForm();
+                    }}
+                    className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Assign Shifts Dialog */}
+        {showShiftDialog && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div
+              className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
+              onClick={() => {
+                setShowShiftDialog(null);
+                setSelectedShiftIds([]);
+              }}
+            />
+            <div className="relative z-50 w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl shadow-blue-500/10 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/95">
+              <div className="mb-6 flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
+                    Assign Shifts to {showShiftDialog.name}
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    Select shifts to assign to this department
                   </p>
                 </div>
-              )}
-
-              {error && (
-                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
-                  {error}
-                </div>
-              )}
-
-              <div className="flex gap-3 pt-2">
                 <button
-                  type="submit"
-                  className="flex-1 rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 hover:shadow-xl hover:shadow-blue-500/40 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
-                >
-                  Assign Shifts
-                </button>
-                <button
-                  type="button"
                   onClick={() => {
                     setShowShiftDialog(null);
                     setSelectedShiftIds([]);
                   }}
-                  className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                  className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 focus:outline-none focus:ring-2 focus:ring-red-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
                 >
-                  Cancel
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
                 </button>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
 
-      {/* Designation Dialog */}
-      {showDesignationDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
-            onClick={() => {
-              setShowDesignationDialog(null);
-              resetDesignationForm();
-            }}
-          />
-          <div className="relative z-50 w-full max-w-6xl max-h-[90vh] overflow-hidden rounded-3xl border border-slate-200 bg-white/95 shadow-2xl shadow-blue-500/10 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/95">
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50/50 px-6 py-4 dark:border-slate-700 dark:from-slate-900 dark:to-blue-900/20">
-              <div>
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Manage Designations</h2>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                  Create and manage designations for this department
-                </p>
-              </div>
-              <button
-                onClick={() => {
-                  setShowDesignationDialog(null);
-                  resetDesignationForm();
-                }}
-                className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 focus:outline-none focus:ring-2 focus:ring-red-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-              >
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+              <form onSubmit={handleAssignShifts} className="space-y-5">
+                <div>
+                  <label className="mb-3 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Select Shifts (Multiple selection allowed)
+                  </label>
+                  {loadingShifts ? (
+                    <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-slate-50/50 py-12 dark:border-slate-700 dark:bg-slate-900/50">
+                      <Spinner />
+                      <p className="mt-4 text-sm text-slate-600 dark:text-slate-400">Loading shifts...</p>
+                    </div>
+                  ) : shifts.length === 0 ? (
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-8 text-center dark:border-slate-700 dark:bg-slate-900/50">
+                      <p className="text-sm font-medium text-slate-600 dark:text-slate-400">No shifts available in the database.</p>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">Please create shifts first from the Shifts page.</p>
+                    </div>
+                  ) : (
+                    <div className="max-h-64 space-y-2 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50/30 p-4 dark:border-slate-700 dark:bg-slate-900/30">
+                      {shifts.map((shift) => (
+                        <label
+                          key={shift._id}
+                          className={`group flex cursor-pointer items-center gap-3 rounded-2xl border p-4 transition-all ${selectedShiftIds.includes(shift._id)
+                              ? 'border-blue-300 bg-blue-50/50 shadow-md shadow-blue-100 dark:border-blue-700 dark:bg-blue-900/20'
+                              : 'border-slate-200 bg-white hover:border-blue-200 hover:bg-blue-50/30 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600'
+                            }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedShiftIds.includes(shift._id)}
+                            onChange={() => toggleShiftSelection(shift._id)}
+                            className="h-5 w-5 rounded-lg border-slate-300 text-blue-600 transition-all focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 dark:border-slate-600"
+                          />
+                          <div className="flex-1">
+                            <div className="font-semibold text-slate-900 dark:text-slate-100">{shift.name}</div>
+                            <div className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                              {shift.startTime} - {shift.endTime} ({shift.duration} hours)
+                            </div>
+                            {!shift.isActive && (
+                              <span className="mt-1 inline-block rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+                                Inactive
+                              </span>
+                            )}
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {selectedShiftIds.length > 0 && (
+                  <div className="rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 p-4 dark:border-blue-800 dark:from-blue-900/20 dark:to-indigo-900/20">
+                    <p className="text-sm font-medium text-blue-800 dark:text-blue-300">
+                      <span className="mr-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-500 text-xs font-bold text-white">
+                        {selectedShiftIds.length}
+                      </span>
+                      shift(s) selected
+                    </p>
+                  </div>
+                )}
+
+                {error && (
+                  <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+                    {error}
+                  </div>
+                )}
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="submit"
+                    className="flex-1 rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 hover:shadow-xl hover:shadow-blue-500/40 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
+                  >
+                    Assign Shifts
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowShiftDialog(null);
+                      setSelectedShiftIds([]);
+                    }}
+                    className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
             </div>
+          </div>
+        )}
 
-            {/* Two Column Layout */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-slate-200 dark:divide-slate-700">
-              {/* Left Side - Add New Designation Form */}
-              <div className="p-6 overflow-y-auto" style={{ maxHeight: 'calc(90vh - 80px)' }}>
-                <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-blue-900/10">
-                  <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                      </svg>
-                    </span>
-                    Add New Designation
-                  </h3>
-                  <form onSubmit={handleCreateDesignation} className="space-y-4">
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                        Designation Name *
-                      </label>
-                      <input
-                        type="text"
-                        value={designationName}
-                        onChange={(e) => setDesignationName(e.target.value)}
-                        required
-                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                        placeholder="e.g., Senior Developer"
-                      />
-                    </div>
+        {/* Designation Dialog */}
+        {showDesignationDialog && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div
+              className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
+              onClick={() => {
+                setShowDesignationDialog(null);
+                resetDesignationForm();
+              }}
+            />
+            <div className="relative z-50 w-full max-w-6xl max-h-[90vh] overflow-hidden rounded-3xl border border-slate-200 bg-white/95 shadow-2xl shadow-blue-500/10 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/95">
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50/50 px-6 py-4 dark:border-slate-700 dark:from-slate-900 dark:to-blue-900/20">
+                <div>
+                  <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Manage Designations</h2>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    Create and manage designations for this department
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowDesignationDialog(null);
+                    resetDesignationForm();
+                  }}
+                  className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 focus:outline-none focus:ring-2 focus:ring-red-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
 
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                        Designation Code
-                      </label>
-                      <input
-                        type="text"
-                        value={designationCode}
-                        onChange={(e) => setDesignationCode(e.target.value.toUpperCase())}
-                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                        placeholder="e.g., SR-DEV"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                        Description
-                      </label>
-                      <textarea
-                        value={designationDescription}
-                        onChange={(e) => setDesignationDescription(e.target.value)}
-                        rows={3}
-                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                        placeholder="Designation description..."
-                      />
-                    </div>
-
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                        Paid Leaves Count
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={designationPaidLeaves}
-                        onChange={(e) => setDesignationPaidLeaves(Number(e.target.value))}
-                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                      />
-                    </div>
-
-                    {error && (
-                      <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
-                        {error}
-                      </div>
-                    )}
-
-                    <button
-                      type="submit"
-                      className="w-full rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 hover:shadow-xl hover:shadow-blue-500/40 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
-                    >
-                      <span className="flex items-center justify-center gap-2">
+              {/* Two Column Layout */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-slate-200 dark:divide-slate-700">
+                {/* Left Side - Add New Designation Form */}
+                <div className="p-6 overflow-y-auto" style={{ maxHeight: 'calc(90vh - 80px)' }}>
+                  <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-blue-900/10">
+                    <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
                         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                         </svg>
-                        Add Designation
                       </span>
-                    </button>
-                  </form>
-                </div>
-              </div>
-
-              {/* Right Side - Existing Designations List */}
-              <div className="p-6 overflow-y-auto bg-slate-50/50 dark:bg-slate-900/30" style={{ maxHeight: 'calc(90vh - 80px)' }}>
-                <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
-                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                    </svg>
-                  </span>
-                  Existing Designations
-                  {designations.length > 0 && (
-                    <span className="ml-auto rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-semibold text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400">
-                      {designations.length}
-                    </span>
-                  )}
-                </h3>
-                {designations.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center dark:border-slate-700 dark:bg-slate-900/50">
-                    <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
-                      <svg className="h-6 w-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-                      </svg>
-                    </div>
-                    <p className="text-sm font-medium text-slate-600 dark:text-slate-400">No designations yet</p>
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">Create your first designation using the form</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {designations.map((designation) => (
-                      <div
-                        key={designation._id}
-                        className="rounded-xl border border-slate-200 bg-white p-4 transition-all hover:border-blue-200 hover:shadow-md dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <h4 className="font-semibold text-slate-900 dark:text-slate-100 truncate">{designation.name}</h4>
-                              <span
-                                className={`flex-shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
-                                  designation.isActive
-                                    ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                                    : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                                }`}
-                              >
-                                {designation.isActive ? 'Active' : 'Inactive'}
-                              </span>
-                            </div>
-                            {designation.code && (
-                              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Code: {designation.code}</p>
-                            )}
-                            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                              <span className="inline-flex items-center gap-1 rounded-lg bg-blue-50 px-2 py-1 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400">
-                                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                </svg>
-                                {designation.paidLeaves} leaves
-                              </span>
-                              {designation.shifts && designation.shifts.length > 0 && (
-                                <span className="inline-flex items-center gap-1 rounded-lg bg-purple-50 px-2 py-1 text-purple-700 dark:bg-purple-900/20 dark:text-purple-400">
-                                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                  </svg>
-                                  {designation.shifts.length} shift{designation.shifts.length > 1 ? 's' : ''}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => handleOpenDesignationShiftDialog(designation)}
-                            className="flex-shrink-0 rounded-lg border border-purple-200 bg-gradient-to-r from-purple-50 to-indigo-50 p-2 text-purple-700 transition-all hover:from-purple-100 hover:to-indigo-100 hover:shadow-sm dark:border-purple-800 dark:from-purple-900/20 dark:to-indigo-900/20 dark:text-purple-300"
-                            title="Manage Shifts"
-                          >
-                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                          </button>
-                        </div>
+                      Add New Designation
+                    </h3>
+                    <form onSubmit={handleCreateDesignation} className="space-y-4">
+                      <div>
+                        <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                          Designation Name *
+                        </label>
+                        <input
+                          type="text"
+                          value={designationName}
+                          onChange={(e) => setDesignationName(e.target.value)}
+                          required
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                          placeholder="e.g., Senior Developer"
+                        />
                       </div>
-                    ))}
+
+                      <div>
+                        <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                          Designation Code
+                        </label>
+                        <input
+                          type="text"
+                          value={designationCode}
+                          onChange={(e) => setDesignationCode(e.target.value.toUpperCase())}
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                          placeholder="e.g., SR-DEV"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                          Description
+                        </label>
+                        <textarea
+                          value={designationDescription}
+                          onChange={(e) => setDesignationDescription(e.target.value)}
+                          rows={3}
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                          placeholder="Designation description..."
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                          Paid Leaves Count
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={designationPaidLeaves}
+                          onChange={(e) => setDesignationPaidLeaves(Number(e.target.value))}
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        />
+                      </div>
+
+                      {error && (
+                        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+                          {error}
+                        </div>
+                      )}
+
+                      <button
+                        type="submit"
+                        className="w-full rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 hover:shadow-xl hover:shadow-blue-500/40 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
+                      >
+                        <span className="flex items-center justify-center gap-2">
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                          </svg>
+                          Add Designation
+                        </span>
+                      </button>
+                    </form>
                   </div>
-                )}
+                </div>
+
+                {/* Right Side - Existing Designations List */}
+                <div className="p-6 overflow-y-auto bg-slate-50/50 dark:bg-slate-900/30" style={{ maxHeight: 'calc(90vh - 80px)' }}>
+                  <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                      </svg>
+                    </span>
+                    Existing Designations
+                    {designations.length > 0 && (
+                      <span className="ml-auto rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-semibold text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400">
+                        {designations.length}
+                      </span>
+                    )}
+                  </h3>
+                  {designations.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center dark:border-slate-700 dark:bg-slate-900/50">
+                      <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
+                        <svg className="h-6 w-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                        </svg>
+                      </div>
+                      <p className="text-sm font-medium text-slate-600 dark:text-slate-400">No designations yet</p>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">Create your first designation using the form</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {designations.map((designation) => (
+                        <div
+                          key={designation._id}
+                          className="rounded-xl border border-slate-200 bg-white p-4 transition-all hover:border-blue-200 hover:shadow-md dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <h4 className="font-semibold text-slate-900 dark:text-slate-100 truncate">{designation.name}</h4>
+                                <span
+                                  className={`flex-shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${designation.isActive
+                                      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                      : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                                    }`}
+                                >
+                                  {designation.isActive ? 'Active' : 'Inactive'}
+                                </span>
+                              </div>
+                              {designation.code && (
+                                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Code: {designation.code}</p>
+                              )}
+                              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                                <span className="inline-flex items-center gap-1 rounded-lg bg-blue-50 px-2 py-1 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400">
+                                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                  </svg>
+                                  {designation.paidLeaves} leaves
+                                </span>
+                                {designation.shifts && designation.shifts.length > 0 && (
+                                  <span className="inline-flex items-center gap-1 rounded-lg bg-purple-50 px-2 py-1 text-purple-700 dark:bg-purple-900/20 dark:text-purple-400">
+                                    <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    {designation.shifts.length} shift{designation.shifts.length > 1 ? 's' : ''}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => handleOpenDesignationShiftDialog(designation)}
+                              className="flex-shrink-0 rounded-lg border border-purple-200 bg-gradient-to-r from-purple-50 to-indigo-50 p-2 text-purple-700 transition-all hover:from-purple-100 hover:to-indigo-100 hover:shadow-sm dark:border-purple-800 dark:from-purple-900/20 dark:to-indigo-900/20 dark:text-purple-300"
+                              title="Manage Shifts"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Assign Shifts to Designation Dialog */}
-      {showDesignationShiftDialog && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div
-            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
-            onClick={() => {
-              setShowDesignationShiftDialog(null);
-              setSelectedDesignationShiftIds([]);
-            }}
-          />
-          <div className="relative z-[60] w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl shadow-purple-500/10 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/95">
-            <div className="mb-6 flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-                  Assign Shifts
-                </h2>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                  Assign shifts to <span className="font-medium text-purple-600 dark:text-purple-400">{showDesignationShiftDialog.name}</span>
-                </p>
-              </div>
-              <button
-                onClick={() => {
-                  setShowDesignationShiftDialog(null);
-                  setSelectedDesignationShiftIds([]);
-                }}
-                className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 focus:outline-none focus:ring-2 focus:ring-red-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-              >
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <form onSubmit={handleAssignDesignationShifts} className="space-y-5">
-              <div>
-                <label className="mb-3 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Select Shifts (Optional - overrides department shifts)
-                </label>
-                {loadingShifts ? (
-                  <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-slate-50/50 py-8 dark:border-slate-700 dark:bg-slate-900/50">
-                    <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-purple-500 border-t-transparent"></div>
-                    <p className="mt-3 text-sm text-slate-600 dark:text-slate-400">Loading shifts...</p>
-                  </div>
-                ) : shifts.length === 0 ? (
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-6 text-center dark:border-slate-700 dark:bg-slate-900/50">
-                    <p className="text-sm font-medium text-slate-600 dark:text-slate-400">No shifts available.</p>
-                    <p className="mt-1 text-xs text-slate-500">Create shifts first from the Shifts page.</p>
-                  </div>
-                ) : (
-                  <div className="max-h-52 space-y-2 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50/30 p-3 dark:border-slate-700 dark:bg-slate-900/30">
-                    {shifts.map((shift) => (
-                      <label
-                        key={shift._id}
-                        className={`group flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-all ${
-                          selectedDesignationShiftIds.includes(shift._id)
-                            ? 'border-purple-300 bg-purple-50/50 shadow-sm dark:border-purple-700 dark:bg-purple-900/20'
-                            : 'border-slate-200 bg-white hover:border-purple-200 hover:bg-purple-50/30 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600'
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedDesignationShiftIds.includes(shift._id)}
-                          onChange={() => toggleDesignationShiftSelection(shift._id)}
-                          className="h-4 w-4 rounded border-slate-300 text-purple-600 transition-all focus:ring-2 focus:ring-purple-400 focus:ring-offset-2 dark:border-slate-600"
-                        />
-                        <div className="flex-1">
-                          <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">{shift.name}</div>
-                          <div className="text-xs text-slate-500 dark:text-slate-400">
-                            {shift.startTime} - {shift.endTime} ({shift.duration}h)
-                          </div>
-                        </div>
-                        {!shift.isActive && (
-                          <span className="rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-medium text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
-                            Inactive
-                          </span>
-                        )}
-                      </label>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {selectedDesignationShiftIds.length > 0 && (
-                <div className="rounded-xl border border-purple-200 bg-gradient-to-r from-purple-50 to-indigo-50 p-3 dark:border-purple-800 dark:from-purple-900/20 dark:to-indigo-900/20">
-                  <p className="text-sm font-medium text-purple-800 dark:text-purple-300">
-                    <span className="mr-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-purple-500 text-xs font-bold text-white">
-                      {selectedDesignationShiftIds.length}
-                    </span>
-                    shift(s) selected
+        {/* Assign Shifts to Designation Dialog */}
+        {showDesignationShiftDialog && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <div
+              className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
+              onClick={() => {
+                setShowDesignationShiftDialog(null);
+                setSelectedDesignationShiftIds([]);
+              }}
+            />
+            <div className="relative z-[60] w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl shadow-purple-500/10 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/95">
+              <div className="mb-6 flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
+                    Assign Shifts
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    Assign shifts to <span className="font-medium text-purple-600 dark:text-purple-400">{showDesignationShiftDialog.name}</span>
                   </p>
                 </div>
-              )}
-
-              <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
-                <strong>Note:</strong> If shifts are assigned to a designation, they will override the department&apos;s default shifts for employees with this designation.
-              </p>
-
-              {error && (
-                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
-                  {error}
-                </div>
-              )}
-
-              <div className="flex gap-3 pt-2">
                 <button
-                  type="submit"
-                  className="flex-1 rounded-2xl bg-gradient-to-r from-purple-500 to-indigo-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-purple-500/30 transition-all hover:from-purple-600 hover:to-indigo-600 hover:shadow-xl hover:shadow-purple-500/40 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:ring-offset-2"
-                >
-                  Save Shifts
-                </button>
-                <button
-                  type="button"
                   onClick={() => {
                     setShowDesignationShiftDialog(null);
                     setSelectedDesignationShiftIds([]);
                   }}
-                  className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                  className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 focus:outline-none focus:ring-2 focus:ring-red-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
                 >
-                  Cancel
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
                 </button>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
 
-      {/* Departments Grid (Card-based) */}
-      {loading ? (
+              <form onSubmit={handleAssignDesignationShifts} className="space-y-5">
+                <div>
+                  <label className="mb-3 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Select Shifts (Optional - overrides department shifts)
+                  </label>
+                  {loadingShifts ? (
+                    <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-slate-50/50 py-8 dark:border-slate-700 dark:bg-slate-900/50">
+                      <Spinner />
+                      <p className="mt-3 text-sm text-slate-600 dark:text-slate-400">Loading shifts...</p>
+                    </div>
+                  ) : shifts.length === 0 ? (
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-6 text-center dark:border-slate-700 dark:bg-slate-900/50">
+                      <p className="text-sm font-medium text-slate-600 dark:text-slate-400">No shifts available.</p>
+                      <p className="mt-1 text-xs text-slate-500">Create shifts first from the Shifts page.</p>
+                    </div>
+                  ) : (
+                    <div className="max-h-52 space-y-2 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50/30 p-3 dark:border-slate-700 dark:bg-slate-900/30">
+                      {shifts.map((shift) => (
+                        <label
+                          key={shift._id}
+                          className={`group flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-all ${selectedDesignationShiftIds.includes(shift._id)
+                              ? 'border-purple-300 bg-purple-50/50 shadow-sm dark:border-purple-700 dark:bg-purple-900/20'
+                              : 'border-slate-200 bg-white hover:border-purple-200 hover:bg-purple-50/30 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600'
+                            }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedDesignationShiftIds.includes(shift._id)}
+                            onChange={() => toggleDesignationShiftSelection(shift._id)}
+                            className="h-4 w-4 rounded border-slate-300 text-purple-600 transition-all focus:ring-2 focus:ring-purple-400 focus:ring-offset-2 dark:border-slate-600"
+                          />
+                          <div className="flex-1">
+                            <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">{shift.name}</div>
+                            <div className="text-xs text-slate-500 dark:text-slate-400">
+                              {shift.startTime} - {shift.endTime} ({shift.duration}h)
+                            </div>
+                          </div>
+                          {!shift.isActive && (
+                            <span className="rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-medium text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+                              Inactive
+                            </span>
+                          )}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {selectedDesignationShiftIds.length > 0 && (
+                  <div className="rounded-xl border border-purple-200 bg-gradient-to-r from-purple-50 to-indigo-50 p-3 dark:border-purple-800 dark:from-purple-900/20 dark:to-indigo-900/20">
+                    <p className="text-sm font-medium text-purple-800 dark:text-purple-300">
+                      <span className="mr-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-purple-500 text-xs font-bold text-white">
+                        {selectedDesignationShiftIds.length}
+                      </span>
+                      shift(s) selected
+                    </p>
+                  </div>
+                )}
+
+                <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+                  <strong>Note:</strong> If shifts are assigned to a designation, they will override the department&apos;s default shifts for employees with this designation.
+                </p>
+
+                {error && (
+                  <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+                    {error}
+                  </div>
+                )}
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="submit"
+                    className="flex-1 rounded-2xl bg-gradient-to-r from-purple-500 to-indigo-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-purple-500/30 transition-all hover:from-purple-600 hover:to-indigo-600 hover:shadow-xl hover:shadow-purple-500/40 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:ring-offset-2"
+                  >
+                    Save Shifts
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowDesignationShiftDialog(null);
+                      setSelectedDesignationShiftIds([]);
+                    }}
+                    className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Departments Grid (Card-based) */}
+        {loading ? (
           <div className="flex flex-col items-center justify-center rounded-3xl border border-slate-200 bg-white/95 py-16 shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
-            <div className="h-10 w-10 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
+            <Spinner />
             <p className="mt-4 text-sm font-medium text-slate-600 dark:text-slate-400">Loading departments...</p>
           </div>
         ) : departments.length === 0 ? (
@@ -1115,11 +1113,10 @@ export default function DepartmentsPage() {
                     )}
                   </div>
                   <span
-                    className={`ml-3 rounded-full px-3 py-1 text-xs font-semibold ${
-                      dept.isActive
+                    className={`ml-3 rounded-full px-3 py-1 text-xs font-semibold ${dept.isActive
                         ? 'bg-green-100 text-green-700 shadow-sm dark:bg-green-900/30 dark:text-green-400'
                         : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                    }`}
+                      }`}
                   >
                     {dept.isActive ? 'Active' : 'Inactive'}
                   </span>

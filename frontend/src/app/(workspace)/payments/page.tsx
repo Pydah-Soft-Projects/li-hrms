@@ -269,7 +269,7 @@ export default function PaymentsPage() {
                                     <tr
                                         key={batch._id}
                                         className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors cursor-pointer"
-                                        onClick={() => router.push(`/superadmin/payments/${batch._id}`)}
+                                        onClick={() => router.push(`/payments/${batch._id}`)}
                                     >
                                         <td className="px-6 py-4 whitespace-nowrap">
                                             <div className="text-sm font-semibold text-blue-600 dark:text-blue-400">{batch.batchNumber}</div>
@@ -304,7 +304,7 @@ export default function PaymentsPage() {
                                         <td className="px-6 py-4 whitespace-nowrap text-center">
                                             <div className="flex justify-center items-center space-x-1" onClick={(e) => e.stopPropagation()}>
                                                 <button
-                                                    onClick={() => router.push(`/superadmin/payments/${batch._id}`)}
+                                                    onClick={() => router.push(`/payments/${batch._id}`)}
                                                     className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                                                     title="View Details"
                                                 >

@@ -1,26 +1,98 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+  /* Light Mode */
+  --bg-base: #F9FAFB;
+  --bg-surface: #FFFFFF;
+  --border-base: rgba(0, 0, 0, 0.08);
+  --text-primary: #111827;
+  --text-secondary: #6B7280;
+  --color-accent: #15803D;
+  /* green-700 */
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* Status Colors */
+  --status-positive: #15803D;
+  --status-warning: #B45309;
+  --status-negative: #B91C1C;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    /* Dark Mode - System Preference Fallback */
+    --bg-base: #000000;
+    --bg-surface: #0f172a;
+    --border-base: rgba(255, 255, 255, 0.08);
+    --text-primary: #F8FAFC;
+    --text-secondary: #94A3B8;
+    --color-accent: #16A34A;
+    /* green-600 */
+    --status-positive: #16A34A;
+    --status-warning: #D97706;
+    --status-negative: #DC2626;
   }
 }
 
+.dark {
+  /* Dark Mode - Manual Toggle */
+  --bg-base: #000000;
+  --bg-surface: #0f172a;
+  --border-base: rgba(255, 255, 255, 0.08);
+  --text-primary: #F8FAFC;
+  --text-secondary: #94A3B8;
+  --color-accent: #16A34A;
+  /* green-600 */
+  --status-positive: #16A34A;
+  --status-warning: #D97706;
+  --status-negative: #DC2626;
+}
+
+@theme inline {
+  --color-bg-base: var(--bg-base);
+  --color-bg-surface: var(--bg-surface);
+  --color-border-base: var(--border-base);
+
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-accent: var(--color-accent);
+
+  --color-status-positive: var(--status-positive);
+  --color-status-warning: var(--status-warning);
+  --color-status-negative: var(--status-negative);
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+}
+
+/* Global Custom Scrollbar (Matches Sidebar) */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  /* slate-300 */
+  border-radius: 9999px;
+}
+
+@media (prefers-color-scheme: dark) {
+  ::-webkit-scrollbar-thumb {
+    background: #475569;
+    /* slate-600 */
+  }
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #475569;
+  /* slate-600 */
 }

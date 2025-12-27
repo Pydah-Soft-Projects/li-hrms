@@ -163,10 +163,10 @@ function HRDashboard({ stats, hasPermission }: { stats: DashboardStats; hasPermi
             Control Center
           </h2>
           <div className="grid grid-cols-1 gap-4">
-            <QuickAction href="/superadmin/employees" label="Talent Pool" description="Manage employee records" icon={<UsersIcon />} color="emerald" />
-            <QuickAction href="/superadmin/attendance" label="Time Tracking" description="Attendance & logs" icon={<CalendarIcon />} color="blue" />
-            <QuickAction href="/superadmin/leaves" label="Absence Management" description="Leave & OD requests" icon={<ClockIcon />} color="amber" />
-            <QuickAction href="/superadmin/payments" label="Financials" description="Payroll & payments" icon={<BuildingIcon />} color="indigo" />
+            <QuickAction href="/employees" label="Talent Pool" description="Manage employee records" icon={<UsersIcon />} color="emerald" />
+            <QuickAction href="/attendance" label="Time Tracking" description="Attendance & logs" icon={<CalendarIcon />} color="blue" />
+            <QuickAction href="/leaves" label="Absence Management" description="Leave & OD requests" icon={<ClockIcon />} color="amber" />
+            <QuickAction href="/payments" label="Financials" description="Payroll & payments" icon={<BuildingIcon />} color="indigo" />
           </div>
         </div>
 

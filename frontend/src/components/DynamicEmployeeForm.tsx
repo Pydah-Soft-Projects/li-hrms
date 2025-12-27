@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { CertificateUpload } from '@/components/CertificateUpload';
+import Spinner from '@/components/Spinner';
 
 interface Field {
   id: string;
@@ -786,7 +787,7 @@ export default function DynamicEmployeeForm({
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-green-500 border-t-transparent"></div>
+        <Spinner className="w-8 h-8" />
       </div>
     );
   }

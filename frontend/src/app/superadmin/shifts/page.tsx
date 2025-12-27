@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { api, Shift } from '@/lib/api';
+import Spinner from '@/components/Spinner';
 
 export default function ShiftsPage() {
   const [shifts, setShifts] = useState<Shift[]>([]);
@@ -44,7 +45,7 @@ export default function ShiftsPage() {
     try {
       const response = await api.getAllowedDurations();
       console.log('Durations API response:', response);
-      
+
       if (response.success) {
         // The API returns { success: true, data: [array of numbers], durations: [full objects] }
         // We need the array of numbers for the dropdown
@@ -64,7 +65,7 @@ export default function ShiftsPage() {
   // Calculate duration from start and end time
   const calculateDuration = (start: string, end: string): number | null => {
     if (!start || !end) return null;
-    
+
     const [startHour, startMin] = start.split(':').map(Number);
     const [endHour, endMin] = end.split(':').map(Number);
 
@@ -84,7 +85,7 @@ export default function ShiftsPage() {
   // Calculate end time from start time and duration
   const calculateEndTime = (start: string, dur: number): string | null => {
     if (!start || !dur) return null;
-    
+
     const [startHour, startMin] = start.split(':').map(Number);
     const startMinutes = startHour * 60 + startMin;
     const endMinutes = startMinutes + dur * 60;
@@ -121,7 +122,7 @@ export default function ShiftsPage() {
         // Calculate suggested payable shifts
         const suggested = calculatedDur / 8;
         setSuggestedPayableShifts(Math.round(suggested * 100) / 100);
-        
+
         if (!validateDuration(calculatedDur)) {
           setIllegalTimingWarning(`Illegal timings: Calculated duration (${calculatedDur} hours) is not in the allowed durations list.`);
         } else {
@@ -451,7 +452,7 @@ export default function ShiftsPage() {
         {/* Shifts Grid */}
         {loading ? (
           <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm py-12 shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
+            <Spinner />
             <p className="mt-4 text-sm font-medium text-slate-600 dark:text-slate-400">Loading shifts...</p>
           </div>
         ) : shifts.length === 0 ? (
@@ -499,11 +500,10 @@ export default function ShiftsPage() {
                     </div>
                   </div>
                   <span
-                    className={`ml-2 flex-shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                      shift.isActive
+                    className={`ml-2 flex-shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${shift.isActive
                         ? 'bg-green-100 text-green-700 shadow-sm dark:bg-green-900/30 dark:text-green-400'
                         : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                    }`}
+                      }`}
                   >
                     {shift.isActive ? 'Active' : 'Inactive'}
                   </span>

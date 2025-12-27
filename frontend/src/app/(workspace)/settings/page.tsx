@@ -1,9 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { api } from '@/lib/api';
+import { api, apiRequest } from '@/lib/api';
+import { toast } from 'react-toastify';
+import Spinner from '@/components/Spinner';
 
-type TabType = 'shift' | 'employee' | 'leaves' | 'loan' | 'salary_advance' | 'attendance' | 'payroll' | 'overtime' | 'permissions' | 'attendance_deductions' | 'general';
+type TabType = 'shift' | 'employee' | 'leaves' | 'loan' | 'salary_advance' | 'attendance' | 'payroll' | 'overtime' | 'permissions' | 'attendance_deductions' | 'communications' | 'feature_control' | 'general';
 
 interface ShiftDuration {
   _id: string;
@@ -119,11 +121,33 @@ export default function SettingsPage() {
   const [mssqlConnected, setMssqlConnected] = useState(false);
   const [employeeSettingsLoading, setEmployeeSettingsLoading] = useState(false);
 
+  // Payroll include-missing toggle (global)
+  const [includeMissingLoading, setIncludeMissingLoading] = useState(false);
+  const [includeMissingSaving, setIncludeMissingSaving] = useState(false);
+  const [includeMissing, setIncludeMissing] = useState<boolean>(true);
+
+  const loadIncludeMissingSetting = async () => {
+    try {
+      setIncludeMissingLoading(true);
+      const res = await api.getIncludeMissingSetting();
+      if (res?.data?.value !== undefined && res?.data?.value !== null) {
+        setIncludeMissing(!!res.data.value);
+      } else {
+        setIncludeMissing(true);
+      }
+    } catch (err) {
+      console.error('Failed to load includeMissing setting', err);
+      setIncludeMissing(true);
+    } finally {
+      setIncludeMissingLoading(false);
+    }
+  };
+
   // Leave settings state
   const [leaveSettings, setLeaveSettings] = useState<LeaveSettingsData | null>(null);
   const [odSettings, setODSettings] = useState<LeaveSettingsData | null>(null);
   const [leaveSettingsLoading, setLeaveSettingsLoading] = useState(false);
-  const [leaveSubTab, setLeaveSubTab] = useState<'types' | 'statuses' | 'odTypes' | 'odStatuses' | 'workspacePermissions' | 'general'>('types');
+  const [leaveSubTab, setLeaveSubTab] = useState<'types' | 'statuses' | 'odTypes' | 'odStatuses' | 'workflow' | 'odWorkflow' | 'workspacePermissions' | 'general'>('types');
 
   // Workspace permissions state
   const [workspaces, setWorkspaces] = useState<any[]>([]);
@@ -161,12 +185,13 @@ export default function SettingsPage() {
   // Loan settings state
   const [loanSettings, setLoanSettings] = useState<any>(null);
   const [loanSettingsLoading, setLoanSettingsLoading] = useState(false);
-  const [loanSubTab, setLoanSubTab] = useState<'general' | 'workspacePermissions'>('general');
+  const [loanSubTab, setLoanSubTab] = useState<'general' | 'workflow' | 'workspacePermissions'>('general');
   const [loanWorkspacePermissions, setLoanWorkspacePermissions] = useState<Record<string, {
     canApplyForSelf: boolean;
     canApplyForOthers: boolean;
   }>>({});
-
+  const [workflowUsers, setWorkflowUsers] = useState<any[]>([]);
+  const [workflowUsersByRole, setWorkflowUsersByRole] = useState<Record<string, any[]>>({});
 
   // Loan general settings form state
   const [loanGeneralSettings, setLoanGeneralSettings] = useState({
@@ -207,6 +232,178 @@ export default function SettingsPage() {
   });
   const [attendanceRulesLoading, setAttendanceRulesLoading] = useState(false);
 
+  // Early-out settings state
+  const [earlyOutSettings, setEarlyOutSettings] = useState({
+    isEnabled: false,
+    allowedDurationMinutes: 0,
+    minimumDuration: 0,
+    deductionRanges: [] as {
+      _id?: string;
+      minMinutes: number;
+      maxMinutes: number;
+      deductionType: 'quarter_day' | 'half_day' | 'full_day' | 'custom_amount';
+      deductionAmount?: number | null;
+      description?: string;
+    }[],
+  });
+  const [earlyOutLoading, setEarlyOutLoading] = useState(false);
+  const [earlyOutSaving, setEarlyOutSaving] = useState(false);
+  const [newRange, setNewRange] = useState({
+    minMinutes: '',
+    maxMinutes: '',
+    deductionType: 'quarter_day' as 'quarter_day' | 'half_day' | 'full_day' | 'custom_amount',
+    deductionAmount: '',
+    description: '',
+  });
+
+  const [passwordGenerationMode, setPasswordGenerationMode] = useState<'random' | 'phone_empno'>('random');
+  const [credentialDeliveryStrategy, setCredentialDeliveryStrategy] = useState<'email_only' | 'sms_only' | 'both' | 'intelligent'>('both');
+  const [communicationsLoading, setCommunicationsLoading] = useState(false);
+
+  // Feature Control state
+  const [featureControlEmployee, setFeatureControlEmployee] = useState<string[]>([]);
+  const [featureControlHOD, setFeatureControlHOD] = useState<string[]>([]);
+  const [featureControlHR, setFeatureControlHR] = useState<string[]>([]);
+  const [featureControlLoading, setFeatureControlLoading] = useState(false);
+
+  // Payslip Settings state
+  const [payslipReleaseRequired, setPayslipReleaseRequired] = useState<boolean>(true);
+  const [payslipHistoryMonths, setPayslipHistoryMonths] = useState<number>(6);
+  const [payslipDownloadLimit, setPayslipDownloadLimit] = useState<number>(5);
+  const [payrollLoading, setPayrollLoading] = useState(false);
+
+  // Bulk Release state
+  const [releaseMonth, setReleaseMonth] = useState<string>(new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' }));
+  const [releasing, setReleasing] = useState(false);
+
+  const loadFeatureControlSettings = async () => {
+    try {
+      setFeatureControlLoading(true);
+      const resEmp = await api.getSetting('feature_control_employee');
+      const resHOD = await api.getSetting('feature_control_hod');
+      const resHR = await api.getSetting('feature_control_hr');
+
+      if (resEmp.success && resEmp.data?.value?.activeModules) setFeatureControlEmployee(resEmp.data.value.activeModules);
+      if (resHOD.success && resHOD.data?.value?.activeModules) setFeatureControlHOD(resHOD.data.value.activeModules);
+      if (resHR.success && resHR.data?.value?.activeModules) setFeatureControlHR(resHR.data.value.activeModules);
+    } catch (err) {
+      console.error('Failed to load feature control settings', err);
+    } finally {
+      setFeatureControlLoading(false);
+    }
+  };
+
+  const saveFeatureControlSettings = async () => {
+    try {
+      setSaving(true);
+      const resEmp = await api.upsertSetting({
+        key: 'feature_control_employee',
+        value: { activeModules: featureControlEmployee },
+        category: 'feature_control',
+        description: 'Active modules for Employee role'
+      });
+      const resHOD = await api.upsertSetting({
+        key: 'feature_control_hod',
+        value: { activeModules: featureControlHOD },
+        category: 'feature_control',
+        description: 'Active modules for HOD role'
+      });
+      const resHR = await api.upsertSetting({
+        key: 'feature_control_hr',
+        value: { activeModules: featureControlHR },
+        category: 'feature_control',
+        description: 'Active modules for HR role'
+      });
+
+      if (resEmp.success && resHOD.success && resHR.success) {
+        setMessage({ type: 'success', text: 'Feature control settings saved successfully' });
+      } else {
+        setMessage({ type: 'error', text: 'Failed to save feature control settings' });
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: 'An error occurred while saving' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const loadPayrollSettings = async () => {
+    try {
+      setPayrollLoading(true);
+      const resRelease = await api.getSetting('payslip_release_required');
+      const resHistory = await api.getSetting('payslip_history_months');
+      const resLimit = await api.getSetting('payslip_download_limit');
+
+      if (resRelease.success && resRelease.data) setPayslipReleaseRequired(!!resRelease.data.value);
+      if (resHistory.success && resHistory.data) setPayslipHistoryMonths(Number(resHistory.data.value));
+      if (resLimit.success && resLimit.data) setPayslipDownloadLimit(Number(resLimit.data.value));
+    } catch (err) {
+      console.error('Failed to load payroll settings', err);
+    } finally {
+      setPayrollLoading(false);
+    }
+  };
+
+  const savePayrollSettings = async () => {
+    try {
+      setSaving(true);
+      const resRelease = await api.upsertSetting({
+        key: 'payslip_release_required',
+        value: payslipReleaseRequired,
+        category: 'payroll',
+        description: 'Whether payslips must be explicitly released before employees can view them'
+      });
+      const resHistory = await api.upsertSetting({
+        key: 'payslip_history_months',
+        value: payslipHistoryMonths,
+        category: 'payroll',
+        description: 'Number of previous months of payslips visible to employees'
+      });
+      const resLimit = await api.upsertSetting({
+        key: 'payslip_download_limit',
+        value: payslipDownloadLimit,
+        category: 'payroll',
+        description: 'Maximum number of times an employee can download a single payslip'
+      });
+
+      if (resRelease.success && resHistory.success && resLimit.success) {
+        setMessage({ type: 'success', text: 'Payroll settings saved successfully' });
+      } else {
+        setMessage({ type: 'error', text: 'Failed to save payroll settings' });
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: 'An error occurred while saving' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleBulkRelease = async () => {
+    if (!releaseMonth) {
+      toast.error('Please select a month for release');
+      return;
+    }
+
+    try {
+      setReleasing(true);
+      const response = await apiRequest<any>('/payroll/release', {
+        method: 'PUT',
+        body: JSON.stringify({ month: releaseMonth })
+      });
+
+      if (response.success) {
+        toast.success(`Successfully released ${response.count} payslips for ${releaseMonth}`);
+      } else {
+        toast.error(response.message || 'Failed to release payslips');
+      }
+    } catch (err: any) {
+      console.error('Error releasing payslips:', err);
+      toast.error(err.message || 'Error releasing payslips');
+    } finally {
+      setReleasing(false);
+    }
+  };
+
   useEffect(() => {
     if (activeTab === 'shift') {
       loadShiftDurations();
@@ -224,6 +421,14 @@ export default function SettingsPage() {
       loadPermissionDeductionRules();
     } else if (activeTab === 'attendance_deductions') {
       loadAttendanceDeductionRules();
+      loadEarlyOutSettings();
+    } else if (activeTab === 'payroll') {
+      loadIncludeMissingSetting();
+      loadPayrollSettings();
+    } else if (activeTab === 'communications') {
+      loadCommunicationSettings();
+    } else if (activeTab === 'feature_control') {
+      loadFeatureControlSettings();
     }
   }, [activeTab]);
 
@@ -445,6 +650,29 @@ export default function SettingsPage() {
     }
   };
 
+  const loadEarlyOutSettings = async () => {
+    try {
+      setEarlyOutLoading(true);
+      const response = await api.getEarlyOutSettings();
+      if (response.success) {
+        const data = response.data || {};
+        setEarlyOutSettings({
+          isEnabled: data.isEnabled ?? false,
+          allowedDurationMinutes: data.allowedDurationMinutes ?? 0,
+          minimumDuration: data.minimumDuration ?? 0,
+          deductionRanges: Array.isArray(data.deductionRanges) ? data.deductionRanges : [],
+        });
+      } else {
+        setMessage({ type: 'error', text: 'Failed to load early-out settings' });
+      }
+    } catch (err) {
+      console.error('Error loading early-out settings:', err);
+      setMessage({ type: 'error', text: 'Failed to load early-out settings' });
+    } finally {
+      setEarlyOutLoading(false);
+    }
+  };
+
   const saveAttendanceDeductionRules = async () => {
     try {
       setSaving(true);
@@ -465,6 +693,138 @@ export default function SettingsPage() {
       setSaving(false);
     }
   };
+
+  const saveEarlyOutSettings = async () => {
+    try {
+      setEarlyOutSaving(true);
+      const payload = {
+        isEnabled: earlyOutSettings.isEnabled,
+        allowedDurationMinutes: earlyOutSettings.allowedDurationMinutes,
+        minimumDuration: earlyOutSettings.minimumDuration,
+        deductionRanges: earlyOutSettings.deductionRanges,
+      };
+      const response = await api.saveEarlyOutSettings(payload);
+      if (response.success) {
+        setMessage({ type: 'success', text: 'Early-out settings saved successfully' });
+        await loadEarlyOutSettings();
+      } else {
+        setMessage({ type: 'error', text: response.error || 'Failed to save early-out settings' });
+      }
+    } catch (err) {
+      console.error('Error saving early-out settings:', err);
+      setMessage({ type: 'error', text: 'Failed to save early-out settings' });
+    } finally {
+      setEarlyOutSaving(false);
+    }
+  };
+
+  const addEarlyOutRange = async () => {
+    try {
+      if (!newRange.minMinutes || !newRange.maxMinutes || Number(newRange.maxMinutes) <= Number(newRange.minMinutes)) {
+        setMessage({ type: 'error', text: 'Please enter valid min and max minutes' });
+        return;
+      }
+      if (newRange.deductionType === 'custom_amount' && (!newRange.deductionAmount || Number(newRange.deductionAmount) <= 0)) {
+        setMessage({ type: 'error', text: 'Custom amount must be greater than 0' });
+        return;
+      }
+      const response = await api.addEarlyOutRange({
+        minMinutes: Number(newRange.minMinutes),
+        maxMinutes: Number(newRange.maxMinutes),
+        deductionType: newRange.deductionType,
+        deductionAmount: newRange.deductionType === 'custom_amount' ? Number(newRange.deductionAmount) : undefined,
+        description: newRange.description || undefined,
+      });
+      if (response.success) {
+        setMessage({ type: 'success', text: 'Early-out range added' });
+        setNewRange({ minMinutes: '', maxMinutes: '', deductionType: 'quarter_day', deductionAmount: '', description: '' });
+        await loadEarlyOutSettings();
+      } else {
+        setMessage({ type: 'error', text: response.error || 'Failed to add range' });
+      }
+    } catch (err) {
+      console.error('Error adding early-out range:', err);
+      setMessage({ type: 'error', text: 'Failed to add range' });
+    }
+  };
+
+  const updateEarlyOutRange = async (id: string, data: any) => {
+    try {
+      const response = await api.updateEarlyOutRange(id, data);
+      if (response.success) {
+        setMessage({ type: 'success', text: 'Range updated' });
+        await loadEarlyOutSettings();
+      } else {
+        setMessage({ type: 'error', text: response.error || 'Failed to update range' });
+      }
+    } catch (err) {
+      console.error('Error updating early-out range:', err);
+      setMessage({ type: 'error', text: 'Failed to update range' });
+    }
+  };
+
+  const deleteEarlyOutRange = async (id: string) => {
+    try {
+      const response = await api.deleteEarlyOutRange(id);
+      if (response.success) {
+        setMessage({ type: 'success', text: 'Range deleted' });
+        await loadEarlyOutSettings();
+      } else {
+        setMessage({ type: 'error', text: response.error || 'Failed to delete range' });
+      }
+    } catch (err) {
+      console.error('Error deleting early-out range:', err);
+      setMessage({ type: 'error', text: 'Failed to delete range' });
+    }
+  };
+
+  const loadCommunicationSettings = async () => {
+    try {
+      setCommunicationsLoading(true);
+      const resMode = await api.getSetting('password_generation_mode');
+      const resStrategy = await api.getSetting('credential_delivery_strategy');
+
+      if (resMode.success && resMode.data) {
+        setPasswordGenerationMode(resMode.data.value || 'random');
+      }
+      if (resStrategy.success && resStrategy.data) {
+        setCredentialDeliveryStrategy(resStrategy.data.value || 'both');
+      }
+    } catch (err) {
+      console.error('Failed to load communication settings', err);
+    } finally {
+      setCommunicationsLoading(false);
+    }
+  };
+
+  const saveCommunicationSettings = async () => {
+    try {
+      setSaving(true);
+      const resMode = await api.upsertSetting({
+        key: 'password_generation_mode',
+        value: passwordGenerationMode,
+        category: 'communications',
+        description: 'Method for generating temporary passwords (random or phone+emp_no)'
+      });
+      const resStrategy = await api.upsertSetting({
+        key: 'credential_delivery_strategy',
+        value: credentialDeliveryStrategy,
+        category: 'communications',
+        description: 'Strategy for delivering credentials (email, sms, both, or intelligent)'
+      });
+
+      if (resMode.success && resStrategy.success) {
+        setMessage({ type: 'success', text: 'Communication settings saved successfully' });
+      } else {
+        setMessage({ type: 'error', text: 'Failed to save communication settings' });
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: 'An error occurred while saving' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
 
   const handleExcelUpload = async () => {
     if (!uploadFile) {
@@ -662,7 +1022,9 @@ export default function SettingsPage() {
         }
 
         // Load users for workflow if on workflow tab
-        // Load users for workflow if on workflow tab
+        if (loanSubTab === 'workflow') {
+
+        }
       } else {
         setLoanSettings(null);
       }
@@ -673,6 +1035,7 @@ export default function SettingsPage() {
       setLoanSettingsLoading(false);
     }
   };
+
 
   const initializeLeaveSettings = async () => {
     try {
@@ -1171,6 +1534,8 @@ export default function SettingsPage() {
     { id: 'permissions', label: 'Permission Deductions' },
     { id: 'attendance_deductions', label: 'Attendance Deductions' },
     { id: 'payroll', label: 'Payroll' },
+    { id: 'communications', label: 'Communications & Notifications' },
+    { id: 'feature_control', label: 'Feature Control' },
     { id: 'general', label: 'General' },
   ];
 
@@ -1179,6 +1544,8 @@ export default function SettingsPage() {
     { id: 'statuses', label: 'Leave Statuses' },
     { id: 'odTypes', label: 'OD Types' },
     { id: 'odStatuses', label: 'OD Statuses' },
+    { id: 'workflow', label: 'Leave Workflow' },
+    { id: 'odWorkflow', label: 'OD Workflow' },
     { id: 'workspacePermissions', label: 'Workspace Permissions' },
     { id: 'general', label: 'General' },
   ];
@@ -1275,7 +1642,7 @@ export default function SettingsPage() {
 
             {loading ? (
               <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-slate-50/50 py-12 dark:border-slate-700 dark:bg-slate-900/50">
-                <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
+                <Spinner />
                 <p className="mt-4 text-sm text-slate-600 dark:text-slate-400">Loading durations...</p>
               </div>
             ) : shiftDurations.length === 0 ? (
@@ -1361,7 +1728,7 @@ export default function SettingsPage() {
 
             {employeeSettingsLoading ? (
               <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-slate-50/50 py-12 dark:border-slate-700 dark:bg-slate-900/50">
-                <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
+                <Spinner />
                 <p className="mt-4 text-sm text-slate-600 dark:text-slate-400">Loading settings...</p>
               </div>
             ) : (
@@ -1505,7 +1872,7 @@ export default function SettingsPage() {
 
             {leaveSettingsLoading ? (
               <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-slate-50/50 py-12 dark:border-slate-700 dark:bg-slate-900/50">
-                <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
+                <Spinner />
                 <p className="mt-4 text-sm text-slate-600 dark:text-slate-400">Loading settings...</p>
               </div>
             ) : (
@@ -1895,6 +2262,190 @@ export default function SettingsPage() {
                   </div>
                 )}
 
+                {/* Leave Workflow */}
+                {leaveSubTab === 'workflow' && (
+                  <div className="space-y-6">
+                    {/* Workflow Enable Toggle */}
+                    <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-blue-900/10">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Enable Workflow</h3>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">Multi-step approval process for leave requests</p>
+                        </div>
+                        <label className="relative inline-flex cursor-pointer items-center">
+                          <input
+                            type="checkbox"
+                            checked={leaveSettings?.workflow.isEnabled || false}
+                            onChange={(e) => setLeaveSettings(prev => prev ? {
+                              ...prev,
+                              workflow: { ...prev.workflow, isEnabled: e.target.checked }
+                            } : null)}
+                            className="peer sr-only"
+                          />
+                          <div className="peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-blue-600 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-blue-800"></div>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Workflow Steps */}
+                    <div className="rounded-2xl border border-slate-200 dark:border-slate-700">
+                      <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-800">
+                        <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Approval Flow</h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Define the approval hierarchy</p>
+                      </div>
+                      <div className="p-4">
+                        <div className="flex items-center gap-4">
+                          {leaveSettings?.workflow?.steps && leaveSettings.workflow.steps.map((step, index) => (
+                            <div key={step.stepOrder} className="flex items-center gap-4">
+                              <div className="flex flex-col items-center">
+                                <div className={`flex h-12 w-12 items-center justify-center rounded-full ${step.approverRole === 'hod'
+                                  ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300'
+                                  : 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300'
+                                  }`}>
+                                  <span className="text-lg font-bold">{step.stepOrder}</span>
+                                </div>
+                                <span className="mt-1 text-xs font-medium text-slate-600 dark:text-slate-400">{step.stepName}</span>
+                                <span className="text-[10px] uppercase text-slate-400">{step.approverRole}</span>
+                              </div>
+                              {index < (leaveSettings?.workflow?.steps?.length || 0) - 1 && (
+                                <div className="flex items-center">
+                                  <div className="h-0.5 w-8 bg-slate-300 dark:bg-slate-600"></div>
+                                  <span className="text-slate-400">→</span>
+                                  <div className="h-0.5 w-8 bg-slate-300 dark:bg-slate-600"></div>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                          <div className="flex flex-col items-center">
+                            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
+                              ✓
+                            </div>
+                            <span className="mt-1 text-xs font-medium text-slate-600 dark:text-slate-400">Approved</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Final Authority */}
+                    <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-blue-900/10">
+                      <h3 className="mb-4 text-sm font-semibold text-slate-900 dark:text-slate-100">Final Approval Authority</h3>
+                      <div className="space-y-3">
+                        <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 transition-all hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800">
+                          <input
+                            type="radio"
+                            name="finalAuthority"
+                            checked={leaveSettings?.workflow?.finalAuthority?.role === 'super_admin'}
+                            onChange={() => setLeaveSettings(prev => ({
+                              ...prev!,
+                              workflow: { ...prev!.workflow, finalAuthority: { ...(prev!.workflow?.finalAuthority || {}), role: 'super_admin', anyHRCanApprove: prev!.workflow?.finalAuthority?.anyHRCanApprove ?? true } }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Super Admin</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Any HR Can Approve Toggle */}
+                    <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-blue-900/10">
+                      <label className="flex cursor-pointer items-center justify-between">
+                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Any HR Can Give Final Approval</span>
+                        <input
+                          type="checkbox"
+                          checked={leaveSettings?.workflow?.finalAuthority?.anyHRCanApprove || false}
+                          onChange={(e) => setLeaveSettings(prev => ({
+                            ...prev!,
+                            workflow: { ...prev!.workflow, finalAuthority: { ...(prev!.workflow?.finalAuthority || {}), role: prev!.workflow?.finalAuthority?.role || 'hr', anyHRCanApprove: e.target.checked } }
+                          }))}
+                          className="h-5 w-5 rounded text-blue-600 focus:ring-blue-500"
+                        />
+                      </label>
+                    </div>
+
+                    <button
+                      onClick={handleSaveLeaveWorkflow}
+                      disabled={saving}
+                      className="w-full rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {saving ? 'Saving...' : 'Save Leave Workflow'}
+                    </button>
+                  </div>
+                )}
+
+                {/* OD Workflow */}
+                {leaveSubTab === 'odWorkflow' && (
+                  <div className="space-y-6">
+                    {/* Workflow Enable Toggle */}
+                    <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-purple-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-purple-900/10">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Enable OD Workflow</h3>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">Multi-step approval process for OD requests</p>
+                        </div>
+                        <label className="relative inline-flex cursor-pointer items-center">
+                          <input
+                            type="checkbox"
+                            checked={odSettings?.workflow.isEnabled || false}
+                            onChange={(e) => setODSettings(prev => prev ? {
+                              ...prev,
+                              workflow: { ...prev.workflow, isEnabled: e.target.checked }
+                            } : null)}
+                            className="peer sr-only"
+                          />
+                          <div className="peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-purple-600 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-purple-800"></div>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* OD Workflow Steps */}
+                    <div className="rounded-2xl border border-slate-200 dark:border-slate-700">
+                      <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-800">
+                        <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">OD Approval Flow</h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Same flow as leave by default</p>
+                      </div>
+                      <div className="p-4">
+                        <div className="flex items-center gap-4">
+                          {odSettings?.workflow?.steps && odSettings.workflow.steps.map((step, index) => (
+                            <div key={step.stepOrder} className="flex items-center gap-4">
+                              <div className="flex flex-col items-center">
+                                <div className={`flex h-12 w-12 items-center justify-center rounded-full ${step.approverRole === 'hod'
+                                  ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300'
+                                  : 'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300'
+                                  }`}>
+                                  <span className="text-lg font-bold">{step.stepOrder}</span>
+                                </div>
+                                <span className="mt-1 text-xs font-medium text-slate-600 dark:text-slate-400">{step.stepName}</span>
+                                <span className="text-[10px] uppercase text-slate-400">{step.approverRole}</span>
+                              </div>
+                              {index < (odSettings?.workflow?.steps?.length || 0) - 1 && (
+                                <div className="flex items-center">
+                                  <div className="h-0.5 w-8 bg-slate-300 dark:bg-slate-600"></div>
+                                  <span className="text-slate-400">→</span>
+                                  <div className="h-0.5 w-8 bg-slate-300 dark:bg-slate-600"></div>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                          <div className="flex flex-col items-center">
+                            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300">
+                              ✓
+                            </div>
+                            <span className="mt-1 text-xs font-medium text-slate-600 dark:text-slate-400">Approved</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={handleSaveODWorkflow}
+                      disabled={saving}
+                      className="w-full rounded-2xl bg-gradient-to-r from-purple-500 to-indigo-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-purple-500/30 transition-all hover:from-purple-600 hover:to-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {saving ? 'Saving...' : 'Save OD Workflow'}
+                    </button>
+                  </div>
+                )}
+
                 {/* Workspace Permissions */}
                 {leaveSubTab === 'workspacePermissions' && (
                   <div className="space-y-6">
@@ -1910,7 +2461,7 @@ export default function SettingsPage() {
 
                     {workspacesLoading ? (
                       <div className="flex items-center justify-center py-12">
-                        <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                        <Spinner />
                       </div>
                     ) : workspaces.length === 0 ? (
                       <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center dark:border-slate-700 dark:bg-slate-800">
@@ -2203,6 +2754,7 @@ export default function SettingsPage() {
                   <div className="flex space-x-1">
                     {[
                       { id: 'general', label: 'General Settings' },
+                      { id: 'workflow', label: 'Workflow' },
                       { id: 'workspacePermissions', label: 'Workspace Permissions' },
                     ].map((tab) => (
                       <button
@@ -2211,6 +2763,8 @@ export default function SettingsPage() {
                           setLoanSubTab(tab.id as any);
                           if (tab.id === 'workspacePermissions') {
                             loadWorkspaces();
+                          } else if (tab.id === 'workflow') {
+
                           }
                         }}
                         className={`flex-1 whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition-all ${loanSubTab === tab.id
@@ -2377,7 +2931,29 @@ export default function SettingsPage() {
                   </div>
                 )}
 
-
+                {/* Workflow Sub-tab */}
+                {loanSubTab === 'workflow' && (
+                  <div className="space-y-6">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-6 dark:border-slate-700 dark:bg-slate-800/50">
+                      <div className="mb-4 flex items-center justify-between">
+                        <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Workflow Configuration</h3>
+                        <label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+                          <input
+                            type="checkbox"
+                            defaultChecked={loanSettings?.workflow?.useDynamicWorkflow || false}
+                            className="rounded border-slate-300"
+                          />
+                          Enable Dynamic Workflow
+                        </label>
+                      </div>
+                      <p className="mb-4 text-sm text-slate-600 dark:text-slate-400">
+                        Configure the approval workflow steps. Enable dynamic workflow to assign specific users to each step.
+                      </p>
+                      {/* Workflow steps UI will go here */}
+                      <div className="text-sm text-slate-500">Workflow configuration UI coming soon...</div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Workspace Permissions Sub-tab */}
                 {loanSubTab === 'workspacePermissions' && (
@@ -2815,8 +3391,295 @@ export default function SettingsPage() {
 
         {activeTab === 'payroll' && (
           <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg dark:border-slate-800 dark:bg-slate-950/95 sm:p-8">
-            <h2 className="mb-2 text-xl font-semibold text-slate-900 dark:text-slate-100">Payroll Settings</h2>
-            <p className="text-sm text-slate-600 dark:text-slate-400">Payroll-related settings will be configured here.</p>
+            <div className="mb-6 flex items-start justify-between gap-4">
+              <div>
+                <h2 className="mb-1 text-xl font-semibold text-slate-900 dark:text-slate-100">Payroll Settings</h2>
+                <p className="text-sm text-slate-600 dark:text-slate-400">
+                  Control global payroll behaviors. Department settings can override these.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-blue-900/10">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                      Include Missing Allowances &amp; Deductions for Employees
+                    </h3>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      When enabled, if an employee has partial overrides, missing items will be auto-filled from Department then Global.
+                      When disabled, only the employee’s own overrides are used.
+                    </p>
+                  </div>
+                  <label className="relative inline-flex cursor-pointer items-center">
+                    <input
+                      type="checkbox"
+                      className="peer sr-only"
+                      checked={includeMissing}
+                      disabled={includeMissingSaving || includeMissingLoading}
+                      onChange={(e) => setIncludeMissing(e.target.checked)}
+                    />
+                    <div className="peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-blue-600 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-blue-800"></div>
+                  </label>
+                </div>
+              </div>
+
+
+              <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-emerald-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-emerald-900/10">
+                <div className="mb-4">
+                  <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Payslip Access Control</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Configure how and when employees can access their payslips</p>
+                </div>
+
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-slate-800 dark:text-slate-200">Release Required</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Employees can only view payslips after they are explicitly released by HR</p>
+                    </div>
+                    <label className="relative inline-flex cursor-pointer items-center">
+                      <input
+                        type="checkbox"
+                        className="peer sr-only"
+                        checked={payslipReleaseRequired}
+                        onChange={(e) => setPayslipReleaseRequired(e.target.checked)}
+                      />
+                      <div className="peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-emerald-600 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-emerald-800"></div>
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                        History Visibility (Months)
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="60"
+                        value={payslipHistoryMonths}
+                        onChange={(e) => setPayslipHistoryMonths(parseInt(e.target.value) || 6)}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                      />
+                      <p className="mt-1 text-[10px] text-slate-500">Number of previous months available in portal</p>
+                    </div>
+
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                        Download Limit Per Payslip
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="100"
+                        value={payslipDownloadLimit}
+                        onChange={(e) => setPayslipDownloadLimit(parseInt(e.target.value) || 5)}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                      />
+                      <p className="mt-1 text-[10px] text-slate-500">Maximum times an employee can download a single payslip</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={savePayrollSettings}
+                  disabled={saving || payrollLoading}
+                  className="rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-500/30 transition-all hover:from-emerald-600 hover:to-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {saving ? 'Saving...' : 'Save Payroll Settings'}
+                </button>
+              </div>
+
+              <div className="mt-8 rounded-2xl border border-blue-200 bg-blue-50/30 p-5 dark:border-blue-700 dark:bg-blue-900/10">
+                <div className="mb-4">
+                  <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-100">Bulk Payslip Release</h3>
+                  <p className="text-xs text-blue-500 dark:text-blue-400">Trigger manual release of payslips for a specific month</p>
+                </div>
+
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+                  <div className="flex-1">
+                    <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Target Month</label>
+                    <input
+                      type="text"
+                      placeholder="e.g., January 2024"
+                      value={releaseMonth}
+                      onChange={(e) => setReleaseMonth(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                    />
+                  </div>
+                  <button
+                    onClick={handleBulkRelease}
+                    disabled={releasing}
+                    className="rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-bold text-white shadow-md shadow-blue-500/20 hover:bg-blue-700 active:scale-95 disabled:opacity-50 transition-all"
+                  >
+                    {releasing ? 'Releasing...' : 'Release Now'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'feature_control' && (
+          <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg dark:border-slate-800 dark:bg-slate-950/95 sm:p-8">
+            <h2 className="mb-2 text-xl font-semibold text-slate-900 dark:text-slate-100">Feature Control</h2>
+            <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">
+              Manage module visibility for different user roles. Modules are organized by category.
+            </p>
+
+            {featureControlLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
+              </div>
+            ) : (
+              <div className="space-y-8">
+                {[
+                  { id: 'employee', label: 'Employee Role', state: featureControlEmployee, setState: setFeatureControlEmployee },
+                  { id: 'hod', label: 'HOD Role', state: featureControlHOD, setState: setFeatureControlHOD },
+                  { id: 'hr', label: 'HR Role', state: featureControlHR, setState: setFeatureControlHR },
+                ].map((role) => (
+                  <div key={role.id} className="rounded-2xl border border-slate-200 bg-slate-50/50 p-6 dark:border-slate-700 dark:bg-slate-900/50">
+                    <h3 className="mb-4 text-sm font-semibold text-slate-900 dark:text-slate-100 uppercase tracking-wider">{role.label}</h3>
+
+                    {/* Categorized Modules */}
+                    <div className="space-y-6">
+                      {/* Dashboard */}
+                      <div>
+                        <h4 className="mb-3 text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">📊 Dashboard</h4>
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                          <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 transition-all hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800">
+                            <input
+                              type="checkbox"
+                              checked={role.state.includes('DASHBOARD')}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  role.setState([...role.state, 'DASHBOARD']);
+                                } else {
+                                  role.setState(role.state.filter(m => m !== 'DASHBOARD'));
+                                }
+                              }}
+                              className="h-4 w-4 rounded text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="text-xs font-medium text-slate-700 dark:text-slate-300">Dashboard</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Employee Management */}
+                      <div>
+                        <h4 className="mb-3 text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">👥 Employee Management</h4>
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                          {['EMPLOYEES', 'PROFILE'].map((module) => (
+                            <label key={module} className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 transition-all hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800">
+                              <input
+                                type="checkbox"
+                                checked={role.state.includes(module)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    role.setState([...role.state, module]);
+                                  } else {
+                                    role.setState(role.state.filter(m => m !== module));
+                                  }
+                                }}
+                                className="h-4 w-4 rounded text-blue-600 focus:ring-blue-500"
+                              />
+                              <span className="text-xs font-medium text-slate-700 dark:text-slate-300">{module === 'EMPLOYEES' ? 'Employees' : 'Profile'}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Time & Attendance */}
+                      <div>
+                        <h4 className="mb-3 text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">⏰ Time & Attendance</h4>
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                          {['LEAVE_OD', 'ATTENDANCE', 'OT_PERMISSIONS', 'SHIFTS'].map((module) => (
+                            <label key={module} className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 transition-all hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800">
+                              <input
+                                type="checkbox"
+                                checked={role.state.includes(module)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    role.setState([...role.state, module]);
+                                  } else {
+                                    role.setState(role.state.filter(m => m !== module));
+                                  }
+                                }}
+                                className="h-4 w-4 rounded text-blue-600 focus:ring-blue-500"
+                              />
+                              <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                                {module === 'LEAVE_OD' ? 'Leave & OD' : module === 'OT_PERMISSIONS' ? 'OT & Permissions' : module === 'SHIFTS' ? 'Shifts' : 'Attendance'}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Organization */}
+                      <div>
+                        <h4 className="mb-3 text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">🏢 Organization</h4>
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                          <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 transition-all hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800">
+                            <input
+                              type="checkbox"
+                              checked={role.state.includes('DEPARTMENTS')}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  role.setState([...role.state, 'DEPARTMENTS']);
+                                } else {
+                                  role.setState(role.state.filter(m => m !== 'DEPARTMENTS'));
+                                }
+                              }}
+                              className="h-4 w-4 rounded text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="text-xs font-medium text-slate-700 dark:text-slate-300">Departments</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Finance & Payroll */}
+                      <div>
+                        <h4 className="mb-3 text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">💰 Finance & Payroll</h4>
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                          {['PAYSLIPS', 'PAY_REGISTER', 'ALLOWANCES_DEDUCTIONS'].map((module) => (
+                            <label key={module} className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 transition-all hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800">
+                              <input
+                                type="checkbox"
+                                checked={role.state.includes(module)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    role.setState([...role.state, module]);
+                                  } else {
+                                    role.setState(role.state.filter(m => m !== module));
+                                  }
+                                }}
+                                className="h-4 w-4 rounded text-blue-600 focus:ring-blue-500"
+                              />
+                              <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                                {module === 'PAY_REGISTER' ? 'Pay Register' : module === 'ALLOWANCES_DEDUCTIONS' ? 'Allowances & Deductions' : 'Payslips'}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                <div className="flex justify-end">
+                  <button
+                    onClick={saveFeatureControlSettings}
+                    disabled={saving}
+                    className="rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-600 px-8 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/25 transition-all hover:from-blue-600 hover:to-indigo-700 disabled:opacity-50"
+                  >
+                    {saving ? 'Saving...' : 'Save Feature Control'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -3156,6 +4019,309 @@ export default function SettingsPage() {
           </div>
         )}
 
+        {activeTab === 'attendance_deductions' && (
+          <div className="space-y-6">
+            {earlyOutLoading ? (
+              <div className="flex items-center justify-center rounded-3xl border border-slate-200 bg-white/95 py-16 shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
+              </div>
+            ) : (
+              <>
+                <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg dark:border-slate-800 dark:bg-slate-950/95 sm:p-8">
+                  <h2 className="mb-2 text-xl font-semibold text-slate-900 dark:text-slate-100">Early-Out Rules</h2>
+                  <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">
+                    Configure independent early-out rules. When enabled, early-outs follow these settings; otherwise they use the combined late-in + early-out logic.
+                  </p>
+
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-blue-900/10">
+                      <div>
+                        <p className="text-sm font-medium text-slate-800 dark:text-slate-200">Enable Early-Out Rules</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Toggle to apply dedicated early-out logic</p>
+                      </div>
+                      <label className="relative inline-flex cursor-pointer items-center">
+                        <input
+                          type="checkbox"
+                          className="peer sr-only"
+                          checked={earlyOutSettings.isEnabled}
+                          onChange={(e) => setEarlyOutSettings(prev => ({ ...prev, isEnabled: e.target.checked }))}
+                        />
+                        <div className="peer h-6 w-11 rounded-full bg-slate-300 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-blue-500 peer-checked:after:translate-x-5"></div>
+                      </label>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-blue-900/10">
+                      <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                        Allowed Early-Out Per Day (Minutes)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={earlyOutSettings.allowedDurationMinutes}
+                        onChange={(e) => setEarlyOutSettings(prev => ({ ...prev, allowedDurationMinutes: parseInt(e.target.value || '0') }))}
+                        placeholder="e.g., 30"
+                        className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-400 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                      />
+                      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                        Minutes of early-out allowed per day without deduction.
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-blue-900/10">
+                      <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                        Minimum Duration to Count (Minutes)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={earlyOutSettings.minimumDuration}
+                        onChange={(e) => setEarlyOutSettings(prev => ({ ...prev, minimumDuration: parseInt(e.target.value || '0') }))}
+                        placeholder="e.g., 10"
+                        className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-400 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                      />
+                      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                        Only early-outs greater than or equal to this duration will be considered for deduction.
+                      </p>
+                    </div>
+
+                    <div className="space-y-3 rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-blue-900/10">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">Early-Out Deduction Ranges</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">Define ranges and apply quarter/half/full day or custom amount</p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        {earlyOutSettings.deductionRanges.length === 0 && (
+                          <p className="text-sm text-slate-500 dark:text-slate-400">No ranges configured.</p>
+                        )}
+                        {earlyOutSettings.deductionRanges.map((range, idx) => (
+                          <div key={range._id || idx} className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+                            <div className="flex flex-wrap items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                              <span className="font-semibold">{range.minMinutes}–{range.maxMinutes} min</span>
+                              <span className="text-slate-500">|</span>
+                              <span className="capitalize">{range.deductionType.replace('_', ' ')}</span>
+                              {range.deductionType === 'custom_amount' && range.deductionAmount && (
+                                <span className="text-slate-500">₹{range.deductionAmount}</span>
+                              )}
+                              {range.description && <span className="text-slate-500">— {range.description}</span>}
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => updateEarlyOutRange(range._id || '', {
+                                  deductionType: range.deductionType,
+                                  deductionAmount: range.deductionType === 'custom_amount' ? range.deductionAmount : undefined,
+                                })}
+                                className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:border-blue-400 hover:text-blue-600 dark:border-slate-700 dark:text-slate-200 dark:hover:border-blue-400 dark:hover:text-blue-300"
+                              >
+                                Refresh
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => deleteEarlyOutRange(range._id || '')}
+                                className="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-600 hover:border-red-400 dark:border-red-700 dark:text-red-300 dark:hover:border-red-500"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-1 gap-3 rounded-xl border border-dashed border-slate-300 bg-white p-4 dark:border-slate-700 dark:bg-slate-800 md:grid-cols-5">
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="Min (min)"
+                          value={newRange.minMinutes}
+                          onChange={(e) => setNewRange(prev => ({ ...prev, minMinutes: e.target.value }))}
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                        />
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="Max (min)"
+                          value={newRange.maxMinutes}
+                          onChange={(e) => setNewRange(prev => ({ ...prev, maxMinutes: e.target.value }))}
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                        />
+                        <select
+                          value={newRange.deductionType}
+                          onChange={(e) => setNewRange(prev => ({ ...prev, deductionType: e.target.value as any }))}
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                        >
+                          <option value="quarter_day">Quarter Day</option>
+                          <option value="half_day">Half Day</option>
+                          <option value="full_day">Full Day</option>
+                          <option value="custom_amount">Custom Amount</option>
+                        </select>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder="Amount (₹, if custom)"
+                          value={newRange.deductionAmount}
+                          onChange={(e) => setNewRange(prev => ({ ...prev, deductionAmount: e.target.value }))}
+                          disabled={newRange.deductionType !== 'custom_amount'}
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white disabled:cursor-not-allowed disabled:bg-slate-50 dark:disabled:bg-slate-800"
+                        />
+                        <input
+                          type="text"
+                          placeholder="Description"
+                          value={newRange.description}
+                          onChange={(e) => setNewRange(prev => ({ ...prev, description: e.target.value }))}
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                        />
+                        <div className="md:col-span-5 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={addEarlyOutRange}
+                            className="rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600"
+                          >
+                            Add Range
+                          </button>
+                        </div>
+                      </div>
+
+                    </div>
+
+                    <div className="flex justify-end">
+                      <button
+                        onClick={saveEarlyOutSettings}
+                        disabled={earlyOutSaving || earlyOutLoading}
+                        className="rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 hover:shadow-xl hover:shadow-blue-500/40 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {earlyOutSaving ? 'Saving...' : 'Save Early-Out Settings'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'communications' && (
+          <div className="space-y-6">
+            {communicationsLoading ? (
+              <div className="flex items-center justify-center rounded-3xl border border-slate-200 bg-white/95 py-16 shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
+              </div>
+            ) : (
+              <>
+                <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg dark:border-slate-800 dark:bg-slate-950/95 sm:p-8">
+                  <h2 className="mb-2 text-xl font-semibold text-slate-900 dark:text-slate-100">Password Management</h2>
+                  <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">
+                    Configure how temporary passwords are generated for new employees and users.
+                  </p>
+
+                  <div className="grid gap-6 sm:grid-cols-2">
+                    <button
+                      onClick={() => setPasswordGenerationMode('random')}
+                      className={`relative flex flex-col items-start rounded-2xl border p-5 text-left transition-all ${passwordGenerationMode === 'random'
+                        ? 'border-blue-500 bg-blue-50/50 ring-2 ring-blue-500/20 dark:border-blue-400 dark:bg-blue-900/10'
+                        : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800'
+                        }`}
+                    >
+                      <div className={`mb-3 flex h-10 w-10 items-center justify-center rounded-xl ${passwordGenerationMode === 'random' ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400'}`}>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                        </svg>
+                      </div>
+                      <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Random Password</h3>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Secure 10-character alphanumeric password</p>
+                      {passwordGenerationMode === 'random' && <div className="absolute right-4 top-4 text-blue-500"><svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg></div>}
+                    </button>
+
+                    <button
+                      onClick={() => setPasswordGenerationMode('phone_empno')}
+                      className={`relative flex flex-col items-start rounded-2xl border p-5 text-left transition-all ${passwordGenerationMode === 'phone_empno'
+                        ? 'border-blue-500 bg-blue-50/50 ring-2 ring-blue-500/20 dark:border-blue-400 dark:bg-blue-900/10'
+                        : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800'
+                        }`}
+                    >
+                      <div className={`mb-3 flex h-10 w-10 items-center justify-center rounded-xl ${passwordGenerationMode === 'phone_empno' ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400'}`}>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                        </svg>
+                      </div>
+                      <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Predictable Password</h3>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Last 4 digits of phone + Employee ID</p>
+                      {passwordGenerationMode === 'phone_empno' && <div className="absolute right-4 top-4 text-blue-500"><svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg></div>}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg dark:border-slate-800 dark:bg-slate-950/95 sm:p-8">
+                  <h2 className="mb-2 text-xl font-semibold text-slate-900 dark:text-slate-100">Credential Delivery Strategy</h2>
+                  <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">
+                    Define how credentials should be sent to employees upon account creation.
+                  </p>
+
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    {[
+                      { id: 'email_only', label: 'Email Only', desc: 'Send via Email only', icon: 'M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z' },
+                      { id: 'sms_only', label: 'SMS Only', desc: 'Send via SMS only', icon: 'M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z' },
+                      { id: 'both', label: 'Email & SMS', desc: 'Send via both channels', icon: 'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9' },
+                      { id: 'intelligent', label: 'Intelligent', desc: 'Auto-select based on availability', icon: 'M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.989-2.386l-.548-.547z' }
+                    ].map((item) => (
+                      <button
+                        key={item.id}
+                        onClick={() => setCredentialDeliveryStrategy(item.id as any)}
+                        className={`group relative flex flex-col items-start rounded-2xl border p-4 text-left transition-all ${credentialDeliveryStrategy === item.id
+                          ? 'border-indigo-500 bg-indigo-50/50 ring-2 ring-indigo-500/20 dark:border-indigo-400 dark:bg-indigo-900/10'
+                          : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800'
+                          }`}
+                      >
+                        <div className={`mb-3 flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${credentialDeliveryStrategy === item.id ? 'bg-indigo-500 text-white' : 'bg-slate-100 text-slate-600 group-hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-400'}`}>
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={item.icon} />
+                          </svg>
+                        </div>
+                        <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{item.label}</h3>
+                        <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">{item.desc}</p>
+                        {credentialDeliveryStrategy === item.id && <div className="absolute right-3 top-3 text-indigo-500"><svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg></div>}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="mt-6 rounded-2xl border border-blue-100 bg-blue-50/30 p-4 dark:border-blue-900/30 dark:bg-blue-900/10">
+                    <div className="flex gap-3">
+                      <div className="text-blue-500">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-semibold text-blue-900 dark:text-blue-100">About {credentialDeliveryStrategy === 'intelligent' ? 'Intelligent Mode' : credentialDeliveryStrategy.replace('_', ' ')}</h4>
+                        <p className="mt-1 text-[11px] leading-relaxed text-blue-800/80 dark:text-blue-200/80">
+                          {credentialDeliveryStrategy === 'intelligent'
+                            ? "Prioritizes SMS for mobile accessibility. If no phone number is found, it automatically falls back to Email delivery."
+                            : credentialDeliveryStrategy === 'both'
+                              ? "Sends credentials to both Email and Phone Number for maximum visibility and record keeping."
+                              : `Sends credentials exclusively via ${credentialDeliveryStrategy === 'email_only' ? 'Email' : 'SMS'}. Ensure users have the required contact info.`}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-8 flex justify-end">
+                    <button
+                      onClick={saveCommunicationSettings}
+                      disabled={saving}
+                      className="rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-600 px-8 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/25 transition-all hover:scale-[1.02] hover:shadow-blue-500/40 active:scale-95 disabled:opacity-50"
+                    >
+                      {saving ? 'Saving...' : 'Save Communication Settings'}
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
         {activeTab === 'general' && (
           <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg dark:border-slate-800 dark:bg-slate-950/95 sm:p-8">
             <h2 className="mb-2 text-xl font-semibold text-slate-900 dark:text-slate-100">General Settings</h2>
@@ -3165,66 +4331,68 @@ export default function SettingsPage() {
       </div>
 
       {/* Edit Modal */}
-      {editingDuration && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="mx-4 w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Edit Duration</h3>
-              <button
-                onClick={() => setEditingDuration(null)}
-                className="rounded-lg p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
-              >
-                <CloseIcon />
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Duration (hours)
-                </label>
-                <input
-                  type="number"
-                  min="0.5"
-                  step="0.5"
-                  value={editDuration}
-                  onChange={(e) => setEditDuration(Number(e.target.value))}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Label
-                </label>
-                <input
-                  type="text"
-                  value={editLabel}
-                  onChange={(e) => setEditLabel(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                  placeholder="e.g., Full Day"
-                />
-              </div>
-
-              <div className="flex gap-3 pt-2">
+      {
+        editingDuration && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="mx-4 w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Edit Duration</h3>
                 <button
                   onClick={() => setEditingDuration(null)}
-                  className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                  className="rounded-lg p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
                 >
-                  Cancel
+                  <CloseIcon />
                 </button>
-                <button
-                  onClick={handleEditSave}
-                  disabled={saving || !editDuration}
-                  className="flex-1 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {saving ? 'Saving...' : 'Save'}
-                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Duration (hours)
+                  </label>
+                  <input
+                    type="number"
+                    min="0.5"
+                    step="0.5"
+                    value={editDuration}
+                    onChange={(e) => setEditDuration(Number(e.target.value))}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Label
+                  </label>
+                  <input
+                    type="text"
+                    value={editLabel}
+                    onChange={(e) => setEditLabel(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                    placeholder="e.g., Full Day"
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={() => setEditingDuration(null)}
+                    className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleEditSave}
+                    disabled={saving || !editDuration}
+                    className="flex-1 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {saving ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )
+      }
+    </div >
   );
 }

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { api, apiRequest } from '@/lib/api';
 import { toast } from 'react-toastify';
+import Spinner from '@/components/Spinner';
 
 type TabType = 'shift' | 'employee' | 'leaves' | 'loan' | 'salary_advance' | 'attendance' | 'payroll' | 'overtime' | 'permissions' | 'attendance_deductions' | 'communications' | 'feature_control' | 'general';
 
@@ -1641,7 +1642,7 @@ export default function SettingsPage() {
 
             {loading ? (
               <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-slate-50/50 py-12 dark:border-slate-700 dark:bg-slate-900/50">
-                <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
+                <Spinner />
                 <p className="mt-4 text-sm text-slate-600 dark:text-slate-400">Loading durations...</p>
               </div>
             ) : shiftDurations.length === 0 ? (
@@ -1727,7 +1728,7 @@ export default function SettingsPage() {
 
             {employeeSettingsLoading ? (
               <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-slate-50/50 py-12 dark:border-slate-700 dark:bg-slate-900/50">
-                <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
+                <Spinner />
                 <p className="mt-4 text-sm text-slate-600 dark:text-slate-400">Loading settings...</p>
               </div>
             ) : (
@@ -1871,7 +1872,7 @@ export default function SettingsPage() {
 
             {leaveSettingsLoading ? (
               <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-slate-50/50 py-12 dark:border-slate-700 dark:bg-slate-900/50">
-                <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
+                <Spinner />
                 <p className="mt-4 text-sm text-slate-600 dark:text-slate-400">Loading settings...</p>
               </div>
             ) : (
@@ -2460,7 +2461,7 @@ export default function SettingsPage() {
 
                     {workspacesLoading ? (
                       <div className="flex items-center justify-center py-12">
-                        <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                        <Spinner />
                       </div>
                     ) : workspaces.length === 0 ? (
                       <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center dark:border-slate-700 dark:bg-slate-800">
