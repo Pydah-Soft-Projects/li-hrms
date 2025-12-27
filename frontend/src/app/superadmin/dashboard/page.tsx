@@ -95,8 +95,8 @@ export default function SuperAdminDashboard() {
         api.getDepartments(true),
         api.getUsers(),
         api.getMonthlyAttendance(currentDate.getFullYear(), currentDate.getMonth() + 1),
-        api.getLeaves({ status: 'pending' }),
-        api.getODs({ status: 'pending' }),
+        api.getPendingLeaveApprovals(),
+        api.getPendingODApprovals(),
         api.getLeaves(),
         api.getODs()
       ]);
