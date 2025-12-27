@@ -831,8 +831,6 @@ export default function DynamicEmployeeForm({
     }
 
     const qualifications = formData.qualifications || [];
-    console.log('[FORM DEBUG] Rendering qualifications, data:', qualifications);
-    console.log('[FORM DEBUG] Full formData:', formData);
 
     const handleQualificationChange = (index: number, fieldId: string, value: any) => {
       const newQualifications = [...qualifications];
