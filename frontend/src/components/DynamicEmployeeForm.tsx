@@ -831,6 +831,8 @@ export default function DynamicEmployeeForm({
     }
 
     const qualifications = formData.qualifications || [];
+    console.log('[FORM DEBUG] Rendering qualifications, data:', qualifications);
+    console.log('[FORM DEBUG] Full formData:', formData);
 
     const handleQualificationChange = (index: number, fieldId: string, value: any) => {
       const newQualifications = [...qualifications];
@@ -1024,19 +1026,18 @@ export default function DynamicEmployeeForm({
                       </p>
                     </div>
                   ) : (
-                    <div className={isViewMode ? 'pointer-events-none opacity-75' : ''}>
-                      <CertificateUpload
-                        qualificationIndex={index}
-                        certificateUrl={qualifications[index]?.certificateUrl}
-                        onFileChange={(file) => {
-                          handleQualificationChange(index, 'certificateFile', file);
-                        }}
-                        onDelete={() => {
-                          handleQualificationChange(index, 'certificateFile', null);
-                          handleQualificationChange(index, 'certificateUrl', null);
-                        }}
-                      />
-                    </div>
+                    <CertificateUpload
+                      qualificationIndex={index}
+                      certificateUrl={qualifications[index]?.certificateUrl}
+                      onFileChange={(file) => {
+                        handleQualificationChange(index, 'certificateFile', file);
+                      }}
+                      onDelete={() => {
+                        handleQualificationChange(index, 'certificateFile', null);
+                        handleQualificationChange(index, 'certificateUrl', null);
+                      }}
+                      isViewMode={isViewMode}
+                    />
                   )}
                 </div>
               )}

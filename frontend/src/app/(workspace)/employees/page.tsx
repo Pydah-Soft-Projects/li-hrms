@@ -15,6 +15,7 @@ import {
 } from '@/lib/bulkUpload';
 
 interface Employee {
+  _id: string;
   emp_no: string;
   employee_name: string;
   department_id?: string;
@@ -632,9 +633,12 @@ export default function EmployeesPage() {
         } else if (field.type === 'number') {
           sample[field.id] = 0;
           columns.push({ key: field.id, label: field.label, type: 'number' });
-        } else if (field.type === 'select') {
+        } else if (field.type === 'select' || field.type === 'multiselect') {
           sample[field.id] = field.options?.[0]?.value || '';
           columns.push({ key: field.id, label: field.label, type: 'select', options: field.options });
+        } else if (field.type === 'userselect') {
+          sample[field.id] = 'Employee Name';
+          columns.push({ key: field.id, label: field.label, type: 'select' }); // Type select for mapping
         } else if (field.type === 'array' || field.type === 'object') {
           if (field.id === 'qualifications' || field.id === 'experience') return;
           sample[field.id] = field.type === 'array' ? 'item1, item2' : 'key1:val1|key2:val2';
@@ -1092,9 +1096,35 @@ export default function EmployeesPage() {
 
     // Get qualifications - check if it's an array (new format) or string (old format)
     let qualificationsValue: any[] = [];
+    console.log('[DEBUG] Employee qualifications:', employee.qualifications);
+    console.log('[DEBUG] Employee dynamicFields:', employee.dynamicFields);
+
     if (employee.qualifications) {
       if (Array.isArray(employee.qualifications)) {
-        qualificationsValue = employee.qualifications;
+        // Normalize field names for legacy data
+        qualificationsValue = employee.qualifications.map((qual: any) => {
+          const normalized: any = {};
+
+          // Handle different field name variations
+          Object.keys(qual).forEach(key => {
+            const lowerKey = key.toLowerCase();
+
+            // Map old field names to new ones
+            if (lowerKey === 'degree') {
+              normalized.degree = qual[key];
+            } else if (lowerKey === 'year' || key === 'qualified_year') {
+              normalized.qualified_year = qual[key];
+            } else if (key === 'certificateUrl' || key === 'certificateFile') {
+              // Preserve certificate fields as-is
+              normalized[key] = qual[key];
+            } else {
+              // Preserve other fields with lowercase keys
+              normalized[lowerKey] = qual[key];
+            }
+          });
+
+          return normalized;
+        });
       } else if (typeof employee.qualifications === 'string') {
         // Old format - convert to array if needed
         qualificationsValue = employee.qualifications.split(',').map(s => ({ degree: s.trim() }));
@@ -1103,9 +1133,29 @@ export default function EmployeesPage() {
     // Also check in dynamicFields
     if (employee.dynamicFields?.qualifications) {
       if (Array.isArray(employee.dynamicFields.qualifications)) {
-        qualificationsValue = employee.dynamicFields.qualifications;
+        qualificationsValue = employee.dynamicFields.qualifications.map((qual: any) => {
+          const normalized: any = {};
+
+          Object.keys(qual).forEach(key => {
+            const lowerKey = key.toLowerCase();
+
+            if (lowerKey === 'degree') {
+              normalized.degree = qual[key];
+            } else if (lowerKey === 'year' || key === 'qualified_year') {
+              normalized.qualified_year = qual[key];
+            } else if (key === 'certificateUrl' || key === 'certificateFile') {
+              normalized[key] = qual[key];
+            } else {
+              normalized[lowerKey] = qual[key];
+            }
+          });
+
+          return normalized;
+        });
       }
     }
+
+    console.log('[DEBUG] Final qualificationsValue:', qualificationsValue);
 
     // Merge dynamicFields into formData
     const dynamicFieldsData = employee.dynamicFields || {};
@@ -1150,6 +1200,7 @@ export default function EmployeesPage() {
       reporting_to_: reportingToValue,
     };
 
+    console.log('[DEBUG] Setting formData with qualifications:', newFormData.qualifications);
     setFormData(newFormData);
     setShowDialog(true);
 
@@ -3009,11 +3060,28 @@ export default function EmployeesPage() {
             if (col.key === 'gender') {
               return { ...col, type: 'select', options: [{ value: 'Male', label: 'Male' }, { value: 'Female', label: 'Female' }, { value: 'Other', label: 'Other' }] };
             }
+            if (col.key === 'marital_status') {
+              return { ...col, type: 'select', options: [{ value: 'Single', label: 'Single' }, { value: 'Married', label: 'Married' }, { value: 'Divorced', label: 'Divorced' }, { value: 'Widowed', label: 'Widowed' }] };
+            }
+            if (col.key === 'blood_group') {
+              return { ...col, type: 'select', options: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(bg => ({ value: bg, label: bg })) };
+            }
+
+            // Handle userselect fields (like reporting_to)
+            const field = formSettings?.groups?.flatMap((g: any) => g.fields).find((f: any) => f.id === col.key);
+            if (field?.type === 'userselect' || col.key === 'reporting_to') {
+              return {
+                ...col,
+                type: 'select',
+                options: employees.map(e => ({ value: e._id, label: e.employee_name }))
+              };
+            }
             return col;
           })}
           validateRow={(row) => {
-            const result = validateEmployeeRow(row, departments, designations);
-            return { isValid: result.isValid, errors: result.errors };
+            const mappedUsers = employees.map(e => ({ _id: e._id, name: e.employee_name }));
+            const result = validateEmployeeRow(row, departments, designations, mappedUsers);
+            return { isValid: result.isValid, errors: result.errors, mappedRow: result.mappedRow };
           }}
           onSubmit={async (data) => {
             const batchData: any[] = [];

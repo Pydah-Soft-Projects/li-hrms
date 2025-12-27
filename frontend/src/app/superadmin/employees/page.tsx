@@ -15,6 +15,7 @@ import {
 } from '@/lib/bulkUpload';
 
 interface Employee {
+  _id: string;
   emp_no: string;
   employee_name: string;
   department_id?: string;
@@ -1095,9 +1096,35 @@ export default function EmployeesPage() {
 
     // Get qualifications - check if it's an array (new format) or string (old format)
     let qualificationsValue: any[] = [];
+    console.log('[DEBUG] Employee qualifications:', employee.qualifications);
+    console.log('[DEBUG] Employee dynamicFields:', employee.dynamicFields);
+
     if (employee.qualifications) {
       if (Array.isArray(employee.qualifications)) {
-        qualificationsValue = employee.qualifications;
+        // Normalize field names for legacy data
+        qualificationsValue = employee.qualifications.map((qual: any) => {
+          const normalized: any = {};
+
+          // Handle different field name variations
+          Object.keys(qual).forEach(key => {
+            const lowerKey = key.toLowerCase();
+
+            // Map old field names to new ones
+            if (lowerKey === 'degree') {
+              normalized.degree = qual[key];
+            } else if (lowerKey === 'year' || key === 'qualified_year') {
+              normalized.qualified_year = qual[key];
+            } else if (key === 'certificateUrl' || key === 'certificateFile') {
+              // Preserve certificate fields as-is
+              normalized[key] = qual[key];
+            } else {
+              // Preserve other fields with lowercase keys
+              normalized[lowerKey] = qual[key];
+            }
+          });
+
+          return normalized;
+        });
       } else if (typeof employee.qualifications === 'string') {
         // Old format - convert to array if needed
         qualificationsValue = employee.qualifications.split(',').map(s => ({ degree: s.trim() }));
@@ -1106,9 +1133,29 @@ export default function EmployeesPage() {
     // Also check in dynamicFields
     if (employee.dynamicFields?.qualifications) {
       if (Array.isArray(employee.dynamicFields.qualifications)) {
-        qualificationsValue = employee.dynamicFields.qualifications;
+        qualificationsValue = employee.dynamicFields.qualifications.map((qual: any) => {
+          const normalized: any = {};
+
+          Object.keys(qual).forEach(key => {
+            const lowerKey = key.toLowerCase();
+
+            if (lowerKey === 'degree') {
+              normalized.degree = qual[key];
+            } else if (lowerKey === 'year' || key === 'qualified_year') {
+              normalized.qualified_year = qual[key];
+            } else if (key === 'certificateUrl' || key === 'certificateFile') {
+              normalized[key] = qual[key];
+            } else {
+              normalized[lowerKey] = qual[key];
+            }
+          });
+
+          return normalized;
+        });
       }
     }
+
+    console.log('[DEBUG] Final qualificationsValue:', qualificationsValue);
 
     // Merge dynamicFields into formData
     const dynamicFieldsData = employee.dynamicFields || {};
@@ -1153,6 +1200,7 @@ export default function EmployeesPage() {
       reporting_to_: reportingToValue,
     };
 
+    console.log('[DEBUG] Setting formData with qualifications:', newFormData.qualifications);
     setFormData(newFormData);
     setShowDialog(true);
 
