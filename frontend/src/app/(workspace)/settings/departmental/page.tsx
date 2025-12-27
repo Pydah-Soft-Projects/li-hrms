@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
+import Spinner from '@/components/Spinner';
 
 interface Department {
   _id: string;
@@ -13,6 +14,9 @@ interface Department {
 interface DepartmentSettings {
   _id?: string;
   department: Department | string;
+  payroll?: {
+    includeMissingEmployeeComponents?: boolean | null;
+  };
   leaves: {
     leavesPerDay: number | null;
     paidLeavesCount: number | null;
@@ -105,6 +109,7 @@ export default function DepartmentalSettingsPage() {
     permissions: DepartmentSettings['permissions'];
     ot: DepartmentSettings['ot'];
     attendance?: DepartmentSettings['attendance'];
+    payroll?: DepartmentSettings['payroll'];
   }>({
     leaves: {
       leavesPerDay: null,
@@ -165,6 +170,9 @@ export default function DepartmentalSettingsPage() {
         minimumDuration: 0,
         deductionRanges: [],
       },
+    },
+    payroll: {
+      includeMissingEmployeeComponents: null,
     },
   });
 
@@ -258,12 +266,16 @@ export default function DepartmentalSettingsPage() {
               minimumDuration: s.attendance?.deductionRules?.minimumDuration ?? null,
               calculationMode: s.attendance?.deductionRules?.calculationMode ?? null,
             },
-        earlyOut: {
-          isEnabled: s.attendance?.earlyOut?.isEnabled ?? false,
-          allowedDurationMinutes: s.attendance?.earlyOut?.allowedDurationMinutes ?? 0,
-          minimumDuration: s.attendance?.earlyOut?.minimumDuration ?? 0,
-          deductionRanges: Array.isArray(s.attendance?.earlyOut?.deductionRanges) ? s.attendance.earlyOut.deductionRanges : [],
-        },
+            earlyOut: {
+              isEnabled: s.attendance?.earlyOut?.isEnabled ?? false,
+              allowedDurationMinutes: s.attendance?.earlyOut?.allowedDurationMinutes ?? 0,
+              minimumDuration: s.attendance?.earlyOut?.minimumDuration ?? 0,
+              deductionRanges: Array.isArray(s.attendance?.earlyOut?.deductionRanges) ? s.attendance.earlyOut.deductionRanges : [],
+            },
+          },
+          payroll: {
+            includeMissingEmployeeComponents:
+              s.payroll?.includeMissingEmployeeComponents ?? null,
           },
         });
       }
@@ -338,10 +350,18 @@ export default function DepartmentalSettingsPage() {
           deductionRanges: [],
         },
       },
+      payroll: {
+        includeMissingEmployeeComponents: null,
+      },
     });
   };
 
-  const handleInputChange = (section: 'leaves' | 'loans' | 'salaryAdvance' | 'permissions' | 'ot' | 'attendance', field: string, value: any, nestedField?: string) => {
+  const handleInputChange = (
+    section: 'leaves' | 'loans' | 'salaryAdvance' | 'permissions' | 'ot' | 'attendance' | 'payroll',
+    field: string,
+    value: any,
+    nestedField?: string
+  ) => {
     setFormData(prev => {
       if (nestedField && (section === 'permissions' || section === 'attendance')) {
         // Handle nested fields like deductionRules
@@ -353,6 +373,14 @@ export default function DepartmentalSettingsPage() {
               ...(prev[section] as any)?.[field],
               [nestedField]: value === '' ? null : value,
             },
+          },
+        };
+      } else if (section === 'payroll') {
+        return {
+          ...prev,
+          payroll: {
+            ...(prev.payroll || {}),
+            [field]: value === '' ? null : value,
           },
         };
       }
@@ -383,6 +411,7 @@ export default function DepartmentalSettingsPage() {
         permissions: formData.permissions,
         ot: formData.ot,
         attendance: formData.attendance,
+        payroll: formData.payroll,
       };
 
       const response = await api.updateDepartmentSettings(selectedDepartmentId, updateData);
@@ -441,7 +470,7 @@ export default function DepartmentalSettingsPage() {
 
       {loadingSettings ? (
         <div className="flex items-center justify-center py-12">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-green-500 border-t-transparent"></div>
+          <Spinner />
           <span className="ml-3 text-sm text-slate-600 dark:text-slate-400">Loading settings...</span>
         </div>
       ) : selectedDepartmentId ? (
@@ -1034,163 +1063,217 @@ export default function DepartmentalSettingsPage() {
                 </p>
               </div>
             </div>
+          </div>
 
-            {/* Early-Out Settings */}
-            <div className="mt-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <h3 className="text-base font-semibold text-slate-900 dark:text-white">Early-Out Rules</h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Independent rules for early-outs. When disabled, combined rules apply.</p>
-                </div>
-                <label className="relative inline-flex cursor-pointer items-center">
-                  <input
-                    type="checkbox"
-                    className="peer sr-only"
-                    checked={formData.attendance?.earlyOut?.isEnabled ?? false}
-                    onChange={(e) => handleInputChange('attendance', 'earlyOut', e.target.checked, 'isEnabled')}
-                  />
-                  <div className="peer h-5 w-10 rounded-full bg-slate-300 after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-all peer-checked:bg-green-500 peer-checked:after:translate-x-5"></div>
+          {/* Early-Out Settings */}
+          <div className="mt-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-semibold text-slate-900 dark:text-white">Early-Out Rules</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Independent rules for early-outs. When disabled, combined rules apply.</p>
+              </div>
+              <label className="relative inline-flex cursor-pointer items-center">
+                <input
+                  type="checkbox"
+                  className="peer sr-only"
+                  checked={formData.attendance?.earlyOut?.isEnabled ?? false}
+                  onChange={(e) => handleInputChange('attendance', 'earlyOut', e.target.checked, 'isEnabled')}
+                />
+                <div className="peer h-5 w-10 rounded-full bg-slate-300 after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-all peer-checked:bg-green-500 peer-checked:after:translate-x-5"></div>
+              </label>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                  Allowed Early-Out Per Day (Minutes)
                 </label>
+                <input
+                  type="number"
+                  min="0"
+                  value={formData.attendance?.earlyOut?.allowedDurationMinutes ?? 0}
+                  onChange={(e) => handleInputChange('attendance', 'earlyOut', e.target.value ? parseInt(e.target.value) : 0, 'allowedDurationMinutes')}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                />
+                <p className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">Minutes allowed without deduction</p>
               </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                  Minimum Duration to Count (Minutes)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  value={formData.attendance?.earlyOut?.minimumDuration ?? 0}
+                  onChange={(e) => handleInputChange('attendance', 'earlyOut', e.target.value ? parseInt(e.target.value) : 0, 'minimumDuration')}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                />
+                <p className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">Only early-outs {'>='} this duration will count</p>
+              </div>
+            </div>
 
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
-                    Allowed Early-Out Per Day (Minutes)
-                  </label>
+            <div className="mt-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">Deduction Ranges</p>
+              </div>
+              {(formData.attendance?.earlyOut?.deductionRanges || []).length === 0 && (
+                <p className="text-xs text-slate-500 dark:text-slate-400">No ranges configured.</p>
+              )}
+              {(formData.attendance?.earlyOut?.deductionRanges || []).map((range, idx) => (
+                <div key={range._id || idx} className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                  <span className="font-semibold">{range.minMinutes}–{range.maxMinutes} min</span>
+                  <span className="text-slate-500">|</span>
+                  <span className="capitalize">{range.deductionType.replace('_', ' ')}</span>
+                  {range.deductionType === 'custom_amount' && range.deductionAmount && <span className="text-slate-500">₹{range.deductionAmount}</span>}
+                  {range.description && <span className="text-slate-500">— {range.description}</span>}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const updated = [...(formData.attendance?.earlyOut?.deductionRanges || [])];
+                      updated.splice(idx, 1);
+                      setFormData((prev) => ({
+                        ...prev,
+                        attendance: {
+                          ...prev.attendance,
+                          earlyOut: {
+                            ...(prev.attendance?.earlyOut || { isEnabled: false, allowedDurationMinutes: 0, minimumDuration: 0, deductionRanges: [] }),
+                            deductionRanges: updated,
+                          },
+                        },
+                      }));
+                    }}
+                    className="ml-auto rounded border border-red-200 px-2 py-1 text-[11px] font-semibold text-red-600 hover:border-red-400 dark:border-red-700 dark:text-red-300"
+                  >
+                    Delete
+                  </button>
+                </div>
+              ))}
+
+              {/* Add Range */}
+              <div className="grid grid-cols-1 gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-xs dark:border-slate-600 dark:bg-slate-800">
+                <div className="grid grid-cols-2 gap-2">
                   <input
                     type="number"
                     min="0"
-                    value={formData.attendance?.earlyOut?.allowedDurationMinutes ?? 0}
-                    onChange={(e) => handleInputChange('attendance', 'earlyOut', e.target.value ? parseInt(e.target.value) : 0, 'allowedDurationMinutes')}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
-                  />
-                  <p className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">Minutes allowed without deduction</p>
-                </div>
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
-                    Minimum Duration to Count (Minutes)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={formData.attendance?.earlyOut?.minimumDuration ?? 0}
-                    onChange={(e) => handleInputChange('attendance', 'earlyOut', e.target.value ? parseInt(e.target.value) : 0, 'minimumDuration')}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
-                  />
-                  <p className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">Only early-outs {'>='} this duration will count</p>
-                </div>
-              </div>
-
-              <div className="mt-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">Deduction Ranges</p>
-                </div>
-                {(formData.attendance?.earlyOut?.deductionRanges || []).length === 0 && (
-                  <p className="text-xs text-slate-500 dark:text-slate-400">No ranges configured.</p>
-                )}
-                {(formData.attendance?.earlyOut?.deductionRanges || []).map((range, idx) => (
-                  <div key={range._id || idx} className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                    <span className="font-semibold">{range.minMinutes}–{range.maxMinutes} min</span>
-                    <span className="text-slate-500">|</span>
-                    <span className="capitalize">{range.deductionType.replace('_', ' ')}</span>
-                    {range.deductionType === 'custom_amount' && range.deductionAmount && <span className="text-slate-500">₹{range.deductionAmount}</span>}
-                    {range.description && <span className="text-slate-500">— {range.description}</span>}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const updated = [...(formData.attendance?.earlyOut?.deductionRanges || [])];
-                        updated.splice(idx, 1);
-                        handleInputChange('attendance', 'earlyOut', updated, 'deductionRanges');
-                      }}
-                      className="ml-auto rounded border border-red-200 px-2 py-1 text-[11px] font-semibold text-red-600 hover:border-red-400 dark:border-red-700 dark:text-red-300"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                ))}
-
-                {/* Add Range */}
-                <div className="grid grid-cols-1 gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-xs dark:border-slate-600 dark:bg-slate-800">
-                  <div className="grid grid-cols-2 gap-2">
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder="Min (min)"
-                      value={newRange.minMinutes}
-                      onChange={(e) => setNewRange(prev => ({ ...prev, minMinutes: e.target.value }))}
-                      className="rounded border border-slate-300 bg-white px-2 py-1 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
-                    />
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder="Max (min)"
-                      value={newRange.maxMinutes}
-                      onChange={(e) => setNewRange(prev => ({ ...prev, maxMinutes: e.target.value }))}
-                      className="rounded border border-slate-300 bg-white px-2 py-1 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <select
-                      value={newRange.deductionType}
-                      onChange={(e) => setNewRange(prev => ({ ...prev, deductionType: e.target.value as any }))}
-                      className="rounded border border-slate-300 bg-white px-2 py-1 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
-                    >
-                      <option value="quarter_day">Quarter Day</option>
-                      <option value="half_day">Half Day</option>
-                      <option value="full_day">Full Day</option>
-                      <option value="custom_amount">Custom Amount</option>
-                    </select>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="Amount (if custom)"
-                      value={newRange.deductionAmount}
-                      disabled={newRange.deductionType !== 'custom_amount'}
-                      onChange={(e) => setNewRange(prev => ({ ...prev, deductionAmount: e.target.value }))}
-                      className="rounded border border-slate-300 bg-white px-2 py-1 disabled:cursor-not-allowed dark:border-slate-600 dark:bg-slate-900 dark:text-white"
-                    />
-                  </div>
-                  <input
-                    type="text"
-                    placeholder="Description"
-                    value={newRange.description}
-                    onChange={(e) => setNewRange(prev => ({ ...prev, description: e.target.value }))}
+                    placeholder="Min (min)"
+                    value={newRange.minMinutes}
+                    onChange={(e) => setNewRange(prev => ({ ...prev, minMinutes: e.target.value }))}
                     className="rounded border border-slate-300 bg-white px-2 py-1 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
                   />
-                  <div className="flex justify-end">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!newRange.minMinutes || !newRange.maxMinutes || Number(newRange.maxMinutes) <= Number(newRange.minMinutes)) {
-                          toast.error('Enter valid min and max minutes');
-                          return;
-                        }
-                        if (newRange.deductionType === 'custom_amount' && (!newRange.deductionAmount || Number(newRange.deductionAmount) <= 0)) {
-                          toast.error('Custom amount must be > 0');
-                          return;
-                        }
-                        const updated = [
-                          ...(formData.attendance?.earlyOut?.deductionRanges || []),
-                          {
-                            minMinutes: Number(newRange.minMinutes),
-                            maxMinutes: Number(newRange.maxMinutes),
-                            deductionType: newRange.deductionType,
-                            deductionAmount: newRange.deductionType === 'custom_amount' ? Number(newRange.deductionAmount) : undefined,
-                            description: newRange.description || '',
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="Max (min)"
+                    value={newRange.maxMinutes}
+                    onChange={(e) => setNewRange(prev => ({ ...prev, maxMinutes: e.target.value }))}
+                    className="rounded border border-slate-300 bg-white px-2 py-1 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <select
+                    value={newRange.deductionType}
+                    onChange={(e) => setNewRange(prev => ({ ...prev, deductionType: e.target.value as any }))}
+                    className="rounded border border-slate-300 bg-white px-2 py-1 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+                  >
+                    <option value="quarter_day">Quarter Day</option>
+                    <option value="half_day">Half Day</option>
+                    <option value="full_day">Full Day</option>
+                    <option value="custom_amount">Custom Amount</option>
+                  </select>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="Amount (if custom)"
+                    value={newRange.deductionAmount}
+                    disabled={newRange.deductionType !== 'custom_amount'}
+                    onChange={(e) => setNewRange(prev => ({ ...prev, deductionAmount: e.target.value }))}
+                    className="rounded border border-slate-300 bg-white px-2 py-1 disabled:cursor-not-allowed dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+                  />
+                </div>
+                <input
+                  type="text"
+                  placeholder="Description"
+                  value={newRange.description}
+                  onChange={(e) => setNewRange(prev => ({ ...prev, description: e.target.value }))}
+                  className="rounded border border-slate-300 bg-white px-2 py-1 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+                />
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const minVal = Number(newRange.minMinutes);
+                      const maxVal = Number(newRange.maxMinutes);
+
+                      if (Number.isNaN(minVal) || Number.isNaN(maxVal)) {
+                        toast.error('Enter valid min and max minutes');
+                        return;
+                      }
+                      if (maxVal === minVal) {
+                        toast.error('Min and Max cannot be equal');
+                        return;
+                      }
+
+                      // Normalize so min < max (auto-swap like global settings behavior)
+                      const normalizedMin = Math.min(minVal, maxVal);
+                      const normalizedMax = Math.max(minVal, maxVal);
+
+                      if (newRange.deductionType === 'custom_amount' && (!newRange.deductionAmount || Number(newRange.deductionAmount) <= 0)) {
+                        toast.error('Custom amount must be > 0');
+                        return;
+                      }
+                      const updated = [
+                        ...(formData.attendance?.earlyOut?.deductionRanges || []),
+                        {
+                          minMinutes: normalizedMin,
+                          maxMinutes: normalizedMax,
+                          deductionType: newRange.deductionType,
+                          deductionAmount: newRange.deductionType === 'custom_amount' ? Number(newRange.deductionAmount) : undefined,
+                          description: newRange.description || '',
+                        },
+                      ];
+                      setFormData((prev) => ({
+                        ...prev,
+                        attendance: {
+                          ...prev.attendance,
+                          earlyOut: {
+                            ...(prev.attendance?.earlyOut || { isEnabled: false, allowedDurationMinutes: 0, minimumDuration: 0, deductionRanges: [] }),
+                            deductionRanges: updated,
                           },
-                        ];
-                        handleInputChange('attendance', 'earlyOut', updated, 'deductionRanges');
-                        setNewRange({ minMinutes: '', maxMinutes: '', deductionType: 'quarter_day', deductionAmount: '', description: '' });
-                      }}
-                      className="rounded bg-green-500 px-3 py-1 text-xs font-semibold text-white hover:bg-green-600"
-                    >
-                      Add Range
-                    </button>
-                  </div>
+                        },
+                      }));
+                      setNewRange({ minMinutes: '', maxMinutes: '', deductionType: 'quarter_day', deductionAmount: '', description: '' });
+                    }}
+                    className="rounded bg-green-500 px-3 py-1 text-xs font-semibold text-white hover:bg-green-600"
+                  >
+                    Add Range
+                  </button>
                 </div>
               </div>
+            </div>
+          </div>
+
+          {/* Payroll Settings */}
+          <div className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/60">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-base font-semibold text-slate-900 dark:text-white">Payroll</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Department override for “Include Missing Allowances &amp; Deductions for Employees”. If unset, global applies.
+                </p>
+              </div>
+              <label className="relative inline-flex cursor-pointer items-center">
+                <input
+                  type="checkbox"
+                  className="peer sr-only"
+                  checked={(formData.payroll?.includeMissingEmployeeComponents ?? true)}
+                  onChange={(e) => handleInputChange('payroll', 'includeMissingEmployeeComponents', e.target.checked)}
+                />
+                <div className="peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-green-500 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-green-800"></div>
+              </label>
+            </div>
+            <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              Enabled: partial employee overrides fill missing items from Department then Global. Disabled: only employee overrides are used.
             </div>
           </div>
 

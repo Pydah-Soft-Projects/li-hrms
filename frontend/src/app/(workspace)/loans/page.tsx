@@ -1,8 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { api } from '@/lib/api';
+import { auth } from '@/lib/auth';
+import { toast, ToastContainer } from 'react-toastify';
+import Swal from 'sweetalert2';
+import 'react-toastify/dist/ReactToastify.css';
 
 // Icons
 const PlusIcon = () => (
@@ -11,15 +14,21 @@ const PlusIcon = () => (
   </svg>
 );
 
-const SearchIcon = () => (
-  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-  </svg>
-);
-
 const CheckIcon = () => (
   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+  </svg>
+);
+
+const XIcon = () => (
+  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+  </svg>
+);
+
+const SearchIcon = () => (
+  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
   </svg>
 );
 
@@ -34,11 +43,12 @@ interface LoanApplication {
   requestType: 'loan' | 'salary_advance';
   amount: number;
   reason: string;
+  remarks?: string;
   duration: number;
   status: string;
   appliedAt: string;
-  department?: { name: string };
-  designation?: { name: string };
+  department?: { _id: string; name: string };
+  designation?: { _id: string; name: string };
   loanConfig?: {
     emiAmount: number;
     interestRate: number;
@@ -51,7 +61,30 @@ interface LoanApplication {
   repayment?: {
     totalPaid: number;
     remainingBalance: number;
+    installmentsPaid: number;
+    totalInstallments: number;
+    lastPaymentDate?: string;
+    nextPaymentDate?: string;
   };
+  transactions?: Array<{
+    transactionType: string;
+    amount: number;
+    transactionDate: string;
+    payrollCycle?: string;
+    processedBy?: { name: string; email: string };
+    remarks?: string;
+    createdAt: string;
+  }>;
+  changeHistory?: Array<{
+    field: string;
+    originalValue: any;
+    newValue: any;
+    modifiedBy?: { _id: string; name: string; email: string; role: string };
+    modifiedByName: string;
+    modifiedByRole: string;
+    modifiedAt: string;
+    reason?: string;
+  }>;
 }
 
 interface Employee {
@@ -60,31 +93,66 @@ interface Employee {
   emp_no: string;
   department?: { _id: string; name: string };
   designation?: { _id: string; name: string };
-  phone_number?: string;
+  first_name?: string;
+  last_name?: string;
 }
 
 export default function LoansPage() {
-  const { activeWorkspace } = useWorkspace();
-  const [activeTab, setActiveTab] = useState<'loans' | 'advances'>('loans');
+  const [activeTab, setActiveTab] = useState<'loans' | 'advances' | 'pending'>('loans');
   const [loans, setLoans] = useState<LoanApplication[]>([]);
   const [advances, setAdvances] = useState<LoanApplication[]>([]);
+  const [pendingLoans, setPendingLoans] = useState<LoanApplication[]>([]);
+  const [pendingAdvances, setPendingAdvances] = useState<LoanApplication[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const [showApplyDialog, setShowApplyDialog] = useState(false);
-  const [applyType, setApplyType] = useState<'loan' | 'salary_advance'>('loan');
-  const [showDetailDialog, setShowDetailDialog] = useState(false);
+  const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  const [searchTerm, setSearchTerm] = useState('');
   const [selectedLoan, setSelectedLoan] = useState<LoanApplication | null>(null);
+  const [showDetailDialog, setShowDetailDialog] = useState(false);
+  const [actionComment, setActionComment] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   
-  // Form state
-  const [formData, setFormData] = useState({
+  // Edit dialog state
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [editFormData, setEditFormData] = useState({
     amount: '',
     reason: '',
     duration: '',
     remarks: '',
+    status: '',
   });
-
-  // Interest calculation state (for loans)
+  
+  // Apply dialog state
+  const [showApplyDialog, setShowApplyDialog] = useState(false);
+  
+  // Payment form state (inline in detail dialog)
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const [paymentData, setPaymentData] = useState({
+    amount: '',
+    paymentDate: new Date().toISOString().split('T')[0],
+    remarks: '',
+    payrollCycle: '',
+  });
+  // Disbursement dialog state
+  const [showDisbursementDialog, setShowDisbursementDialog] = useState(false);
+  const [disbursementData, setDisbursementData] = useState({
+    disbursementMethod: 'bank_transfer',
+    transactionReference: '',
+    remarks: '',
+  });
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [loadingTransactions, setLoadingTransactions] = useState(false);
+  
+  // Settlement preview state
+  const [settlementPreview, setSettlementPreview] = useState<any>(null);
+  const [loadingSettlement, setLoadingSettlement] = useState(false);
+  const [showSettlementDialog, setShowSettlementDialog] = useState(false);
+  const [applyType, setApplyType] = useState<'loan' | 'salary_advance'>('loan');
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [employeeSearch, setEmployeeSearch] = useState('');
+  const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
+  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
+  const [loanSettings, setLoanSettings] = useState<any>(null);
   const [interestCalculation, setInterestCalculation] = useState<{
     principal: number;
     interestRate: number;
@@ -94,28 +162,29 @@ export default function LoansPage() {
     totalAmount: number;
   } | null>(null);
   
-  // Loan settings for interest calculation
-  const [loanSettings, setLoanSettings] = useState<any>(null);
-
-  // Employee selection
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [employeeSearch, setEmployeeSearch] = useState('');
-  const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
-  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
-  
-  // Permissions
-  const [canApplyLoanForSelf, setCanApplyLoanForSelf] = useState(false);
-  const [canApplyLoanForOthers, setCanApplyLoanForOthers] = useState(false);
-  const [canApplyAdvanceForSelf, setCanApplyAdvanceForSelf] = useState(false);
-  const [canApplyAdvanceForOthers, setCanApplyAdvanceForOthers] = useState(false);
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  // Form state
+  const [formData, setFormData] = useState({
+    amount: '',
+    reason: '',
+    duration: '',
+    remarks: '',
+  });
 
   useEffect(() => {
     loadData();
-    loadCurrentUser();
-    checkWorkspacePermission();
+    loadEmployees();
     loadLoanSettings();
-  }, [activeWorkspace]);
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (showDetailDialog && selectedLoan) {
+      loadTransactions(selectedLoan._id);
+      // Load settlement preview for loans
+      if (selectedLoan.requestType === 'loan' && ['disbursed', 'active'].includes(selectedLoan.status)) {
+        loadSettlementPreview(selectedLoan._id);
+      }
+    }
+  }, [showDetailDialog, selectedLoan?._id]);
 
   useEffect(() => {
     if (applyType === 'loan' && formData.amount && formData.duration && loanSettings) {
@@ -125,102 +194,356 @@ export default function LoansPage() {
     }
   }, [formData.amount, formData.duration, applyType, loanSettings]);
 
-  useEffect(() => {
-    if ((canApplyLoanForOthers || canApplyAdvanceForOthers) && currentUser) {
-      loadEmployees();
-    }
-  }, [canApplyLoanForOthers, canApplyAdvanceForOthers, currentUser, activeWorkspace]);
-
-  const loadCurrentUser = async () => {
+  const loadData = async () => {
     try {
-      const response = await api.getCurrentUser();
-      if (response.success && response.data?.user) {
-        setCurrentUser(response.data.user);
+      setLoading(true);
+      console.log('[Superadmin Loans] Loading data...');
+      
+      // Load all loans - show ALL loans in loans tab (like leaves page)
+      const loansRes = await api.getLoans({ requestType: 'loan', limit: 100 });
+      console.log('[Superadmin Loans] Loans response:', loansRes);
+      if (loansRes.success && loansRes.data) {
+        const allLoans = Array.isArray(loansRes.data) ? loansRes.data : [];
+        console.log('[Superadmin Loans] All loans:', allLoans);
+        setLoans(allLoans);
+      } else {
+        setLoans([]);
+      }
+      
+      // Load all advances - show ALL advances in advances tab (like leaves page)
+      const advancesRes = await api.getLoans({ requestType: 'salary_advance', limit: 100 });
+      console.log('[Superadmin Loans] Advances response:', advancesRes);
+      if (advancesRes.success && advancesRes.data) {
+        const allAdvances = Array.isArray(advancesRes.data) ? advancesRes.data : [];
+        console.log('[Superadmin Loans] All advances:', allAdvances);
+        setAdvances(allAdvances);
+      } else {
+        setAdvances([]);
+      }
+      
+      // Load pending approvals - only for pending tab
+      const pendingRes = await api.getPendingLoanApprovals();
+      console.log('[Superadmin Loans] Pending response:', pendingRes);
+      if (pendingRes.success && pendingRes.data) {
+        const pending = Array.isArray(pendingRes.data) ? pendingRes.data : [];
+        console.log('[Superadmin Loans] All pending:', pending);
+        setPendingLoans(pending.filter((l: LoanApplication) => l.requestType === 'loan'));
+        setPendingAdvances(pending.filter((a: LoanApplication) => a.requestType === 'salary_advance'));
+      } else {
+        setPendingLoans([]);
+        setPendingAdvances([]);
       }
     } catch (err) {
-      console.error('Error loading current user:', err);
+      console.error('[Superadmin Loans] Error loading data:', err);
+      setMessage({ type: 'error', text: 'Failed to load loans and advances' });
+    } finally {
+      setLoading(false);
     }
   };
 
-  const checkWorkspacePermission = async () => {
+  const handleAction = async (loanId: string, action: 'approve' | 'reject' | 'forward') => {
     try {
-      const workspaceId = activeWorkspace?._id;
-      if (!workspaceId) {
-        setCanApplyLoanForSelf(false);
-        setCanApplyLoanForOthers(false);
-        setCanApplyAdvanceForSelf(false);
-        setCanApplyAdvanceForOthers(false);
-        return;
-      }
-
-      if (activeWorkspace?.type === 'employee') {
-        setCanApplyLoanForSelf(true);
-        setCanApplyLoanForOthers(false);
-        setCanApplyAdvanceForSelf(true);
-        setCanApplyAdvanceForOthers(false);
-        return;
-      }
-
-      const [loanSettingsRes, advanceSettingsRes] = await Promise.all([
-        api.getLoanSettings('loan'),
-        api.getLoanSettings('salary_advance'),
-      ]);
-
-      const workspaceIdStr = String(workspaceId);
-
-      // Check Loan permissions
-      let loanPermissions = null;
-      if (loanSettingsRes.success && loanSettingsRes.data?.settings?.workspacePermissions) {
-        const perms = loanSettingsRes.data.settings.workspacePermissions;
-        loanPermissions = perms[workspaceIdStr];
-      }
-
-      // Check Advance permissions
-      let advancePermissions = null;
-      if (advanceSettingsRes.success && advanceSettingsRes.data?.settings?.workspacePermissions) {
-        const perms = advanceSettingsRes.data.settings.workspacePermissions;
-        advancePermissions = perms[workspaceIdStr];
-      }
-
-      if (loanPermissions) {
-        if (typeof loanPermissions === 'boolean') {
-          setCanApplyLoanForSelf(false);
-          setCanApplyLoanForOthers(loanPermissions);
-        } else {
-          setCanApplyLoanForSelf(loanPermissions.canApplyForSelf || false);
-          setCanApplyLoanForOthers(loanPermissions.canApplyForOthers || false);
-        }
-      }
-
-      if (advancePermissions) {
-        if (typeof advancePermissions === 'boolean') {
-          setCanApplyAdvanceForSelf(false);
-          setCanApplyAdvanceForOthers(advancePermissions);
-        } else {
-          setCanApplyAdvanceForSelf(advancePermissions.canApplyForSelf || false);
-          setCanApplyAdvanceForOthers(advancePermissions.canApplyForOthers || false);
-        }
+      setSaving(true);
+      const response = await api.processLoanAction(loanId, action, actionComment);
+      if (response.success) {
+        setMessage({ type: 'success', text: `Loan ${action}d successfully` });
+        setShowDetailDialog(false);
+        setActionComment('');
+        loadData();
+      } else {
+        setMessage({ type: 'error', text: response.error || 'Failed to process action' });
       }
     } catch (err) {
-      console.error('Error checking workspace permission:', err);
+      setMessage({ type: 'error', text: 'An error occurred' });
+    } finally {
+      setSaving(false);
     }
+  };
+
+  const handleDisburse = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedLoan) return;
+
+    try {
+      setSaving(true);
+      setMessage(null);
+
+      const response = await api.disburseLoan(selectedLoan._id, {
+        disbursementMethod: disbursementData.disbursementMethod,
+        transactionReference: disbursementData.transactionReference,
+        remarks: disbursementData.remarks,
+      });
+
+      if (response.success) {
+        setMessage({ type: 'success', text: 'Funds released successfully. Transaction recorded.' });
+        setShowDisbursementDialog(false);
+        setDisbursementData({ disbursementMethod: 'bank_transfer', transactionReference: '', remarks: '' });
+        
+        // Reload loan data and transactions
+        const loanRes = await api.getLoan(selectedLoan._id);
+        if (loanRes.success) {
+          setSelectedLoan(loanRes.data);
+        }
+        loadTransactions(selectedLoan._id);
+        loadData();
+      } else {
+        setMessage({ type: 'error', text: response.error || 'Failed to release funds' });
+      }
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err.message || 'An error occurred' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const loadTransactions = async (loanId: string) => {
+    try {
+      setLoadingTransactions(true);
+      const response = await api.getLoanTransactions(loanId);
+      if (response.success && response.data) {
+        setTransactions(response.data.transactions || []);
+      }
+    } catch (err) {
+      console.error('Error loading transactions:', err);
+    } finally {
+      setLoadingTransactions(false);
+    }
+  };
+
+  const loadSettlementPreview = async (loanId: string) => {
+    try {
+      setLoadingSettlement(true);
+      const response = await api.getSettlementPreview(loanId);
+      if (response.success && response.data) {
+        setSettlementPreview(response.data);
+      }
+    } catch (err) {
+      console.error('Error loading settlement preview:', err);
+      setSettlementPreview(null);
+    } finally {
+      setLoadingSettlement(false);
+    }
+  };
+
+  const handleEdit = () => {
+    if (!selectedLoan) return;
+    
+    setEditFormData({
+      amount: selectedLoan.amount.toString(),
+      reason: selectedLoan.reason || '',
+      duration: selectedLoan.duration.toString(),
+      remarks: selectedLoan.remarks || '',
+      status: selectedLoan.status,
+    });
+    setShowEditDialog(true);
+  };
+
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedLoan) return;
+
+    try {
+      setSaving(true);
+      const user = auth.getUser();
+      const isSuperAdmin = user?.role === 'super_admin';
+      
+      const updateData: any = {
+        amount: parseFloat(editFormData.amount),
+        reason: editFormData.reason,
+        duration: parseInt(editFormData.duration),
+        remarks: editFormData.remarks,
+        changeReason: `Edited by ${user?.name || 'Admin'}`,
+      };
+
+      // If Super Admin is changing status, include statusChangeReason
+      if (isSuperAdmin && editFormData.status && editFormData.status !== selectedLoan.status) {
+        updateData.status = editFormData.status;
+        updateData.statusChangeReason = `Status changed from ${selectedLoan.status} to ${editFormData.status}`;
+      }
+
+      const response = await api.updateLoan(selectedLoan._id, updateData);
+
+      if (response.success) {
+        Swal.fire({
+          icon: 'success',
+          title: 'Success!',
+          text: `${selectedLoan.requestType === 'loan' ? 'Loan' : 'Salary advance'} updated successfully`,
+          timer: 2000,
+          showConfirmButton: false,
+        });
+        setShowEditDialog(false);
+        setShowDetailDialog(false);
+        setSelectedLoan(null);
+        loadData();
+      } else {
+        Swal.fire({
+          icon: 'error',
+          title: 'Failed',
+          text: response.error || 'Failed to update',
+        });
+      }
+    } catch (err: any) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: err.message || 'Failed to update',
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const togglePaymentForm = () => {
+    if (!selectedLoan) return;
+    
+    if (!showPaymentForm) {
+      // Pre-fill EMI amount for loans
+      const emiAmount = selectedLoan.requestType === 'loan' && selectedLoan.loanConfig?.emiAmount
+        ? selectedLoan.loanConfig.emiAmount
+        : selectedLoan.requestType === 'salary_advance' && selectedLoan.advanceConfig?.deductionPerCycle
+        ? selectedLoan.advanceConfig.deductionPerCycle
+        : '';
+      
+      setPaymentData({
+        amount: emiAmount.toString(),
+        paymentDate: new Date().toISOString().split('T')[0],
+        remarks: '',
+        payrollCycle: '',
+      });
+    }
+    setShowPaymentForm(!showPaymentForm);
+  };
+
+  const handlePayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedLoan) return;
+
+    try {
+      setSaving(true);
+      setMessage(null);
+
+      if (!paymentData.amount || parseFloat(paymentData.amount) <= 0) {
+        setMessage({ type: 'error', text: 'Please enter a valid payment amount' });
+        return;
+      }
+
+      const payload = {
+        amount: parseFloat(paymentData.amount),
+        paymentDate: paymentData.paymentDate,
+        remarks: paymentData.remarks,
+        payrollCycle: paymentData.payrollCycle || undefined,
+      };
+
+      let response;
+      if (selectedLoan.requestType === 'loan') {
+        response = await api.payEMI(selectedLoan._id, payload);
+      } else {
+        response = await api.payAdvance(selectedLoan._id, payload);
+      }
+
+      if (response.success) {
+        Swal.fire({
+          icon: 'success',
+          title: 'Success!',
+          text: `${selectedLoan.requestType === 'loan' ? 'EMI' : 'Advance'} payment recorded successfully`,
+          timer: 2000,
+          showConfirmButton: false,
+        });
+        setShowPaymentForm(false);
+        setPaymentData({ amount: '', paymentDate: new Date().toISOString().split('T')[0], remarks: '', payrollCycle: '' });
+        
+        // Reload loan data and transactions
+        const loanRes = await api.getLoan(selectedLoan._id);
+        if (loanRes.success) {
+          setSelectedLoan(loanRes.data);
+        }
+        loadTransactions(selectedLoan._id);
+        if (selectedLoan.requestType === 'loan') {
+          loadSettlementPreview(selectedLoan._id);
+        }
+        loadData();
+      } else {
+        Swal.fire({
+          icon: 'error',
+          title: 'Failed',
+          text: response.error || 'Failed to record payment',
+        });
+      }
+    } catch (err: any) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: err.message || 'An error occurred',
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleEarlySettlement = async () => {
+    if (!selectedLoan || !settlementPreview) return;
+
+    try {
+      setSaving(true);
+      const payload = {
+        amount: settlementPreview.current.settlementAmount,
+        paymentDate: new Date().toISOString().split('T')[0],
+        remarks: `Early settlement - Interest saved: ₹${settlementPreview.current.interestSavings.toLocaleString()}`,
+        isEarlySettlement: true,
+      };
+
+      const response = await api.payEMI(selectedLoan._id, payload);
+
+      if (response.success) {
+        Swal.fire({
+          icon: 'success',
+          title: 'Settlement Complete!',
+          html: `
+            <div class="text-left">
+              <p class="mb-2">Early settlement payment recorded successfully!</p>
+              <p class="text-sm text-gray-600 mb-1"><strong>Amount Paid:</strong> ₹${settlementPreview.current.settlementAmount.toLocaleString()}</p>
+              <p class="text-sm text-green-600 mb-1"><strong>Interest Saved:</strong> ₹${settlementPreview.current.interestSavings.toLocaleString()}</p>
+              <p class="text-sm text-gray-600"><strong>Months Used:</strong> ${settlementPreview.current.actualMonthsUsed} of ${settlementPreview.current.originalDuration}</p>
+            </div>
+          `,
+          timer: 3000,
+        });
+        setShowSettlementDialog(false);
+        setShowDetailDialog(false);
+        setSelectedLoan(null);
+        loadData();
+      } else {
+        Swal.fire({
+          icon: 'error',
+          title: 'Failed',
+          text: response.error || 'Failed to process early settlement',
+        });
+      }
+    } catch (err: any) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: err.message || 'Failed to process early settlement',
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const formatDate = (dateStr: string) => {
+    return new Date(dateStr).toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
   };
 
   const loadEmployees = async () => {
     try {
-      if (!currentUser?.departments || currentUser.departments.length === 0) return;
-      
-      const departmentIds = currentUser.departments.map((d: any) => d._id || d);
-      const allEmployees: Employee[] = [];
-      
-      for (const deptId of departmentIds) {
-        const response = await api.getEmployees({ is_active: true, department_id: deptId });
-        if (response.success && response.data) {
-          allEmployees.push(...response.data);
-        }
+      const response = await api.getEmployees({ is_active: true });
+      if (response.success && response.data) {
+        setEmployees(response.data || []);
       }
-      
-      setEmployees(allEmployees);
     } catch (err) {
       console.error('Error loading employees:', err);
     }
@@ -246,7 +569,6 @@ export default function LoansPage() {
     const isInterestApplicable = loanSettings.settings?.isInterestApplicable || false;
 
     if (!isInterestApplicable || interestRate === 0) {
-      // No interest
       const emiAmount = principal / duration;
       setInterestCalculation({
         principal,
@@ -257,7 +579,6 @@ export default function LoansPage() {
         totalAmount: principal,
       });
     } else {
-      // Calculate with interest
       const monthlyRate = interestRate / 100 / 12;
       const emiAmount = (principal * monthlyRate * Math.pow(1 + monthlyRate, duration)) / (Math.pow(1 + monthlyRate, duration) - 1);
       const totalAmount = emiAmount * duration;
@@ -274,20 +595,20 @@ export default function LoansPage() {
     }
   };
 
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      const response = await api.getMyLoans();
-      if (response.success && response.data) {
-        const all = response.data;
-        setLoans(all.filter((l: LoanApplication) => l.requestType === 'loan'));
-        setAdvances(all.filter((a: LoanApplication) => a.requestType === 'salary_advance'));
-      }
-    } catch (err) {
-      setError('Failed to load loans');
-    } finally {
-      setLoading(false);
+  const getEmployeeName = (emp: Employee) => {
+    if (emp.employee_name) return emp.employee_name;
+    if (emp.first_name && emp.last_name) return `${emp.first_name} ${emp.last_name}`;
+    if (emp.first_name) return emp.first_name;
+    return emp.emp_no;
+  };
+
+  const getEmployeeInitials = (emp: Employee) => {
+    const name = getEmployeeName(emp);
+    const parts = name.trim().split(' ');
+    if (parts.length >= 2) {
+      return `${parts[0][0] || ''}${parts[parts.length - 1][0] || ''}`.toUpperCase();
     }
+    return (name[0] || 'E').toUpperCase();
   };
 
   const openApplyDialog = (type: 'loan' | 'salary_advance') => {
@@ -302,63 +623,61 @@ export default function LoansPage() {
   const handleApply = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      setError('');
-      setSuccess('');
+      setSaving(true);
+      setMessage(null);
 
-      const canApplySelf = applyType === 'loan' ? canApplyLoanForSelf : canApplyAdvanceForSelf;
-      const canApplyOthers = applyType === 'loan' ? canApplyLoanForOthers : canApplyAdvanceForOthers;
-
-      if (!canApplySelf && !canApplyOthers) {
-        setError('You do not have permission to apply for ' + (applyType === 'loan' ? 'loans' : 'salary advances'));
+      if (!selectedEmployee) {
+        setMessage({ type: 'error', text: 'Please select an employee' });
         return;
       }
 
-      if (canApplyOthers && !selectedEmployee && !canApplySelf) {
-        setError('Please select an employee');
+      if (!formData.amount || !formData.reason) {
+        setMessage({ type: 'error', text: 'Please fill all required fields' });
         return;
       }
 
-      // Validate duration for loans
       if (applyType === 'loan' && !formData.duration) {
-        setError('Duration is required for loans');
+        setMessage({ type: 'error', text: 'Duration is required for loans' });
         return;
       }
 
-      // For salary advance, duration is not required (will be set to 1 cycle)
       const payload: any = {
         requestType: applyType,
         amount: parseFloat(formData.amount),
         reason: formData.reason,
         remarks: formData.remarks,
-        empNo: canApplyOthers && selectedEmployee ? selectedEmployee.emp_no : undefined,
+        empNo: selectedEmployee.emp_no,
       };
 
-      // Only add duration for loans
       if (applyType === 'loan') {
         payload.duration = parseInt(formData.duration);
       } else {
-        // For salary advance, default to 1 cycle if not specified
         payload.duration = formData.duration ? parseInt(formData.duration) : 1;
       }
 
       const response = await api.applyLoan(payload);
 
       if (response.success) {
-        setSuccess(`${applyType === 'loan' ? 'Loan' : 'Salary advance'} application submitted successfully`);
+        setMessage({ type: 'success', text: `${applyType === 'loan' ? 'Loan' : 'Salary advance'} applied successfully for ${getEmployeeName(selectedEmployee)}` });
         setShowApplyDialog(false);
+        setFormData({ amount: '', reason: '', duration: '', remarks: '' });
+        setSelectedEmployee(null);
+        setEmployeeSearch('');
         loadData();
       } else {
-        setError(response.error || 'Failed to submit application');
+        setMessage({ type: 'error', text: response.error || 'Failed to submit application' });
       }
-    } catch (err) {
-      setError('An error occurred');
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err.message || 'An error occurred' });
+    } finally {
+      setSaving(false);
     }
   };
 
   const filteredEmployees = employees.filter((emp) => {
     const search = employeeSearch.toLowerCase();
     return (
-      emp.employee_name.toLowerCase().includes(search) ||
+      getEmployeeName(emp).toLowerCase().includes(search) ||
       emp.emp_no.toLowerCase().includes(search) ||
       emp.department?.name.toLowerCase().includes(search)
     );
@@ -370,6 +689,7 @@ export default function LoansPage() {
       approved: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
       rejected: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
       hod_approved: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+      hr_approved: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
       disbursed: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
       active: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400',
       completed: 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400',
@@ -377,219 +697,1445 @@ export default function LoansPage() {
     return colors[status] || 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400';
   };
 
-  const canShowLoanButton = (canApplyLoanForSelf || canApplyLoanForOthers);
-  const canShowAdvanceButton = (canApplyAdvanceForSelf || canApplyAdvanceForOthers);
-  const canShowBothButtons = canShowLoanButton && canShowAdvanceButton;
+  // Icons for tabs
+  const LoanIcon = () => (
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  );
+
+  const AdvanceIcon = () => (
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  );
+
+  const ClockIcon = () => (
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  );
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-[1920px] mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="mb-5">
+        <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Loan & Salary Advance Management</h1>
-          <p className="text-gray-500 dark:text-gray-400 mt-1">View and manage your loan and salary advance applications</p>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Loan & Salary Advance Management</h1>
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+            Manage loan and salary advance applications
+          </p>
         </div>
-        <div className="flex gap-2">
-          {canShowBothButtons && (
-            <button
-              onClick={() => openApplyDialog(activeTab === 'loans' ? 'loan' : 'salary_advance')}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-semibold shadow-lg shadow-blue-500/30 hover:shadow-xl transition-all"
-            >
-              <PlusIcon />
-              Apply {activeTab === 'loans' ? 'Loan' : 'Salary Advance'}
-            </button>
-          )}
-          {canShowLoanButton && !canShowAdvanceButton && (
-            <button
-              onClick={() => openApplyDialog('loan')}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-semibold shadow-lg shadow-blue-500/30 hover:shadow-xl transition-all"
-            >
-              <PlusIcon />
-              Apply Loan
-            </button>
-          )}
-          {canShowAdvanceButton && !canShowLoanButton && (
-            <button
-              onClick={() => openApplyDialog('salary_advance')}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-500 to-red-500 text-white font-semibold shadow-lg shadow-purple-500/30 hover:shadow-xl transition-all"
-            >
-              <PlusIcon />
-              Apply Salary Advance
-            </button>
-          )}
+          <button
+            onClick={() => openApplyDialog('loan')}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-green-500 to-green-600 text-white text-xs font-semibold shadow-sm hover:shadow-md transition-all"
+          >
+            <PlusIcon />
+            Apply Loan / Salary Advance
+          </button>
         </div>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-5">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-300">
-              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mb-6">
+        <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+          <div className="flex items-center gap-2.5">
+            <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center dark:bg-blue-900/20">
+              <LoanIcon />
             </div>
             <div>
-              <div className="text-2xl font-bold text-gray-900 dark:text-white">{loans.length}</div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">Total Loans</div>
+              <div className="text-xl font-bold text-slate-900 dark:text-white">{loans.length}</div>
+              <div className="text-[11px] text-slate-500">Total Loans</div>
             </div>
           </div>
         </div>
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-5">
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-purple-100 dark:bg-purple-900/50 flex items-center justify-center text-purple-600 dark:text-purple-300">
-              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+            <div className="w-12 h-12 rounded-xl bg-purple-100 flex items-center justify-center">
+              <AdvanceIcon />
             </div>
             <div>
-              <div className="text-2xl font-bold text-gray-900 dark:text-white">{advances.length}</div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">Total Advances</div>
+              <div className="text-2xl font-bold text-slate-900 dark:text-white">{advances.length}</div>
+              <div className="text-sm text-slate-500">Total Advances</div>
             </div>
           </div>
         </div>
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-5">
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-green-100 dark:bg-green-900/50 flex items-center justify-center text-green-600 dark:text-green-300">
+            <div className="w-12 h-12 rounded-xl bg-yellow-100 flex items-center justify-center">
+              <ClockIcon />
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-yellow-600">{pendingLoans.length + pendingAdvances.length}</div>
+              <div className="text-sm text-slate-500">Pending Approvals</div>
+            </div>
+          </div>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-xl bg-green-100 flex items-center justify-center">
               <CheckIcon />
             </div>
             <div>
-              <div className="text-2xl font-bold text-green-600 dark:text-green-400">
+              <div className="text-2xl font-bold text-green-600">
                 {loans.filter(l => l.status === 'approved').length + advances.filter(a => a.status === 'approved').length}
               </div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">Approved</div>
+              <div className="text-sm text-slate-500">Approved</div>
             </div>
           </div>
         </div>
       </div>
 
       {/* Tabs */}
-      {canShowBothButtons && (
-        <div className="mb-6">
-          <div className="flex gap-2 border-b border-gray-200 dark:border-slate-700">
-            <button
-              onClick={() => setActiveTab('loans')}
-              className={`px-4 py-2.5 font-medium text-sm transition-all border-b-2 -mb-px ${
-                activeTab === 'loans'
-                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-              }`}
-            >
+      <div className="mb-6">
+        <div className="flex gap-2 border-b border-slate-200 dark:border-slate-700">
+          <button
+            onClick={() => setActiveTab('loans')}
+            className={`px-4 py-2.5 font-medium text-sm transition-all border-b-2 -mb-px ${
+              activeTab === 'loans'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <LoanIcon />
               Loans ({loans.length})
-            </button>
-            <button
-              onClick={() => setActiveTab('advances')}
-              className={`px-4 py-2.5 font-medium text-sm transition-all border-b-2 -mb-px ${
-                activeTab === 'advances'
-                  ? 'border-purple-500 text-purple-600 dark:text-purple-400'
-                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-              }`}
-            >
+            </span>
+          </button>
+          <button
+            onClick={() => setActiveTab('advances')}
+            className={`px-4 py-2.5 font-medium text-sm transition-all border-b-2 -mb-px ${
+              activeTab === 'advances'
+                ? 'border-purple-500 text-purple-600'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <AdvanceIcon />
               Salary Advances ({advances.length})
-            </button>
-          </div>
+            </span>
+          </button>
+          <button
+            onClick={() => setActiveTab('pending')}
+            className={`px-4 py-2.5 font-medium text-sm transition-all border-b-2 -mb-px ${
+              activeTab === 'pending'
+                ? 'border-yellow-500 text-yellow-600'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <ClockIcon />
+              Pending Approvals ({pendingLoans.length + pendingAdvances.length})
+            </span>
+          </button>
+        </div>
+      </div>
+
+      {/* Messages */}
+      {message && (
+        <div className={`mb-6 rounded-xl border px-4 py-3 flex items-center justify-between ${
+          message.type === 'success'
+            ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400'
+            : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'
+        }`}>
+          <span>{message.text}</span>
+          <button onClick={() => setMessage(null)} className="text-current hover:opacity-70">×</button>
         </div>
       )}
 
-      {/* Messages */}
-      {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400 flex items-center justify-between">
-          <span>{error}</span>
-          <button onClick={() => setError('')} className="text-red-700 hover:text-red-900">×</button>
-        </div>
-      )}
-      {success && (
-        <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400 flex items-center justify-between">
-          <span>{success}</span>
-          <button onClick={() => setSuccess('')} className="text-green-700 hover:text-green-900">×</button>
+      {/* Search - Only show for loans and advances tabs */}
+      {(activeTab === 'loans' || activeTab === 'advances') && (
+        <div className="mb-4">
+          <div className="relative">
+            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+              <SearchIcon />
+            </div>
+            <input
+              type="text"
+              placeholder="Search by employee name, emp no, or reason..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 bg-white pl-10 pr-4 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+            />
+          </div>
         </div>
       )}
 
       {/* Content */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 overflow-hidden">
-        {loading ? (
-          <div className="p-12 text-center text-gray-500 dark:text-gray-400">
-            Loading...
-          </div>
-        ) : (activeTab === 'loans' ? loans : advances).length === 0 ? (
-          <div className="p-12 text-center text-gray-500 dark:text-gray-400">
-            No {activeTab === 'loans' ? 'loans' : 'salary advances'} found
-          </div>
-        ) : (
+      <div className="rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800 overflow-hidden">
+        {activeTab === 'loans' && (
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-gray-50 dark:bg-slate-900">
+              <thead className="bg-slate-50 dark:bg-slate-900">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Amount
-                  </th>
-                  {activeTab === 'loans' && (
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Duration
-                    </th>
-                  )}
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Applied Date
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Actions
-                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Employee</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Amount</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Duration</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Status</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Date</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200 dark:divide-slate-700">
-                {(activeTab === 'loans' ? loans : advances).map((item) => (
-                  <tr 
-                    key={item._id} 
-                    className="hover:bg-gray-50 dark:hover:bg-slate-700/50 cursor-pointer transition-colors"
-                    onClick={() => {
-                      setSelectedLoan(item);
-                      setShowDetailDialog(true);
-                    }}
-                  >
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900 dark:text-white">₹{item.amount.toLocaleString()}</div>
-                    </td>
-                    {activeTab === 'loans' && (
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-600 dark:text-gray-300">
-                          {item.duration} {item.duration === 1 ? 'month' : 'months'}
-                        </div>
-                      </td>
-                    )}
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${getStatusColor(item.status)}`}>
-                        {item.status.replace('_', ' ').toUpperCase()}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">
-                      {new Date(item.appliedAt).toLocaleDateString('en-IN', {
-                        day: '2-digit',
-                        month: 'short',
-                        year: 'numeric',
-                      })}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedLoan(item);
-                          setShowDetailDialog(true);
-                        }}
-                        className="text-sm font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-                      >
-                        View Details
-                      </button>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                {loading ? (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
+                      Loading...
                     </td>
                   </tr>
-                ))}
+                ) : loans.filter((item) => {
+                  if (searchTerm) {
+                    const searchLower = searchTerm.toLowerCase();
+                    const empName = item.employeeId?.employee_name || '';
+                    const empNo = item.emp_no || item.employeeId?.emp_no || '';
+                    return (
+                      empName.toLowerCase().includes(searchLower) ||
+                      empNo.toLowerCase().includes(searchLower) ||
+                      item.reason.toLowerCase().includes(searchLower)
+                    );
+                  }
+                  return true;
+                }).length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
+                      No loan applications found
+                    </td>
+                  </tr>
+                ) : (
+                  loans.filter((item) => {
+                    if (searchTerm) {
+                      const searchLower = searchTerm.toLowerCase();
+                      const empName = item.employeeId?.employee_name || '';
+                      const empNo = item.emp_no || item.employeeId?.emp_no || '';
+                      return (
+                        empName.toLowerCase().includes(searchLower) ||
+                        empNo.toLowerCase().includes(searchLower) ||
+                        item.reason.toLowerCase().includes(searchLower)
+                      );
+                    }
+                    return true;
+                  }).map((loan) => (
+                    <tr 
+                      key={loan._id} 
+                      className="hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer transition-colors"
+                      onClick={() => {
+                        setSelectedLoan(loan);
+                        setShowDetailDialog(true);
+                      }}
+                    >
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-slate-900 dark:text-white">
+                          {loan.employeeId?.employee_name || loan.emp_no || 'Unknown'}
+                        </div>
+                        <div className="text-xs text-slate-500">{loan.emp_no || loan.employeeId?.emp_no || 'N/A'}</div>
+                      </td>
+                      <td className="px-4 py-3 text-sm font-medium text-slate-900 dark:text-white">
+                        ₹{loan.amount.toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
+                        {loan.duration} months
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2.5 py-1 text-xs font-medium rounded-lg capitalize ${getStatusColor(loan.status)}`}>
+                          {loan.status?.replace('_', ' ') || '-'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-500">
+                        {new Date(loan.appliedAt).toLocaleDateString('en-IN', {
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric',
+                        })}
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
         )}
+
+        {activeTab === 'advances' && (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-slate-50 dark:bg-slate-900">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Employee</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Amount</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Status</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Date</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                {loading ? (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
+                      Loading...
+                    </td>
+                  </tr>
+                ) : advances.filter((item) => {
+                  if (searchTerm) {
+                    const searchLower = searchTerm.toLowerCase();
+                    const empName = item.employeeId?.employee_name || '';
+                    const empNo = item.emp_no || item.employeeId?.emp_no || '';
+                    return (
+                      empName.toLowerCase().includes(searchLower) ||
+                      empNo.toLowerCase().includes(searchLower) ||
+                      item.reason.toLowerCase().includes(searchLower)
+                    );
+                  }
+                  return true;
+                }).length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
+                      No salary advance applications found
+                    </td>
+                  </tr>
+                ) : (
+                  advances.filter((item) => {
+                    if (searchTerm) {
+                      const searchLower = searchTerm.toLowerCase();
+                      const empName = item.employeeId?.employee_name || '';
+                      const empNo = item.emp_no || item.employeeId?.emp_no || '';
+                      return (
+                        empName.toLowerCase().includes(searchLower) ||
+                        empNo.toLowerCase().includes(searchLower) ||
+                        item.reason.toLowerCase().includes(searchLower)
+                      );
+                    }
+                    return true;
+                  }).map((advance) => (
+                    <tr 
+                      key={advance._id} 
+                      className="hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer transition-colors"
+                      onClick={() => {
+                        setSelectedLoan(advance);
+                        setShowDetailDialog(true);
+                      }}
+                    >
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-slate-900 dark:text-white">
+                          {advance.employeeId?.employee_name || advance.emp_no || 'Unknown'}
+                        </div>
+                        <div className="text-xs text-slate-500">{advance.emp_no || advance.employeeId?.emp_no || 'N/A'}</div>
+                      </td>
+                      <td className="px-4 py-3 text-sm font-medium text-slate-900 dark:text-white">
+                        ₹{advance.amount.toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2.5 py-1 text-xs font-medium rounded-lg capitalize ${getStatusColor(advance.status)}`}>
+                          {advance.status?.replace('_', ' ') || '-'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-500">
+                        {new Date(advance.appliedAt).toLocaleDateString('en-IN', {
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric',
+                        })}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {activeTab === 'pending' && (
+          <div className="p-4 space-y-4">
+            {/* Pending Loans */}
+            {pendingLoans.length > 0 && (
+              <div>
+                <h3 className="text-base font-bold text-slate-800 dark:text-slate-200 mb-4 flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white">
+                    <LoanIcon />
+                  </div>
+                  Pending Loans ({pendingLoans.length})
+                </h3>
+                <div className="space-y-4">
+                  {pendingLoans.map((loan) => (
+                    <div key={loan._id} className="rounded-2xl border-2 border-amber-200/50 bg-gradient-to-br from-amber-50/80 to-yellow-50/50 p-5 dark:border-amber-800/30 dark:from-amber-900/20 dark:to-yellow-900/10 shadow-sm hover:shadow-md transition-all duration-300">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <span className="font-medium text-slate-900 dark:text-white">
+                              {loan.employeeId?.employee_name || loan.emp_no || 'Unknown'}
+                            </span>
+                            <span className="text-xs text-slate-500">({loan.emp_no || loan.employeeId?.emp_no || 'N/A'})</span>
+                            <span className={`px-2 py-0.5 text-xs font-medium rounded ${getStatusColor(loan.status)}`}>
+                              {loan.status.replace('_', ' ')}
+                            </span>
+                          </div>
+                          <div className="text-sm text-slate-600 dark:text-slate-400 space-y-1">
+                            <div><strong>Amount:</strong> ₹{loan.amount.toLocaleString()} | <strong>Duration:</strong> {loan.duration} months</div>
+                            <div><strong>Reason:</strong> {loan.reason}</div>
+                          </div>
+                        </div>
+                        <div className="flex gap-3">
+                          <button
+                            onClick={() => {
+                              setSelectedLoan(loan);
+                              setShowDetailDialog(true);
+                            }}
+                            className="px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-green-500 to-green-600 rounded-xl hover:from-green-600 hover:to-green-700 flex items-center gap-2 transition-all duration-300 shadow-md shadow-green-500/30 hover:shadow-lg"
+                          >
+                            <CheckIcon /> Approve
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedLoan(loan);
+                              setShowDetailDialog(true);
+                            }}
+                            className="px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-red-500 to-red-600 rounded-xl hover:from-red-600 hover:to-red-700 flex items-center gap-2 transition-all duration-300 shadow-md shadow-red-500/30 hover:shadow-lg"
+                          >
+                            <XIcon /> Reject
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Pending Advances */}
+            {pendingAdvances.length > 0 && (
+              <div>
+                <h3 className="text-base font-bold text-slate-800 dark:text-slate-200 mb-4 flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-purple-400 to-purple-600 flex items-center justify-center text-white">
+                    <AdvanceIcon />
+                  </div>
+                  Pending Advances ({pendingAdvances.length})
+                </h3>
+                <div className="space-y-4">
+                  {pendingAdvances.map((advance) => (
+                    <div key={advance._id} className="rounded-2xl border-2 border-amber-200/50 bg-gradient-to-br from-amber-50/80 to-yellow-50/50 p-5 dark:border-amber-800/30 dark:from-amber-900/20 dark:to-yellow-900/10 shadow-sm hover:shadow-md transition-all duration-300">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <span className="font-medium text-slate-900 dark:text-white">
+                              {advance.employeeId?.employee_name || advance.emp_no || 'Unknown'}
+                            </span>
+                            <span className="text-xs text-slate-500">({advance.emp_no || advance.employeeId?.emp_no || 'N/A'})</span>
+                            <span className={`px-2 py-0.5 text-xs font-medium rounded ${getStatusColor(advance.status)}`}>
+                              {advance.status.replace('_', ' ')}
+                            </span>
+                          </div>
+                          <div className="text-sm text-slate-600 dark:text-slate-400 space-y-1">
+                            <div><strong>Amount:</strong> ₹{advance.amount.toLocaleString()}</div>
+                            <div><strong>Reason:</strong> {advance.reason}</div>
+                          </div>
+                        </div>
+                        <div className="flex gap-3">
+                          <button
+                            onClick={() => {
+                              setSelectedLoan(advance);
+                              setShowDetailDialog(true);
+                            }}
+                            className="px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-green-500 to-green-600 rounded-xl hover:from-green-600 hover:to-green-700 flex items-center gap-2 transition-all duration-300 shadow-md shadow-green-500/30 hover:shadow-lg"
+                          >
+                            <CheckIcon /> Approve
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedLoan(advance);
+                              setShowDetailDialog(true);
+                            }}
+                            className="px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-red-500 to-red-600 rounded-xl hover:from-red-600 hover:to-red-700 flex items-center gap-2 transition-all duration-300 shadow-md shadow-red-500/30 hover:shadow-lg"
+                          >
+                            <XIcon /> Reject
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {pendingLoans.length === 0 && pendingAdvances.length === 0 && (
+              <div className="text-center py-12 text-slate-500">
+                No pending approvals
+              </div>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Detail Dialog */}
+      {showDetailDialog && selectedLoan && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => {
+            setShowDetailDialog(false);
+            setSelectedLoan(null);
+            setTransactions([]);
+            setShowPaymentForm(false);
+            setShowDisbursementDialog(false);
+            setSettlementPreview(null);
+          }} />
+          <div className="relative z-50 w-full max-w-2xl rounded-2xl bg-white shadow-2xl dark:bg-slate-900 max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className={`p-6 bg-gradient-to-r ${
+              selectedLoan.requestType === 'loan'
+                ? 'from-blue-500 to-indigo-600'
+                : 'from-purple-500 to-red-600'
+            } text-white`}>
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold">
+                  {selectedLoan.requestType === 'loan' ? 'Loan' : 'Salary Advance'} Details
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowDetailDialog(false);
+                    setSelectedLoan(null);
+                    setTransactions([]);
+                    setShowPaymentForm(false);
+                    setShowDisbursementDialog(false);
+                  }}
+                  className="p-2 text-white/80 hover:text-white hover:bg-white/20 rounded-lg transition-colors"
+                >
+                  <XIcon />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-6 overflow-y-auto">
+              {/* Status Badge & Dates */}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className={`px-4 py-2 text-sm font-semibold rounded-xl capitalize ${getStatusColor(selectedLoan.status)}`}>
+                  {selectedLoan.status?.replace('_', ' ') || 'Unknown'}
+                </span>
+                <div className="flex gap-4 text-sm text-slate-500">
+                  <span>Applied: {new Date(selectedLoan.appliedAt).toLocaleDateString('en-IN', {
+                    day: '2-digit',
+                    month: 'short',
+                    year: 'numeric',
+                  })}</span>
+                </div>
+              </div>
+
+              {/* Employee Info */}
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50">
+                <h3 className="text-sm font-semibold text-slate-500 dark:text-slate-400 mb-3 uppercase tracking-wide">Employee Details</h3>
+                <div className="flex items-start gap-4">
+                  <div className={`w-14 h-14 rounded-full flex items-center justify-center text-white font-bold text-lg flex-shrink-0 ${
+                    selectedLoan.requestType === 'loan' ? 'bg-blue-500' : 'bg-purple-500'
+                  }`}>
+                    {(selectedLoan.employeeId?.employee_name || selectedLoan.emp_no || 'E')[0].toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-lg text-slate-900 dark:text-white">
+                      {selectedLoan.employeeId?.employee_name || selectedLoan.emp_no || 'Unknown'}
+                    </p>
+                    <p className="text-sm text-slate-500">{selectedLoan.emp_no || selectedLoan.employeeId?.emp_no || 'N/A'}</p>
+                    {selectedLoan.department && (
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {selectedLoan.department.name && (
+                          <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300 rounded-lg inline-flex items-center gap-1">
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                            </svg>
+                            {selectedLoan.department.name}
+                          </span>
+                        )}
+                        {selectedLoan.designation?.name && (
+                          <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300 rounded-lg inline-flex items-center gap-1">
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                            </svg>
+                            {selectedLoan.designation.name}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Details Grid */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <p className="text-xs text-slate-500 uppercase font-semibold mb-1">Type</p>
+                  <p className="text-sm font-medium text-slate-900 dark:text-white capitalize">
+                    {selectedLoan.requestType === 'loan' ? 'Loan' : 'Salary Advance'}
+                  </p>
+                </div>
+                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <p className="text-xs text-slate-500 uppercase font-semibold mb-1">Amount</p>
+                  <p className="text-sm font-medium text-slate-900 dark:text-white">₹{selectedLoan.amount.toLocaleString()}</p>
+                </div>
+                {selectedLoan.requestType === 'loan' && (
+                  <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                    <p className="text-xs text-slate-500 uppercase font-semibold mb-1">Duration</p>
+                    <p className="text-sm font-medium text-slate-900 dark:text-white">
+                      {selectedLoan.duration} months
+                    </p>
+                  </div>
+                )}
+                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <p className="text-xs text-slate-500 uppercase font-semibold mb-1">Status</p>
+                  <span className={`inline-flex px-2.5 py-1 text-xs font-medium rounded-lg capitalize ${getStatusColor(selectedLoan.status)}`}>
+                    {selectedLoan.status?.replace('_', ' ') || '-'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Reason */}
+              <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                <p className="text-xs text-slate-500 uppercase font-semibold mb-2">Reason</p>
+                <p className="text-sm text-slate-700 dark:text-slate-300">
+                  {selectedLoan.reason || 'Not specified'}
+                </p>
+              </div>
+
+              {/* Change History */}
+              {selectedLoan.changeHistory && selectedLoan.changeHistory.length > 0 && (
+                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <p className="text-xs text-blue-500 uppercase font-semibold tracking-wide mb-3">
+                    Change History ({selectedLoan.changeHistory.length})
+                  </p>
+                  <div className="space-y-3">
+                    {selectedLoan.changeHistory.map((change: any, idx: number) => (
+                      <div key={idx} className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-semibold text-blue-500 uppercase">
+                            {change.field.replace(/([A-Z])/g, ' $1').trim()}
+                          </span>
+                          <span className="text-xs text-slate-500">
+                            {new Date(change.modifiedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          </span>
+                        </div>
+                        <div className="text-sm">
+                          <span className="text-slate-400 dark:text-slate-500 line-through">
+                            {typeof change.originalValue === 'number' 
+                              ? change.field === 'amount' 
+                                ? `₹${change.originalValue.toLocaleString()}` 
+                                : change.originalValue
+                              : change.originalValue || 'N/A'}
+                          </span>
+                          <span className="font-semibold text-green-600 dark:text-green-400 ml-2">
+                            → {typeof change.newValue === 'number' 
+                              ? change.field === 'amount' 
+                                ? `₹${change.newValue.toLocaleString()}` 
+                                : change.newValue
+                              : change.newValue || 'N/A'}
+                          </span>
+                        </div>
+                        {change.reason && (
+                          <p className="text-xs text-slate-500 mt-1">{change.reason}</p>
+                        )}
+                        <p className="text-xs text-slate-400 mt-1">
+                          Modified by {change.modifiedByName} ({change.modifiedByRole})
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Loan Calculation */}
+              {selectedLoan.requestType === 'loan' && selectedLoan.loanConfig && (
+                <div className="p-4 rounded-xl border-2 border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20">
+                  <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-3">Loan Calculation</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">EMI Amount</p>
+                      <p className="text-sm font-bold text-slate-900 dark:text-slate-100">₹{selectedLoan.loanConfig.emiAmount?.toLocaleString()}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">Total Amount (with interest)</p>
+                      <p className="text-sm font-bold text-slate-900 dark:text-slate-100">₹{selectedLoan.loanConfig.totalAmount?.toLocaleString()}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Early Settlement Calculator - Only for active/disbursed loans */}
+              {selectedLoan.requestType === 'loan' && ['disbursed', 'active'].includes(selectedLoan.status) && (
+                <div className="p-4 rounded-xl border-2 border-green-200 bg-gradient-to-br from-green-50 to-green-50 dark:from-green-900/20 dark:to-green-900/20 dark:border-green-800">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-semibold text-green-900 dark:text-green-100 flex items-center gap-2">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 7h6m0 10v-5m-3 5h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                      </svg>
+                      Early Settlement Calculator
+                    </h3>
+                    {loadingSettlement && (
+                      <div className="w-4 h-4 border-2 border-green-500 border-t-transparent rounded-full animate-spin"></div>
+                    )}
+                  </div>
+
+                  {settlementPreview && settlementPreview.current ? (
+                    <div className="space-y-4">
+                      {/* Current Settlement */}
+                      <div className="p-3 rounded-lg bg-white dark:bg-slate-800 border border-green-200 dark:border-green-700">
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-xs font-semibold text-green-700 dark:text-green-300">If Paid Now</p>
+                          <span className="px-2 py-1 text-xs font-bold text-white bg-green-600 rounded">Current</span>
+                        </div>
+                        <div className="space-y-1">
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-slate-600 dark:text-slate-400">Settlement Amount:</span>
+                            <span className="text-lg font-bold text-green-700 dark:text-green-300">₹{settlementPreview.current.settlementAmount.toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="text-slate-500">Principal:</span>
+                            <span className="font-medium">₹{settlementPreview.current.remainingPrincipal.toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="text-slate-500">Interest (for {settlementPreview.current.actualMonthsUsed} months):</span>
+                            <span className="font-medium">₹{settlementPreview.current.settlementInterest.toLocaleString()}</span>
+                          </div>
+                          <div className="pt-2 border-t border-green-200 dark:border-green-700">
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs font-semibold text-green-600 dark:text-green-400">Interest Saved:</span>
+                              <span className="text-sm font-bold text-green-600 dark:text-green-400">₹{settlementPreview.current.interestSavings.toLocaleString()}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Next Month Settlement */}
+                      {settlementPreview.nextMonth && (
+                        <div className="p-3 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">If Paid Next Month</p>
+                            <span className="px-2 py-1 text-xs font-medium text-slate-600 bg-slate-100 dark:bg-slate-700 rounded">Projected</span>
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-slate-600 dark:text-slate-400">Settlement Amount:</span>
+                              <span className="text-base font-bold text-slate-700 dark:text-slate-300">₹{settlementPreview.nextMonth.settlementAmount.toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="text-slate-500">Interest Saved:</span>
+                              <span className="font-medium text-slate-600">₹{settlementPreview.nextMonth.interestSavings.toLocaleString()}</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Pay Full Amount Button */}
+                      <button
+                        onClick={() => setShowSettlementDialog(true)}
+                        disabled={saving}
+                        className="w-full px-4 py-3 text-sm font-semibold text-white bg-gradient-to-r from-green-600 to-green-600 rounded-xl hover:from-green-700 hover:to-green-700 transition-all shadow-md hover:shadow-lg disabled:opacity-50 flex items-center justify-center gap-2"
+                      >
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        Pay Full Amount (₹{settlementPreview.current.settlementAmount.toLocaleString()})
+                      </button>
+                    </div>
+                  ) : !loadingSettlement ? (
+                    <p className="text-xs text-slate-500 text-center py-2">Unable to calculate settlement preview</p>
+                  ) : null}
+                </div>
+              )}
+
+              {/* Advance Config */}
+              {selectedLoan.requestType === 'salary_advance' && selectedLoan.advanceConfig && (
+                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <p className="text-xs text-slate-500 uppercase font-semibold mb-2">Deduction Details</p>
+                  <p className="text-sm text-slate-700 dark:text-slate-300">
+                    ₹{selectedLoan.advanceConfig.deductionPerCycle?.toLocaleString()} per cycle
+                  </p>
+                </div>
+              )}
+
+              {/* Repayment Status */}
+              <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-xs text-slate-500 uppercase font-semibold">Repayment Status</p>
+                  {['disbursed', 'active', 'approved'].includes(selectedLoan.status) && (
+                    <button
+                      onClick={togglePaymentForm}
+                      className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all shadow-md hover:shadow-lg flex items-center gap-2 ${
+                        showPaymentForm
+                          ? 'text-slate-700 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-300'
+                          : 'text-white bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700'
+                      }`}
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      {showPaymentForm ? 'Cancel' : (selectedLoan.requestType === 'loan' ? 'Pay EMI' : 'Record Payment')}
+                    </button>
+                  )}
+                </div>
+                {selectedLoan.repayment ? (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xs text-slate-500 mb-1">Total Paid</p>
+                      <p className="text-lg font-bold text-green-600 dark:text-green-400">₹{selectedLoan.repayment.totalPaid?.toLocaleString() || 0}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500 mb-1">Remaining Balance</p>
+                      <p className="text-lg font-bold text-slate-900 dark:text-slate-100">₹{selectedLoan.repayment.remainingBalance?.toLocaleString() || (selectedLoan.requestType === 'loan' ? (selectedLoan.loanConfig?.totalAmount || selectedLoan.amount) : selectedLoan.amount)}</p>
+                    </div>
+                    {selectedLoan.requestType === 'loan' && (
+                      <>
+                        <div>
+                          <p className="text-xs text-slate-500 mb-1">EMIs Paid</p>
+                          <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                            {selectedLoan.repayment.installmentsPaid || 0} / {selectedLoan.repayment.totalInstallments || selectedLoan.duration}
+                          </p>
+                        </div>
+                        {selectedLoan.repayment.nextPaymentDate && (
+                          <div>
+                            <p className="text-xs text-slate-500 mb-1">Next Payment Due</p>
+                            <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                              {new Date(selectedLoan.repayment.nextPaymentDate).toLocaleDateString('en-IN', {
+                                day: '2-digit',
+                                month: 'short',
+                                year: 'numeric',
+                              })}
+                            </p>
+                          </div>
+                        )}
+                      </>
+                    )}
+                    {selectedLoan.requestType === 'salary_advance' && (
+                      <div>
+                        <p className="text-xs text-slate-500 mb-1">Cycles Paid</p>
+                        <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                          {selectedLoan.repayment.installmentsPaid || 0} / {selectedLoan.repayment.totalInstallments || selectedLoan.duration}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-4">
+                    <p className="text-sm text-slate-500 dark:text-slate-400">
+                      {selectedLoan.requestType === 'loan' 
+                        ? `Total Amount: ₹${(selectedLoan.loanConfig?.totalAmount || selectedLoan.amount).toLocaleString()}`
+                        : `Total Amount: ₹${selectedLoan.amount.toLocaleString()}`
+                      }
+                    </p>
+                    <p className="text-xs text-slate-400 mt-1">No payments recorded yet</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Payment Form Section - Inline */}
+              {showPaymentForm && ['disbursed', 'active', 'approved'].includes(selectedLoan.status) && (
+                <div className="p-4 rounded-xl border-2 border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-900/20">
+                  <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-4 flex items-center gap-2">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    {selectedLoan.requestType === 'loan' ? 'Record EMI Payment' : 'Record Advance Payment'}
+                  </h3>
+                  
+                  <form onSubmit={handlePayment} className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+                          Amount *
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          required
+                          value={paymentData.amount}
+                          onChange={(e) => setPaymentData({ ...paymentData, amount: e.target.value })}
+                          placeholder="Enter payment amount"
+                          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                        {selectedLoan.requestType === 'loan' && selectedLoan.loanConfig?.emiAmount && (
+                          <p className="text-xs text-slate-500 mt-1">
+                            EMI Amount: ₹{selectedLoan.loanConfig.emiAmount.toLocaleString()}
+                          </p>
+                        )}
+                        {selectedLoan.requestType === 'salary_advance' && selectedLoan.advanceConfig?.deductionPerCycle && (
+                          <p className="text-xs text-slate-500 mt-1">
+                            Deduction per cycle: ₹{selectedLoan.advanceConfig.deductionPerCycle.toLocaleString()}
+                          </p>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+                          Payment Date *
+                        </label>
+                        <input
+                          type="date"
+                          required
+                          value={paymentData.paymentDate}
+                          onChange={(e) => setPaymentData({ ...paymentData, paymentDate: e.target.value })}
+                          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+                        Payroll Cycle (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={paymentData.payrollCycle}
+                        onChange={(e) => setPaymentData({ ...paymentData, payrollCycle: e.target.value })}
+                        placeholder="e.g., 2024-11"
+                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+                        Remarks (Optional)
+                      </label>
+                      <textarea
+                        value={paymentData.remarks}
+                        onChange={(e) => setPaymentData({ ...paymentData, remarks: e.target.value })}
+                        placeholder="Add any remarks for this transaction..."
+                        rows={3}
+                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                      />
+                    </div>
+
+                    <div className="flex gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={togglePaymentForm}
+                        className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-200 rounded-lg hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={saving}
+                        className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                      >
+                        {saving ? (
+                          <>
+                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                            Processing...
+                          </>
+                        ) : (
+                          <>
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                            Record Payment
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {/* Transaction History */}
+              {selectedLoan.status !== 'pending' && selectedLoan.status !== 'draft' && (
+                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-xs text-slate-500 uppercase font-semibold">Transaction History</p>
+                    <button
+                      onClick={() => loadTransactions(selectedLoan._id)}
+                      className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                    >
+                      Refresh
+                    </button>
+                  </div>
+                  {loadingTransactions ? (
+                    <div className="text-center py-4 text-slate-500">
+                      <div className="inline-block w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                      <span className="ml-2">Loading transactions...</span>
+                    </div>
+                  ) : transactions.length > 0 ? (
+                    <div className="space-y-2 max-h-60 overflow-y-auto">
+                      {transactions.map((txn, idx) => (
+                        <div key={idx} className="flex items-center justify-between p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className={`px-2 py-0.5 text-xs font-semibold rounded capitalize ${
+                                txn.transactionType === 'disbursement' 
+                                  ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                  : txn.transactionType === 'emi_payment'
+                                  ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                                  : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                              }`}>
+                                {txn.transactionType?.replace('_', ' ')}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                              {new Date(txn.transactionDate || txn.createdAt).toLocaleDateString('en-IN', {
+                                day: '2-digit',
+                                month: 'short',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </p>
+                            {txn.remarks && (
+                              <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 italic">{txn.remarks}</p>
+                            )}
+                            {txn.payrollCycle && (
+                              <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Cycle: {txn.payrollCycle}</p>
+                            )}
+                          </div>
+                          <div className="text-right ml-4">
+                            <p className={`text-base font-bold ${
+                              txn.transactionType === 'disbursement' ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'
+                            }`}>
+                              {txn.transactionType === 'disbursement' ? '-' : '+'}₹{txn.amount?.toLocaleString()}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-6 text-slate-500 text-sm">
+                      <svg className="w-12 h-12 mx-auto mb-2 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <p>No transactions yet</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Release Funds Section - For Approved Loans */}
+              {selectedLoan.status === 'approved' && (
+                <div className="p-4 rounded-xl border-2 border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-900/20">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h3 className="text-sm font-semibold text-green-900 dark:text-green-100 flex items-center gap-2">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        Release Funds
+                      </h3>
+                      <p className="text-xs text-green-700 dark:text-green-300 mt-1">
+                        Disburse ₹{selectedLoan.requestType === 'loan' ? (selectedLoan.loanConfig?.totalAmount || selectedLoan.amount) : selectedLoan.amount} to {selectedLoan.employeeId?.employee_name || selectedLoan.emp_no}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setShowDisbursementDialog(true)}
+                      className="px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-green-500 to-green-600 rounded-lg hover:from-green-600 hover:to-green-700 transition-all shadow-md hover:shadow-lg flex items-center gap-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      Release Funds
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Edit Button (for Super Admin/HR - not final approved/disbursed) */}
+              {(() => {
+                const user = auth.getUser();
+                const isSuperAdmin = user?.role === 'super_admin';
+                const isHR = user?.role === 'hr';
+                const canEdit = isSuperAdmin || (isHR && !['approved', 'disbursed', 'active', 'completed'].includes(selectedLoan.status));
+                
+                return canEdit && (
+                  <button
+                    onClick={handleEdit}
+                    className="w-full px-4 py-2 text-sm font-semibold text-white bg-blue-500 rounded-xl hover:bg-blue-600 transition-colors mb-4"
+                  >
+                    Edit {selectedLoan.requestType === 'loan' ? 'Loan' : 'Advance'}
+                  </button>
+                );
+              })()}
+
+              {/* Action Section */}
+              {!['approved', 'rejected', 'cancelled', 'disbursed', 'active', 'completed'].includes(selectedLoan.status) && (
+                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-4">
+                  <p className="text-xs text-slate-500 uppercase font-semibold">Take Action</p>
+                  
+                  {/* Comment */}
+                  <textarea
+                    value={actionComment}
+                    onChange={(e) => setActionComment(e.target.value)}
+                    placeholder="Add a comment (optional)..."
+                    rows={2}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  />
+                  
+                  {/* Action Buttons */}
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => handleAction(selectedLoan._id, 'approve')}
+                      disabled={saving}
+                      className="px-4 py-2.5 text-sm font-semibold text-white bg-green-500 rounded-xl hover:bg-green-600 transition-colors flex items-center gap-2 disabled:opacity-50"
+                    >
+                      <CheckIcon /> Approve
+                    </button>
+                    <button
+                      onClick={() => handleAction(selectedLoan._id, 'reject')}
+                      disabled={saving}
+                      className="px-4 py-2.5 text-sm font-semibold text-white bg-red-500 rounded-xl hover:bg-red-600 transition-colors flex items-center gap-2 disabled:opacity-50"
+                    >
+                      <XIcon /> Reject
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Close Button */}
+              <button
+                onClick={() => {
+                  setShowDetailDialog(false);
+                  setSelectedLoan(null);
+                  setTransactions([]);
+                  setShowPaymentForm(false);
+                  setShowDisbursementDialog(false);
+                }}
+                className="w-full px-4 py-3 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Disbursement Dialog */}
+      {showDisbursementDialog && selectedLoan && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowDisbursementDialog(false)} />
+          <div className="relative z-50 w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                  Release Funds
+                </h2>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                  Disburse ₹{selectedLoan.amount.toLocaleString()} to {selectedLoan.employeeId?.employee_name || selectedLoan.emp_no}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowDisbursementDialog(false)}
+                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+              >
+                <XIcon />
+              </button>
+            </div>
+
+            <form onSubmit={handleDisburse} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Disbursement Method *
+                </label>
+                <select
+                  required
+                  value={disbursementData.disbursementMethod}
+                  onChange={(e) => setDisbursementData({ ...disbursementData, disbursementMethod: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                >
+                  <option value="bank_transfer">Bank Transfer</option>
+                  <option value="cash">Cash</option>
+                  <option value="cheque">Cheque</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Transaction Reference
+                </label>
+                <input
+                  type="text"
+                  value={disbursementData.transactionReference}
+                  onChange={(e) => setDisbursementData({ ...disbursementData, transactionReference: e.target.value })}
+                  placeholder="e.g., TXN123456789"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Remarks
+                </label>
+                <textarea
+                  value={disbursementData.remarks}
+                  onChange={(e) => setDisbursementData({ ...disbursementData, remarks: e.target.value })}
+                  placeholder="Add any remarks for this disbursement..."
+                  rows={3}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white resize-none"
+                />
+              </div>
+
+              {message && (
+                <div className={`rounded-lg px-4 py-2 text-sm ${
+                  message.type === 'success'
+                    ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400'
+                    : 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400'
+                }`}>
+                  {message.text}
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowDisbursementDialog(false)}
+                  className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-green-500 to-green-600 rounded-xl hover:from-green-600 hover:to-green-700 transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {saving ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                      Release Funds
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Dialog */}
+      {showEditDialog && selectedLoan && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowEditDialog(false)} />
+          <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-6">
+              Edit {selectedLoan.requestType === 'loan' ? 'Loan' : 'Salary Advance'}
+            </h2>
+
+            <form onSubmit={handleUpdate} className="space-y-4">
+              {/* Amount */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Amount (₹) *
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={editFormData.amount}
+                  onChange={(e) => setEditFormData({ ...editFormData, amount: e.target.value })}
+                  required
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+
+              {/* Duration */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Duration ({selectedLoan.requestType === 'loan' ? 'Months' : 'Cycles'}) *
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={editFormData.duration}
+                  onChange={(e) => setEditFormData({ ...editFormData, duration: e.target.value })}
+                  required
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+
+              {/* Reason */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Reason / Purpose *
+                </label>
+                <textarea
+                  value={editFormData.reason}
+                  onChange={(e) => setEditFormData({ ...editFormData, reason: e.target.value })}
+                  required
+                  rows={3}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+
+              {/* Remarks */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Remarks
+                </label>
+                <textarea
+                  value={editFormData.remarks}
+                  onChange={(e) => setEditFormData({ ...editFormData, remarks: e.target.value })}
+                  rows={2}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+
+              {/* Status (Super Admin only) */}
+              {(() => {
+                const user = auth.getUser();
+                const isSuperAdmin = user?.role === 'super_admin';
+                return isSuperAdmin && (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Status (Super Admin)
+                    </label>
+                    <select
+                      value={editFormData.status || selectedLoan.status}
+                      onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    >
+                      <option value="pending">Pending</option>
+                      <option value="hod_approved">HOD Approved</option>
+                      <option value="hr_approved">HR Approved</option>
+                      <option value="approved">Approved</option>
+                      <option value="hod_rejected">HOD Rejected</option>
+                      <option value="hr_rejected">HR Rejected</option>
+                      <option value="rejected">Rejected</option>
+                      <option value="cancelled">Cancelled</option>
+                    </select>
+                  </div>
+                );
+              })()}
+
+              {/* Buttons */}
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowEditDialog(false)}
+                  className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="flex-1 px-4 py-2.5 text-sm font-semibold text-white rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 disabled:opacity-50"
+                >
+                  {saving ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Early Settlement Confirmation Dialog */}
+      {showSettlementDialog && selectedLoan && settlementPreview && settlementPreview.current && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowSettlementDialog(false)} />
+          <div className="relative z-50 w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                  Confirm Early Settlement
+                </h2>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                  Pay full amount and save on interest
+                </p>
+              </div>
+              <button
+                onClick={() => setShowSettlementDialog(false)}
+                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+              >
+                <XIcon />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Settlement Breakdown */}
+              <div className="p-4 rounded-xl border-2 border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20">
+                <h3 className="text-sm font-semibold text-green-900 dark:text-green-100 mb-3">Settlement Breakdown</h3>
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-slate-600 dark:text-slate-400">Remaining Principal:</span>
+                    <span className="text-sm font-semibold text-slate-900 dark:text-white">₹{settlementPreview.current.remainingPrincipal.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-slate-600 dark:text-slate-400">Interest (for {settlementPreview.current.actualMonthsUsed} months):</span>
+                    <span className="text-sm font-semibold text-slate-900 dark:text-white">₹{settlementPreview.current.settlementInterest.toLocaleString()}</span>
+                  </div>
+                  <div className="pt-2 border-t border-green-200 dark:border-green-700">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-base font-semibold text-green-700 dark:text-green-300">Total Settlement Amount:</span>
+                      <span className="text-xl font-bold text-green-700 dark:text-green-300">₹{settlementPreview.current.settlementAmount.toLocaleString()}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Savings Highlight */}
+              <div className="p-4 rounded-xl border border-green-200 bg-gradient-to-r from-green-50 to-green-50 dark:from-green-900/30 dark:to-green-900/30 dark:border-green-700">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full bg-green-500 flex items-center justify-center">
+                    <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">You will save</p>
+                    <p className="text-2xl font-bold text-green-600 dark:text-green-400">₹{settlementPreview.current.interestSavings.toLocaleString()}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-500">in interest by paying early</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Loan Details */}
+              <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <p className="text-slate-500 dark:text-slate-400 mb-1">Original Duration:</p>
+                    <p className="font-semibold text-slate-900 dark:text-white">{settlementPreview.current.originalDuration} months</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500 dark:text-slate-400 mb-1">Months Used:</p>
+                    <p className="font-semibold text-slate-900 dark:text-white">{settlementPreview.current.actualMonthsUsed} months</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500 dark:text-slate-400 mb-1">Original Total:</p>
+                    <p className="font-semibold text-slate-900 dark:text-white">₹{settlementPreview.current.originalTotalAmount.toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500 dark:text-slate-400 mb-1">Remaining Months:</p>
+                    <p className="font-semibold text-slate-900 dark:text-white">{settlementPreview.current.remainingMonths} months</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowSettlementDialog(false)}
+                  className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleEarlySettlement}
+                  disabled={saving}
+                  className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-green-600 to-green-600 rounded-xl hover:from-green-700 hover:to-green-700 transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {saving ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                      Confirm Settlement
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Apply Dialog */}
       {showApplyDialog && (
@@ -597,38 +2143,42 @@ export default function LoansPage() {
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowApplyDialog(false)} />
           <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
             {/* Type Toggle */}
-            {canShowBothButtons && (
-              <div className="flex gap-2 mb-6">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setApplyType('loan');
-                    setInterestCalculation(null);
-                  }}
-                  className={`flex-1 py-3 rounded-xl font-medium text-sm transition-all ${
-                    applyType === 'loan'
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
-                  }`}
-                >
+            <div className="flex gap-2 mb-6">
+              <button
+                type="button"
+                onClick={() => {
+                  setApplyType('loan');
+                  setInterestCalculation(null);
+                }}
+                className={`flex-1 py-3 rounded-xl font-medium text-sm transition-all ${
+                  applyType === 'loan'
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                }`}
+              >
+                <span className="flex items-center justify-center gap-2">
+                  <LoanIcon />
                   Loan
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setApplyType('salary_advance');
-                    setInterestCalculation(null);
-                  }}
-                  className={`flex-1 py-3 rounded-xl font-medium text-sm transition-all ${
-                    applyType === 'salary_advance'
-                      ? 'bg-purple-500 text-white'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
-                  }`}
-                >
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setApplyType('salary_advance');
+                  setInterestCalculation(null);
+                }}
+                className={`flex-1 py-3 rounded-xl font-medium text-sm transition-all ${
+                  applyType === 'salary_advance'
+                    ? 'bg-purple-500 text-white'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                }`}
+              >
+                <span className="flex items-center justify-center gap-2">
+                  <AdvanceIcon />
                   Salary Advance
-                </button>
-              </div>
-            )}
+                </span>
+              </button>
+            </div>
 
             <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-6">
               Apply for {applyType === 'loan' ? 'Loan' : 'Salary Advance'}
@@ -636,55 +2186,110 @@ export default function LoansPage() {
 
             <form onSubmit={handleApply} className="space-y-4">
               {/* Employee Selection */}
-              {((applyType === 'loan' && canApplyLoanForOthers) || (applyType === 'salary_advance' && canApplyAdvanceForOthers)) && (
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Apply For Employee {!((applyType === 'loan' && canApplyLoanForSelf) || (applyType === 'salary_advance' && canApplyAdvanceForSelf)) && '*'}
-                  </label>
-                  <div className="relative employee-dropdown-container">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Apply For Employee *
+                </label>
+                <div className="relative">
+                  {selectedEmployee ? (
+                    <div className="flex items-center justify-between p-3 rounded-xl border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-semibold">
+                          {getEmployeeInitials(selectedEmployee)}
+                        </div>
+                        <div>
+                          <div className="font-medium text-slate-900 dark:text-white">
+                            {getEmployeeName(selectedEmployee)}
+                          </div>
+                          <div className="text-xs text-slate-500 dark:text-slate-400">
+                            {selectedEmployee.emp_no}
+                          </div>
+                          <div className="flex flex-wrap gap-1.5 mt-1">
+                            {selectedEmployee.department?.name && (
+                              <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-800 dark:text-blue-300 rounded">
+                                {selectedEmployee.department.name}
+                              </span>
+                            )}
+                            {selectedEmployee.designation?.name && (
+                              <span className="px-1.5 py-0.5 text-[10px] font-medium bg-green-100 text-green-700 dark:bg-green-800 dark:text-green-300 rounded">
+                                {selectedEmployee.designation.name}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedEmployee(null);
+                          setEmployeeSearch('');
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                      >
+                        <XIcon />
+                      </button>
+                    </div>
+                  ) : (
                     <div className="relative">
-                      <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                         <SearchIcon />
                       </div>
                       <input
                         type="text"
-                        placeholder="Search by name, emp no, or department..."
                         value={employeeSearch}
                         onChange={(e) => {
                           setEmployeeSearch(e.target.value);
                           setShowEmployeeDropdown(true);
                         }}
                         onFocus={() => setShowEmployeeDropdown(true)}
-                        className="w-full rounded-lg border border-slate-200 bg-white pl-10 pr-4 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                        placeholder="Search by name, emp no, or department..."
+                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20"
                       />
-                    </div>
-                    {showEmployeeDropdown && filteredEmployees.length > 0 && (
-                      <div className="absolute z-10 mt-1 w-full max-h-60 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-800">
-                        {filteredEmployees.map((emp) => (
-                          <button
-                            key={emp._id}
-                            type="button"
-                            onClick={() => {
-                              setSelectedEmployee(emp);
-                              setEmployeeSearch(emp.employee_name);
-                              setShowEmployeeDropdown(false);
-                            }}
-                            className="w-full px-4 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-700"
-                          >
-                            <div className="font-medium">{emp.employee_name}</div>
-                            <div className="text-xs text-slate-500">{emp.emp_no}</div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  {selectedEmployee && (
-                    <div className="mt-2 text-sm text-slate-600 dark:text-slate-400">
-                      Selected: {selectedEmployee.employee_name} ({selectedEmployee.emp_no})
+                      
+                      {/* Employee Dropdown */}
+                      {showEmployeeDropdown && (
+                        <div className="absolute z-10 w-full mt-1 max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-800">
+                          {filteredEmployees.length === 0 ? (
+                            <div className="p-4 text-center text-sm text-slate-500">
+                              {employeeSearch ? 'No employees found' : 'Type to search employees'}
+                            </div>
+                          ) : (
+                            filteredEmployees.slice(0, 10).map((emp) => (
+                              <button
+                                key={emp._id}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedEmployee(emp);
+                                  setEmployeeSearch('');
+                                  setShowEmployeeDropdown(false);
+                                }}
+                                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700 text-left transition-colors border-b border-slate-100 dark:border-slate-700 last:border-0"
+                              >
+                                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-slate-400 to-slate-500 flex items-center justify-center text-white text-sm font-medium">
+                                  {getEmployeeInitials(emp)}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="font-medium text-slate-900 dark:text-white truncate">
+                                    {getEmployeeName(emp)}
+                                  </div>
+                                  <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                                    {emp.emp_no} • {emp.department?.name || 'No Department'} • {emp.designation?.name || 'No Designation'}
+                                  </div>
+                                </div>
+                              </button>
+                            ))
+                          )}
+                          {filteredEmployees.length > 10 && (
+                            <div className="px-4 py-2 text-center text-xs text-slate-500 bg-slate-50 dark:bg-slate-900">
+                              Showing 10 of {filteredEmployees.length} results. Type more to filter.
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
-              )}
+              </div>
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
@@ -776,19 +2381,25 @@ export default function LoansPage() {
                 />
               </div>
 
-              <div className="flex gap-2 pt-4">
+              {/* Buttons */}
+              <div className="flex gap-3 pt-4">
                 <button
                   type="button"
                   onClick={() => setShowApplyDialog(false)}
-                  className="flex-1 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                  className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-2 text-sm font-semibold text-white shadow-lg"
+                  disabled={saving}
+                  className={`flex-1 px-4 py-2.5 text-sm font-semibold text-white rounded-xl transition-all disabled:opacity-50 ${
+                    applyType === 'loan'
+                      ? 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600'
+                      : 'bg-gradient-to-r from-purple-500 to-red-500 hover:from-purple-600 hover:to-red-600'
+                  }`}
                 >
-                  Submit Application
+                  {saving ? 'Submitting...' : `Apply ${applyType === 'loan' ? 'Loan' : 'Salary Advance'}`}
                 </button>
               </div>
             </form>
@@ -796,81 +2407,19 @@ export default function LoansPage() {
         </div>
       )}
 
-      {/* Detail Dialog */}
-      {showDetailDialog && selectedLoan && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowDetailDialog(false)} />
-          <div className="relative z-50 w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900 max-h-[90vh] overflow-y-auto">
-            <h2 className="mb-4 text-xl font-semibold text-slate-900 dark:text-slate-100">
-              {selectedLoan.requestType === 'loan' ? 'Loan' : 'Salary Advance'} Details
-            </h2>
-            
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium text-slate-600 dark:text-slate-400">Type</label>
-                <div className="text-slate-900 dark:text-slate-100">
-                  {selectedLoan.requestType === 'loan' ? 'Loan' : 'Salary Advance'}
-                </div>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-slate-600 dark:text-slate-400">Amount</label>
-                <div className="text-slate-900 dark:text-slate-100">₹{selectedLoan.amount.toLocaleString()}</div>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-slate-600 dark:text-slate-400">Duration</label>
-                <div className="text-slate-900 dark:text-slate-100">
-                  {selectedLoan.duration} {selectedLoan.requestType === 'loan' ? 'months' : 'cycles'}
-                </div>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-slate-600 dark:text-slate-400">Reason</label>
-                <div className="text-slate-900 dark:text-slate-100">{selectedLoan.reason}</div>
-              </div>
-              {selectedLoan.requestType === 'loan' && selectedLoan.loanConfig && (
-                <>
-                  <div>
-                    <label className="text-sm font-medium text-slate-600 dark:text-slate-400">EMI Amount</label>
-                    <div className="text-slate-900 dark:text-slate-100">₹{selectedLoan.loanConfig.emiAmount?.toLocaleString()}</div>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-slate-600 dark:text-slate-400">Total Amount (with interest)</label>
-                    <div className="text-slate-900 dark:text-slate-100">₹{selectedLoan.loanConfig.totalAmount?.toLocaleString()}</div>
-                  </div>
-                </>
-              )}
-              {selectedLoan.requestType === 'salary_advance' && selectedLoan.advanceConfig && (
-                <div>
-                  <label className="text-sm font-medium text-slate-600 dark:text-slate-400">Deduction per Cycle</label>
-                  <div className="text-slate-900 dark:text-slate-100">₹{selectedLoan.advanceConfig.deductionPerCycle?.toLocaleString()}</div>
-                </div>
-              )}
-              {selectedLoan.repayment && (
-                <div>
-                  <label className="text-sm font-medium text-slate-600 dark:text-slate-400">Repayment Status</label>
-                  <div className="text-slate-900 dark:text-slate-100">
-                    Paid: ₹{selectedLoan.repayment.totalPaid?.toLocaleString()} / Remaining: ₹{selectedLoan.repayment.remainingBalance?.toLocaleString()}
-                  </div>
-                </div>
-              )}
-              <div>
-                <label className="text-sm font-medium text-slate-600 dark:text-slate-400">Status</label>
-                <div>
-                  <span className={`px-2 py-1 rounded text-xs font-medium ${getStatusColor(selectedLoan.status)}`}>
-                    {selectedLoan.status.replace('_', ' ').toUpperCase()}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <button
-              onClick={() => setShowDetailDialog(false)}
-              className="mt-6 w-full rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Toast Container */}
+      <ToastContainer
+        position="top-right"
+        autoClose={3000}
+        hideProgressBar={false}
+        newestOnTop={false}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="light"
+      />
     </div>
   );
 }

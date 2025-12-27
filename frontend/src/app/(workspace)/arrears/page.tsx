@@ -1,0 +1,333 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { format } from 'date-fns';
+import { toast, ToastContainer } from 'react-toastify';
+import Swal from 'sweetalert2';
+import 'react-toastify/dist/ReactToastify.css';
+import { api } from '@/lib/api';
+import ArrearsDetailDialog from '@/components/Arrears/ArrearsDetailDialog';
+import ArrearsForm from '@/components/Arrears/ArrearsForm';
+import Spinner from '@/components/Spinner';
+
+// Icons
+const PlusIcon = () => (
+  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+  </svg>
+);
+
+const EyeIcon = () => (
+  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+  </svg>
+);
+
+const CheckIcon = () => (
+  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+  </svg>
+);
+
+const ClockIcon = () => (
+  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
+);
+
+const getStatusColor = (status: string) => {
+  switch (status) {
+    case 'approved':
+      return 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800';
+    case 'pending_hod':
+    case 'pending_hr':
+    case 'pending_admin':
+      return 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800';
+    case 'rejected':
+      return 'bg-red-50 text-red-700 border border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800';
+    case 'partially_settled':
+      return 'bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800';
+    case 'settled':
+      return 'bg-green-50 text-green-700 border border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800';
+    default:
+      return 'bg-slate-50 text-slate-700 border border-slate-200 dark:bg-slate-900/20 dark:text-slate-400 dark:border-slate-800';
+  }
+};
+
+const getStatusLabel = (status: string) => {
+  const labels: Record<string, string> = {
+    draft: 'Draft',
+    pending_hod: 'Pending HOD',
+    pending_hr: 'Pending HR',
+    pending_admin: 'Pending Admin',
+    approved: 'Approved',
+    rejected: 'Rejected',
+    partially_settled: 'Partially Settled',
+    settled: 'Settled',
+    cancelled: 'Cancelled'
+  };
+  return labels[status] || status;
+};
+
+interface Arrears {
+  _id: string;
+  employee: { _id: string; emp_no: string; employee_name?: string; first_name?: string; last_name?: string };
+  startMonth: string;
+  endMonth: string;
+  totalAmount: number;
+  remainingAmount: number;
+  status: string;
+  reason: string;
+  createdAt: string;
+}
+
+export default function ArrearsPage() {
+  const [arrears, setArrears] = useState<Arrears[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('all');
+  const [formOpen, setFormOpen] = useState(false);
+  const [selectedArrearsId, setSelectedArrearsId] = useState<string | null>(null);
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
+  const [employees, setEmployees] = useState([]);
+
+  useEffect(() => {
+    loadData();
+    loadEmployees();
+  }, []);
+
+  const loadData = () => {
+    setLoading(true);
+
+    Promise.resolve(api.getArrears({ limit: 100 }))
+      .then((response: any) => {
+        if (response.success) {
+          setArrears(response.data || []);
+        } else {
+          toast.error(response.message || 'Failed to load arrears');
+        }
+      })
+      .catch((err: any) => {
+        toast.error(err.message || 'Failed to load arrears');
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  };
+
+  const loadEmployees = () => {
+    Promise.resolve(api.getEmployees({ is_active: true }))
+      .then((response: any) => {
+        if (response.success) {
+          setEmployees(response.data || []);
+        }
+      })
+      .catch((err: any) => {
+        console.error('Failed to load employees:', err);
+      });
+  };
+
+  const handleViewDetails = (id: string) => {
+    setSelectedArrearsId(id);
+    setDetailDialogOpen(true);
+  };
+
+  const handleCreateArrears = async (data: any) => {
+    try {
+      const response = await api.createArrears(data);
+      if (response.success) {
+        toast.success('Arrears created successfully');
+        setFormOpen(false);
+        loadData();
+      } else {
+        toast.error(response.message || 'Failed to create arrears');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to create arrears');
+    }
+  };
+
+  const filteredArrears = arrears.filter(ar => {
+    if (activeTab === 'pending') {
+      return ['pending_hod', 'pending_hr', 'pending_admin'].includes(ar.status);
+    }
+    if (activeTab === 'all') return true;
+    return ar.status === activeTab;
+  });
+
+  const stats = {
+    pending: arrears.filter(ar => ['pending_hod', 'pending_hr', 'pending_admin'].includes(ar.status)).length,
+    approved: arrears.filter(ar => ar.status === 'approved').length,
+    settled: arrears.filter(ar => ar.status === 'settled').length,
+    rejected: arrears.filter(ar => ar.status === 'rejected').length
+  };
+
+  const getEmployeeName = (emp: any) => {
+    if (emp.employee_name) return emp.employee_name;
+    if (emp.first_name && emp.last_name) return `${emp.first_name} ${emp.last_name}`;
+    if (emp.first_name) return emp.first_name;
+    return emp.emp_no;
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 p-6">
+      <ToastContainer position="top-right" autoClose={3000} />
+
+      {/* Header */}
+      <div className="mb-8">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-2">Arrears Management</h1>
+            <p className="text-slate-600 dark:text-slate-400">Manage employee arrears requests and approvals</p>
+          </div>
+          <button
+            onClick={() => setFormOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white rounded-lg font-medium transition-all duration-200 shadow-lg hover:shadow-xl"
+          >
+            <PlusIcon />
+            Create Arrears
+          </button>
+        </div>
+      </div>
+
+      {/* Statistics Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        {[
+          { label: 'Pending Approval', value: stats.pending, color: 'from-amber-500 to-orange-600', icon: '⏳' },
+          { label: 'Approved', value: stats.approved, color: 'from-emerald-500 to-green-600', icon: '✓' },
+          { label: 'Settled', value: stats.settled, color: 'from-green-500 to-emerald-600', icon: '✓✓' },
+          { label: 'Rejected', value: stats.rejected, color: 'from-red-500 to-rose-600', icon: '✕' }
+        ].map((stat, idx) => (
+          <div
+            key={idx}
+            className="bg-white dark:bg-slate-800 rounded-xl shadow-md hover:shadow-lg transition-all duration-200 p-6 border border-slate-200 dark:border-slate-700"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-slate-600 dark:text-slate-400 text-sm font-medium mb-1">{stat.label}</p>
+                <p className="text-3xl font-bold text-slate-900 dark:text-white">{stat.value}</p>
+              </div>
+              <div className={`w-12 h-12 rounded-lg bg-gradient-to-br ${stat.color} flex items-center justify-center text-white text-xl`}>
+                {stat.icon}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Tabs */}
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md border border-slate-200 dark:border-slate-700 overflow-hidden mb-6">
+        <div className="flex border-b border-slate-200 dark:border-slate-700">
+          {['pending', 'approved', 'settled', 'rejected', 'all'].map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`flex-1 px-4 py-4 font-medium transition-all duration-200 ${activeTab === tab
+                  ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400 bg-blue-50 dark:bg-blue-900/20'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                }`}
+            >
+              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            </button>
+          ))}
+        </div>
+
+        {/* Table */}
+        <div className="overflow-x-auto">
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Spinner />
+            </div>
+          ) : filteredArrears.length === 0 ? (
+            <div className="text-center py-12">
+              <p className="text-slate-500 dark:text-slate-400">No arrears found</p>
+            </div>
+          ) : (
+            <table className="w-full">
+              <thead>
+                <tr className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700">
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Employee</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Period</th>
+                  <th className="px-6 py-4 text-right text-sm font-semibold text-slate-900 dark:text-white">Amount</th>
+                  <th className="px-6 py-4 text-right text-sm font-semibold text-slate-900 dark:text-white">Remaining</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Status</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Created</th>
+                  <th className="px-6 py-4 text-center text-sm font-semibold text-slate-900 dark:text-white">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredArrears.map((ar, idx) => (
+                  <tr
+                    key={ar._id}
+                    className={`border-b border-slate-200 dark:border-slate-700 transition-colors duration-200 ${idx % 2 === 0
+                        ? 'bg-white dark:bg-slate-800'
+                        : 'bg-slate-50 dark:bg-slate-900/50'
+                      } hover:bg-blue-50 dark:hover:bg-blue-900/20`}
+                  >
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-semibold text-sm">
+                          {getEmployeeName(ar.employee).charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="font-medium text-slate-900 dark:text-white">{getEmployeeName(ar.employee)}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">{ar.employee.emp_no}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-slate-700 dark:text-slate-300">{ar.startMonth} to {ar.endMonth}</td>
+                    <td className="px-6 py-4 text-right font-semibold text-slate-900 dark:text-white">
+                      ₹{ar.totalAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${ar.remainingAmount > 0
+                          ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                          : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                        }`}>
+                        ₹{ar.remainingAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold border ${getStatusColor(ar.status)}`}>
+                        {getStatusLabel(ar.status)}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
+                      {format(new Date(ar.createdAt), 'dd MMM yyyy')}
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      <button
+                        onClick={() => handleViewDetails(ar._id)}
+                        className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors duration-200"
+                      >
+                        <EyeIcon />
+                        View
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
+      {/* Dialogs */}
+      <ArrearsDetailDialog
+        open={detailDialogOpen}
+        onClose={() => setDetailDialogOpen(false)}
+        arrearsId={selectedArrearsId}
+        onUpdate={loadData}
+      />
+
+      {formOpen && (
+        <ArrearsForm
+          open={formOpen}
+          onClose={() => setFormOpen(false)}
+          onSubmit={handleCreateArrears}
+          employees={employees}
+        />
+      )}
+    </div>
+  );
+}
