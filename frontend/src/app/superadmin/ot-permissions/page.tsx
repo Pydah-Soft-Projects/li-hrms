@@ -726,10 +726,10 @@ export default function OTAndPermissionsPage() {
 
       <div className="relative z-10 mx-auto max-w-[1920px] px-4 py-8 sm:px-6 lg:px-8">
         {/* Header */}
-        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-slate-900 dark:text-white">OT & Permissions Management</h1>
-            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">Manage overtime requests and permission applications</p>
+            <h1 className="text-xl font-bold text-slate-900 dark:text-white">OT & Permissions Management</h1>
+            <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">Manage overtime requests and permission applications</p>
           </div>
 
           <div className="flex items-center gap-3">
@@ -766,7 +766,7 @@ export default function OTAndPermissionsPage() {
                 setActiveTab('ot');
                 setShowOTDialog(true);
               }}
-              className="rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600"
+              className="rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-3 py-2 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600"
             >
               <svg className="mr-2 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -778,7 +778,7 @@ export default function OTAndPermissionsPage() {
                 setActiveTab('permissions');
                 setShowPermissionDialog(true);
               }}
-              className="rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
+              className="rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-3 py-2 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
             >
               <svg className="mr-2 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -789,7 +789,7 @@ export default function OTAndPermissionsPage() {
         </div>
 
         {/* Filters */}
-        <div className="mb-6 rounded-xl border border-slate-200 bg-white/80 backdrop-blur-sm p-4 dark:border-slate-700 dark:bg-slate-900/80">
+        <div className="mb-5 rounded-xl border border-slate-200 bg-white/80 backdrop-blur-sm p-3 dark:border-slate-700 dark:bg-slate-900/80">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Employee Number</label>
@@ -804,7 +804,7 @@ export default function OTAndPermissionsPage() {
                   }
                 }}
                 placeholder="Filter by employee"
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
               />
             </div>
             <div>
@@ -818,7 +818,7 @@ export default function OTAndPermissionsPage() {
                     setPermissionFilters(prev => ({ ...prev, status: e.target.value }));
                   }
                 }}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
               >
                 <option value="">All Status</option>
                 <option value="pending">Pending</option>
@@ -838,7 +838,7 @@ export default function OTAndPermissionsPage() {
                     setPermissionFilters(prev => ({ ...prev, startDate: e.target.value }));
                   }
                 }}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
               />
             </div>
             <div>
@@ -853,7 +853,7 @@ export default function OTAndPermissionsPage() {
                     setPermissionFilters(prev => ({ ...prev, endDate: e.target.value }));
                   }
                 }}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
               />
             </div>
           </div>
@@ -870,14 +870,14 @@ export default function OTAndPermissionsPage() {
               <table className="w-full">
                 <thead className="bg-slate-50 dark:bg-slate-800">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Employee</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Date</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Shift</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">OT In</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">OT Out</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">OT Hours</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Status</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Actions</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Employee</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Date</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Shift</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">OT In</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">OT Out</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">OT Hours</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Status</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
@@ -890,25 +890,25 @@ export default function OTAndPermissionsPage() {
                   ) : (
                     otRequests.map((ot) => (
                       <tr key={ot._id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-2.5">
                           <div className="text-sm font-medium text-slate-900 dark:text-white">
                             {ot.employeeId?.employee_name || ot.employeeNumber}
                           </div>
                           <div className="text-xs text-slate-500 dark:text-slate-400">{ot.employeeNumber}</div>
                         </td>
-                        <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">{formatDate(ot.date)}</td>
-                        <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">
+                        <td className="px-3 py-2.5 text-sm text-slate-600 dark:text-slate-400">{formatDate(ot.date)}</td>
+                        <td className="px-3 py-2.5 text-sm text-slate-600 dark:text-slate-400">
                           {ot.shiftId?.name || '-'}
                         </td>
-                        <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">{formatTime(ot.otInTime)}</td>
-                        <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">{formatTime(ot.otOutTime)}</td>
-                        <td className="px-4 py-3 text-sm font-medium text-slate-900 dark:text-white">{ot.otHours} hrs</td>
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-2.5 text-sm text-slate-600 dark:text-slate-400">{formatTime(ot.otInTime)}</td>
+                        <td className="px-3 py-2.5 text-sm text-slate-600 dark:text-slate-400">{formatTime(ot.otOutTime)}</td>
+                        <td className="px-3 py-2.5 text-sm font-medium text-slate-900 dark:text-white">{ot.otHours} hrs</td>
+                        <td className="px-3 py-2.5">
                           <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${getStatusColor(ot.status)}`}>
                             {ot.status}
                           </span>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-2.5">
                           <div className="flex gap-2">
                             {ot.status === 'pending' && (
                               <>
@@ -959,13 +959,13 @@ export default function OTAndPermissionsPage() {
               <table className="w-full">
                 <thead className="bg-slate-50 dark:bg-slate-800">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Employee</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Date</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Time Range</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Hours</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Purpose</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Status</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Actions</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Employee</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Date</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Time Range</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Hours</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Purpose</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Status</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
@@ -978,24 +978,24 @@ export default function OTAndPermissionsPage() {
                   ) : (
                     permissions.map((perm) => (
                       <tr key={perm._id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-2.5">
                           <div className="text-sm font-medium text-slate-900 dark:text-white">
                             {perm.employeeId?.employee_name || perm.employeeNumber}
                           </div>
                           <div className="text-xs text-slate-500 dark:text-slate-400">{perm.employeeNumber}</div>
                         </td>
-                        <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">{formatDate(perm.date)}</td>
-                        <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">
+                        <td className="px-3 py-2.5 text-sm text-slate-600 dark:text-slate-400">{formatDate(perm.date)}</td>
+                        <td className="px-3 py-2.5 text-sm text-slate-600 dark:text-slate-400">
                           {formatTime(perm.permissionStartTime)} - {formatTime(perm.permissionEndTime)}
                         </td>
-                        <td className="px-4 py-3 text-sm font-medium text-slate-900 dark:text-white">{perm.permissionHours} hrs</td>
-                        <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">{perm.purpose}</td>
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-2.5 text-sm font-medium text-slate-900 dark:text-white">{perm.permissionHours} hrs</td>
+                        <td className="px-3 py-2.5 text-sm text-slate-600 dark:text-slate-400">{perm.purpose}</td>
+                        <td className="px-3 py-2.5">
                           <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${getStatusColor(perm.status)}`}>
                             {perm.status}
                           </span>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-2.5">
                           <div className="flex gap-2">
                             {perm.status === 'pending' && (
                               <>
@@ -1055,10 +1055,11 @@ export default function OTAndPermissionsPage() {
 
         {/* OT Dialog */}
         {showOTDialog && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Create OT Request</h2>
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowOTDialog(false)} />
+            <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+              <div className="mb-6 flex items-center justify-between">
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">create OT Request</h2>
                 <button
                   onClick={() => {
                     setShowOTDialog(false);
@@ -1075,7 +1076,7 @@ export default function OTAndPermissionsPage() {
               <div className="space-y-4">
                 {/* Validation Error */}
                 {validationError && (
-                  <div className="rounded-lg border-2 border-red-300 bg-red-50 p-4 dark:border-red-700 dark:bg-red-900/20">
+                  <div className="rounded-lg border-2 border-red-300 bg-red-50 p-3 dark:border-red-700 dark:bg-red-900/20">
                     <div className="flex items-center gap-2">
                       <svg className="h-5 w-5 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -1100,7 +1101,7 @@ export default function OTAndPermissionsPage() {
                         handleEmployeeSelect(employeeId, employee.emp_no, otFormData.date);
                       }
                     }}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                   >
                     <option value="">Select Employee</option>
                     {employees && employees.length > 0 ? (
@@ -1131,7 +1132,7 @@ export default function OTAndPermissionsPage() {
                         handleEmployeeSelect(otFormData.employeeId, otFormData.employeeNumber, e.target.value);
                       }
                     }}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                   />
                 </div>
 
@@ -1232,7 +1233,7 @@ export default function OTAndPermissionsPage() {
                             }
                           }
                         }}
-                        className="w-full rounded-lg border border-yellow-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-yellow-500 focus:outline-none focus:ring-1 focus:ring-yellow-500 dark:border-yellow-600 dark:bg-slate-900 dark:text-white"
+                        className="w-full rounded-xl border border-yellow-300 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-yellow-500 focus:outline-none focus:ring-1 focus:ring-yellow-500 dark:border-yellow-600 dark:bg-slate-900 dark:text-white"
                         required
                       >
                         <option value="">Select Shift</option>
@@ -1284,7 +1285,7 @@ export default function OTAndPermissionsPage() {
                     type="datetime-local"
                     value={otFormData.otOutTime}
                     onChange={(e) => setOTFormData(prev => ({ ...prev, otOutTime: e.target.value }))}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                     required
                   />
                 </div>
@@ -1295,7 +1296,7 @@ export default function OTAndPermissionsPage() {
                     value={otFormData.comments}
                     onChange={(e) => setOTFormData(prev => ({ ...prev, comments: e.target.value }))}
                     rows={3}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                   />
                 </div>
 
@@ -1321,14 +1322,14 @@ export default function OTAndPermissionsPage() {
                       setShowOTDialog(false);
                       resetOTForm();
                     }}
-                    className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                    className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleCreateOT}
                     disabled={loading}
-                    className="rounded-lg bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-blue-500/30 hover:from-blue-600 hover:to-indigo-600 disabled:opacity-50"
+                    className="rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-blue-500/30 hover:from-blue-600 hover:to-indigo-600 disabled:opacity-50"
                   >
                     {loading ? 'Creating...' : 'Create OT Request'}
                   </button>
@@ -1340,9 +1341,10 @@ export default function OTAndPermissionsPage() {
 
         {/* Permission Dialog */}
         {showPermissionDialog && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
-              <div className="mb-4 flex items-center justify-between">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowPermissionDialog(false)} />
+            <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+              <div className="mb-6 flex items-center justify-between">
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white">Create Permission Request</h2>
                 <button
                   onClick={() => {
@@ -1357,10 +1359,10 @@ export default function OTAndPermissionsPage() {
                 </button>
               </div>
 
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {/* Validation Error */}
                 {permissionValidationError && (
-                  <div className="rounded-lg border-2 border-red-300 bg-red-50 p-4 dark:border-red-700 dark:bg-red-900/20">
+                  <div className="rounded-lg border-2 border-red-300 bg-red-50 p-3 dark:border-red-700 dark:bg-red-900/20">
                     <div className="flex items-center gap-2">
                       <svg className="h-5 w-5 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -1418,7 +1420,7 @@ export default function OTAndPermissionsPage() {
                         setPermissionValidationError('');
                       }
                     }}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                   >
                     <option value="">Select Employee</option>
                     {employees && employees.length > 0 ? (
@@ -1459,13 +1461,13 @@ export default function OTAndPermissionsPage() {
                         }
                       }
                     }}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                   />
                 </div>
 
                 {/* Attendance Validation Message for Permission */}
                 {permissionFormData.employeeNumber && permissionFormData.date && (
-                  <div className="rounded-lg border-2 border-orange-200 bg-orange-50 p-4 dark:border-orange-700 dark:bg-orange-900/20">
+                  <div className="rounded-lg border-2 border-orange-200 bg-orange-50 p-3 dark:border-orange-700 dark:bg-orange-900/20">
                     <div className="flex items-center gap-2">
                       <svg className="h-5 w-5 text-orange-600 dark:text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -1484,7 +1486,7 @@ export default function OTAndPermissionsPage() {
                       type="datetime-local"
                       value={permissionFormData.permissionStartTime}
                       onChange={(e) => setPermissionFormData(prev => ({ ...prev, permissionStartTime: e.target.value }))}
-                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                       required
                     />
                   </div>
@@ -1494,7 +1496,7 @@ export default function OTAndPermissionsPage() {
                       type="datetime-local"
                       value={permissionFormData.permissionEndTime}
                       onChange={(e) => setPermissionFormData(prev => ({ ...prev, permissionEndTime: e.target.value }))}
-                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                       required
                     />
                   </div>
@@ -1507,7 +1509,7 @@ export default function OTAndPermissionsPage() {
                     value={permissionFormData.purpose}
                     onChange={(e) => setPermissionFormData(prev => ({ ...prev, purpose: e.target.value }))}
                     placeholder="Enter purpose for permission"
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                     required
                   />
                 </div>
@@ -1518,7 +1520,7 @@ export default function OTAndPermissionsPage() {
                     value={permissionFormData.comments}
                     onChange={(e) => setPermissionFormData(prev => ({ ...prev, comments: e.target.value }))}
                     rows={3}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                   />
                 </div>
 
@@ -1544,14 +1546,14 @@ export default function OTAndPermissionsPage() {
                       setShowPermissionDialog(false);
                       resetPermissionForm();
                     }}
-                    className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                    className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleCreatePermission}
                     disabled={loading}
-                    className="rounded-lg bg-gradient-to-r from-green-500 to-green-500 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-green-500/30 hover:from-green-600 hover:to-green-600 disabled:opacity-50"
+                    className="rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-green-500/30 hover:from-green-600 hover:to-green-600 disabled:opacity-50"
                   >
                     {loading ? 'Creating...' : 'Create Permission'}
                   </button>
@@ -1563,8 +1565,9 @@ export default function OTAndPermissionsPage() {
 
         {/* Evidence Viewer Dialog */}
         {showEvidenceDialog && selectedEvidenceItem && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowEvidenceDialog(false)} />
+            <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
               <div className="mb-4 flex items-center justify-between">
                 <div>
                   <h2 className="text-xl font-bold text-slate-900 dark:text-white">Evidence & Location</h2>
@@ -1666,8 +1669,9 @@ export default function OTAndPermissionsPage() {
 
         {/* QR Code Dialog */}
         {showQRDialog && selectedQR && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowQRDialog(false)} />
+            <div className="relative z-50 w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white">Permission QR Code</h2>
                 <button
