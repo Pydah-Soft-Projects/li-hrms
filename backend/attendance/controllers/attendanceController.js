@@ -1144,3 +1144,111 @@ exports.assignShift = async (req, res) => {
     });
   }
 };
+
+/**
+ * @desc    Get recent live activity feed for dashboard
+ * @route   GET /api/attendance/activity/recent
+ * @access  Private
+ */
+exports.getRecentActivity = async (req, res) => {
+  try {
+    const { limit = 20 } = req.query;
+
+    // 1. Determine Scope & Filter
+    let logQuery = {};
+    const isScopeAll = !req.scopeFilter || Object.keys(req.scopeFilter).length === 0 || (req.scopeFilter._id === null && !req.scopeFilter.department_id);
+
+    // If we have a specific scope filter (HR/HOD/Emp)
+    if (!isScopeAll && req.scopeFilter) {
+      // Find allowed Employee Numbers
+      const allowedEmployees = await Employee.find(req.scopeFilter).select('emp_no').lean();
+      const allowedEmpNos = allowedEmployees.map(e => e.emp_no);
+
+      if (allowedEmpNos.length === 0) {
+        return res.status(200).json({ success: true, data: [] });
+      }
+      logQuery.employeeNumber = { $in: allowedEmpNos };
+    }
+
+    // 2. Fetch Recent Logs
+    const rawLogs = await AttendanceRawLog.find(logQuery)
+      .sort({ timestamp: -1 })
+      .limit(parseInt(limit))
+      .lean();
+
+    if (rawLogs.length === 0) {
+      return res.status(200).json({ success: true, data: [] });
+    }
+
+    // 3. Hydrate Data
+    const uniqueEmpNos = [...new Set(rawLogs.map(l => l.employeeNumber))];
+
+    const employeesInfo = await Employee.find({ emp_no: { $in: uniqueEmpNos } })
+      .select('emp_no employee_name department_id designation_id')
+      .populate('department_id', 'name')
+      .populate('designation_id', 'name')
+      .lean();
+
+    const empMap = {};
+    employeesInfo.forEach(e => { empMap[e.emp_no] = e; });
+
+    const dailyMap = {};
+    const relevantDates = [...new Set(rawLogs.map(l => ({ emp: l.employeeNumber, date: l.date })))];
+
+    const dailyQuery = {
+      $or: relevantDates.map(i => ({ employeeNumber: i.emp, date: i.date }))
+    };
+
+    if (relevantDates.length > 0) {
+      const dailyRecords = await AttendanceDaily.find(dailyQuery)
+        .select('employeeNumber date shiftId status')
+        .populate('shiftId', 'name startTime endTime')
+        .lean();
+
+      dailyRecords.forEach(d => {
+        dailyMap[`${d.employeeNumber}_${d.date}`] = d;
+      });
+    }
+
+    // 4. Assemble Response
+    const activityFeed = rawLogs.map(log => {
+      const emp = empMap[log.employeeNumber] || {};
+      const daily = dailyMap[`${log.employeeNumber}_${log.date}`] || {};
+      const shift = daily.shiftId || {};
+
+      return {
+        _id: log._id,
+        timestamp: log.timestamp,
+        employee: {
+          name: emp.employee_name || 'Unknown',
+          number: log.employeeNumber,
+          department: emp.department_id?.name || '-',
+          designation: emp.designation_id?.name || '-'
+        },
+        punch: {
+          type: log.type,
+          subType: log.subType,
+          device: log.deviceName || log.deviceId
+        },
+        shift: {
+          name: shift.name || 'Detecting...',
+          startTime: shift.startTime,
+          endTime: shift.endTime
+        },
+        status: daily.status || 'PROCESSING'
+      };
+    });
+
+    res.status(200).json({
+      success: true,
+      data: activityFeed
+    });
+
+  } catch (error) {
+    console.error('Error fetching recent activity:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch activity feed'
+    });
+  }
+};

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import RecentActivityFeed from '@/components/attendance/RecentActivityFeed';
 
 interface DashboardStats {
   totalEmployees: number;
@@ -615,52 +616,9 @@ export default function SuperAdminDashboard() {
             )}
           </div>
 
-          {/* Recent Activities */}
-          <div className="rounded-xl border border-border-base bg-bg-surface/70 backdrop-blur p-4 hover:bg-bg-surface/80 transition shadow-sm">
-            <h2 className="mb-4 text-base font-semibold tracking-tight text-text-primary">Recent Activities</h2>
-            {loading ? (
-              <div className="space-y-3">
-                {[1, 2, 3, 4, 5].map((i) => (
-                  <div key={i} className="h-16 animate-pulse rounded-lg bg-gray-200 dark:bg-white/5"></div>
-                ))}
-              </div>
-            ) : recentActivities.length === 0 ? (
-              <div className="py-6 text-center text-sm text-text-secondary">
-                No recent activities
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {recentActivities.map((activity) => (
-                  <div
-                    key={activity._id}
-                    className="flex items-start gap-3 rounded-lg border border-border-base bg-bg-surface/40 p-3 transition-all hover:bg-bg-surface/60"
-                  >
-                    <div className={`rounded p-2 ${activity.type === 'leave' ? 'bg-status-warning/15 text-status-warning' :
-                      activity.type === 'od' ? 'bg-blue-500/15 text-blue-500' :
-                        'bg-purple-500/15 text-purple-500'
-                      }`}>
-                      <div className="h-4 w-4">{getActivityIcon(activity.type)}</div>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="truncate text-sm font-medium text-text-primary">
-                        {activity.title}
-                      </p>
-                      <p className="mt-0.5 truncate text-xs text-text-secondary">
-                        {activity.description}
-                      </p>
-                      <div className="mt-1.5 flex items-center gap-2">
-                        <span className={`inline-flex items-center rounded px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${getStatusColor(activity.status)}`}>
-                          {activity.status || 'new'}
-                        </span>
-                        <span className="text-[10px] text-text-secondary">
-                          {formatTimeAgo(activity.timestamp)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+          {/* Recent Activities Live Feed */}
+          <div className="h-[500px]">
+            <RecentActivityFeed />
           </div>
         </div>
 

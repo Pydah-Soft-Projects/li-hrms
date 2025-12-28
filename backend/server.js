@@ -92,6 +92,12 @@ app.use('/api/loans', loanRoutes);
 
 // Attendance routes
 const attendanceRoutes = require('./attendance/index.js');
+
+// Internal Attendance Routes (System-to-System, No Auth)
+const internalAttendanceRoutes = require('./attendance/internalRoutes.js');
+// Changed path to avoid conflict with /api/attendance which has auth middleware
+app.use('/api/internal/attendance', internalAttendanceRoutes);
+
 app.use('/api/attendance', attendanceRoutes);
 
 // Overtime routes

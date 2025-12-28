@@ -43,6 +43,7 @@ router.get('/list', applyScopeFilter, attendanceController.getAttendanceList);
 router.get('/detail', applyScopeFilter, attendanceController.getAttendanceDetail);
 router.get('/employees', applyScopeFilter, attendanceController.getEmployeesWithAttendance);
 router.get('/monthly', applyScopeFilter, attendanceController.getMonthlyAttendance);
+router.get('/activity/recent', applyScopeFilter, attendanceController.getRecentActivity);
 router.get('/:employeeNumber/:date/available-shifts', attendanceController.getAvailableShifts);
 
 // Update outTime for PARTIAL attendance (Super Admin, Sub Admin, HR, HOD)

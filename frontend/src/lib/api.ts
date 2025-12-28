@@ -2362,5 +2362,9 @@ export const api = {
   },
   // Workflows
   // (Workflow methods moved up to avoid duplicates)
+  // Activity Feed
+  getRecentActivity: async () => {
+    return apiRequest<any>('/attendance/activity/recent', { method: 'GET' });
+  },
 };
 

@@ -5,6 +5,7 @@ import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { auth } from '@/lib/auth';
 import { api } from '@/lib/api';
 import Link from 'next/link';
+import RecentActivityFeed from '@/components/attendance/RecentActivityFeed';
 
 interface DashboardStats {
   totalEmployees?: number;
@@ -339,18 +340,8 @@ function EmployeeDashboard({ stats, hasPermission }: { stats: DashboardStats; ha
           </div>
         </div>
 
-        <div className="lg:col-span-2 bg-gradient-to-br from-white to-slate-50 rounded-3xl border border-slate-100 p-8 shadow-sm">
-          <div className="flex items-center justify-between mb-8">
-            <h2 className="text-xl font-bold text-slate-900">Recent Updates</h2>
-            <button className="text- emerald-600 font-semibold text-sm">View History</button>
-          </div>
-
-          <div className="flex flex-col items-center justify-center h-48 border-2 border-dashed border-slate-200 rounded-3xl">
-            <div className="text-slate-400 text-center">
-              <p className="font-medium text-lg">No recent activity</p>
-              <p className="text-sm">Your 최근 updates and notifications will appear here.</p>
-            </div>
-          </div>
+        <div className="lg:col-span-2 h-[500px]">
+          <RecentActivityFeed />
         </div>
       </div>
     </div>

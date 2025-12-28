@@ -27,7 +27,7 @@ const formatDate = (date) => {
  * @param {Boolean} previousDayLinking - Whether to enable previous day linking (deprecated, using chronological approach)
  * @returns {Object} Statistics of processed records
  */
-const processAndAggregateLogs = async (rawLogs, previousDayLinking = false) => {
+const processAndAggregateLogs = async (rawLogs, previousDayLinking = false, skipInsertion = false) => {
   const stats = {
     rawLogsInserted: 0,
     rawLogsSkipped: 0,
@@ -37,35 +37,39 @@ const processAndAggregateLogs = async (rawLogs, previousDayLinking = false) => {
   };
 
   try {
-    // First, insert all raw logs (with duplicate prevention)
-    for (const log of rawLogs) {
-      try {
-        const date = formatDate(log.timestamp);
-        const logData = {
-          employeeNumber: log.employeeNumber,
-          timestamp: new Date(log.timestamp),
-          type: log.type,
-          source: log.source || 'mssql',
-          date: date,
-          rawData: log.rawData,
-        };
-
-        // Try to insert (will fail if duplicate due to unique index)
+    // First, insert all raw logs (Duplicate prevention)
+    // SKIP if explicitly requested (e.g. from RealTime Controller which already saves)
+    if (!skipInsertion) {
+      for (const log of rawLogs) {
         try {
-          await AttendanceRawLog.create(logData);
-          stats.rawLogsInserted++;
-        } catch (error) {
-          if (error.code === 11000) {
-            // Duplicate - skip
-            stats.rawLogsSkipped++;
-          } else {
-            throw error;
+          const date = formatDate(log.timestamp);
+          const logData = {
+            employeeNumber: log.employeeNumber,
+            timestamp: new Date(log.timestamp),
+            type: log.type,
+            source: log.source || 'mssql',
+            date: date,
+            rawData: log.rawData,
+          };
+
+          // Try to insert (will fail if duplicate due to unique index)
+          try {
+            await AttendanceRawLog.create(logData);
+            stats.rawLogsInserted++;
+          } catch (error) {
+            if (error.code === 11000) {
+              // Duplicate - skip
+              stats.rawLogsSkipped++;
+            } else {
+              throw error;
+            }
           }
+        } catch (error) {
+          stats.errors.push(`Error processing log for ${log.employeeNumber}: ${error.message}`);
         }
-      } catch (error) {
-        stats.errors.push(`Error processing log for ${log.employeeNumber}: ${error.message}`);
       }
     }
+
 
     // NEW APPROACH: Group logs by employee, then process chronologically
     const logsByEmployee = {};
@@ -111,6 +115,7 @@ const processAndAggregateLogs = async (rawLogs, previousDayLinking = false) => {
         // Process each log chronologically
         for (let i = 0; i < logs.length; i++) {
           const currentLog = logs[i];
+          console.log(`[SyncDebug] Processing log ${i}: Time=${currentLog.timestamp}, Type=${currentLog.type}`);
 
           // Skip if this is an OUT log that's already been paired
           if (usedOutLogs.has(i)) {
@@ -145,6 +150,7 @@ const processAndAggregateLogs = async (rawLogs, previousDayLinking = false) => {
                     // Valid same-day pair: OUT time > IN time
                     outTime = candidateOutTime;
                     outIndex = j;
+                    console.log(`[SyncDebug] Found Same-Day Pair: IN=${inTime}, OUT=${outTime}`);
                     break;
                   } else {
                     // OUT time < IN time on same day - this is overnight, check next day
@@ -232,6 +238,7 @@ const processAndAggregateLogs = async (rawLogs, previousDayLinking = false) => {
             }
 
             // Create or update daily record
+            console.log(`[SyncDebug] Updating Daily Record: Emp=${employeeNumber}, Date=${shiftDate}, IN=${inTime}, OUT=${outTime}, Shift=${updateData.shiftId}`);
             const dailyRecord = await AttendanceDaily.findOneAndUpdate(
               { employeeNumber, date: shiftDate },
               {

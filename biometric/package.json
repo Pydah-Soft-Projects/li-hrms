@@ -1,0 +1,33 @@
+{
+  "name": "biometric-log-collector",
+  "version": "1.0.0",
+  "description": "eSSL Biometric Device Log Collection System for HRMS Integration",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "seed": "node scripts/seedDevices.js",
+    "test": "echo \"No tests yet\" && exit 0"
+  },
+  "keywords": [
+    "biometric",
+    "essl",
+    "zkteco",
+    "attendance",
+    "hrms"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.13.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "mongoose": "^8.0.3",
+    "node-cron": "^3.0.3",
+    "node-zklib": "^1.3.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}
