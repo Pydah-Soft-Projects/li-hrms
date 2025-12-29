@@ -18,6 +18,9 @@ interface DashboardStats {
   myPendingLeaves?: number;
   myApprovedLeaves?: number;
   teamPendingApprovals?: number;
+  efficiencyScore?: number;
+  departmentFeed?: any[];
+  leaveBalance?: number
 }
 
 export default function DashboardPage() {
@@ -35,18 +38,10 @@ export default function DashboardPage() {
     // Simulate/Fetch stats
     const fetchStats = async () => {
       try {
-        // In a real app, we'd fetch these from the API
-        // For now, we'll use placeholder data that looks "well and great"
-        setStats({
-          totalEmployees: 124,
-          pendingLeaves: 8,
-          approvedLeaves: 45,
-          todayPresent: 112,
-          myPendingLeaves: 1,
-          myApprovedLeaves: 3,
-          upcomingHolidays: 2,
-          teamPendingApprovals: 5
-        });
+        const response = await api.getDashboardStats();
+        if (response.success && response.data) {
+          setStats(response.data);
+        }
       } catch (error) {
         console.error('Error fetching dashboard stats:', error);
       } finally {
@@ -98,9 +93,6 @@ export default function DashboardPage() {
             <h1 className="text-4xl md:text-5xl font-black tracking-tight mb-4">
               Welcome back, <span className="bg-gradient-to-r from-emerald-400 to-teal-300 bg-clip-text text-transparent">{user?.name?.split(' ')[0] || 'User'}</span>
             </h1>
-            <p className="text-emerald-100/60 max-w-md text-lg leading-relaxed">
-              We're glad to see you again. Here's a snapshot of what's happening today in your organization.
-            </p>
           </div>
 
           <div className="flex items-center gap-6">
@@ -229,16 +221,16 @@ function HODDashboard({ stats, hasPermission }: { stats: DashboardStats; hasPerm
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
           title="Team Squad"
-          value={12}
+          value={stats.totalEmployees || 0}
           icon={<UsersIcon className="w-6 h-6" />}
           trend="All active"
           color="indigo"
         />
         <StatCard
           title="Team Present"
-          value={11}
+          value={stats.todayPresent || 0}
           icon={<CalendarIcon className="w-6 h-6" />}
-          trend="1 on leave"
+          trend={`${stats.totalEmployees ? stats.totalEmployees - (stats.todayPresent || 0) : 0} on leave`}
           color="emerald"
         />
         <StatCard
@@ -251,7 +243,7 @@ function HODDashboard({ stats, hasPermission }: { stats: DashboardStats; hasPerm
         />
         <StatCard
           title="Efficiency Score"
-          value={98}
+          value={stats.efficiencyScore || 0}
           icon={<CheckIcon className="w-6 h-6" />}
           trend="Top department"
           color="blue"
@@ -276,12 +268,33 @@ function HODDashboard({ stats, hasPermission }: { stats: DashboardStats; hasPerm
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-bold text-slate-900">Department Feed</h2>
           </div>
-          <div className="text-center py-12">
-            <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-emerald-500">
-              <CheckIcon className="w-10 h-10" />
-            </div>
-            <h3 className="text-lg font-bold text-slate-900">Your queue is empty</h3>
-            <p className="text-slate-500 max-w-xs mx-auto mt-2">All team requests have been processed. Great job keeping things moving!</p>
+          <div className="space-y-4">
+            {stats.departmentFeed && stats.departmentFeed.length > 0 ? (
+              stats.departmentFeed.map((req: any) => (
+                <div key={req._id} className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 border border-slate-100">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold">
+                      {req.employeeId?.employee_name?.[0] || 'U'}
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-900 text-sm">{req.employeeId?.employee_name || 'Unknown Employee'}</h4>
+                      <p className="text-slate-500 text-xs">{req.leaveType} • {req.numberOfDays} days</p>
+                    </div>
+                  </div>
+                  <Link href={`/leaves/${req._id}`} className="text-xs font-semibold text-indigo-600 hover:underline">
+                    Review
+                  </Link>
+                </div>
+              ))
+            ) : (
+              <div className="text-center py-12">
+                <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-emerald-500">
+                  <CheckIcon className="w-10 h-10" />
+                </div>
+                <h3 className="text-lg font-bold text-slate-900">Your queue is empty</h3>
+                <p className="text-slate-500 max-w-xs mx-auto mt-2">All team requests have been processed. Great job keeping things moving!</p>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -297,7 +310,7 @@ function EmployeeDashboard({ stats, hasPermission }: { stats: DashboardStats; ha
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
           title="Leave Balance"
-          value={12}
+          value={stats.leaveBalance || 0}
           icon={<CalendarIcon className="w-6 h-6" />}
           trend="Days remaining"
           color="emerald"
@@ -312,7 +325,7 @@ function EmployeeDashboard({ stats, hasPermission }: { stats: DashboardStats; ha
         />
         <StatCard
           title="Attendance"
-          value={22}
+          value={stats.todayPresent || 0}
           icon={<CheckIcon className="w-6 h-6" />}
           trend="Days this month"
           color="blue"

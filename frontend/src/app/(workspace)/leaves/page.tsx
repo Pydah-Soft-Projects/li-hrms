@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { api } from '@/lib/api';
 import { auth } from '@/lib/auth';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
@@ -589,9 +589,11 @@ export default function LeavesPage() {
       // Override based on Role (Strict Role-Based Access)
       if (currentUser) {
         if (currentUser.role === 'employee') {
+          leaveSelf = true; // Employees can always apply for themselves
           leaveOthers = false;
         } else if (['hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser.role)) {
           leaveOthers = true;
+          leaveSelf = true; // Admins/HODs should also be able to apply
         }
       }
 
@@ -643,9 +645,11 @@ export default function LeavesPage() {
       // Override OD based on Role
       if (currentUser) {
         if (currentUser.role === 'employee') {
+          odSelf = true; // Employees can always apply for OD
           odOthers = false;
         } else if (['hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser.role)) {
           odOthers = true;
+          odSelf = true;
         }
       }
 
@@ -677,9 +681,43 @@ export default function LeavesPage() {
 
       // Load employees logic (based on Role)
       if (currentUser) {
-        // 1. Employee: No access to other employees
+        // 1. Employee: Load self profile only
         if (currentUser.role === 'employee') {
-          setEmployees([]);
+          console.log('[Workspace Leaves] Loading data for employee:', currentUser);
+          // Try to get employee details using linked employeeId or emp_no
+          const identifier = (currentUser as any).emp_no || currentUser.employeeId;
+
+          let employeeLoaded = false;
+
+          if (identifier) {
+            try {
+              const response = await api.getEmployee(identifier);
+              if (response.success && response.data) {
+                setEmployees([response.data]);
+                employeeLoaded = true;
+              }
+            } catch (fetchErr) {
+              console.error('Error fetching employee details:', fetchErr);
+            }
+          }
+
+          // Fallback: If API failed or no identifier, but we are logged in as employee,
+          // create a synthetic employee object from currentUser to allow application
+          if (!employeeLoaded) {
+            console.warn('Using synthetic employee data from currentUser');
+            const syntheticEmployee: any = {
+              _id: currentUser!.id || 'current-user',
+              emp_no: identifier || 'UNKNOWN',
+              employee_name: currentUser!.name,
+              email: currentUser!.email,
+              role: 'employee',
+              phone_number: (currentUser as any).phone || '',
+              department: currentUser!.department,
+            };
+            setEmployees([syntheticEmployee]);
+          }
+          console.log('[Workspace Leaves] Loaded employees list:', employeeLoaded ? 'From API' : 'Synthetic');
+
         }
         // 2. HOD: Access to own department employees
         else if (currentUser.role === 'hod') {
@@ -798,17 +836,19 @@ export default function LeavesPage() {
   };
 
 
-  // Filter employees based on search
-  const filteredEmployees = employees.filter((emp) => {
-    const searchLower = employeeSearch.toLowerCase();
-    const fullName = getEmployeeName(emp).toLowerCase();
-    return (
-      fullName.includes(searchLower) ||
-      emp.emp_no?.toLowerCase().includes(searchLower) ||
-      emp.department?.name?.toLowerCase().includes(searchLower)
-    );
-  });
 
+  // Filter employees based on search
+  const filteredEmployees = useMemo(() => {
+    return employees.filter((emp) => {
+      const searchLower = employeeSearch.toLowerCase();
+      const fullName = getEmployeeName(emp).toLowerCase();
+      return (
+        fullName.includes(searchLower) ||
+        emp.emp_no?.toLowerCase().includes(searchLower) ||
+        emp.department?.name?.toLowerCase().includes(searchLower)
+      );
+    });
+  }, [employees, employeeSearch]);
   const openApplyDialog = (type: 'leave' | 'od') => {
     setApplyType(type);
     resetForm();
@@ -824,13 +864,48 @@ export default function LeavesPage() {
     }
   };
 
+  // Auto-select employee for employee role when dialog opens
+  useEffect(() => {
+    console.log('[Workspace Leaves] Auto-select effect. Show:', showApplyDialog, 'Role:', currentUser?.role, 'Employees:', employees.length);
+    if (showApplyDialog && currentUser?.role === 'employee' && employees.length > 0) {
+      if (!selectedEmployee || selectedEmployee._id !== employees[0]._id) {
+        console.log('[Workspace Leaves] Auto-selecting employee:', employees[0]);
+        handleSelectEmployee(employees[0]);
+      }
+    }
+  }, [showApplyDialog, currentUser, employees]);
+
+
+
   const handleApply = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
 
     try {
-      if (!selectedEmployee) {
+      let employeeToApplyFor = selectedEmployee;
+
+      console.log('[Workspace Leaves] Apply. Selected:', selectedEmployee, 'Role:', currentUser?.role, 'Employees count:', employees.length);
+
+      // Fallback: If no employee selected but current user is employee
+      if (!employeeToApplyFor && currentUser?.role === 'employee') {
+        if (employees.length > 0) {
+          employeeToApplyFor = employees[0];
+        } else {
+          console.warn('[Workspace Leaves] Constructing synthetic employee in handleApply fallback');
+          employeeToApplyFor = {
+            _id: currentUser.id || 'current-user',
+            emp_no: (currentUser as any).emp_no || currentUser.employeeId || 'UNKNOWN',
+            employee_name: currentUser.name || 'Current User',
+            email: currentUser.email || '',
+            role: 'employee',
+            phone_number: (currentUser as any).phone || '',
+            department: currentUser.department,
+          } as Employee;
+        }
+      }
+
+      if (!employeeToApplyFor) {
         toast.error('Please select an employee');
         setLoading(false);
         return;
@@ -878,9 +953,11 @@ export default function LeavesPage() {
       }
 
       // 2. Prepare Payload
-      const contactNum = formData.contactNumber || selectedEmployee.phone_number || '';
+      const contactNum = formData.contactNumber || employeeToApplyFor.phone_number || '';
       let payload: any = {
-        empNo: selectedEmployee.emp_no,
+        // Only send empNo if NOT employee role (admin applying for others)
+        // Employees applying for self should omit empNo to trigger backend "self" logic
+        ...(currentUser?.role !== 'employee' ? { empNo: employeeToApplyFor.emp_no } : {}),
         fromDate: formData.fromDate,
         toDate: formData.toDate,
         purpose: formData.purpose,
@@ -1299,6 +1376,7 @@ export default function LeavesPage() {
     }
   };
 
+
   const totalPending = pendingLeaves.length + pendingODs.length;
 
   if (loading) {
@@ -1320,7 +1398,7 @@ export default function LeavesPage() {
               Manage leave applications and on-duty requests
             </p>
           </div>
-          {(canApplyForSelf || canApplyForOthers) && (
+          {(canApplyForSelf || canApplyForOthers || currentUser?.role === 'employee' || ['hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser?.role)) && (
             <button
               onClick={() => openApplyDialog('leave')}
               className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-green-500 to-green-600 text-white text-xs font-semibold shadow-sm hover:shadow-md transition-all"
@@ -1710,107 +1788,109 @@ export default function LeavesPage() {
             </h2>
 
             <form onSubmit={handleApply} className="space-y-4">
-              {/* Apply For - Employee Selection */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  Apply For Employee *
-                </label>
-                <div className="relative">
-                  {selectedEmployee ? (
-                    <div className="flex items-center justify-between p-3 rounded-xl border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-semibold">
-                          {getEmployeeInitials(selectedEmployee)}
+              {/* Apply For - Employee Selection (Hidden for Employees) */}
+              {currentUser?.role !== 'employee' && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    Apply For Employee *
+                  </label>
+                  <div className="relative">
+                    {selectedEmployee ? (
+                      <div className="flex items-center justify-between p-3 rounded-xl border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-semibold">
+                            {getEmployeeInitials(selectedEmployee)}
+                          </div>
+                          <div>
+                            <div className="font-medium text-slate-900 dark:text-white">
+                              {getEmployeeName(selectedEmployee)}
+                            </div>
+                            <div className="text-xs text-slate-500 dark:text-slate-400">
+                              {selectedEmployee.emp_no}
+                            </div>
+                            <div className="flex flex-wrap gap-1.5 mt-1">
+                              {selectedEmployee.department?.name && (
+                                <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-800 dark:text-blue-300 rounded">
+                                  {selectedEmployee.department.name}
+                                </span>
+                              )}
+                              {selectedEmployee.designation?.name && (
+                                <span className="px-1.5 py-0.5 text-[10px] font-medium bg-green-100 text-green-700 dark:bg-green-800 dark:text-green-300 rounded">
+                                  {selectedEmployee.designation.name}
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                        <div>
-                          <div className="font-medium text-slate-900 dark:text-white">
-                            {getEmployeeName(selectedEmployee)}
-                          </div>
-                          <div className="text-xs text-slate-500 dark:text-slate-400">
-                            {selectedEmployee.emp_no}
-                          </div>
-                          <div className="flex flex-wrap gap-1.5 mt-1">
-                            {selectedEmployee.department?.name && (
-                              <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-800 dark:text-blue-300 rounded">
-                                {selectedEmployee.department.name}
-                              </span>
-                            )}
-                            {selectedEmployee.designation?.name && (
-                              <span className="px-1.5 py-0.5 text-[10px] font-medium bg-green-100 text-green-700 dark:bg-green-800 dark:text-green-300 rounded">
-                                {selectedEmployee.designation.name}
-                              </span>
-                            )}
-                          </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedEmployee(null);
+                            setFormData(prev => ({ ...prev, contactNumber: '' }));
+                          }}
+                          className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                        >
+                          <XIcon />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <SearchIcon />
                         </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedEmployee(null);
-                          setFormData(prev => ({ ...prev, contactNumber: '' }));
-                        }}
-                        className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                      >
-                        <XIcon />
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <SearchIcon />
-                      </div>
-                      <input
-                        type="text"
-                        value={employeeSearch}
-                        onChange={(e) => {
-                          setEmployeeSearch(e.target.value);
-                          setShowEmployeeDropdown(true);
-                        }}
-                        onFocus={() => setShowEmployeeDropdown(true)}
-                        placeholder="Search by name, emp no, or department..."
-                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20"
-                      />
+                        <input
+                          type="text"
+                          value={employeeSearch}
+                          onChange={(e) => {
+                            setEmployeeSearch(e.target.value);
+                            setShowEmployeeDropdown(true);
+                          }}
+                          onFocus={() => setShowEmployeeDropdown(true)}
+                          placeholder="Search by name, emp no, or department..."
+                          className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20"
+                        />
 
-                      {/* Employee Dropdown */}
-                      {showEmployeeDropdown && (
-                        <div className="absolute z-10 w-full mt-1 max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-800">
-                          {filteredEmployees.length === 0 ? (
-                            <div className="p-4 text-center text-sm text-slate-500">
-                              {employeeSearch ? 'No employees found' : 'Type to search employees'}
-                            </div>
-                          ) : (
-                            filteredEmployees.slice(0, 10).map((emp, idx) => (
-                              <button
-                                key={emp._id || emp.emp_no || `emp-${idx}`}
-                                type="button"
-                                onClick={() => handleSelectEmployee(emp)}
-                                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700 text-left transition-colors border-b border-slate-100 dark:border-slate-700 last:border-0"
-                              >
-                                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-slate-400 to-slate-500 flex items-center justify-center text-white text-sm font-medium">
-                                  {getEmployeeInitials(emp)}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="font-medium text-slate-900 dark:text-white truncate">
-                                    {getEmployeeName(emp)}
+                        {/* Employee Dropdown */}
+                        {showEmployeeDropdown && (
+                          <div className="absolute z-10 w-full mt-1 max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-800">
+                            {filteredEmployees.length === 0 ? (
+                              <div className="p-4 text-center text-sm text-slate-500">
+                                {employeeSearch ? 'No employees found' : 'Type to search employees'}
+                              </div>
+                            ) : (
+                              filteredEmployees.slice(0, 10).map((emp, idx) => (
+                                <button
+                                  key={emp._id || emp.emp_no || `emp-${idx}`}
+                                  type="button"
+                                  onClick={() => handleSelectEmployee(emp)}
+                                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700 text-left transition-colors border-b border-slate-100 dark:border-slate-700 last:border-0"
+                                >
+                                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-slate-400 to-slate-500 flex items-center justify-center text-white text-sm font-medium">
+                                    {getEmployeeInitials(emp)}
                                   </div>
-                                  <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                                    {emp.emp_no} • {emp.department?.name || 'No Department'} • {emp.designation?.name || 'No Designation'}
+                                  <div className="flex-1 min-w-0">
+                                    <div className="font-medium text-slate-900 dark:text-white truncate">
+                                      {getEmployeeName(emp)}
+                                    </div>
+                                    <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                                      {emp.emp_no} • {emp.department?.name || 'No Department'} • {emp.designation?.name || 'No Designation'}
+                                    </div>
                                   </div>
-                                </div>
-                              </button>
-                            ))
-                          )}
-                          {filteredEmployees.length > 10 && (
-                            <div className="px-4 py-2 text-center text-xs text-slate-500 bg-slate-50 dark:bg-slate-900">
-                              Showing 10 of {filteredEmployees.length} results. Type more to filter.
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
+                                </button>
+                              ))
+                            )}
+                            {filteredEmployees.length > 10 && (
+                              <div className="px-4 py-2 text-center text-xs text-slate-500 bg-slate-50 dark:bg-slate-900">
+                                Showing 10 of {filteredEmployees.length} results. Type more to filter.
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Type Selection */}
               <div>
@@ -1886,36 +1966,45 @@ export default function LeavesPage() {
                 </div>
               )}
 
-              {/* Dates */}
-              <div className="grid grid-cols-2 gap-4">
+              {/* Date Selection Logic */}
+              {((applyType === 'leave' && formData.isHalfDay) ||
+                (applyType === 'od' && (formData.odType_extended === 'half_day' || formData.odType_extended === 'hours'))) ? (
+                /* Single Date Input for Half Day / Specific Hours */
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">From Date *</label>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Date *</label>
                   <input
                     type="date"
-                    value={formData.fromDate}
-                    onChange={(e) => {
-                      const newFromDate = e.target.value;
-                      const newToDate = (applyType === 'od' && (formData.odType_extended === 'half_day' || formData.odType_extended === 'hours'))
-                        ? newFromDate
-                        : formData.toDate;
-                      setFormData({ ...formData, fromDate: newFromDate, toDate: newToDate });
-                    }}
+                    value={formData.fromDate} // Use fromDate as the single source of truth
+                    onChange={(e) => setFormData({ ...formData, fromDate: e.target.value, toDate: e.target.value })}
                     required
                     className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">To Date *</label>
-                  <input
-                    type="date"
-                    value={formData.toDate}
-                    disabled={applyType === 'od' && (formData.odType_extended === 'half_day' || formData.odType_extended === 'hours')}
-                    onChange={(e) => setFormData({ ...formData, toDate: e.target.value })}
-                    required
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white disabled:bg-slate-100 dark:disabled:bg-slate-700"
-                  />
+              ) : (
+                /* Two Date Inputs for Full Day */
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">From Date *</label>
+                    <input
+                      type="date"
+                      value={formData.fromDate}
+                      onChange={(e) => setFormData({ ...formData, fromDate: e.target.value })}
+                      required
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">To Date *</label>
+                    <input
+                      type="date"
+                      value={formData.toDate}
+                      onChange={(e) => setFormData({ ...formData, toDate: e.target.value })}
+                      required
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Hour-Based OD - Time Pickers */}
               {applyType === 'od' && formData.odType_extended === 'hours' && (
@@ -1940,17 +2029,52 @@ export default function LeavesPage() {
                       className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                     />
                   </div>
+                  {formData.odStartTime && formData.odEndTime && (
+                    <div className="col-span-2 p-3 rounded-lg bg-white dark:bg-slate-800 border border-fuchsia-200 dark:border-fuchsia-700">
+                      {(() => {
+                        const [startH, startM] = formData.odStartTime!.split(':').map(Number);
+                        const [endH, endM] = formData.odEndTime!.split(':').map(Number);
+                        const startMin = startH * 60 + startM;
+                        const endMin = endH * 60 + endM;
+
+                        if (startMin >= endMin) {
+                          return <p className="text-sm text-red-600 dark:text-red-400">⚠️ End time must be after start time</p>;
+                        }
+
+                        const durationMin = endMin - startMin;
+                        const hours = Math.floor(durationMin / 60);
+                        const mins = durationMin % 60;
+
+                        if (durationMin > 480) {
+                          return <p className="text-sm text-red-600 dark:text-red-400">⚠️ Maximum duration is 8 hours</p>;
+                        }
+
+                        return (
+                          <p className="text-sm font-medium text-fuchsia-700 dark:text-fuchsia-300">
+                            ✓ Duration: {hours}h {mins}m
+                          </p>
+                        );
+                      })()}
+                    </div>
+                  )}
                 </div>
               )}
 
-              {/* Half Day Selection */}
-              {((applyType === 'leave') || (applyType === 'od' && formData.odType_extended === 'half_day')) && (
+              {/* Half Day Selection (Leave Only - OD handled above via buttons) */}
+              {applyType === 'leave' && (
                 <div className="flex items-center gap-4">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={formData.isHalfDay}
-                      onChange={(e) => setFormData({ ...formData, isHalfDay: e.target.checked, halfDayType: e.target.checked ? (formData.halfDayType || 'first_half') : null })}
+                      onChange={(e) => {
+                        if (!e.target.checked) {
+                          setFormData({ ...formData, isHalfDay: false, halfDayType: null });
+                        } else {
+                          // When toggling half-day on, sync toDate to fromDate and default to first_half
+                          setFormData({ ...formData, isHalfDay: true, halfDayType: formData.halfDayType || 'first_half', toDate: formData.fromDate });
+                        }
+                      }}
                       className="w-4 h-4 rounded border-slate-300"
                     />
                     <span className="text-sm text-slate-700 dark:text-slate-300">Half Day</span>

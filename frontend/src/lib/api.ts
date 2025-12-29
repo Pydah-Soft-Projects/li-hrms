@@ -418,6 +418,10 @@ export const api = {
     return apiRequest<any>('/users/stats', { method: 'GET' });
   },
 
+  getDashboardStats: async () => {
+    return apiRequest<any>('/dashboard/stats', { method: 'GET' });
+  },
+
   getEmployeesWithoutAccount: async () => {
     return apiRequest<any>('/users/employees-without-account', { method: 'GET' });
   },

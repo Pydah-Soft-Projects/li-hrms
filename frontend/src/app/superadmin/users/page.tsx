@@ -93,7 +93,6 @@ const ROLES = [
   { value: 'sub_admin', label: 'Sub Admin', color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' },
   { value: 'hr', label: 'HR', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
   { value: 'hod', label: 'HOD', color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' },
-  { value: 'employee', label: 'Employee', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
 ];
 
 const getRoleColor = (role: string) => {
@@ -267,7 +266,7 @@ export default function UsersPage() {
 
       if (res.success) {
         setSuccessModalData({
-          username: res.data.email || res.data.identifier,
+          username: res.data.user.email || res.data.identifier,
           password: res.data.generatedPassword || formData.password,
           message: 'User created successfully. Please copy the credentials below.'
         });

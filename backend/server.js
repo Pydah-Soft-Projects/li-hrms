@@ -132,6 +132,10 @@ app.use('/api/arrears', arrearsRoutes);
 const payrollBatchRoutes = require('./payroll/routes/payrollBatchRoutes.js');
 app.use('/api/payroll-batch', payrollBatchRoutes);
 
+// Dashboard routes
+const dashboardRoutes = require('./dashboard/index.js');
+app.use('/api/dashboard', dashboardRoutes);
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({
