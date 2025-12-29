@@ -76,7 +76,7 @@ export function getModulesForCategory(categoryCode: string) {
 
 // Helper to check if a module is enabled based on feature control
 export function isModuleEnabled(moduleCode: string, featureControl: string[] | null): boolean {
-    if (!featureControl) return true; // If no feature control, allow all
+    if (!featureControl || featureControl.length === 0) return true; // If no feature control or empty, allow all
     return featureControl.includes(moduleCode);
 }
 

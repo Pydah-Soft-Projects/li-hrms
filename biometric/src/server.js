@@ -6,11 +6,12 @@ const fs = require('fs');
 const path = require('path');
 
 const logger = require('./utils/logger');
-const DeviceService = require('./services/deviceService');
+const DeviceService = require('./services/DeviceService');
 const SyncScheduler = require('./jobs/syncScheduler');
 const apiRoutes = require('./routes/api');
 const deviceRoutes = require('./routes/devices');
 const admsRoutes = require('./routes/adms');
+const userSyncRoutes = require('./routes/userSync');
 
 // Initialize Express app
 const app = express();
@@ -35,6 +36,7 @@ app.set('deviceService', deviceService);
 // Routes
 app.use('/api', apiRoutes);
 app.use('/api/devices', deviceRoutes);
+app.use('/api/user-sync', userSyncRoutes); // Added: Use userSyncRoutes
 app.use('/api/adms/raw', (req, res, next) => {
     // Forward to the adms router's internally defined /api/raw endpoint
     req.url = '/api/raw';
