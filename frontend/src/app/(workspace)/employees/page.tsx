@@ -56,13 +56,14 @@ interface Department {
   _id: string;
   name: string;
   code?: string;
+  designations?: Designation[];
 }
 
 interface Designation {
   _id: string;
   name: string;
   code?: string;
-  department: string;
+  department?: string | any;
 }
 
 interface EmployeeApplication {
@@ -497,16 +498,29 @@ export default function EmployeesPage() {
 
   useEffect(() => {
     if (formData.department_id) {
-      const filtered = designations.filter(d => d.department === formData.department_id);
-      setFilteredDesignations(filtered);
+      const selectedDept = departments.find(d => d._id === formData.department_id);
+      if (selectedDept && selectedDept.designations) {
+        // Polyfill department ID for DynamicEmployeeForm compatibility
+        const validDesignations = selectedDept.designations.map((d: any) => ({
+          ...d,
+          department: selectedDept._id
+        }));
+        setFilteredDesignations(validDesignations);
+      } else {
+        setFilteredDesignations([]);
+      }
+
       // Reset designation if it doesn't belong to selected department
-      if (formData.designation_id && !filtered.find(d => d._id === formData.designation_id)) {
-        setFormData(prev => ({ ...prev, designation_id: '' }));
+      if (formData.designation_id && selectedDept?.designations) {
+        const isValid = selectedDept.designations.find(d => d._id === formData.designation_id);
+        if (!isValid) {
+          setFormData(prev => ({ ...prev, designation_id: '' }));
+        }
       }
     } else {
       setFilteredDesignations([]);
     }
-  }, [formData.department_id, designations]);
+  }, [formData.department_id, departments]);
 
   // Load allowance/deduction defaults when department and gross salary are set
   useEffect(() => {
@@ -554,21 +568,35 @@ export default function EmployeesPage() {
       const deptId = typeof applicationFormData.department_id === 'string'
         ? applicationFormData.department_id
         : applicationFormData.department_id._id;
-      const filtered = designations.filter(d => d.department === deptId);
-      setFilteredApplicationDesignations(filtered);
+
+      const selectedDept = departments.find(d => d._id === deptId);
+
+      if (selectedDept && selectedDept.designations) {
+        // Polyfill department ID for DynamicEmployeeForm compatibility
+        const validDesignations = selectedDept.designations.map((d: any) => ({
+          ...d,
+          department: selectedDept._id
+        }));
+        setFilteredApplicationDesignations(validDesignations);
+      } else {
+        setFilteredApplicationDesignations([]);
+      }
+
       // Reset designation if it doesn't belong to selected department
-      if (applicationFormData.designation_id) {
+      if (applicationFormData.designation_id && selectedDept?.designations) {
         const desigId = typeof applicationFormData.designation_id === 'string'
           ? applicationFormData.designation_id
           : applicationFormData.designation_id._id;
-        if (!filtered.find(d => d._id === desigId)) {
+
+        const isValid = selectedDept.designations.find((d: any) => d._id === desigId);
+        if (!isValid) {
           setApplicationFormData(prev => ({ ...prev, designation_id: '' }));
         }
       }
     } else {
       setFilteredApplicationDesignations([]);
     }
-  }, [applicationFormData.department_id, applicationFormData.designation_id, designations]);
+  }, [applicationFormData.department_id, applicationFormData.designation_id, departments]);
 
   const loadFormSettings = async () => {
     try {
@@ -825,14 +853,16 @@ export default function EmployeesPage() {
       const response = await api.getDepartments(true);
       if (response.success && response.data) {
         setDepartments(response.data);
-        // Load all designations
+
+        // Flatten designations for Bulk Upload and legacy lookups
         const allDesignations: Designation[] = [];
-        for (const dept of response.data) {
-          const desigRes = await api.getDesignations(dept._id);
-          if (desigRes.success && desigRes.data) {
-            allDesignations.push(...desigRes.data.map((d: any) => ({ ...d, department: dept._id })));
+        response.data.forEach((dept: any) => {
+          if (dept.designations && Array.isArray(dept.designations)) {
+            dept.designations.forEach((d: any) => {
+              allDesignations.push({ ...d, department: dept._id });
+            });
           }
-        }
+        });
         setDesignations(allDesignations);
       }
     } catch (err) {
@@ -2148,7 +2178,7 @@ export default function EmployeesPage() {
                 onChange={setApplicationFormData}
                 errors={formErrors}
                 departments={departments}
-                designations={filteredApplicationDesignations}
+                designations={filteredApplicationDesignations as any}
               />
 
               {/* Allowances & Deductions Overrides */}
@@ -2808,7 +2838,7 @@ export default function EmployeesPage() {
                 onChange={setFormData}
                 errors={{}}
                 departments={departments}
-                designations={designations}
+                designations={filteredDesignations as any}
                 onSettingsLoaded={setFormSettings}
               />
 
@@ -3094,7 +3124,7 @@ export default function EmployeesPage() {
           })}
           validateRow={(row) => {
             const mappedUsers = employees.map(e => ({ _id: e._id, name: e.employee_name }));
-            const result = validateEmployeeRow(row, departments, designations, mappedUsers);
+            const result = validateEmployeeRow(row, departments, designations as any, mappedUsers);
             return { isValid: result.isValid, errors: result.errors, mappedRow: result.mappedRow };
           }}
           onSubmit={async (data) => {

@@ -11,6 +11,27 @@ router.use(protect);
 // Get all departments
 router.get('/', departmentController.getAllDepartments);
 
+// ============== Global Designation Routes ==============
+// These routes handle designations as independent entities
+
+// Get all designations (global)
+router.get('/designations', designationController.getAllDesignations);
+
+// Create global designation (Super Admin, Sub Admin, HR)
+router.post('/designations', authorize('super_admin', 'sub_admin', 'hr'), designationController.createGlobalDesignation);
+
+// Get single designation
+router.get('/designations/:id', designationController.getDesignation);
+
+// Update designation (Super Admin, Sub Admin, HR)
+router.put('/designations/:id', authorize('super_admin', 'sub_admin', 'hr'), designationController.updateDesignation);
+
+// Assign shifts to designation (Super Admin, Sub Admin, HR)
+router.put('/designations/:id/shifts', authorize('super_admin', 'sub_admin', 'hr'), designationController.assignShifts);
+
+// Delete designation (Super Admin, Sub Admin)
+router.delete('/designations/:id', authorize('super_admin', 'sub_admin'), designationController.deleteDesignation);
+
 // Get single department
 router.get('/:id', departmentController.getDepartment);
 
@@ -47,24 +68,18 @@ router.put('/:id/leave-limits', authorize('super_admin', 'sub_admin', 'hr'), dep
 // Delete department (Super Admin, Sub Admin)
 router.delete('/:id', authorize('super_admin', 'sub_admin'), departmentController.deleteDepartment);
 
-// Designation routes
+
+
+// ============== Department-Specific Designation Routes (Backward Compatible) ==============
+
 // Get designations by department
 router.get('/:departmentId/designations', designationController.getDesignationsByDepartment);
 
-// Create designation (Super Admin, Sub Admin, HR)
+// Link existing designation to department
+router.post('/:departmentId/designations/link', authorize('super_admin', 'sub_admin', 'hr'), designationController.linkDesignation);
+
+// Create designation (Super Admin, Sub Admin, HR) - backward compatible
 router.post('/:departmentId/designations', authorize('super_admin', 'sub_admin', 'hr'), designationController.createDesignation);
-
-// Get single designation
-router.get('/designations/:id', designationController.getDesignation);
-
-// Update designation (Super Admin, Sub Admin, HR)
-router.put('/designations/:id', authorize('super_admin', 'sub_admin', 'hr'), designationController.updateDesignation);
-
-// Assign shifts to designation (Super Admin, Sub Admin, HR)
-router.put('/designations/:id/shifts', authorize('super_admin', 'sub_admin', 'hr'), designationController.assignShifts);
-
-// Delete designation (Super Admin, Sub Admin)
-router.delete('/designations/:id', authorize('super_admin', 'sub_admin'), designationController.deleteDesignation);
 
 // Department Settings routes
 // Get department settings

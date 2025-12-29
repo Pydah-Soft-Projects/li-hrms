@@ -67,6 +67,11 @@ export default function DepartmentsPage() {
   const [designationDescription, setDesignationDescription] = useState('');
   const [designationPaidLeaves, setDesignationPaidLeaves] = useState(0);
 
+  // Manual Linking State
+  const [showLinkDesignationDialog, setShowLinkDesignationDialog] = useState(false);
+  const [unlinkedDesignations, setUnlinkedDesignations] = useState<any[]>([]);
+  const [selectedLinkDesignationId, setSelectedLinkDesignationId] = useState<string>('');
+
   useEffect(() => {
     loadDepartments();
     loadUsers();
@@ -220,12 +225,18 @@ export default function DepartmentsPage() {
         paidLeaves: designationPaidLeaves || 0,
       };
 
-      const response = await api.createDesignation(showDesignationDialog, data);
+      // Check if this is global designation creation or department-specific
+      const isGlobal = showDesignationDialog === 'global';
+
+      const response = isGlobal
+        ? await api.createGlobalDesignation(data)
+        : await api.createDesignation(showDesignationDialog, data);
 
       if (response.success) {
         setShowDesignationDialog(null);
         resetDesignationForm();
-        if (showDesignationDialog) {
+        // Reload designations if it was department-specific
+        if (!isGlobal && showDesignationDialog) {
           loadDesignations(showDesignationDialog);
         }
       } else {
@@ -234,6 +245,46 @@ export default function DepartmentsPage() {
     } catch (err) {
       setError('An error occurred');
       console.error(err);
+    }
+  };
+
+  const handleOpenLinkDesignationDialog = async () => {
+    try {
+      setLoadingShifts(true);
+      const globalRes = await api.getAllDesignations();
+      if (globalRes && globalRes.success) {
+        const allDesignations = globalRes.data || [];
+        // Filter out designations that are already linked
+        const linkedIds = designations.map(d => d._id);
+        const available = allDesignations.filter((d: any) => !linkedIds.includes(d._id));
+        setUnlinkedDesignations(available);
+      }
+      setShowLinkDesignationDialog(true);
+    } catch (err) {
+      console.error(err);
+      setError('Failed to load available designations');
+    } finally {
+      setLoadingShifts(false);
+    }
+  };
+
+  const handleLinkDesignation = async () => {
+    if (!selectedLinkDesignationId || !showDesignationDialog) return;
+
+    try {
+      // showDesignationDialog holds the department ID when in department mode
+      const response = await api.linkDesignationToDepartment(showDesignationDialog, selectedLinkDesignationId);
+
+      if (response.success) {
+        setShowLinkDesignationDialog(false);
+        setSelectedLinkDesignationId('');
+        loadDesignations(showDesignationDialog); // Refresh list
+      } else {
+        setError(response.message || 'Failed to link designation');
+      }
+    } catch (err) {
+      console.error(err);
+      setError('An error occurred while linking');
     }
   };
 
@@ -373,7 +424,17 @@ export default function DepartmentsPage() {
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
               </svg>
-              Bulk Roles
+              Bulk Designations
+            </button>
+            <button
+              onClick={() => {
+                resetDesignationForm();
+                setShowDesignationDialog('global');
+              }}
+              className="inline-flex items-center gap-2 rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm font-semibold text-emerald-700 transition-all hover:bg-emerald-50 hover:shadow-md dark:border-emerald-800 dark:bg-slate-900 dark:text-emerald-400 dark:hover:bg-emerald-900/20"
+            >
+              <span className="text-lg">+</span>
+              Create Designation
             </button>
             <button
               onClick={() => {
@@ -682,8 +743,8 @@ export default function DepartmentsPage() {
                         <label
                           key={shift._id}
                           className={`group flex cursor-pointer items-center gap-3 rounded-2xl border p-4 transition-all ${selectedShiftIds.includes(shift._id)
-                              ? 'border-blue-300 bg-blue-50/50 shadow-md shadow-blue-100 dark:border-blue-700 dark:bg-blue-900/20'
-                              : 'border-slate-200 bg-white hover:border-blue-200 hover:bg-blue-50/30 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600'
+                            ? 'border-blue-300 bg-blue-50/50 shadow-md shadow-blue-100 dark:border-blue-700 dark:bg-blue-900/20'
+                            : 'border-slate-200 bg-white hover:border-blue-200 hover:bg-blue-50/30 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600'
                             }`}
                         >
                           <input
@@ -763,9 +824,13 @@ export default function DepartmentsPage() {
               {/* Header */}
               <div className="flex items-center justify-between border-b border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50/50 px-6 py-4 dark:border-slate-700 dark:from-slate-900 dark:to-blue-900/20">
                 <div>
-                  <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Manage Designations</h2>
+                  <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
+                    {showDesignationDialog === 'global' ? 'Create Global Designation' : 'Manage Designations'}
+                  </h2>
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    Create and manage designations for this department
+                    {showDesignationDialog === 'global'
+                      ? 'Create a designation that can be used across all departments'
+                      : 'View and configure designations linked to this department'}
                   </p>
                 </div>
                 <button
@@ -781,109 +846,161 @@ export default function DepartmentsPage() {
                 </button>
               </div>
 
-              {/* Two Column Layout */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-slate-200 dark:divide-slate-700">
-                {/* Left Side - Add New Designation Form */}
+              {/* Conditional Layout based on dialog type */}
+              {showDesignationDialog === 'global' ? (
+                /* Global Designation Creation - Single Column Form */
                 <div className="p-6 overflow-y-auto" style={{ maxHeight: 'calc(90vh - 80px)' }}>
-                  <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-blue-900/10">
-                    <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
-                      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                        </svg>
-                      </span>
-                      Add New Designation
-                    </h3>
-                    <form onSubmit={handleCreateDesignation} className="space-y-4">
-                      <div>
-                        <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                          Designation Name *
-                        </label>
-                        <input
-                          type="text"
-                          value={designationName}
-                          onChange={(e) => setDesignationName(e.target.value)}
-                          required
-                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                          placeholder="e.g., Senior Developer"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                          Designation Code
-                        </label>
-                        <input
-                          type="text"
-                          value={designationCode}
-                          onChange={(e) => setDesignationCode(e.target.value.toUpperCase())}
-                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                          placeholder="e.g., SR-DEV"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                          Description
-                        </label>
-                        <textarea
-                          value={designationDescription}
-                          onChange={(e) => setDesignationDescription(e.target.value)}
-                          rows={3}
-                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                          placeholder="Designation description..."
-                        />
-                      </div>
-
-                      <div>
-                        <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                          Paid Leaves Count
-                        </label>
-                        <input
-                          type="number"
-                          min="0"
-                          value={designationPaidLeaves}
-                          onChange={(e) => setDesignationPaidLeaves(Number(e.target.value))}
-                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                        />
-                      </div>
-
-                      {error && (
-                        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
-                          {error}
-                        </div>
-                      )}
-
-                      <button
-                        type="submit"
-                        className="w-full rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 hover:shadow-xl hover:shadow-blue-500/40 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
-                      >
-                        <span className="flex items-center justify-center gap-2">
+                  <div className="max-w-2xl mx-auto">
+                    <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-blue-900/10">
+                      <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
+                        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
                           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                           </svg>
-                          Add Designation
                         </span>
-                      </button>
-                    </form>
+                        Create Global Designation
+                      </h3>
+                      <form onSubmit={handleCreateDesignation} className="space-y-4">
+                        <div>
+                          <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                            Designation Name *
+                          </label>
+                          <input
+                            type="text"
+                            value={designationName}
+                            onChange={(e) => setDesignationName(e.target.value)}
+                            required
+                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                            placeholder="e.g., Senior Developer"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                            Designation Code
+                          </label>
+                          <input
+                            type="text"
+                            value={designationCode}
+                            onChange={(e) => setDesignationCode(e.target.value.toUpperCase())}
+                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                            placeholder="e.g., SR-DEV"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                            Description
+                          </label>
+                          <textarea
+                            value={designationDescription}
+                            onChange={(e) => setDesignationDescription(e.target.value)}
+                            rows={3}
+                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                            placeholder="Designation description..."
+                          />
+                        </div>
+
+                        <div>
+                          <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                            Paid Leaves Count
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={designationPaidLeaves}
+                            onChange={(e) => setDesignationPaidLeaves(Number(e.target.value))}
+                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                          />
+                        </div>
+
+                        {error && (
+                          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+                            {error}
+                          </div>
+                        )}
+
+                        <button
+                          type="submit"
+                          className="w-full rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 hover:shadow-xl hover:shadow-blue-500/40 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
+                        >
+                          <span className="flex items-center justify-center gap-2">
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                            </svg>
+                            Create Designation
+                          </span>
+                        </button>
+                      </form>
+                    </div>
                   </div>
                 </div>
-
-                {/* Right Side - Existing Designations List */}
-                <div className="p-6 overflow-y-auto bg-slate-50/50 dark:bg-slate-900/30" style={{ maxHeight: 'calc(90vh - 80px)' }}>
+              ) : (
+                /* Department Designations - Full Width List Only */
+                <div className="p-6 overflow-y-auto" style={{ maxHeight: 'calc(90vh - 80px)' }}>
                   <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
                     <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
                       <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                       </svg>
                     </span>
-                    Existing Designations
+                    Linked Designations
                     {designations.length > 0 && (
                       <span className="ml-auto rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-semibold text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400">
                         {designations.length}
                       </span>
                     )}
                   </h3>
+
+                  {/* Link Button */}
+                  <button
+                    onClick={handleOpenLinkDesignationDialog}
+                    className="mb-4 w-full rounded-xl border border-dashed border-indigo-300 bg-indigo-50 py-3 text-sm font-medium text-indigo-700 transition-all hover:bg-indigo-100 hover:border-indigo-400 dark:border-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-400 dark:hover:bg-indigo-900/40"
+                  >
+                    + Link Existing Designation
+                  </button>
+
+                  {/* Manual Linking Form (Inline) */}
+                  {showLinkDesignationDialog && (
+                    <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50/50 p-4 dark:border-indigo-800 dark:bg-indigo-900/10">
+                      <h4 className="mb-3 text-sm font-semibold text-indigo-900 dark:text-indigo-300">Link Designation to Department</h4>
+                      <div className="space-y-3">
+                        <div>
+                          <select
+                            value={selectedLinkDesignationId}
+                            onChange={(e) => setSelectedLinkDesignationId(e.target.value)}
+                            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                          >
+                            <option value="">Select a designation...</option>
+                            {unlinkedDesignations.map((d) => (
+                              <option key={d._id} value={d._id}>
+                                {d.name} {d.code ? `(${d.code})` : ''}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={handleLinkDesignation}
+                            disabled={!selectedLinkDesignationId}
+                            className="flex-1 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Link
+                          </button>
+                          <button
+                            onClick={() => {
+                              setShowLinkDesignationDialog(false);
+                              setSelectedLinkDesignationId('');
+                            }}
+                            className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {designations.length === 0 ? (
                     <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center dark:border-slate-700 dark:bg-slate-900/50">
                       <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
@@ -891,8 +1008,8 @@ export default function DepartmentsPage() {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
                         </svg>
                       </div>
-                      <p className="text-sm font-medium text-slate-600 dark:text-slate-400">No designations yet</p>
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">Create your first designation using the form</p>
+                      <p className="text-sm font-medium text-slate-600 dark:text-slate-400">No designations linked yet</p>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">Designations will be automatically linked when employees are assigned</p>
                     </div>
                   ) : (
                     <div className="space-y-3">
@@ -907,8 +1024,8 @@ export default function DepartmentsPage() {
                                 <h4 className="font-semibold text-slate-900 dark:text-slate-100 truncate">{designation.name}</h4>
                                 <span
                                   className={`flex-shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${designation.isActive
-                                      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                                      : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                                    ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                    : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
                                     }`}
                                 >
                                   {designation.isActive ? 'Active' : 'Inactive'}
@@ -949,7 +1066,7 @@ export default function DepartmentsPage() {
                     </div>
                   )}
                 </div>
-              </div>
+              )}
             </div>
           </div>
         )}
@@ -1008,8 +1125,8 @@ export default function DepartmentsPage() {
                         <label
                           key={shift._id}
                           className={`group flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-all ${selectedDesignationShiftIds.includes(shift._id)
-                              ? 'border-purple-300 bg-purple-50/50 shadow-sm dark:border-purple-700 dark:bg-purple-900/20'
-                              : 'border-slate-200 bg-white hover:border-purple-200 hover:bg-purple-50/30 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600'
+                            ? 'border-purple-300 bg-purple-50/50 shadow-sm dark:border-purple-700 dark:bg-purple-900/20'
+                            : 'border-slate-200 bg-white hover:border-purple-200 hover:bg-purple-50/30 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600'
                             }`}
                         >
                           <input
@@ -1114,8 +1231,8 @@ export default function DepartmentsPage() {
                   </div>
                   <span
                     className={`ml-3 rounded-full px-3 py-1 text-xs font-semibold ${dept.isActive
-                        ? 'bg-green-100 text-green-700 shadow-sm dark:bg-green-900/30 dark:text-green-400'
-                        : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                      ? 'bg-green-100 text-green-700 shadow-sm dark:bg-green-900/30 dark:text-green-400'
+                      : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
                       }`}
                   >
                     {dept.isActive ? 'Active' : 'Inactive'}
@@ -1175,7 +1292,7 @@ export default function DepartmentsPage() {
                     onClick={() => handleOpenDesignationDialog(dept._id)}
                     className="group flex-1 rounded-2xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-blue-50 px-4 py-2.5 text-sm font-semibold text-indigo-700 transition-all hover:from-indigo-100 hover:to-blue-100 hover:shadow-md dark:border-indigo-800 dark:from-indigo-900/20 dark:to-blue-900/20 dark:text-indigo-300 dark:hover:from-indigo-900/30 dark:hover:to-blue-900/30"
                   >
-                    Roles
+                    Designations
                   </button>
                   <button
                     onClick={() => handleDeleteDepartment(dept._id)}
@@ -1306,6 +1423,6 @@ export default function DepartmentsPage() {
           />
         )}
       </div>
-    </div>
+    </div >
   );
 }
