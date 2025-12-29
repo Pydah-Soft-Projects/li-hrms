@@ -97,6 +97,14 @@ const departmentSchema = new mongoose.Schema(
         ref: 'Shift',
       },
     ],
+    // Designations linked to this department
+    // Automatically populated when employees are assigned designations
+    designations: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Designation',
+      },
+    ],
     // Paid leaves count (number only)
     paidLeaves: {
       type: Number,
@@ -133,6 +141,7 @@ const departmentSchema = new mongoose.Schema(
 departmentSchema.index({ hod: 1 });
 departmentSchema.index({ hr: 1 });
 departmentSchema.index({ isActive: 1 });
+departmentSchema.index({ designations: 1 });
 
 module.exports = mongoose.models.Department || mongoose.model('Department', departmentSchema);
 

@@ -20,6 +20,7 @@ exports.getAllDepartments = async (req, res) => {
       .populate('hod', 'name email role')
       .populate('hr', 'name email role')
       .populate('shifts', 'name startTime endTime duration isActive')
+      .populate('designations', 'name code isActive')
       .populate('createdBy', 'name email')
       .sort({ name: 1 });
 
@@ -538,9 +539,11 @@ exports.getDepartmentConfiguration = async (req, res) => {
       });
     }
 
-    // Get designations for this department
-    const designations = await Designation.find({ department: req.params.id, isActive: true })
-      .select('name code deductionRules paidLeaves');
+    // Get designations linked to this department
+    const designations = await Designation.find({
+      _id: { $in: department.designations || [] },
+      isActive: true
+    }).select('name code deductionRules paidLeaves');
 
     res.status(200).json({
       success: true,

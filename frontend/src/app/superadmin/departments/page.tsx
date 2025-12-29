@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { api, Department } from '@/lib/api';
+import { api } from '@/lib/api';
 import BulkUpload from '@/components/BulkUpload';
 import {
   DEPARTMENT_TEMPLATE_HEADERS,
@@ -19,11 +19,22 @@ interface Designation {
   name: string;
   code?: string;
   description?: string;
-  department: string;
+  department?: string | any; // Made optional/any for independent designations
   paidLeaves: number;
   deductionRules: any[];
   shifts?: any[];
   isActive: boolean;
+}
+
+interface Department {
+  _id: string;
+  name: string;
+  code?: string;
+  description?: string;
+  hod?: any;
+  designations?: Designation[]; // Added designations array
+  shifts?: any[];
+  isActive?: boolean;
 }
 
 interface Shift {
@@ -40,11 +51,13 @@ export default function DepartmentsPage() {
   const [users, setUsers] = useState<any[]>([]);
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [designations, setDesignations] = useState<Designation[]>([]);
+  const [unlinkedDesignations, setUnlinkedDesignations] = useState<Designation[]>([]); // New state for linking
   const [loading, setLoading] = useState(true);
   const [loadingShifts, setLoadingShifts] = useState(false);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState<Department | null>(null);
   const [showDesignationDialog, setShowDesignationDialog] = useState<string | null>(null);
+  const [showLinkDesignationDialog, setShowLinkDesignationDialog] = useState<string | null>(null); // New dialog state
   const [showShiftDialog, setShowShiftDialog] = useState<Department | null>(null);
   const [showDesignationShiftDialog, setShowDesignationShiftDialog] = useState<Designation | null>(null);
   const [showBulkUploadDept, setShowBulkUploadDept] = useState(false);
@@ -77,7 +90,8 @@ export default function DepartmentsPage() {
   const loadDepartments = async () => {
     try {
       setLoading(true);
-      const response = await api.getDepartments();
+      // Pass true to get populated data (including designations)
+      const response = await api.getDepartments(true);
       if (response.success && response.data) {
         setDepartments(response.data);
       }
@@ -121,13 +135,50 @@ export default function DepartmentsPage() {
   };
 
   const loadDesignations = async (departmentId: string) => {
+    // If global (departmentId === 'global'), fetch all designations
+    if (departmentId === 'global') {
+      try {
+        const response = await api.getAllDesignations();
+        if (response.success && response.data) {
+          setDesignations(response.data);
+        }
+      } catch (err) {
+        console.error('Error loading global designations:', err);
+      }
+      return;
+    }
+
+    // Otherwise, find department in local state (since it's populated)
+    const dept = departments.find(d => d._id === departmentId);
+    if (dept && dept.designations) {
+      setDesignations(dept.designations);
+    } else {
+      // Fallback to API if not found or not populated
+      try {
+        const response = await api.getDesignations(departmentId);
+        if (response.success && response.data) {
+          setDesignations(response.data);
+        }
+      } catch (err) {
+        console.error('Error loading designations:', err);
+      }
+    }
+  };
+
+  const loadUnlinkedDesignations = async (departmentId: string) => {
     try {
-      const response = await api.getDesignations(departmentId);
+      const response = await api.getAllDesignations();
       if (response.success && response.data) {
-        setDesignations(response.data);
+        const allDesigs = response.data;
+        const currentDept = departments.find(d => d._id === departmentId);
+        const currentDesigIds = currentDept?.designations?.map(d => d._id) || [];
+
+        // Filter out designations already linked to this department
+        const unlinked = allDesigs.filter((d: any) => !currentDesigIds.includes(d._id));
+        setUnlinkedDesignations(unlinked);
       }
     } catch (err) {
-      console.error('Error loading designations:', err);
+      console.error('Error loading unlinked designations:', err);
     }
   };
 
@@ -220,12 +271,22 @@ export default function DepartmentsPage() {
         paidLeaves: designationPaidLeaves || 0,
       };
 
-      const response = await api.createDesignation(showDesignationDialog, data);
+      let response;
+      if (showDesignationDialog === 'global') {
+        response = await api.createGlobalDesignation(data);
+      } else {
+        response = await api.createDesignation(showDesignationDialog, data);
+      }
 
       if (response.success) {
+        if (showDesignationDialog !== 'global') {
+          // Reload departments to update the list
+          loadDepartments();
+        }
         setShowDesignationDialog(null);
         resetDesignationForm();
-        if (showDesignationDialog) {
+        // If we were viewing a department, refresh it
+        if (showDesignationDialog !== 'global') {
           loadDesignations(showDesignationDialog);
         }
       } else {
@@ -234,6 +295,21 @@ export default function DepartmentsPage() {
     } catch (err) {
       setError('An error occurred');
       console.error(err);
+    }
+  };
+
+  const handleLinkDesignation = async (designationId: string) => {
+    if (!showLinkDesignationDialog) return;
+    try {
+      const response = await api.linkDesignationToDepartment(showLinkDesignationDialog, designationId);
+      if (response.success) {
+        loadDepartments(); // Reload to get updated structure
+        setShowLinkDesignationDialog(null);
+      } else {
+        alert(response.message || 'Failed to link designation');
+      }
+    } catch (err) {
+      console.error('Error linking designation:', err);
     }
   };
 
@@ -373,7 +449,19 @@ export default function DepartmentsPage() {
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
               </svg>
-              Bulk Roles
+              Bulk Designations
+            </button>
+            <button
+              onClick={() => {
+                setShowDesignationDialog('global');
+                resetDesignationForm();
+              }}
+              className="inline-flex items-center gap-2 rounded-2xl border border-green-200 bg-white px-4 py-3 text-sm font-semibold text-green-700 transition-all hover:bg-green-50 hover:shadow-md dark:border-green-800 dark:bg-slate-900 dark:text-green-400 dark:hover:bg-green-900/20"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Create Designation
             </button>
             <button
               onClick={() => {
@@ -628,7 +716,56 @@ export default function DepartmentsPage() {
           </div>
         )}
 
-        {/* Assign Shifts Dialog */}
+        {/* Link Designation Dialog */}
+        {showLinkDesignationDialog && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <div
+              className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
+              onClick={() => setShowLinkDesignationDialog(null)}
+            />
+            <div className="relative z-[60] w-full max-w-md rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl shadow-blue-500/10 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/95">
+              <div className="mb-6 flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Link Designation</h2>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    Add an existing designation to this department
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowLinkDesignationDialog(null)}
+                  className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 focus:outline-none focus:ring-2 focus:ring-red-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="max-h-96 overflow-y-auto space-y-2">
+                {unlinkedDesignations.length === 0 ? (
+                  <p className="text-center text-sm text-slate-500 py-4">No unlinked designations available.</p>
+                ) : (
+                  unlinkedDesignations.map(d => (
+                    <div key={d._id} className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900/50">
+                      <div>
+                        <p className="font-medium text-slate-900 dark:text-slate-100">{d.name}</p>
+                        {d.code && <p className="text-xs text-slate-500">{d.code}</p>}
+                      </div>
+                      <button
+                        onClick={() => handleLinkDesignation(d._id)}
+                        className="px-3 py-1.5 text-xs font-semibold text-blue-600 bg-blue-100 rounded-lg hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-900/50"
+                      >
+                        Link
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Existing Shift Dialog */}
         {showShiftDialog && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div
@@ -682,8 +819,8 @@ export default function DepartmentsPage() {
                         <label
                           key={shift._id}
                           className={`group flex cursor-pointer items-center gap-3 rounded-2xl border p-4 transition-all ${selectedShiftIds.includes(shift._id)
-                              ? 'border-blue-300 bg-blue-50/50 shadow-md shadow-blue-100 dark:border-blue-700 dark:bg-blue-900/20'
-                              : 'border-slate-200 bg-white hover:border-blue-200 hover:bg-blue-50/30 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600'
+                            ? 'border-blue-300 bg-blue-50/50 shadow-md shadow-blue-100 dark:border-blue-700 dark:bg-blue-900/20'
+                            : 'border-slate-200 bg-white hover:border-blue-200 hover:bg-blue-50/30 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600'
                             }`}
                         >
                           <input
@@ -763,9 +900,11 @@ export default function DepartmentsPage() {
               {/* Header */}
               <div className="flex items-center justify-between border-b border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50/50 px-6 py-4 dark:border-slate-700 dark:from-slate-900 dark:to-blue-900/20">
                 <div>
-                  <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Manage Designations</h2>
+                  <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
+                    {showDesignationDialog === 'global' ? 'Global Designations' : 'Manage Designations'}
+                  </h2>
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    Create and manage designations for this department
+                    {showDesignationDialog === 'global' ? 'Create independent designations' : 'Create and manage designations for this department'}
                   </p>
                 </div>
                 <button
@@ -884,6 +1023,28 @@ export default function DepartmentsPage() {
                       </span>
                     )}
                   </h3>
+
+                  {/* Add Link Designation Button if not global */}
+                  {showDesignationDialog !== 'global' && (
+                    <div className="mb-4">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (showDesignationDialog) {
+                            loadUnlinkedDesignations(showDesignationDialog);
+                            setShowLinkDesignationDialog(showDesignationDialog);
+                          }
+                        }}
+                        className="flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-400"
+                      >
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                        </svg>
+                        Link Existing Designation
+                      </button>
+                    </div>
+                  )}
+
                   {designations.length === 0 ? (
                     <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center dark:border-slate-700 dark:bg-slate-900/50">
                       <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
@@ -907,8 +1068,8 @@ export default function DepartmentsPage() {
                                 <h4 className="font-semibold text-slate-900 dark:text-slate-100 truncate">{designation.name}</h4>
                                 <span
                                   className={`flex-shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${designation.isActive
-                                      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                                      : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                                    ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                    : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
                                     }`}
                                 >
                                   {designation.isActive ? 'Active' : 'Inactive'}
@@ -1008,8 +1169,8 @@ export default function DepartmentsPage() {
                         <label
                           key={shift._id}
                           className={`group flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-all ${selectedDesignationShiftIds.includes(shift._id)
-                              ? 'border-purple-300 bg-purple-50/50 shadow-sm dark:border-purple-700 dark:bg-purple-900/20'
-                              : 'border-slate-200 bg-white hover:border-purple-200 hover:bg-purple-50/30 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600'
+                            ? 'border-purple-300 bg-purple-50/50 shadow-sm dark:border-purple-700 dark:bg-purple-900/20'
+                            : 'border-slate-200 bg-white hover:border-purple-200 hover:bg-purple-50/30 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600'
                             }`}
                         >
                           <input
@@ -1114,8 +1275,8 @@ export default function DepartmentsPage() {
                   </div>
                   <span
                     className={`ml-3 rounded-full px-3 py-1 text-xs font-semibold ${dept.isActive
-                        ? 'bg-green-100 text-green-700 shadow-sm dark:bg-green-900/30 dark:text-green-400'
-                        : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                      ? 'bg-green-100 text-green-700 shadow-sm dark:bg-green-900/30 dark:text-green-400'
+                      : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
                       }`}
                   >
                     {dept.isActive ? 'Active' : 'Inactive'}

@@ -589,6 +589,19 @@ export const api = {
   },
 
   // Designations
+  // Global designation endpoints (independent of department)
+  getAllDesignations: async () => {
+    return apiRequest<any[]>('/departments/designations', { method: 'GET' });
+  },
+
+  createGlobalDesignation: async (data: any) => {
+    return apiRequest<any>('/departments/designations', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Department-specific designation endpoints
   getDesignations: async (departmentId: string) => {
     return apiRequest<any[]>(`/departments/${departmentId}/designations`, { method: 'GET' });
   },
@@ -619,6 +632,13 @@ export const api = {
     return apiRequest<any>(`/departments/designations/${id}/shifts`, {
       method: 'PUT',
       body: JSON.stringify({ shiftIds }),
+    });
+  },
+
+  linkDesignationToDepartment: async (departmentId: string, designationId: string) => {
+    return apiRequest<any>(`/departments/${departmentId}/designations/link`, {
+      method: 'POST',
+      body: JSON.stringify({ designationId }),
     });
   },
 

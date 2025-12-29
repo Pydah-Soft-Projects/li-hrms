@@ -93,11 +93,12 @@ export const DEPARTMENT_TEMPLATE_SAMPLE = [
 ];
 
 // ============== Designation Template ==============
+// Designations are now independent entities (not tied to specific departments)
+// They will be automatically linked to departments when employees are assigned
 
 export const DESIGNATION_TEMPLATE_HEADERS = [
   'name',
   'code',
-  'department_name',
   'description',
   'paid_leaves',
 ];
@@ -106,16 +107,20 @@ export const DESIGNATION_TEMPLATE_SAMPLE = [
   {
     name: 'Software Developer',
     code: 'SD',
-    department_name: 'Information Technology',
     description: 'Develops and maintains software applications',
     paid_leaves: 12,
   },
   {
     name: 'HR Manager',
     code: 'HRM',
-    department_name: 'Human Resources',
     description: 'Manages HR operations',
     paid_leaves: 15,
+  },
+  {
+    name: 'Manager',
+    code: 'MGR',
+    description: 'Manages team operations and strategy',
+    paid_leaves: 18,
   },
 ];
 
@@ -408,6 +413,7 @@ export const validateDepartmentRow = (
 
 /**
  * Validate designation row
+ * Designations are now independent - department is optional
  */
 export const validateDesignationRow = (
   row: ParsedRow,
@@ -418,16 +424,15 @@ export const validateDesignationRow = (
 
   if (!row.name) errors.push('Designation Name is required');
 
-  // Map department
+  // Map department if provided (optional for independent designations)
   if (row.department_name) {
     const deptId = matchDepartmentByName(row.department_name as string, departments);
     if (!deptId) {
       errors.push(`Department "${row.department_name}" not found`);
     }
     mappedRow.department_id = deptId;
-  } else {
-    errors.push('Department Name is required');
   }
+  // Department is now optional - designations can be created independently
 
   return { isValid: errors.length === 0, errors, mappedRow };
 };

@@ -530,6 +530,18 @@ exports.createEmployee = async (req, res) => {
           message: 'Invalid designation ID',
         });
       }
+
+      // Auto-link designation to department if not already linked
+      if (employeeData.department_id) {
+        const department = await Department.findById(employeeData.department_id);
+        if (department && !department.designations.includes(employeeData.designation_id)) {
+          await Department.findByIdAndUpdate(
+            employeeData.department_id,
+            { $addToSet: { designations: employeeData.designation_id } }
+          );
+          console.log(`[createEmployee] Auto-linked designation ${desig.name} to department ${department.name}`);
+        }
+      }
     }
 
     const results = { mongodb: false, mssql: false };
@@ -690,6 +702,19 @@ exports.updateEmployee = async (req, res) => {
           success: false,
           message: 'Invalid designation ID',
         });
+      }
+
+      // Auto-link designation to department if designation or department changed
+      const departmentId = employeeData.department_id || existingEmployee.department_id;
+      if (departmentId) {
+        const department = await Department.findById(departmentId);
+        if (department && !department.designations.includes(employeeData.designation_id)) {
+          await Department.findByIdAndUpdate(
+            departmentId,
+            { $addToSet: { designations: employeeData.designation_id } }
+          );
+          console.log(`[updateEmployee] Auto-linked designation ${desig.name} to department ${department.name}`);
+        }
       }
     }
 

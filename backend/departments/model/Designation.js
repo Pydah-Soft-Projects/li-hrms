@@ -12,10 +12,14 @@ const designationSchema = new mongoose.Schema(
       trim: true,
       uppercase: true,
     },
+    // Optional department reference (for backward compatibility)
+    // New independent designations will have department: null
+    // Departments track designations via their 'designations' array
     department: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Department',
-      required: [true, 'Department is required'],
+      required: false,
+      default: null,
     },
     description: {
       type: String,
@@ -72,7 +76,9 @@ const designationSchema = new mongoose.Schema(
 );
 
 // Indexes
-designationSchema.index({ department: 1, name: 1 }, { unique: true });
+// Global unique index on name (designations are now independent entities)
+designationSchema.index({ name: 1 }, { unique: true });
+// Department index kept for backward compatibility queries
 designationSchema.index({ department: 1 });
 designationSchema.index({ isActive: 1 });
 
