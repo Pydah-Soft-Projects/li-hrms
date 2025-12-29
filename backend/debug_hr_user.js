@@ -1,0 +1,1 @@
+const mongoose = require('mongoose'); const User = require('./users/model/User'); require('dotenv').config(); mongoose.connect(process.env.MONGO_URI).then(async () => { const user = await User.findOne({ email: 'hr@email.com' }); console.log(JSON.stringify(user, null, 2)); process.exit(); });

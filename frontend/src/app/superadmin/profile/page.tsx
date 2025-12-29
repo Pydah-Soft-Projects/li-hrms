@@ -55,7 +55,7 @@ export default function ProfilePage() {
     try {
       const response = await api.getCurrentUser();
       if (response.success && response.data) {
-        setUser(response.data.user);
+        setUser({ ...response.data.user, isActive: true });
         setEditData({
           name: response.data.user.name || '',
           phone: response.data.user.phone || '',
@@ -210,8 +210,8 @@ export default function ProfilePage() {
       {toast && (
         <div
           className={`fixed top-4 right-4 z-50 px-6 py-4 rounded-lg shadow-xl animate-slide-in ${toast.type === 'success'
-              ? 'bg-green-600 text-white'
-              : 'bg-red-600 text-white'
+            ? 'bg-green-600 text-white'
+            : 'bg-red-600 text-white'
             }`}
         >
           <div className="flex items-center gap-3">
@@ -387,8 +387,8 @@ export default function ProfilePage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-500 mb-1.5">Account Status</label>
                   <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium ${user.isActive
-                      ? 'bg-green-100 text-green-800'
-                      : 'bg-red-100 text-red-800'
+                    ? 'bg-green-100 text-green-800'
+                    : 'bg-red-100 text-red-800'
                     }`}>
                     <span className={`w-2 h-2 rounded-full ${user.isActive ? 'bg-green-500' : 'bg-red-500'}`} />
                     {user.isActive ? 'Active' : 'Inactive'}
