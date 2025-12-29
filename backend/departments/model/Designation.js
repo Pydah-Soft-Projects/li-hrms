@@ -60,6 +60,22 @@ const designationSchema = new mongoose.Schema(
         ref: 'Shift',
       },
     ],
+    // Department-specific shift overrides
+    departmentShifts: [
+      {
+        department: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'Department',
+          required: true,
+        },
+        shifts: [
+          {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Shift',
+          },
+        ],
+      },
+    ],
     isActive: {
       type: Boolean,
       default: true,

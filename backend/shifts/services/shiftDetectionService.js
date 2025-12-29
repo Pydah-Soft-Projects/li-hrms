@@ -97,9 +97,10 @@ const isWithinShiftWindow = (punchTime, shiftStartTime, gracePeriodMinutes = 15)
 const getShiftsForEmployee = async (employeeNumber, date) => {
   try {
     // Get employee details
+    // Get employee details
     const employee = await Employee.findOne({ emp_no: employeeNumber })
       .populate('department_id', 'shifts')
-      .populate('designation_id', 'shifts');
+      .populate('designation_id'); // Populate full designation to access departmentShifts
 
     if (!employee) {
       return { shifts: [], source: 'none' };
@@ -122,13 +123,33 @@ const getShiftsForEmployee = async (employeeNumber, date) => {
       allCandidateShifts.set(preScheduled.shiftId._id.toString(), preScheduled.shiftId);
     }
 
-    // 2. Check designation shifts
-    if (employee.designation_id && employee.designation_id.shifts && employee.designation_id.shifts.length > 0) {
-      const designationShifts = await Shift.find({
-        _id: { $in: employee.designation_id.shifts },
-        isActive: true,
-      });
-      designationShifts.forEach(s => allCandidateShifts.set(s._id.toString(), s));
+    // 2. Check designation shifts (Department specific -> Global)
+    if (employee.designation_id) {
+      let shiftIds = [];
+
+      // Check for department-specific override first
+      if (employee.department_id && employee.designation_id.departmentShifts) {
+        const deptOverride = employee.designation_id.departmentShifts.find(
+          ds => ds.department && ds.department.toString() === employee.department_id._id.toString()
+        );
+
+        if (deptOverride && deptOverride.shifts && deptOverride.shifts.length > 0) {
+          shiftIds = deptOverride.shifts;
+        }
+      }
+
+      // Fallback to global designation shifts if no override found
+      if (shiftIds.length === 0 && employee.designation_id.shifts && employee.designation_id.shifts.length > 0) {
+        shiftIds = employee.designation_id.shifts;
+      }
+
+      if (shiftIds.length > 0) {
+        const designationShifts = await Shift.find({
+          _id: { $in: shiftIds },
+          isActive: true,
+        });
+        designationShifts.forEach(s => allCandidateShifts.set(s._id.toString(), s));
+      }
     }
 
     // 3. Check department shifts

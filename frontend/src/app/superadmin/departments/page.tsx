@@ -58,6 +58,7 @@ export default function DepartmentsPage() {
   const [showEditDialog, setShowEditDialog] = useState<Department | null>(null);
   const [showDesignationDialog, setShowDesignationDialog] = useState<string | null>(null);
   const [showLinkDesignationDialog, setShowLinkDesignationDialog] = useState<string | null>(null); // New dialog state
+  const [selectedLinkDesignationId, setSelectedLinkDesignationId] = useState(''); // Added state for link selection
   const [showShiftDialog, setShowShiftDialog] = useState<Department | null>(null);
   const [showDesignationShiftDialog, setShowDesignationShiftDialog] = useState<Designation | null>(null);
   const [showBulkUploadDept, setShowBulkUploadDept] = useState(false);
@@ -192,6 +193,36 @@ export default function DepartmentsPage() {
         code: code || undefined,
         description: description || undefined,
         hod: hodId || undefined,
+      };
+
+      const loadDesignations = async (departmentId: string) => {
+        try {
+          const response = await api.getDesignations(departmentId);
+          if (response.success && response.data) {
+            setDesignations(response.data);
+          }
+        } catch (err) {
+          console.error('Error loading designations:', err);
+        }
+      };
+
+      const loadUnlinkedDesignations = async (departmentId: string) => {
+        try {
+          const globalRes = await api.getAllDesignations();
+          const linkedRes = await api.getDesignations(departmentId);
+
+          if (globalRes.success && linkedRes.success) {
+            const globalDesigs = globalRes.data || [];
+            const linkedDesigs = linkedRes.data || [];
+            const linkedIds = linkedDesigs.map(d => d._id);
+
+            // Filter out designations that are already linked to this department
+            const available = globalDesigs.filter(d => !linkedIds.includes(d._id));
+            setUnlinkedDesignations(available);
+          }
+        } catch (err) {
+          console.error('Error loading unlinked designations:', err);
+        }
       };
 
       const response = await api.createDepartment(data);
@@ -395,13 +426,20 @@ export default function DepartmentsPage() {
     setError('');
 
     try {
-      const response = await api.assignShiftsToDesignation(showDesignationShiftDialog._id, selectedDesignationShiftIds);
+      const response = await api.assignShiftsToDesignation(
+        showDesignationShiftDialog._id,
+        selectedDesignationShiftIds,
+        showDesignationDialog === 'global' ? undefined : (showDesignationDialog || undefined)
+      );
 
       if (response.success) {
         setShowDesignationShiftDialog(null);
         setSelectedDesignationShiftIds([]);
-        // Reload designations for the current department
-        if (showDesignationDialog) {
+
+        // Update local state directly with the returned populated designation
+        if (response.data) {
+          setDesignations(prev => prev.map(d => d._id === response.data._id ? response.data : d));
+        } else if (showDesignationDialog && showDesignationDialog !== 'global') {
           loadDesignations(showDesignationDialog);
         }
       } else {
@@ -1045,6 +1083,51 @@ export default function DepartmentsPage() {
                     </div>
                   )}
 
+                  {/* Manual Linking Form (Inline) */}
+                  {showLinkDesignationDialog === showDesignationDialog && (
+                    <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50/50 p-4 dark:border-indigo-800 dark:bg-indigo-900/10">
+                      <h4 className="mb-3 text-sm font-semibold text-indigo-900 dark:text-indigo-300">Link Designation to Department</h4>
+                      <div className="space-y-3">
+                        <div>
+                          <select
+                            value={selectedLinkDesignationId}
+                            onChange={(e) => setSelectedLinkDesignationId(e.target.value)}
+                            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                          >
+                            <option value="">Select a designation...</option>
+                            {unlinkedDesignations.length === 0 ? (
+                              <option disabled>No unlinked designations available</option>
+                            ) : (
+                              unlinkedDesignations.map((d) => (
+                                <option key={d._id} value={d._id}>
+                                  {d.name} {d.code ? `(${d.code})` : ''}
+                                </option>
+                              ))
+                            )}
+                          </select>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleLinkDesignation(selectedLinkDesignationId)}
+                            disabled={!selectedLinkDesignationId}
+                            className="flex-1 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Link
+                          </button>
+                          <button
+                            onClick={() => {
+                              setShowLinkDesignationDialog(null);
+                              setSelectedLinkDesignationId('');
+                            }}
+                            className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {designations.length === 0 ? (
                     <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center dark:border-slate-700 dark:bg-slate-900/50">
                       <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
@@ -1086,12 +1169,16 @@ export default function DepartmentsPage() {
                                   {designation.paidLeaves} leaves
                                 </span>
                                 {designation.shifts && designation.shifts.length > 0 && (
-                                  <span className="inline-flex items-center gap-1 rounded-lg bg-purple-50 px-2 py-1 text-purple-700 dark:bg-purple-900/20 dark:text-purple-400">
-                                    <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
-                                    {designation.shifts.length} shift{designation.shifts.length > 1 ? 's' : ''}
-                                  </span>
+                                  <div className="flex flex-wrap gap-1 mt-1">
+                                    {designation.shifts.map((shift: any) => (
+                                      <span
+                                        key={shift._id}
+                                        className="inline-flex items-center gap-1 rounded-md bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700 ring-1 ring-inset ring-purple-700/10 dark:bg-purple-400/10 dark:text-purple-400 dark:ring-purple-400/20"
+                                      >
+                                        {shift.name} {shift.startTime ? `(${shift.startTime}-${shift.endTime})` : ''}
+                                      </span>
+                                    ))}
+                                  </div>
                                 )}
                               </div>
                             </div>
@@ -1310,9 +1397,9 @@ export default function DepartmentsPage() {
                       {dept.shifts.map((shift: any) => (
                         <span
                           key={typeof shift === 'string' ? shift : shift._id}
-                          className="rounded-lg bg-gradient-to-r from-purple-100 to-indigo-100 px-2.5 py-1 text-xs font-medium text-purple-700 shadow-sm dark:from-purple-900/30 dark:to-indigo-900/30 dark:text-purple-300"
+                          className="inline-flex items-center gap-1 rounded-lg bg-purple-50 px-2.5 py-1 text-xs font-medium text-purple-700 ring-1 ring-inset ring-purple-700/10 dark:bg-purple-400/10 dark:text-purple-400 dark:ring-purple-400/20"
                         >
-                          {typeof shift === 'string' ? 'Shift' : shift.name}
+                          {typeof shift === 'string' ? 'Shift' : `${shift.name} (${shift.startTime}-${shift.endTime})`}
                         </span>
                       ))}
                     </div>
@@ -1336,7 +1423,7 @@ export default function DepartmentsPage() {
                     onClick={() => handleOpenDesignationDialog(dept._id)}
                     className="group flex-1 rounded-2xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-blue-50 px-4 py-2.5 text-sm font-semibold text-indigo-700 transition-all hover:from-indigo-100 hover:to-blue-100 hover:shadow-md dark:border-indigo-800 dark:from-indigo-900/20 dark:to-blue-900/20 dark:text-indigo-300 dark:hover:from-indigo-900/30 dark:hover:to-blue-900/30"
                   >
-                    Roles
+                    Designations
                   </button>
                   <button
                     onClick={() => handleDeleteDepartment(dept._id)}
@@ -1407,7 +1494,7 @@ export default function DepartmentsPage() {
         {/* Bulk Upload Designations Dialog */}
         {showBulkUploadDesig && (
           <BulkUpload
-            title="Bulk Upload Designations (Roles)"
+            title="Bulk Upload Designations"
             templateHeaders={DESIGNATION_TEMPLATE_HEADERS}
             templateSample={DESIGNATION_TEMPLATE_SAMPLE}
             templateFilename="designation_template"

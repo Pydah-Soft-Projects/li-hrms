@@ -370,13 +370,22 @@ export default function DepartmentsPage() {
     setError('');
 
     try {
-      const response = await api.assignShiftsToDesignation(showDesignationShiftDialog._id, selectedDesignationShiftIds);
+      // Pass the current department ID to save shifts specifically for this department
+      const response = await api.assignShiftsToDesignation(
+        showDesignationShiftDialog._id,
+        selectedDesignationShiftIds,
+        showDesignationDialog || undefined
+      );
 
       if (response.success) {
         setShowDesignationShiftDialog(null);
         setSelectedDesignationShiftIds([]);
-        // Reload designations for the current department
-        if (showDesignationDialog) {
+
+        // Update local state directly with the returned populated designation
+        if (response.data) {
+          setDesignations(prev => prev.map(d => d._id === response.data._id ? response.data : d));
+        } else if (showDesignationDialog) {
+          // Fallback to reload if no data returned
           loadDesignations(showDesignationDialog);
         }
       } else {
@@ -972,11 +981,15 @@ export default function DepartmentsPage() {
                             className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
                           >
                             <option value="">Select a designation...</option>
-                            {unlinkedDesignations.map((d) => (
-                              <option key={d._id} value={d._id}>
-                                {d.name} {d.code ? `(${d.code})` : ''}
-                              </option>
-                            ))}
+                            {unlinkedDesignations.length === 0 ? (
+                              <option disabled>No unlinked designations available</option>
+                            ) : (
+                              unlinkedDesignations.map((d) => (
+                                <option key={d._id} value={d._id}>
+                                  {d.name} {d.code ? `(${d.code})` : ''}
+                                </option>
+                              ))
+                            )}
                           </select>
                         </div>
                         <div className="flex gap-2">
@@ -1042,12 +1055,19 @@ export default function DepartmentsPage() {
                                   {designation.paidLeaves} leaves
                                 </span>
                                 {designation.shifts && designation.shifts.length > 0 && (
-                                  <span className="inline-flex items-center gap-1 rounded-lg bg-purple-50 px-2 py-1 text-purple-700 dark:bg-purple-900/20 dark:text-purple-400">
-                                    <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
-                                    {designation.shifts.length} shift{designation.shifts.length > 1 ? 's' : ''}
-                                  </span>
+                                  <div className="flex flex-wrap gap-1 mt-1">
+                                    {designation.shifts.map((shift: any) => (
+                                      <span
+                                        key={shift._id}
+                                        className="inline-flex items-center gap-1 rounded-md bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700 ring-1 ring-inset ring-purple-700/10 dark:bg-purple-400/10 dark:text-purple-400 dark:ring-purple-400/20"
+                                      >
+                                        {shift.name}
+                                        <span className="text-purple-400 dark:text-purple-500">
+                                          ({shift.startTime}-{shift.endTime})
+                                        </span>
+                                      </span>
+                                    ))}
+                                  </div>
                                 )}
                               </div>
                             </div>
@@ -1152,6 +1172,8 @@ export default function DepartmentsPage() {
                   )}
                 </div>
 
+
+
                 {selectedDesignationShiftIds.length > 0 && (
                   <div className="rounded-xl border border-purple-200 bg-gradient-to-r from-purple-50 to-indigo-50 p-3 dark:border-purple-800 dark:from-purple-900/20 dark:to-indigo-900/20">
                     <p className="text-sm font-medium text-purple-800 dark:text-purple-300">
@@ -1193,236 +1215,243 @@ export default function DepartmentsPage() {
                 </div>
               </form>
             </div>
-          </div>
-        )}
+          </div >
+        )
+        }
 
         {/* Departments Grid (Card-based) */}
-        {loading ? (
-          <div className="flex flex-col items-center justify-center rounded-3xl border border-slate-200 bg-white/95 py-16 shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
-            <Spinner />
-            <p className="mt-4 text-sm font-medium text-slate-600 dark:text-slate-400">Loading departments...</p>
-          </div>
-        ) : departments.length === 0 ? (
-          <div className="rounded-3xl border border-slate-200 bg-white/95 p-12 text-center shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-900/30 dark:to-indigo-900/30">
-              <svg className="h-8 w-8 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-              </svg>
+        {
+          loading ? (
+            <div className="flex flex-col items-center justify-center rounded-3xl border border-slate-200 bg-white/95 py-16 shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
+              <Spinner />
+              <p className="mt-4 text-sm font-medium text-slate-600 dark:text-slate-400">Loading departments...</p>
             </div>
-            <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">No departments found</p>
-            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Create your first department to get started</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {departments.map((dept) => (
-              <div
-                key={dept._id}
-                className="group relative overflow-hidden rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg shadow-blue-100/40 transition-all hover:border-blue-300 hover:shadow-xl hover:shadow-blue-200/50 dark:border-slate-800 dark:bg-slate-950/95 dark:shadow-none dark:hover:border-slate-700"
-              >
-                {/* Gradient accent */}
-                <div className="absolute top-0 left-0 h-1 w-full bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500"></div>
+          ) : departments.length === 0 ? (
+            <div className="rounded-3xl border border-slate-200 bg-white/95 p-12 text-center shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-900/30 dark:to-indigo-900/30">
+                <svg className="h-8 w-8 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                </svg>
+              </div>
+              <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">No departments found</p>
+              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Create your first department to get started</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {departments.map((dept) => (
+                <div
+                  key={dept._id}
+                  className="group relative overflow-hidden rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg shadow-blue-100/40 transition-all hover:border-blue-300 hover:shadow-xl hover:shadow-blue-200/50 dark:border-slate-800 dark:bg-slate-950/95 dark:shadow-none dark:hover:border-slate-700"
+                >
+                  {/* Gradient accent */}
+                  <div className="absolute top-0 left-0 h-1 w-full bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500"></div>
 
-                <div className="mb-4 flex items-start justify-between">
-                  <div className="flex-1">
-                    <h3 className="text-xl font-semibold text-slate-900 dark:text-slate-100">{dept.name}</h3>
-                    {dept.code && (
-                      <p className="mt-1 text-sm font-medium text-blue-600 dark:text-blue-400">Code: {dept.code}</p>
+                  <div className="mb-4 flex items-start justify-between">
+                    <div className="flex-1">
+                      <h3 className="text-xl font-semibold text-slate-900 dark:text-slate-100">{dept.name}</h3>
+                      {dept.code && (
+                        <p className="mt-1 text-sm font-medium text-blue-600 dark:text-blue-400">Code: {dept.code}</p>
+                      )}
+                    </div>
+                    <span
+                      className={`ml-3 rounded-full px-3 py-1 text-xs font-semibold ${dept.isActive
+                        ? 'bg-green-100 text-green-700 shadow-sm dark:bg-green-900/30 dark:text-green-400'
+                        : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                        }`}
+                    >
+                      {dept.isActive ? 'Active' : 'Inactive'}
+                    </span>
+                  </div>
+
+                  {dept.description && (
+                    <p className="mb-4 line-clamp-2 text-sm text-slate-600 dark:text-slate-400">{dept.description}</p>
+                  )}
+
+                  <div className="mb-4 space-y-2">
+                    {dept.hod && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                          </svg>
+                        </span>
+                        <span className="font-medium text-slate-700 dark:text-slate-300">HOD:</span>
+                        <span className="text-slate-600 dark:text-slate-400">{dept.hod.name || dept.hod.email}</span>
+                      </div>
                     )}
                   </div>
-                  <span
-                    className={`ml-3 rounded-full px-3 py-1 text-xs font-semibold ${dept.isActive
-                      ? 'bg-green-100 text-green-700 shadow-sm dark:bg-green-900/30 dark:text-green-400'
-                      : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                      }`}
-                  >
-                    {dept.isActive ? 'Active' : 'Inactive'}
-                  </span>
-                </div>
 
-                {dept.description && (
-                  <p className="mb-4 line-clamp-2 text-sm text-slate-600 dark:text-slate-400">{dept.description}</p>
-                )}
-
-                <div className="mb-4 space-y-2">
-                  {dept.hod && (
-                    <div className="flex items-center gap-2 text-sm">
-                      <span className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                        </svg>
-                      </span>
-                      <span className="font-medium text-slate-700 dark:text-slate-300">HOD:</span>
-                      <span className="text-slate-600 dark:text-slate-400">{dept.hod.name || dept.hod.email}</span>
+                  {dept.shifts && dept.shifts.length > 0 && (
+                    <div className="mb-4">
+                      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                        Assigned Shifts
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {dept.shifts.map((shift: any) => (
+                          <span
+                            key={typeof shift === 'string' ? shift : shift._id}
+                            className="rounded-lg bg-gradient-to-r from-purple-100 to-indigo-100 px-2.5 py-1 text-xs font-medium text-purple-700 shadow-sm dark:from-purple-900/30 dark:to-indigo-900/30 dark:text-purple-300"
+                          >
+                            {typeof shift === 'string' ? 'Shift' : shift.name}
+                          </span>
+                        ))}
+                      </div>
                     </div>
                   )}
-                </div>
 
-                {dept.shifts && dept.shifts.length > 0 && (
-                  <div className="mb-4">
-                    <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                      Assigned Shifts
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {dept.shifts.map((shift: any) => (
-                        <span
-                          key={typeof shift === 'string' ? shift : shift._id}
-                          className="rounded-lg bg-gradient-to-r from-purple-100 to-indigo-100 px-2.5 py-1 text-xs font-medium text-purple-700 shadow-sm dark:from-purple-900/30 dark:to-indigo-900/30 dark:text-purple-300"
-                        >
-                          {typeof shift === 'string' ? 'Shift' : shift.name}
-                        </span>
-                      ))}
-                    </div>
+                  <div className="flex flex-wrap gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">
+                    <button
+                      onClick={() => handleOpenEditDialog(dept)}
+                      className="group flex-1 rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 px-4 py-2.5 text-sm font-semibold text-blue-700 transition-all hover:from-blue-100 hover:to-indigo-100 hover:shadow-md dark:border-blue-800 dark:from-blue-900/20 dark:to-indigo-900/20 dark:text-blue-300 dark:hover:from-blue-900/30 dark:hover:to-indigo-900/30"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleOpenShiftDialog(dept)}
+                      className="group flex-1 rounded-2xl border border-purple-200 bg-gradient-to-r from-purple-50 to-red-50 px-4 py-2.5 text-sm font-semibold text-purple-700 transition-all hover:from-purple-100 hover:to-red-100 hover:shadow-md dark:border-purple-800 dark:from-purple-900/20 dark:to-red-900/20 dark:text-purple-300 dark:hover:from-purple-900/30 dark:hover:to-red-900/30"
+                    >
+                      Shifts
+                    </button>
+                    <button
+                      onClick={() => handleOpenDesignationDialog(dept._id)}
+                      className="group flex-1 rounded-2xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-blue-50 px-4 py-2.5 text-sm font-semibold text-indigo-700 transition-all hover:from-indigo-100 hover:to-blue-100 hover:shadow-md dark:border-indigo-800 dark:from-indigo-900/20 dark:to-blue-900/20 dark:text-indigo-300 dark:hover:from-indigo-900/30 dark:hover:to-blue-900/30"
+                    >
+                      Designations
+                    </button>
+                    <button
+                      onClick={() => handleDeleteDepartment(dept._id)}
+                      className="rounded-2xl border border-red-200 bg-gradient-to-r from-red-50 to-red-50 px-4 py-2.5 text-sm font-semibold text-red-700 transition-all hover:from-red-100 hover:to-red-100 hover:shadow-md dark:border-red-800 dark:from-red-900/20 dark:to-red-900/20 dark:text-red-300 dark:hover:from-red-900/30 dark:hover:to-red-900/30"
+                    >
+                      Delete
+                    </button>
                   </div>
-                )}
-
-                <div className="flex flex-wrap gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">
-                  <button
-                    onClick={() => handleOpenEditDialog(dept)}
-                    className="group flex-1 rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 px-4 py-2.5 text-sm font-semibold text-blue-700 transition-all hover:from-blue-100 hover:to-indigo-100 hover:shadow-md dark:border-blue-800 dark:from-blue-900/20 dark:to-indigo-900/20 dark:text-blue-300 dark:hover:from-blue-900/30 dark:hover:to-indigo-900/30"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => handleOpenShiftDialog(dept)}
-                    className="group flex-1 rounded-2xl border border-purple-200 bg-gradient-to-r from-purple-50 to-red-50 px-4 py-2.5 text-sm font-semibold text-purple-700 transition-all hover:from-purple-100 hover:to-red-100 hover:shadow-md dark:border-purple-800 dark:from-purple-900/20 dark:to-red-900/20 dark:text-purple-300 dark:hover:from-purple-900/30 dark:hover:to-red-900/30"
-                  >
-                    Shifts
-                  </button>
-                  <button
-                    onClick={() => handleOpenDesignationDialog(dept._id)}
-                    className="group flex-1 rounded-2xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-blue-50 px-4 py-2.5 text-sm font-semibold text-indigo-700 transition-all hover:from-indigo-100 hover:to-blue-100 hover:shadow-md dark:border-indigo-800 dark:from-indigo-900/20 dark:to-blue-900/20 dark:text-indigo-300 dark:hover:from-indigo-900/30 dark:hover:to-blue-900/30"
-                  >
-                    Designations
-                  </button>
-                  <button
-                    onClick={() => handleDeleteDepartment(dept._id)}
-                    className="rounded-2xl border border-red-200 bg-gradient-to-r from-red-50 to-red-50 px-4 py-2.5 text-sm font-semibold text-red-700 transition-all hover:from-red-100 hover:to-red-100 hover:shadow-md dark:border-red-800 dark:from-red-900/20 dark:to-red-900/20 dark:text-red-300 dark:hover:from-red-900/30 dark:hover:to-red-900/30"
-                  >
-                    Delete
-                  </button>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          )
+        }
 
         {/* Bulk Upload Departments Dialog */}
-        {showBulkUploadDept && (
-          <BulkUpload
-            title="Bulk Upload Departments"
-            templateHeaders={DEPARTMENT_TEMPLATE_HEADERS}
-            templateSample={DEPARTMENT_TEMPLATE_SAMPLE}
-            templateFilename="department_template"
-            columns={[
-              { key: 'name', label: 'Department Name', width: '200px' },
-              { key: 'code', label: 'Code', width: '100px' },
-              { key: 'description', label: 'Description', width: '300px' },
-            ]}
-            validateRow={(row) => {
-              const result = validateDepartmentRow(row);
-              return { isValid: result.isValid, errors: result.errors };
-            }}
-            onSubmit={async (data) => {
-              let successCount = 0;
-              let failCount = 0;
-              const errors: string[] = [];
+        {
+          showBulkUploadDept && (
+            <BulkUpload
+              title="Bulk Upload Departments"
+              templateHeaders={DEPARTMENT_TEMPLATE_HEADERS}
+              templateSample={DEPARTMENT_TEMPLATE_SAMPLE}
+              templateFilename="department_template"
+              columns={[
+                { key: 'name', label: 'Department Name', width: '200px' },
+                { key: 'code', label: 'Code', width: '100px' },
+                { key: 'description', label: 'Description', width: '300px' },
+              ]}
+              validateRow={(row) => {
+                const result = validateDepartmentRow(row);
+                return { isValid: result.isValid, errors: result.errors };
+              }}
+              onSubmit={async (data) => {
+                let successCount = 0;
+                let failCount = 0;
+                const errors: string[] = [];
 
-              for (const row of data) {
-                try {
-                  const deptData = {
-                    name: row.name as string,
-                    code: row.code as string || undefined,
-                    description: row.description as string || undefined,
-                  };
+                for (const row of data) {
+                  try {
+                    const deptData = {
+                      name: row.name as string,
+                      code: row.code as string || undefined,
+                      description: row.description as string || undefined,
+                    };
 
-                  const response = await api.createDepartment(deptData);
-                  if (response.success) {
-                    successCount++;
-                  } else {
+                    const response = await api.createDepartment(deptData);
+                    if (response.success) {
+                      successCount++;
+                    } else {
+                      failCount++;
+                      errors.push(`${row.name}: ${response.message}`);
+                    }
+                  } catch (err) {
                     failCount++;
-                    errors.push(`${row.name}: ${response.message}`);
+                    errors.push(`${row.name}: Failed to create`);
                   }
-                } catch (err) {
-                  failCount++;
-                  errors.push(`${row.name}: Failed to create`);
                 }
-              }
 
-              loadDepartments();
+                loadDepartments();
 
-              if (failCount === 0) {
-                return { success: true, message: `Successfully created ${successCount} departments` };
-              } else {
-                return { success: false, message: `Created ${successCount}, Failed ${failCount}. Errors: ${errors.slice(0, 3).join('; ')}` };
-              }
-            }}
-            onClose={() => setShowBulkUploadDept(false)}
-          />
-        )}
+                if (failCount === 0) {
+                  return { success: true, message: `Successfully created ${successCount} departments` };
+                } else {
+                  return { success: false, message: `Created ${successCount}, Failed ${failCount}. Errors: ${errors.slice(0, 3).join('; ')}` };
+                }
+              }}
+              onClose={() => setShowBulkUploadDept(false)}
+            />
+          )
+        }
 
         {/* Bulk Upload Designations Dialog */}
-        {showBulkUploadDesig && (
-          <BulkUpload
-            title="Bulk Upload Designations (Roles)"
-            templateHeaders={DESIGNATION_TEMPLATE_HEADERS}
-            templateSample={DESIGNATION_TEMPLATE_SAMPLE}
-            templateFilename="designation_template"
-            columns={[
-              { key: 'name', label: 'Designation Name', width: '180px' },
-              { key: 'code', label: 'Code', width: '100px' },
-              { key: 'department_name', label: 'Department', type: 'select', options: departments.map(d => ({ value: d.name, label: d.name })), width: '180px' },
-              { key: 'description', label: 'Description', width: '200px' },
-              { key: 'paid_leaves', label: 'Paid Leaves', type: 'number', width: '100px' },
-            ]}
-            validateRow={(row) => {
-              const result = validateDesignationRow(row, departments);
-              return { isValid: result.isValid, errors: result.errors };
-            }}
-            onSubmit={async (data) => {
-              let successCount = 0;
-              let failCount = 0;
-              const errors: string[] = [];
+        {
+          showBulkUploadDesig && (
+            <BulkUpload
+              title="Bulk Upload Designations"
+              templateHeaders={DESIGNATION_TEMPLATE_HEADERS}
+              templateSample={DESIGNATION_TEMPLATE_SAMPLE}
+              templateFilename="designation_template"
+              columns={[
+                { key: 'name', label: 'Designation Name', width: '180px' },
+                { key: 'code', label: 'Code', width: '100px' },
+                { key: 'department_name', label: 'Department', type: 'select', options: departments.map(d => ({ value: d.name, label: d.name })), width: '180px' },
+                { key: 'description', label: 'Description', width: '200px' },
+                { key: 'paid_leaves', label: 'Paid Leaves', type: 'number', width: '100px' },
+              ]}
+              validateRow={(row) => {
+                const result = validateDesignationRow(row, departments);
+                return { isValid: result.isValid, errors: result.errors };
+              }}
+              onSubmit={async (data) => {
+                let successCount = 0;
+                let failCount = 0;
+                const errors: string[] = [];
 
-              for (const row of data) {
-                try {
-                  // Find department by name
-                  const dept = departments.find(d => d.name.toLowerCase() === (row.department_name as string)?.toLowerCase());
-                  if (!dept) {
+                for (const row of data) {
+                  try {
+                    // Find department by name
+                    const dept = departments.find(d => d.name.toLowerCase() === (row.department_name as string)?.toLowerCase());
+                    if (!dept) {
+                      failCount++;
+                      errors.push(`${row.name}: Department not found`);
+                      continue;
+                    }
+
+                    const desigData = {
+                      name: row.name as string,
+                      code: row.code as string || undefined,
+                      description: row.description as string || undefined,
+                      paidLeaves: row.paid_leaves ? Number(row.paid_leaves) : 0,
+                    };
+
+                    const response = await api.createDesignation(dept._id, desigData);
+                    if (response.success) {
+                      successCount++;
+                    } else {
+                      failCount++;
+                      errors.push(`${row.name}: ${response.message}`);
+                    }
+                  } catch (err) {
                     failCount++;
-                    errors.push(`${row.name}: Department not found`);
-                    continue;
+                    errors.push(`${row.name}: Failed to create`);
                   }
-
-                  const desigData = {
-                    name: row.name as string,
-                    code: row.code as string || undefined,
-                    description: row.description as string || undefined,
-                    paidLeaves: row.paid_leaves ? Number(row.paid_leaves) : 0,
-                  };
-
-                  const response = await api.createDesignation(dept._id, desigData);
-                  if (response.success) {
-                    successCount++;
-                  } else {
-                    failCount++;
-                    errors.push(`${row.name}: ${response.message}`);
-                  }
-                } catch (err) {
-                  failCount++;
-                  errors.push(`${row.name}: Failed to create`);
                 }
-              }
 
-              if (failCount === 0) {
-                return { success: true, message: `Successfully created ${successCount} designations` };
-              } else {
-                return { success: false, message: `Created ${successCount}, Failed ${failCount}. Errors: ${errors.slice(0, 3).join('; ')}` };
-              }
-            }}
-            onClose={() => setShowBulkUploadDesig(false)}
-          />
-        )}
-      </div>
+                if (failCount === 0) {
+                  return { success: true, message: `Successfully created ${successCount} designations` };
+                } else {
+                  return { success: false, message: `Created ${successCount}, Failed ${failCount}. Errors: ${errors.slice(0, 3).join('; ')}` };
+                }
+              }}
+              onClose={() => setShowBulkUploadDesig(false)}
+            />
+          )
+        }
+      </div >
     </div >
   );
 }

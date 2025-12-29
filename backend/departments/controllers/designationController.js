@@ -57,15 +57,34 @@ exports.getDesignationsByDepartment = async (req, res) => {
       query.isActive = isActive === 'true';
     }
 
+    // Populate global shifts and department-specific shifts
     const designations = await Designation.find(query)
       .populate('shifts', 'name startTime endTime duration isActive')
+      .populate({
+        path: 'departmentShifts.shifts',
+        select: 'name startTime endTime duration isActive',
+      })
       .populate('createdBy', 'name email')
       .sort({ name: 1 });
 
+    // Process designations to show effective shifts for this department
+    const processedDesignations = designations.map((des) => {
+      const desObj = des.toObject();
+      const departmentFn = des.departmentShifts?.find(
+        (ds) => ds.department && ds.department.toString() === departmentId
+      );
+
+      if (departmentFn && departmentFn.shifts && departmentFn.shifts.length > 0) {
+        // Override global shifts with department-specific shifts
+        desObj.shifts = departmentFn.shifts;
+      }
+      return desObj;
+    });
+
     res.status(200).json({
       success: true,
-      count: designations.length,
-      data: designations,
+      count: processedDesignations.length,
+      data: processedDesignations,
     });
   } catch (error) {
     console.error('Error fetching designations:', error);
@@ -409,7 +428,7 @@ exports.updateDesignation = async (req, res) => {
 // @access  Private (Super Admin, Sub Admin, HR)
 exports.assignShifts = async (req, res) => {
   try {
-    const { shiftIds } = req.body;
+    const { shiftIds, departmentId } = req.body;
 
     if (!Array.isArray(shiftIds)) {
       return res.status(400).json({
@@ -437,16 +456,36 @@ exports.assignShifts = async (req, res) => {
       }
     }
 
-    designation.shifts = shiftIds;
+    if (departmentId) {
+      // Find and update specific department configuration
+      const existingConfigIndex = designation.departmentShifts.findIndex(
+        (ds) => ds.department.toString() === departmentId
+      );
+
+      if (existingConfigIndex > -1) {
+        designation.departmentShifts[existingConfigIndex].shifts = shiftIds;
+      } else {
+        designation.departmentShifts.push({
+          department: departmentId,
+          shifts: shiftIds,
+        });
+      }
+    } else {
+      // Global update (default)
+      designation.shifts = shiftIds;
+    }
+
     await designation.save();
 
+    // Populate global shifts and department specific shifts
     const populatedDesignation = await Designation.findById(req.params.id)
       .populate('department', 'name code')
-      .populate('shifts', 'name startTime endTime duration isActive');
+      .populate('shifts', 'name startTime endTime duration isActive')
+      .populate('departmentShifts.shifts', 'name startTime endTime duration isActive');
 
     res.status(200).json({
       success: true,
-      message: 'Shifts assigned to designation successfully',
+      message: departmentId ? 'Department-specific shifts assigned successfully' : 'Shifts assigned to designation successfully',
       data: populatedDesignation,
     });
   } catch (error) {

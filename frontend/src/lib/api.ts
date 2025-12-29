@@ -628,10 +628,10 @@ export const api = {
     return apiRequest<void>(`/departments/designations/${id}`, { method: 'DELETE' });
   },
 
-  assignShiftsToDesignation: async (id: string, shiftIds: string[]) => {
+  assignShiftsToDesignation: async (id: string, shiftIds: string[], departmentId?: string) => {
     return apiRequest<any>(`/departments/designations/${id}/shifts`, {
       method: 'PUT',
-      body: JSON.stringify({ shiftIds }),
+      body: JSON.stringify({ shiftIds, departmentId }),
     });
   },
 
