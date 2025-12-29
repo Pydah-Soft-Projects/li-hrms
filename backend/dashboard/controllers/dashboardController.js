@@ -25,8 +25,8 @@ exports.getDashboardStats = async (req, res) => {
 
     let stats = {};
 
-    // 1. HR / Super Admin / Sub Admin - Global Stats
-    if (['super_admin', 'sub_admin', 'hr'].includes(role)) {
+    // 1. Super Admin / Sub Admin - Global Stats
+    if (['super_admin', 'sub_admin'].includes(role)) {
       // Total Employees (Active)
       const totalEmployees = await Employee.countDocuments({ is_active: true });
 
@@ -49,6 +49,62 @@ exports.getDashboardStats = async (req, res) => {
         approvedLeaves,
         todayPresent,
         // Mock data for things we don't have easy queries for yet
+        upcomingHolidays: 2,
+      };
+    }
+
+    // 2. HR - Scoped Stats (Departments)
+    else if (role === 'hr') {
+      // Determine accessible departments
+      let departmentIds = [];
+
+      // Check for multi-department assignment
+      if (user.departments && user.departments.length > 0) {
+        // If populated, map to _id, otherwise use as is
+        departmentIds = user.departments.map(d => d._id || d);
+      }
+      // Fallback to single department if no list
+      else if (user.department) {
+        departmentIds = [user.department._id || user.department];
+      }
+
+      // If dataScope is explicitly 'all', revert to global (optional, based on future needs)
+      // For now, enforcing scoped access as per request
+
+      const deptFilter = departmentIds.length > 0 ? { department_id: { $in: departmentIds } } : {};
+      const leaveFilter = departmentIds.length > 0 ? { department: { $in: departmentIds } } : {};
+      const attendanceFilter = departmentIds.length > 0 ? { departmentId: { $in: departmentIds } } : {};
+
+      // Total Employees (Scoped)
+      const totalEmployees = await Employee.countDocuments({
+        is_active: true,
+        ...deptFilter
+      });
+
+      // Pending Leaves (Scoped)
+      const pendingLeaves = await Leave.countDocuments({
+        status: 'pending',
+        ...leaveFilter
+      });
+
+      // Approved Leaves (Scoped)
+      const approvedLeaves = await Leave.countDocuments({
+        status: 'approved',
+        ...leaveFilter
+      });
+
+      // Active Today (Scoped)
+      const todayPresent = await AttendanceDaily.countDocuments({
+        date: today,
+        status: { $in: ['P', 'WO-P', 'PH-P'] },
+        ...attendanceFilter
+      });
+
+      stats = {
+        totalEmployees,
+        pendingLeaves,
+        approvedLeaves,
+        todayPresent,
         upcomingHolidays: 2,
       };
     }
