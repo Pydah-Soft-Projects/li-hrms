@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const DeviceService = require('../services/DeviceService');
+const DeviceService = require('../services/deviceService');
 const DeviceUser = require('../models/DeviceUser');
 const logger = require('../utils/logger');
 

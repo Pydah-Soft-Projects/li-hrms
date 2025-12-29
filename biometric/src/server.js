@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 
 const logger = require('./utils/logger');
-const DeviceService = require('./services/DeviceService');
+const DeviceService = require('./services/deviceService');
 const SyncScheduler = require('./jobs/syncScheduler');
 const apiRoutes = require('./routes/api');
 const deviceRoutes = require('./routes/devices');
