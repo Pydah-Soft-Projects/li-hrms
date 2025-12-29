@@ -191,6 +191,13 @@ const PaymentsIcon = ({ className, ...props }: IconProps) => (
   </svg>
 );
 
+const LoansIcon = ({ className, ...props }: IconProps) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+    <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+    <circle cx="12" cy="12" r="1" />
+  </svg>
+);
+
 export type NavItem = {
   href: string;
   label: string;
@@ -218,6 +225,7 @@ const navItems: NavItem[] = [
   { href: '/superadmin/payslips', label: 'Payslips', icon: PayslipsIcon, category: 'Finance & Payroll', moduleCode: 'PAYSLIPS' },
   { href: '/superadmin/arrears', label: 'Arrears', icon: ArrearsIcon, category: 'Finance & Payroll', moduleCode: 'ARREARS' },
   { href: '/superadmin/allowances-deductions', label: 'Allowances & Deductions', icon: AllowancesDeductionsIcon, category: 'Finance & Payroll', moduleCode: 'ALLOWANCES_DEDUCTIONS' },
+  { href: '/superadmin/loans', label: 'Loans & Salary Advance', icon: LoansIcon, category: 'Finance & Payroll', moduleCode: 'LOANS_SALARY_ADVANCE' },
   { href: '/superadmin/settings', label: 'General Settings', icon: SettingsIcon, category: 'Settings', moduleCode: 'GENERAL_SETTINGS' },
 ];
 
