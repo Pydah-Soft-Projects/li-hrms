@@ -17,6 +17,14 @@ exports.getAllDesignations = async (req, res) => {
 
     const designations = await Designation.find(query)
       .populate('shifts', 'name startTime endTime duration isActive')
+      .populate({
+        path: 'departmentShifts.department',
+        select: 'name code',
+      })
+      .populate({
+        path: 'departmentShifts.shifts',
+        select: 'name startTime endTime duration isActive',
+      })
       .populate('createdBy', 'name email')
       .sort({ name: 1 });
 

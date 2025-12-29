@@ -23,6 +23,11 @@ interface Designation {
   paidLeaves: number;
   deductionRules: any[];
   shifts?: any[];
+  departmentShifts?: Array<{
+    department: { _id: string; name: string; code?: string };
+    shifts: any[];
+    _id?: string;
+  }>;
   isActive: boolean;
 }
 
@@ -61,6 +66,7 @@ export default function DepartmentsPage() {
   const [selectedLinkDesignationId, setSelectedLinkDesignationId] = useState(''); // Added state for link selection
   const [showShiftDialog, setShowShiftDialog] = useState<Department | null>(null);
   const [showDesignationShiftDialog, setShowDesignationShiftDialog] = useState<Designation | null>(null);
+  const [showShiftBreakdownDialog, setShowShiftBreakdownDialog] = useState<Designation | null>(null);
   const [showBulkUploadDept, setShowBulkUploadDept] = useState(false);
   const [showBulkUploadDesig, setShowBulkUploadDesig] = useState(false);
   const [error, setError] = useState('');
@@ -149,20 +155,14 @@ export default function DepartmentsPage() {
       return;
     }
 
-    // Otherwise, find department in local state (since it's populated)
-    const dept = departments.find(d => d._id === departmentId);
-    if (dept && dept.designations) {
-      setDesignations(dept.designations);
-    } else {
-      // Fallback to API if not found or not populated
-      try {
-        const response = await api.getDesignations(departmentId);
-        if (response.success && response.data) {
-          setDesignations(response.data);
-        }
-      } catch (err) {
-        console.error('Error loading designations:', err);
+    // For department-specific, always call API to get resolved shifts
+    try {
+      const response = await api.getDesignations(departmentId);
+      if (response.success && response.data) {
+        setDesignations(response.data);
       }
+    } catch (err) {
+      console.error('Error loading designations:', err);
     }
   };
 
@@ -492,6 +492,7 @@ export default function DepartmentsPage() {
             <button
               onClick={() => {
                 setShowDesignationDialog('global');
+                loadDesignations('global');
                 resetDesignationForm();
               }}
               className="inline-flex items-center gap-2 rounded-2xl border border-green-200 bg-white px-4 py-3 text-sm font-semibold text-green-700 transition-all hover:bg-green-50 hover:shadow-md dark:border-green-800 dark:bg-slate-900 dark:text-green-400 dark:hover:bg-green-900/20"
@@ -1168,16 +1169,37 @@ export default function DepartmentsPage() {
                                   </svg>
                                   {designation.paidLeaves} leaves
                                 </span>
+                                {/* Global Shifts */}
                                 {designation.shifts && designation.shifts.length > 0 && (
                                   <div className="flex flex-wrap gap-1 mt-1">
+                                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-400 w-full">Global:</span>
                                     {designation.shifts.map((shift: any) => (
-                                      <span
+                                      <button
                                         key={shift._id}
-                                        className="inline-flex items-center gap-1 rounded-md bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700 ring-1 ring-inset ring-purple-700/10 dark:bg-purple-400/10 dark:text-purple-400 dark:ring-purple-400/20"
+                                        onClick={() => setShowShiftBreakdownDialog(designation)}
+                                        className="inline-flex items-center gap-1 rounded-md bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700 ring-1 ring-inset ring-purple-700/10 hover:bg-purple-100 transition-colors dark:bg-purple-400/10 dark:text-purple-400 dark:ring-purple-400/20 dark:hover:bg-purple-400/20 cursor-pointer"
                                       >
                                         {shift.name} {shift.startTime ? `(${shift.startTime}-${shift.endTime})` : ''}
-                                      </span>
+                                      </button>
                                     ))}
+                                  </div>
+                                )}
+                                {/* Department-Specific Shifts */}
+                                {designation.departmentShifts && designation.departmentShifts.length > 0 && (
+                                  <div className="flex flex-wrap gap-1 mt-1">
+                                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-400 w-full">Dept-Specific:</span>
+                                    {designation.departmentShifts.flatMap((ds) =>
+                                      ds.shifts?.map((shift: any) => (
+                                        <button
+                                          key={`${ds.department._id}-${shift._id}`}
+                                          onClick={() => setShowShiftBreakdownDialog(designation)}
+                                          className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-700/10 hover:bg-emerald-100 transition-colors dark:bg-emerald-400/10 dark:text-emerald-400 dark:ring-emerald-400/20 dark:hover:bg-emerald-400/20 cursor-pointer"
+                                          title={`${ds.department.name}`}
+                                        >
+                                          {shift.name} ({ds.department.name})
+                                        </button>
+                                      )) || []
+                                    )}
                                   </div>
                                 )}
                               </div>
@@ -1326,6 +1348,112 @@ export default function DepartmentsPage() {
             </div>
           </div>
         )}
+
+        {/* Shift Breakdown Dialog */}
+        {showShiftBreakdownDialog && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+            <div
+              className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
+              onClick={() => setShowShiftBreakdownDialog(null)}
+            />
+            <div className="relative z-[70] w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl shadow-blue-500/10 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/95">
+              <div className="mb-6 flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
+                    Shift Assignments
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    Department-wise shift breakdown for <span className="font-medium text-blue-600 dark:text-blue-400">{showShiftBreakdownDialog.name}</span>
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowShiftBreakdownDialog(null)}
+                  className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 focus:outline-none focus:ring-2 focus:ring-red-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                {/* Global Shifts Section */}
+                {showShiftBreakdownDialog.shifts && showShiftBreakdownDialog.shifts.length > 0 && (
+                  <div className="rounded-xl border border-purple-200 bg-purple-50/30 p-4 dark:border-purple-800 dark:bg-purple-900/20">
+                    <h3 className="mb-3 font-semibold text-purple-900 dark:text-purple-300 flex items-center gap-2">
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      Global Defaults
+                      <span className="ml-auto text-xs bg-purple-100 px-2 py-0.5 rounded-full dark:bg-purple-900/50">
+                        All Departments
+                      </span>
+                    </h3>
+                    <div className="space-y-2">
+                      {showShiftBreakdownDialog.shifts.map((shift: any) => (
+                        <div key={shift._id} className="flex items-center justify-between rounded-lg border border-purple-200 bg-white p-3 dark:border-purple-700 dark:bg-slate-900">
+                          <div>
+                            <p className="font-medium text-slate-900 dark:text-slate-100">{shift.name}</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                              {shift.startTime} - {shift.endTime} ({shift.duration}h)
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Department-Specific Shifts Section */}
+                {showShiftBreakdownDialog.departmentShifts && showShiftBreakdownDialog.departmentShifts.length > 0 && (
+                  <div className="space-y-4">
+                    <h3 className="font-semibold text-emerald-900 dark:text-emerald-300 flex items-center gap-2">
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                      </svg>
+                      Department Overrides
+                      <span className="ml-auto text-xs bg-emerald-100 px-2 py-0.5 rounded-full dark:bg-emerald-900/50">
+                        {showShiftBreakdownDialog.departmentShifts.length} {showShiftBreakdownDialog.departmentShifts.length === 1 ? 'Department' : 'Departments'}
+                      </span>
+                    </h3>
+                    {showShiftBreakdownDialog.departmentShifts.map((ds) => (
+                      <div key={ds.department._id} className="rounded-xl border border-emerald-200 bg-emerald-50/30 p-4 dark:border-emerald-800 dark:bg-emerald-900/20">
+                        <h4 className="mb-3 font-medium text-emerald-900 dark:text-emerald-300">
+                          {ds.department.name} {ds.department.code && `(${ds.department.code})`}
+                        </h4>
+                        <div className="space-y-2">
+                          {ds.shifts && ds.shifts.length > 0 ? (
+                            ds.shifts.map((shift: any) => (
+                              <div key={shift._id} className="flex items-center justify-between rounded-lg border border-emerald-200 bg-white p-3 dark:border-emerald-700 dark:bg-slate-900">
+                                <div>
+                                  <p className="font-medium text-slate-900 dark:text-slate-100">{shift.name}</p>
+                                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                                    {shift.startTime} - {shift.endTime} ({shift.duration}h)
+                                  </p>
+                                </div>
+                              </div>
+                            ))
+                          ) : (
+                            <p className="text-xs text-slate-500 italic">No shifts assigned</p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Empty State */}
+                {(!showShiftBreakdownDialog.shifts || showShiftBreakdownDialog.shifts.length === 0) &&
+                  (!showShiftBreakdownDialog.departmentShifts || showShiftBreakdownDialog.departmentShifts.length === 0) && (
+                    <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/50 p-8 text-center dark:border-slate-700 dark:bg-slate-900/30">
+                      <p className="text-sm text-slate-500 dark:text-slate-400">No shifts assigned to this designation yet</p>
+                    </div>
+                  )}
+              </div>
+            </div>
+          </div>
+        )}
+
 
         {/* Departments Grid (Card-based) */}
         {loading ? (

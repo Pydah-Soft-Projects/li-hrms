@@ -497,26 +497,9 @@ export default function EmployeesPage() {
   }, [activeTab]);
 
   useEffect(() => {
-    if (formData.department_id) {
-      const selectedDept = departments.find(d => d._id === formData.department_id);
-      let filtered: Designation[] = [];
-
-      if (selectedDept && selectedDept.designations) {
-        filtered = selectedDept.designations;
-      } else {
-        filtered = designations.filter(d => d.department === formData.department_id);
-      }
-
-      setFilteredDesignations(filtered);
-
-      // Reset designation if it doesn't belong to selected department
-      if (formData.designation_id && !filtered.find(d => d._id === formData.designation_id)) {
-        setFormData(prev => ({ ...prev, designation_id: '' }));
-      }
-    } else {
-      setFilteredDesignations([]);
-    }
-  }, [formData.department_id, designations, departments]);
+    // Show all designations since they are now global
+    setFilteredDesignations(designations);
+  }, [designations]);
 
   // Load allowance/deduction defaults when department and gross salary are set
   useEffect(() => {
@@ -560,35 +543,9 @@ export default function EmployeesPage() {
   }, [showApprovalDialog, selectedApplication, approvalData.approvedSalary]);
 
   useEffect(() => {
-    if (applicationFormData.department_id) {
-      const deptId = typeof applicationFormData.department_id === 'string'
-        ? applicationFormData.department_id
-        : applicationFormData.department_id._id;
-
-      const selectedDept = departments.find(d => d._id === deptId);
-      let filtered: Designation[] = [];
-
-      if (selectedDept && selectedDept.designations) {
-        filtered = selectedDept.designations;
-      } else {
-        filtered = designations.filter(d => d.department === deptId);
-      }
-
-      setFilteredApplicationDesignations(filtered);
-
-      // Reset designation if it doesn't belong to selected department
-      if (applicationFormData.designation_id) {
-        const desigId = typeof applicationFormData.designation_id === 'string'
-          ? applicationFormData.designation_id
-          : applicationFormData.designation_id._id;
-        if (!filtered.find(d => d._id === desigId)) {
-          setApplicationFormData(prev => ({ ...prev, designation_id: '' }));
-        }
-      }
-    } else {
-      setFilteredApplicationDesignations([]);
-    }
-  }, [applicationFormData.department_id, applicationFormData.designation_id, designations, departments]);
+    // Show all designations since they are now global
+    setFilteredApplicationDesignations(designations);
+  }, [designations]);
 
   const loadFormSettings = async () => {
     try {
@@ -842,21 +799,16 @@ export default function EmployeesPage() {
 
   const loadDepartments = async () => {
     try {
-      // Pass true to populate designations
-      const response = await api.getDepartments(true);
+      // Load all departments (no filter)
+      const response = await api.getDepartments();
       if (response.success && response.data) {
         setDepartments(response.data);
-        // Load all designations from populated departments
-        const allDesignations: Designation[] = [];
-        response.data.forEach((dept: any) => {
-          if (dept.designations && Array.isArray(dept.designations)) {
-            allDesignations.push(...dept.designations.map((d: any) => ({
-              ...d,
-              department: dept._id // Ensure compatibility
-            })));
-          }
-        });
-        setDesignations(allDesignations);
+      }
+
+      // Load all designations globally
+      const designationsResponse = await api.getAllDesignations();
+      if (designationsResponse.success && designationsResponse.data) {
+        setDesignations(designationsResponse.data);
       }
     } catch (err) {
       console.error('Error loading departments:', err);

@@ -534,7 +534,10 @@ exports.createEmployee = async (req, res) => {
       // Auto-link designation to department if not already linked
       if (employeeData.department_id) {
         const department = await Department.findById(employeeData.department_id);
-        if (department && !department.designations.includes(employeeData.designation_id)) {
+        const designationIdStr = employeeData.designation_id.toString();
+        const isLinked = department.designations.some(d => d.toString() === designationIdStr);
+
+        if (department && !isLinked) {
           await Department.findByIdAndUpdate(
             employeeData.department_id,
             { $addToSet: { designations: employeeData.designation_id } }
@@ -708,7 +711,10 @@ exports.updateEmployee = async (req, res) => {
       const departmentId = employeeData.department_id || existingEmployee.department_id;
       if (departmentId) {
         const department = await Department.findById(departmentId);
-        if (department && !department.designations.includes(employeeData.designation_id)) {
+        const designationIdStr = employeeData.designation_id.toString();
+        const isLinked = department.designations.some(d => d.toString() === designationIdStr);
+
+        if (department && !isLinked) {
           await Department.findByIdAndUpdate(
             departmentId,
             { $addToSet: { designations: employeeData.designation_id } }
