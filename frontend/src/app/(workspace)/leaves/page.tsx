@@ -2530,8 +2530,8 @@ export default function LeavesPage() {
                 </div>
               )}
 
-              {/* Split Editor for approvers */}
-              {detailType === 'leave' && !['approved', 'rejected', 'cancelled'].includes(selectedItem.status) && (
+              {/* Split Editor for approvers (Not for employees) */}
+              {detailType === 'leave' && !['approved', 'rejected', 'cancelled'].includes(selectedItem.status) && currentUser?.role !== 'employee' && (
                 <div className="rounded-2xl bg-white dark:bg-slate-800 p-6 shadow-md border border-slate-200 dark:border-slate-700 space-y-4">
                   <div className="flex items-center justify-between gap-3">
                     <div>
@@ -2830,8 +2830,8 @@ export default function LeavesPage() {
 
               {/* Action Section */}
               <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-4">
-                {/* Revoke Button (if within 3 hours) */}
-                {canRevoke && (selectedItem.status === 'approved' || selectedItem.status === 'hod_approved' || selectedItem.status === 'hr_approved') && (
+                {/* Revoke Button (if within 3 hours) - Not for employees */}
+                {canRevoke && currentUser?.role !== 'employee' && (selectedItem.status === 'approved' || selectedItem.status === 'hod_approved' || selectedItem.status === 'hr_approved') && (
                   <div className="p-3 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800">
                     <p className="text-xs font-semibold text-orange-800 dark:text-orange-300 mb-2">
                       ⏰ Revoke Approval (Within 3 hours)
@@ -2884,8 +2884,8 @@ export default function LeavesPage() {
                   </div>
                 )}
 
-                {/* Edit Button (for Super Admin/HR - not final approved) */}
-                {(selectedItem.status !== 'approved' || isSuperAdmin) && (
+                {/* Edit Button (Employee ONLY) - Only active before HOD actions */}
+                {['draft', 'pending'].includes(selectedItem.status) && currentUser?.role === 'employee' && (
                   <button
                     onClick={() => {
                       const odItem = selectedItem as any;
@@ -2914,43 +2914,57 @@ export default function LeavesPage() {
                   </button>
                 )}
 
-                {/* Approval Actions */}
-                {!['approved', 'rejected', 'cancelled'].includes(selectedItem.status) && (
-                  <>
-                    <p className="text-xs text-slate-500 uppercase font-semibold">Take Action</p>
+                {/* Approval Actions - HIDDEN for employees AND already forwarded/approved/rejected */}
+                {/* Logic: Hide if final status OR (user is employee) OR (user is HOD and already forwarded) */}
+                {!['approved', 'rejected', 'cancelled'].includes(selectedItem.status) &&
+                  currentUser?.role !== 'employee' &&
+                  !(currentUser?.role === 'hod' && selectedItem.status === 'hod_approved') && (
+                    <>
+                      <p className="text-xs text-slate-500 uppercase font-semibold">Take Action</p>
 
-                    {/* Comment */}
-                    <textarea
-                      value={actionComment}
-                      onChange={(e) => setActionComment(e.target.value)}
-                      placeholder="Add a comment (optional)..."
-                      rows={2}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                    />
+                      {/* Comment */}
+                      <textarea
+                        value={actionComment}
+                        onChange={(e) => setActionComment(e.target.value)}
+                        placeholder="Add a comment (optional)..."
+                        rows={2}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                      />
 
-                    {/* Action Buttons */}
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        onClick={() => handleDetailAction('approve')}
-                        className="px-4 py-2 text-sm font-semibold text-white bg-green-500 rounded-xl hover:bg-green-600 transition-colors flex items-center gap-2"
-                      >
-                        <CheckIcon /> Approve
-                      </button>
-                      <button
-                        onClick={() => handleDetailAction('reject')}
-                        className="px-4 py-2 text-sm font-semibold text-white bg-red-500 rounded-xl hover:bg-red-600 transition-colors flex items-center gap-2"
-                      >
-                        <XIcon /> Reject
-                      </button>
-                      <button
-                        onClick={() => handleDetailAction('forward')}
-                        className="px-4 py-2 text-sm font-semibold text-white bg-blue-500 rounded-xl hover:bg-blue-600 transition-colors"
-                      >
-                        Forward to HR
-                      </button>
-                    </div>
-                  </>
-                )}
+                      {/* Action Buttons */}
+                      <div className="flex flex-wrap gap-2">
+                        {/* Approve: HR and Super Admin only */}
+                        {(currentUser?.role === 'hr' || currentUser?.role === 'super_admin') && (
+                          <button
+                            onClick={() => handleDetailAction('approve')}
+                            className="px-4 py-2 text-sm font-semibold text-white bg-green-500 rounded-xl hover:bg-green-600 transition-colors flex items-center gap-2"
+                          >
+                            <CheckIcon /> Approve
+                          </button>
+                        )}
+
+                        {/* Reject: HOD, HR, Super Admin */}
+                        {(['hod', 'hr', 'super_admin'].includes(currentUser?.role || '')) && (
+                          <button
+                            onClick={() => handleDetailAction('reject')}
+                            className="px-4 py-2 text-sm font-semibold text-white bg-red-500 rounded-xl hover:bg-red-600 transition-colors flex items-center gap-2"
+                          >
+                            <XIcon /> Reject
+                          </button>
+                        )}
+
+                        {/* Forward: HOD and Super Admin only */}
+                        {(currentUser?.role === 'hod' || currentUser?.role === 'super_admin') && (
+                          <button
+                            onClick={() => handleDetailAction('forward')}
+                            className="px-4 py-2 text-sm font-semibold text-white bg-blue-500 rounded-xl hover:bg-blue-600 transition-colors"
+                          >
+                            Forward to HR
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
               </div>
 
               {/* Close Button */}
