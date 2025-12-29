@@ -96,6 +96,7 @@ const processAndAggregateLogs = async (rawLogs, previousDayLinking = false, skip
           $gte: formatDate(minDateObj),
           $lte: formatDate(maxDateObj),
         },
+        type: { $in: ['IN', 'OUT'] }, // CRITICAL: Only process IN/OUT logs, exclude null-type (BREAK/OT)
       }).sort({ timestamp: 1 }); // Sort chronologically
 
       logsByEmployee[empNo] = allLogs.map(log => ({
@@ -123,7 +124,7 @@ const processAndAggregateLogs = async (rawLogs, previousDayLinking = false, skip
           }
 
           // If this is an IN log, find its matching OUT
-          if (currentLog.type === 'IN' || (!currentLog.type && i % 2 === 0)) {
+          if (currentLog.type === 'IN') {
             const inTime = currentLog.timestamp;
             const inDate = formatDate(inTime);
             const inTimeOnly = inTime.getHours() * 60 + inTime.getMinutes();
@@ -138,7 +139,7 @@ const processAndAggregateLogs = async (rawLogs, previousDayLinking = false, skip
               }
 
               const candidateLog = logs[j];
-              if (candidateLog.type === 'OUT' || (!candidateLog.type && j % 2 === 1)) {
+              if (candidateLog.type === 'OUT') {
                 const candidateOutTime = candidateLog.timestamp;
                 const candidateOutDate = formatDate(candidateOutTime);
                 const candidateOutTimeOnly = candidateOutTime.getHours() * 60 + candidateOutTime.getMinutes();
@@ -166,7 +167,7 @@ const processAndAggregateLogs = async (rawLogs, previousDayLinking = false, skip
                     const nextLog = logs[k];
                     const nextLogDate = formatDate(nextLog.timestamp);
                     if (nextLogDate === candidateOutDate) {
-                      if (nextLog.type === 'IN' || (!nextLog.type && k % 2 === 0)) {
+                      if (nextLog.type === 'IN') {
                         nextDayHasIN = true;
                         nextDayINTime = nextLog.timestamp;
                         break;

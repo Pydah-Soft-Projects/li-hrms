@@ -59,15 +59,20 @@ exports.receiveRealTimeLogs = async (req, res) => {
 
             // We map "CHECK-IN" -> "IN", "CHECK-OUT" -> "OUT" for the calculation engine
             // But we keep the original 'logType' for record keeping.
+            // IMPORTANT: OVERTIME and BREAK punches are stored separately and NOT included in shift attendance
 
             let normalizedType = null;
             const typeUpper = log.logType ? log.logType.toUpperCase() : null;
 
-            if (typeUpper === 'CHECK-IN' || typeUpper === 'OVERTIME-IN' || typeUpper === 'BREAK-IN') {
+            // ONLY regular CHECK-IN/OUT are normalized to IN/OUT for shift attendance
+            // BREAK-IN/OUT, OVERTIME-IN/OUT are kept as null type - they don't affect shift attendance
+            if (typeUpper === 'CHECK-IN') {
                 normalizedType = 'IN';
-            } else if (typeUpper === 'CHECK-OUT' || typeUpper === 'OVERTIME-OUT' || typeUpper === 'BREAK-OUT') {
+            } else if (typeUpper === 'CHECK-OUT') {
                 normalizedType = 'OUT';
             }
+            // BREAK-IN, BREAK-OUT, OVERTIME-IN, and OVERTIME-OUT are intentionally left as null
+            // They will be stored in rawData for break/OT tracking but won't trigger attendance processing
 
             if (VALID_LOG_TYPES.includes(typeUpper)) {
                 // Parse timestamp safe
