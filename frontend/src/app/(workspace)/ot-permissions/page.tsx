@@ -1,10 +1,22 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { api } from '@/lib/api';
 import { QRCodeSVG } from 'qrcode.react';
 import LocationPhotoCapture from '@/components/LocationPhotoCapture';
 import Spinner from '@/components/Spinner';
+
+const Portal = ({ children }: { children: React.ReactNode }) => {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    return () => setMounted(false);
+  }, []);
+
+  return mounted ? createPortal(children, document.body) : null;
+};
 
 // Toast Notification Component
 interface Toast {
@@ -158,6 +170,8 @@ export default function OTAndPermissionsPage() {
   const [showPermissionDialog, setShowPermissionDialog] = useState(false);
   const [showQRDialog, setShowQRDialog] = useState(false);
   const [selectedQR, setSelectedQR] = useState<PermissionRequest | null>(null);
+  const [showEvidenceDialog, setShowEvidenceDialog] = useState(false);
+  const [selectedEvidenceItem, setSelectedEvidenceItem] = useState<any | null>(null);
 
   // Toast notifications
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -675,7 +689,7 @@ export default function OTAndPermissionsPage() {
                 setActiveTab('ot');
                 setShowOTDialog(true);
               }}
-              className="rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600"
+              className="rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-3 py-2 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600"
             >
               <svg className="mr-2 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -687,7 +701,7 @@ export default function OTAndPermissionsPage() {
                 setActiveTab('permissions');
                 setShowPermissionDialog(true);
               }}
-              className="rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
+              className="rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-3 py-2 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
             >
               <svg className="mr-2 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -928,353 +942,407 @@ export default function OTAndPermissionsPage() {
 
         {/* OT Dialog */}
         {showOTDialog && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900 max-h-[90vh] overflow-y-auto">
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Create OT Request</h2>
-                <button
-                  onClick={() => {
-                    setShowOTDialog(false);
-                    resetOTForm();
-                  }}
-                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
-                >
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              <div className="space-y-4">
-                {/* Validation Error */}
-                {validationError && (
-                  <div className="rounded-lg border-2 border-red-300 bg-red-50 p-4 dark:border-red-700 dark:bg-red-900/20">
-                    <div className="flex items-center gap-2">
-                      <svg className="h-5 w-5 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      <p className="text-sm font-medium text-red-800 dark:text-red-300">{validationError}</p>
-                    </div>
-                  </div>
-                )}
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Employee *</label>
-                  <select
-                    value={otFormData.employeeId}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      if (!value) return;
-
-                      // Find employee by _id or emp_no
-                      const employee = employees.find(emp => (emp._id === value) || (emp.emp_no === value));
-                      if (employee && employee.emp_no) {
-                        const employeeId = employee._id || employee.emp_no;
-                        handleEmployeeSelect(employeeId, employee.emp_no, otFormData.date);
-                      }
+          <Portal>
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowOTDialog(false)} />
+              <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">Create OT Request</h2>
+                  <button
+                    onClick={() => {
+                      setShowOTDialog(false);
+                      resetOTForm();
                     }}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                    className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
                   >
-                    <option value="">Select Employee</option>
-                    {employees && employees.length > 0 ? (
-                      employees
-                        .filter(emp => emp.emp_no) // Only require emp_no, not _id
-                        .map((emp, index) => {
-                          const identifier = emp._id || emp.emp_no;
-                          return (
-                            <option key={`ot-employee-${identifier}-${index}`} value={identifier}>
-                              {emp.emp_no} - {emp.employee_name || 'Unknown'}
-                            </option>
-                          );
-                        })
-                    ) : (
-                      <option value="" disabled>No employees available</option>
-                    )}
-                  </select>
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
                 </div>
 
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Date *</label>
-                  <input
-                    type="date"
-                    value={otFormData.date}
-                    onChange={(e) => {
-                      setOTFormData(prev => ({ ...prev, date: e.target.value }));
-                      if (otFormData.employeeId && otFormData.employeeNumber) {
-                        handleEmployeeSelect(otFormData.employeeId, otFormData.employeeNumber, e.target.value);
-                      }
-                    }}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                  />
-                </div>
-
-                {/* Attendance Information */}
-                {attendanceLoading && (
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
-                    <div className="flex items-center gap-2">
-                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
-                      <p className="text-sm text-slate-600 dark:text-slate-400">Loading attendance data...</p>
-                    </div>
-                  </div>
-                )}
-
-                {attendanceData && !attendanceLoading && (
-                  <div className="rounded-lg border-2 border-green-200 bg-green-50 p-4 dark:border-green-700 dark:bg-green-900/20">
-                    <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-green-900 dark:text-green-200">
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      Attendance Information
-                    </h3>
-                    <div className="grid grid-cols-2 gap-3 text-sm">
-                      <div className="rounded bg-white/50 p-2 dark:bg-slate-800/50">
-                        <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Status</p>
-                        <p className="mt-1 font-semibold text-slate-900 dark:text-white">{attendanceData.status || '-'}</p>
-                      </div>
-                      <div className="rounded bg-white/50 p-2 dark:bg-slate-800/50">
-                        <p className="text-xs font-medium text-slate-500 dark:text-slate-400">In Time</p>
-                        <p className="mt-1 font-semibold text-slate-900 dark:text-white">{formatTime(attendanceData.inTime)}</p>
-                      </div>
-                      <div className="rounded bg-white/50 p-2 dark:bg-slate-800/50">
-                        <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Out Time</p>
-                        <p className="mt-1 font-semibold text-slate-900 dark:text-white">{formatTime(attendanceData.outTime)}</p>
-                      </div>
-                      <div className="rounded bg-white/50 p-2 dark:bg-slate-800/50">
-                        <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Total Hours</p>
-                        <p className="mt-1 font-semibold text-slate-900 dark:text-white">{attendanceData.totalHours ? `${attendanceData.totalHours.toFixed(2)}h` : '-'}</p>
+                <div className="space-y-4">
+                  {/* Validation Error */}
+                  {validationError && (
+                    <div className="rounded-lg border-2 border-red-300 bg-red-50 p-4 dark:border-red-700 dark:bg-red-900/20">
+                      <div className="flex items-center gap-2">
+                        <svg className="h-5 w-5 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <p className="text-sm font-medium text-red-800 dark:text-red-300">{validationError}</p>
                       </div>
                     </div>
+                  )}
+
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Employee *</label>
+                    <select
+                      value={otFormData.employeeId}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (!value) return;
+
+                        // Find employee by _id or emp_no
+                        const employee = employees.find(emp => (emp._id === value) || (emp.emp_no === value));
+                        if (employee && employee.emp_no) {
+                          const employeeId = employee._id || employee.emp_no;
+                          handleEmployeeSelect(employeeId, employee.emp_no, otFormData.date);
+                        }
+                      }}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                    >
+                      <option value="">Select Employee</option>
+                      {employees && employees.length > 0 ? (
+                        employees
+                          .filter(emp => emp.emp_no) // Only require emp_no, not _id
+                          .map((emp, index) => {
+                            const identifier = emp._id || emp.emp_no;
+                            return (
+                              <option key={`ot-employee-${identifier}-${index}`} value={identifier}>
+                                {emp.emp_no} - {emp.employee_name || 'Unknown'}
+                              </option>
+                            );
+                          })
+                      ) : (
+                        <option value="" disabled>No employees available</option>
+                      )}
+                    </select>
                   </div>
-                )}
 
-                {/* Show message if no attendance but employee and date are selected */}
-                {!attendanceLoading && !attendanceData && otFormData.employeeId && otFormData.date && (
-                  <div className="rounded-lg border-2 border-orange-200 bg-orange-50 p-4 dark:border-orange-700 dark:bg-orange-900/20">
-                    <div className="flex items-center gap-2">
-                      <svg className="h-5 w-5 text-orange-600 dark:text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                      </svg>
-                      <p className="text-sm font-medium text-orange-800 dark:text-orange-300">No attendance record found for this date</p>
-                    </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Date *</label>
+                    <input
+                      type="date"
+                      value={otFormData.date}
+                      onChange={(e) => {
+                        setOTFormData(prev => ({ ...prev, date: e.target.value }));
+                        if (otFormData.employeeId && otFormData.employeeNumber) {
+                          handleEmployeeSelect(otFormData.employeeId, otFormData.employeeNumber, e.target.value);
+                        }
+                      }}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                    />
                   </div>
-                )}
 
-                {confusedShift && (
-                  <div className="rounded-lg border-2 border-yellow-300 bg-yellow-50 p-4 dark:border-yellow-600 dark:bg-yellow-900/20">
-                    <div className="mb-2 flex items-center gap-2">
-                      <svg className="h-5 w-5 text-yellow-600 dark:text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                      </svg>
-                      <span className="font-semibold text-yellow-800 dark:text-yellow-300">ConfusedShift Detected</span>
+                  {/* Attendance Information */}
+                  {attendanceLoading && (
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
+                      <div className="flex items-center gap-2">
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
+                        <p className="text-sm text-slate-600 dark:text-slate-400">Loading attendance data...</p>
+                      </div>
                     </div>
-                    <p className="mb-3 text-sm text-yellow-700 dark:text-yellow-400">
-                      Multiple shifts match for this attendance. Please manually select the correct shift.
-                    </p>
-                    <div>
-                      <label className="mb-1 block text-sm font-medium text-yellow-800 dark:text-yellow-300">Select Shift *</label>
-                      <select
-                        value={otFormData.manuallySelectedShiftId}
-                        onChange={(e) => {
-                          const selectedShiftId = e.target.value;
-                          setOTFormData(prev => ({ ...prev, manuallySelectedShiftId: selectedShiftId }));
+                  )}
 
-                          // Find and set the selected shift
-                          const selectedShiftData = confusedShift.possibleShifts.find(s => s.shiftId === selectedShiftId);
-                          if (selectedShiftData) {
-                            const shiftFromList = shifts.find(s => s._id === selectedShiftId);
-                            if (shiftFromList) {
-                              setSelectedShift(shiftFromList);
-                            } else {
-                              // Create shift object from confused shift data
-                              setSelectedShift({
-                                _id: selectedShiftData.shiftId,
-                                name: selectedShiftData.shiftName,
-                                startTime: selectedShiftData.startTime,
-                                endTime: selectedShiftData.endTime,
-                                duration: 0,
-                              });
-                            }
-
-                            // Auto-suggest OT out time based on selected shift
-                            if (selectedShiftData.endTime) {
-                              const [endHour, endMin] = selectedShiftData.endTime.split(':').map(Number);
-                              const suggestedOutTime = new Date(otFormData.date);
-                              suggestedOutTime.setHours(endHour + 1, endMin, 0, 0);
-                              const suggestedOutTimeStr = suggestedOutTime.toISOString().slice(0, 16);
-                              setOTFormData(prev => ({ ...prev, otOutTime: suggestedOutTimeStr }));
-                            }
-                          }
-                        }}
-                        className="w-full rounded-lg border border-yellow-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-yellow-500 focus:outline-none focus:ring-1 focus:ring-yellow-500 dark:border-yellow-600 dark:bg-slate-900 dark:text-white"
-                        required
-                      >
-                        <option value="">Select Shift</option>
-                        {confusedShift.possibleShifts.map((shift, index) => {
-                          const shiftObj = shifts.find(s => s._id === shift.shiftId);
-                          return (
-                            <option key={`confused-shift-${shift.shiftId}-${index}`} value={shift.shiftId}>
-                              {shift.shiftName} ({shift.startTime} - {shift.endTime})
-                            </option>
-                          );
-                        })}
-                      </select>
+                  {attendanceData && !attendanceLoading && (
+                    <div className="rounded-lg border-2 border-green-200 bg-green-50 p-4 dark:border-green-700 dark:bg-green-900/20">
+                      <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-green-900 dark:text-green-200">
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        Attendance Information
+                      </h3>
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div className="rounded bg-white/50 p-2 dark:bg-slate-800/50">
+                          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Status</p>
+                          <p className="mt-1 font-semibold text-slate-900 dark:text-white">{attendanceData.status || '-'}</p>
+                        </div>
+                        <div className="rounded bg-white/50 p-2 dark:bg-slate-800/50">
+                          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">In Time</p>
+                          <p className="mt-1 font-semibold text-slate-900 dark:text-white">{formatTime(attendanceData.inTime)}</p>
+                        </div>
+                        <div className="rounded bg-white/50 p-2 dark:bg-slate-800/50">
+                          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Out Time</p>
+                          <p className="mt-1 font-semibold text-slate-900 dark:text-white">{formatTime(attendanceData.outTime)}</p>
+                        </div>
+                        <div className="rounded bg-white/50 p-2 dark:bg-slate-800/50">
+                          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Total Hours</p>
+                          <p className="mt-1 font-semibold text-slate-900 dark:text-white">{attendanceData.totalHours ? `${attendanceData.totalHours.toFixed(2)}h` : '-'}</p>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {/* Shift Information - Show for both normal and confused shift (after selection) */}
-                {(selectedShift || (confusedShift && otFormData.manuallySelectedShiftId)) && attendanceData && (
-                  <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-700 dark:bg-blue-900/20">
-                    <h3 className="mb-2 text-sm font-semibold text-blue-900 dark:text-blue-200">Shift Information</h3>
-                    <div className="space-y-2 text-sm">
+                  {/* Show message if no attendance but employee and date are selected */}
+                  {!attendanceLoading && !attendanceData && otFormData.employeeId && otFormData.date && (
+                    <div className="rounded-lg border-2 border-orange-200 bg-orange-50 p-4 dark:border-orange-700 dark:bg-orange-900/20">
+                      <div className="flex items-center gap-2">
+                        <svg className="h-5 w-5 text-orange-600 dark:text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        <p className="text-sm font-medium text-orange-800 dark:text-orange-300">No attendance record found for this date</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {confusedShift && (
+                    <div className="rounded-lg border-2 border-yellow-300 bg-yellow-50 p-4 dark:border-yellow-600 dark:bg-yellow-900/20">
+                      <div className="mb-2 flex items-center gap-2">
+                        <svg className="h-5 w-5 text-yellow-600 dark:text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        <span className="font-semibold text-yellow-800 dark:text-yellow-300">ConfusedShift Detected</span>
+                      </div>
+                      <p className="mb-3 text-sm text-yellow-700 dark:text-yellow-400">
+                        Multiple shifts match for this attendance. Please manually select the correct shift.
+                      </p>
                       <div>
-                        <span className="font-medium text-blue-800 dark:text-blue-300">Shift:</span>{' '}
-                        <span className="text-blue-900 dark:text-blue-200">
-                          {selectedShift?.name || confusedShift?.possibleShifts.find(s => s.shiftId === otFormData.manuallySelectedShiftId)?.shiftName || '-'}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="font-medium text-blue-800 dark:text-blue-300">Shift Time:</span>{' '}
-                        <span className="text-blue-900 dark:text-blue-200">
-                          {selectedShift ? `${selectedShift.startTime} - ${selectedShift.endTime}` :
-                            confusedShift?.possibleShifts.find(s => s.shiftId === otFormData.manuallySelectedShiftId) ?
-                              `${confusedShift.possibleShifts.find(s => s.shiftId === otFormData.manuallySelectedShiftId)?.startTime} - ${confusedShift.possibleShifts.find(s => s.shiftId === otFormData.manuallySelectedShiftId)?.endTime}` : '-'}
-                        </span>
-                      </div>
-                      <div className="mt-3 rounded bg-white/50 p-2 dark:bg-slate-800/50">
-                        <span className="font-semibold text-blue-900 dark:text-blue-200">OT In Time (Shift End):</span>{' '}
-                        <span className="text-lg font-bold text-blue-700 dark:text-blue-300">
-                          {selectedShift?.endTime || confusedShift?.possibleShifts.find(s => s.shiftId === otFormData.manuallySelectedShiftId)?.endTime || '-'}
-                        </span>
+                        <label className="mb-1 block text-sm font-medium text-yellow-800 dark:text-yellow-300">Select Shift *</label>
+                        <select
+                          value={otFormData.manuallySelectedShiftId}
+                          onChange={(e) => {
+                            const selectedShiftId = e.target.value;
+                            setOTFormData(prev => ({ ...prev, manuallySelectedShiftId: selectedShiftId }));
+
+                            // Find and set the selected shift
+                            const selectedShiftData = confusedShift.possibleShifts.find(s => s.shiftId === selectedShiftId);
+                            if (selectedShiftData) {
+                              const shiftFromList = shifts.find(s => s._id === selectedShiftId);
+                              if (shiftFromList) {
+                                setSelectedShift(shiftFromList);
+                              } else {
+                                // Create shift object from confused shift data
+                                setSelectedShift({
+                                  _id: selectedShiftData.shiftId,
+                                  name: selectedShiftData.shiftName,
+                                  startTime: selectedShiftData.startTime,
+                                  endTime: selectedShiftData.endTime,
+                                  duration: 0,
+                                });
+                              }
+
+                              // Auto-suggest OT out time based on selected shift
+                              if (selectedShiftData.endTime) {
+                                const [endHour, endMin] = selectedShiftData.endTime.split(':').map(Number);
+                                const suggestedOutTime = new Date(otFormData.date);
+                                suggestedOutTime.setHours(endHour + 1, endMin, 0, 0);
+                                const suggestedOutTimeStr = suggestedOutTime.toISOString().slice(0, 16);
+                                setOTFormData(prev => ({ ...prev, otOutTime: suggestedOutTimeStr }));
+                              }
+                            }
+                          }}
+                          className="w-full rounded-lg border border-yellow-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-yellow-500 focus:outline-none focus:ring-1 focus:ring-yellow-500 dark:border-yellow-600 dark:bg-slate-900 dark:text-white"
+                          required
+                        >
+                          <option value="">Select Shift</option>
+                          {confusedShift.possibleShifts.map((shift, index) => {
+                            const shiftObj = shifts.find(s => s._id === shift.shiftId);
+                            return (
+                              <option key={`confused-shift-${shift.shiftId}-${index}`} value={shift.shiftId}>
+                                {shift.shiftName} ({shift.startTime} - {shift.endTime})
+                              </option>
+                            );
+                          })}
+                        </select>
                       </div>
                     </div>
+                  )}
+
+                  {/* Shift Information - Show for both normal and confused shift (after selection) */}
+                  {(selectedShift || (confusedShift && otFormData.manuallySelectedShiftId)) && attendanceData && (
+                    <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-700 dark:bg-blue-900/20">
+                      <h3 className="mb-2 text-sm font-semibold text-blue-900 dark:text-blue-200">Shift Information</h3>
+                      <div className="space-y-2 text-sm">
+                        <div>
+                          <span className="font-medium text-blue-800 dark:text-blue-300">Shift:</span>{' '}
+                          <span className="text-blue-900 dark:text-blue-200">
+                            {selectedShift?.name || confusedShift?.possibleShifts.find(s => s.shiftId === otFormData.manuallySelectedShiftId)?.shiftName || '-'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="font-medium text-blue-800 dark:text-blue-300">Shift Time:</span>{' '}
+                          <span className="text-blue-900 dark:text-blue-200">
+                            {selectedShift ? `${selectedShift.startTime} - ${selectedShift.endTime}` :
+                              confusedShift?.possibleShifts.find(s => s.shiftId === otFormData.manuallySelectedShiftId) ?
+                                `${confusedShift.possibleShifts.find(s => s.shiftId === otFormData.manuallySelectedShiftId)?.startTime} - ${confusedShift.possibleShifts.find(s => s.shiftId === otFormData.manuallySelectedShiftId)?.endTime}` : '-'}
+                          </span>
+                        </div>
+                        <div className="mt-3 rounded bg-white/50 p-2 dark:bg-slate-800/50">
+                          <span className="font-semibold text-blue-900 dark:text-blue-200">OT In Time (Shift End):</span>{' '}
+                          <span className="text-lg font-bold text-blue-700 dark:text-blue-300">
+                            {selectedShift?.endTime || confusedShift?.possibleShifts.find(s => s.shiftId === otFormData.manuallySelectedShiftId)?.endTime || '-'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">OT Out Time *</label>
+                    <input
+                      type="datetime-local"
+                      value={otFormData.otOutTime}
+                      onChange={(e) => setOTFormData(prev => ({ ...prev, otOutTime: e.target.value }))}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                      required
+                    />
                   </div>
-                )}
 
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">OT Out Time *</label>
-                  <input
-                    type="datetime-local"
-                    value={otFormData.otOutTime}
-                    onChange={(e) => setOTFormData(prev => ({ ...prev, otOutTime: e.target.value }))}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                    required
-                  />
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-400">Comments (Optional)</label>
+                    <textarea
+                      value={otFormData.comments}
+                      onChange={(e) => setOTFormData(prev => ({ ...prev, comments: e.target.value }))}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                      rows={2}
+                    />
+                  </div>
+
+                  {/* Photo Evidence */}
+                  <div className="pt-2 border-t border-slate-100 dark:border-slate-700/50">
+                    <LocationPhotoCapture
+                      label="Live Photo Evidence"
+                      onCapture={(loc, photo) => {
+                        setEvidenceFile(photo.file);
+                        setLocationData(loc);
+                        (photo.file as any).exifLocation = photo.exifLocation;
+                      }}
+                      onClear={() => {
+                        setEvidenceFile(null);
+                        setLocationData(null);
+                      }}
+                    />
+                  </div>
+
                 </div>
 
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-400">Comments (Optional)</label>
-                  <textarea
-                    value={otFormData.comments}
-                    onChange={(e) => setOTFormData(prev => ({ ...prev, comments: e.target.value }))}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                    rows={2}
-                  />
-                </div>
-
-                {/* Photo Evidence */}
-                <div className="pt-2 border-t border-slate-100 dark:border-slate-700/50">
-                  <LocationPhotoCapture
-                    label="Live Photo Evidence"
-                    onCapture={(loc, photo) => {
-                      setEvidenceFile(photo.file);
-                      setLocationData(loc);
-                      (photo.file as any).exifLocation = photo.exifLocation;
+                {/* Footer */}
+                <div className="flex items-center justify-end gap-3 border-t border-slate-100 bg-slate-50 px-6 py-4 dark:border-slate-800 dark:bg-slate-800/50">
+                  <button
+                    onClick={() => {
+                      setShowOTDialog(false);
+                      resetOTForm();
                     }}
-                    onClear={() => {
-                      setEvidenceFile(null);
-                      setLocationData(null);
-                    }}
-                  />
+                    className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleCreateOT}
+                    disabled={loading}
+                    className="rounded-lg bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-blue-500/30 hover:from-blue-600 hover:to-indigo-600 disabled:opacity-50"
+                  >
+                    {loading ? 'Creating...' : 'Create OT Request'}
+                  </button>
                 </div>
-
-              </div>
-
-              {/* Footer */}
-              <div className="flex items-center justify-end gap-3 border-t border-slate-100 bg-slate-50 px-6 py-4 dark:border-slate-800 dark:bg-slate-800/50">
-                <button
-                  onClick={() => {
-                    setShowOTDialog(false);
-                    resetOTForm();
-                  }}
-                  className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleCreateOT}
-                  disabled={loading}
-                  className="rounded-lg bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-blue-500/30 hover:from-blue-600 hover:to-indigo-600 disabled:opacity-50"
-                >
-                  {loading ? 'Creating...' : 'Create OT Request'}
-                </button>
               </div>
             </div>
-          </div>
+          </Portal>
         )}
 
         {/* Permission Dialog */}
         {showPermissionDialog && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900 max-h-[90vh] overflow-y-auto">
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Create Permission Request</h2>
-                <button
-                  onClick={() => {
-                    setShowPermissionDialog(false);
-                    resetPermissionForm();
-                  }}
-                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
-                >
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
+          <Portal>
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowPermissionDialog(false)} />
+              <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">Create Permission Request</h2>
+                  <button
+                    onClick={() => {
+                      setShowPermissionDialog(false);
+                      resetPermissionForm();
+                    }}
+                    className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+                  >
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
 
-              <div className="space-y-4">
-                {/* Validation Error */}
-                {permissionValidationError && (
-                  <div className="rounded-lg border-2 border-red-300 bg-red-50 p-4 dark:border-red-700 dark:bg-red-900/20">
-                    <div className="flex items-center gap-2">
-                      <svg className="h-5 w-5 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      <p className="text-sm font-medium text-red-800 dark:text-red-300">{permissionValidationError}</p>
+                <div className="space-y-4">
+                  {/* Validation Error */}
+                  {permissionValidationError && (
+                    <div className="rounded-lg border-2 border-red-300 bg-red-50 p-4 dark:border-red-700 dark:bg-red-900/20">
+                      <div className="flex items-center gap-2">
+                        <svg className="h-5 w-5 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <p className="text-sm font-medium text-red-800 dark:text-red-300">{permissionValidationError}</p>
+                      </div>
                     </div>
+                  )}
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Employee *</label>
+                    <select
+                      value={permissionFormData.employeeId}
+                      onChange={async (e) => {
+                        const value = e.target.value;
+                        if (!value) {
+                          setPermissionFormData(prev => ({
+                            ...prev,
+                            employeeId: '',
+                            employeeNumber: '',
+                          }));
+                          setPermissionValidationError('');
+                          return;
+                        }
+
+                        // Find employee by _id or emp_no
+                        const employee = employees.find(emp => (emp._id === value) || (emp.emp_no === value));
+                        if (employee && employee.emp_no) {
+                          const employeeId = employee._id || employee.emp_no;
+                          setPermissionFormData(prev => ({
+                            ...prev,
+                            employeeId: employeeId,
+                            employeeNumber: employee.emp_no,
+                          }));
+                          setPermissionValidationError('');
+
+                          // Check attendance when employee is selected
+                          if (permissionFormData.date) {
+                            try {
+                              const attendanceRes = await api.getAttendanceDetail(employee.emp_no, permissionFormData.date);
+                              if (!attendanceRes.success || !attendanceRes.data || !attendanceRes.data.inTime) {
+                                setPermissionValidationError('No attendance record found or employee has no in-time for this date. Permission cannot be created without attendance.');
+                              } else {
+                                setPermissionValidationError('');
+                              }
+                            } catch (error) {
+                              console.error('Error checking attendance:', error);
+                            }
+                          }
+                        } else {
+                          setPermissionFormData(prev => ({
+                            ...prev,
+                            employeeId: '',
+                            employeeNumber: '',
+                          }));
+                          setPermissionValidationError('');
+                        }
+                      }}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                    >
+                      <option value="">Select Employee</option>
+                      {employees && employees.length > 0 ? (
+                        employees
+                          .filter(emp => emp.emp_no) // Only require emp_no, not _id
+                          .map((emp, index) => {
+                            const identifier = emp._id || emp.emp_no;
+                            return (
+                              <option key={`perm-employee-${identifier}-${index}`} value={identifier}>
+                                {emp.emp_no} - {emp.employee_name || 'Unknown'}
+                              </option>
+                            );
+                          })
+                      ) : (
+                        <option value="" disabled>No employees available</option>
+                      )}
+                    </select>
                   </div>
-                )}
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Employee *</label>
-                  <select
-                    value={permissionFormData.employeeId}
-                    onChange={async (e) => {
-                      const value = e.target.value;
-                      if (!value) {
-                        setPermissionFormData(prev => ({
-                          ...prev,
-                          employeeId: '',
-                          employeeNumber: '',
-                        }));
-                        setPermissionValidationError('');
-                        return;
-                      }
 
-                      // Find employee by _id or emp_no
-                      const employee = employees.find(emp => (emp._id === value) || (emp.emp_no === value));
-                      if (employee && employee.emp_no) {
-                        const employeeId = employee._id || employee.emp_no;
-                        setPermissionFormData(prev => ({
-                          ...prev,
-                          employeeId: employeeId,
-                          employeeNumber: employee.emp_no,
-                        }));
-                        setPermissionValidationError('');
-
-                        // Check attendance when employee is selected
-                        if (permissionFormData.date) {
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Date *</label>
+                    <input
+                      type="date"
+                      value={permissionFormData.date}
+                      onChange={async (e) => {
+                        setPermissionFormData(prev => ({ ...prev, date: e.target.value }));
+                        // Check attendance when date changes
+                        if (permissionFormData.employeeNumber && e.target.value) {
                           try {
-                            const attendanceRes = await api.getAttendanceDetail(employee.emp_no, permissionFormData.date);
+                            const attendanceRes = await api.getAttendanceDetail(permissionFormData.employeeNumber, e.target.value);
                             if (!attendanceRes.success || !attendanceRes.data || !attendanceRes.data.inTime) {
                               setPermissionValidationError('No attendance record found or employee has no in-time for this date. Permission cannot be created without attendance.');
                             } else {
@@ -1284,215 +1352,254 @@ export default function OTAndPermissionsPage() {
                             console.error('Error checking attendance:', error);
                           }
                         }
-                      } else {
-                        setPermissionFormData(prev => ({
-                          ...prev,
-                          employeeId: '',
-                          employeeNumber: '',
-                        }));
-                        setPermissionValidationError('');
-                      }
-                    }}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                  >
-                    <option value="">Select Employee</option>
-                    {employees && employees.length > 0 ? (
-                      employees
-                        .filter(emp => emp.emp_no) // Only require emp_no, not _id
-                        .map((emp, index) => {
-                          const identifier = emp._id || emp.emp_no;
-                          return (
-                            <option key={`perm-employee-${identifier}-${index}`} value={identifier}>
-                              {emp.emp_no} - {emp.employee_name || 'Unknown'}
-                            </option>
-                          );
-                        })
-                    ) : (
-                      <option value="" disabled>No employees available</option>
-                    )}
-                  </select>
-                </div>
+                      }}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                    />
+                  </div>
 
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Date *</label>
-                  <input
-                    type="date"
-                    value={permissionFormData.date}
-                    onChange={async (e) => {
-                      setPermissionFormData(prev => ({ ...prev, date: e.target.value }));
-                      // Check attendance when date changes
-                      if (permissionFormData.employeeNumber && e.target.value) {
-                        try {
-                          const attendanceRes = await api.getAttendanceDetail(permissionFormData.employeeNumber, e.target.value);
-                          if (!attendanceRes.success || !attendanceRes.data || !attendanceRes.data.inTime) {
-                            setPermissionValidationError('No attendance record found or employee has no in-time for this date. Permission cannot be created without attendance.');
-                          } else {
-                            setPermissionValidationError('');
-                          }
-                        } catch (error) {
-                          console.error('Error checking attendance:', error);
-                        }
-                      }
-                    }}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                  />
-                </div>
+                  {/* Attendance Validation Message for Permission */}
+                  {permissionFormData.employeeNumber && permissionFormData.date && (
+                    <div className="rounded-lg border-2 border-orange-200 bg-orange-50 p-4 dark:border-orange-700 dark:bg-orange-900/20">
+                      <div className="flex items-center gap-2">
+                        <svg className="h-5 w-5 text-orange-600 dark:text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <p className="text-sm font-medium text-orange-800 dark:text-orange-300">
+                          Note: Permission requires attendance with in-time for the selected date. Please ensure the employee has marked attendance.
+                        </p>
+                      </div>
+                    </div>
+                  )}
 
-                {/* Attendance Validation Message for Permission */}
-                {permissionFormData.employeeNumber && permissionFormData.date && (
-                  <div className="rounded-lg border-2 border-orange-200 bg-orange-50 p-4 dark:border-orange-700 dark:bg-orange-900/20">
-                    <div className="flex items-center gap-2">
-                      <svg className="h-5 w-5 text-orange-600 dark:text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      <p className="text-sm font-medium text-orange-800 dark:text-orange-300">
-                        Note: Permission requires attendance with in-time for the selected date. Please ensure the employee has marked attendance.
-                      </p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Permission Start Time *</label>
+                      <input
+                        type="datetime-local"
+                        value={permissionFormData.permissionStartTime}
+                        onChange={(e) => setPermissionFormData(prev => ({ ...prev, permissionStartTime: e.target.value }))}
+                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Permission End Time *</label>
+                      <input
+                        type="datetime-local"
+                        value={permissionFormData.permissionEndTime}
+                        onChange={(e) => setPermissionFormData(prev => ({ ...prev, permissionEndTime: e.target.value }))}
+                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                        required
+                      />
                     </div>
                   </div>
-                )}
 
-                <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Permission Start Time *</label>
+                    <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Purpose *</label>
                     <input
-                      type="datetime-local"
-                      value={permissionFormData.permissionStartTime}
-                      onChange={(e) => setPermissionFormData(prev => ({ ...prev, permissionStartTime: e.target.value }))}
+                      type="text"
+                      value={permissionFormData.purpose}
+                      onChange={(e) => setPermissionFormData(prev => ({ ...prev, purpose: e.target.value }))}
+                      placeholder="Enter purpose for permission"
                       className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                       required
                     />
                   </div>
+
                   <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Permission End Time *</label>
-                    <input
-                      type="datetime-local"
-                      value={permissionFormData.permissionEndTime}
-                      onChange={(e) => setPermissionFormData(prev => ({ ...prev, permissionEndTime: e.target.value }))}
-                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                      required
+                    <label className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-400">Comments (Optional)</label>
+                    <textarea
+                      value={permissionFormData.comments}
+                      onChange={(e) => setPermissionFormData(prev => ({ ...prev, comments: e.target.value }))}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                      rows={2}
+                    />
+                  </div>
+
+                  {/* Photo Evidence */}
+                  <div className="pt-2 border-t border-slate-100 dark:border-slate-700/50">
+                    <LocationPhotoCapture
+                      label="Live Photo Evidence"
+                      onCapture={(loc, photo) => {
+                        setEvidenceFile(photo.file);
+                        setLocationData(loc);
+                        (photo.file as any).exifLocation = photo.exifLocation;
+                      }}
+                      onClear={() => {
+                        setEvidenceFile(null);
+                        setLocationData(null);
+                      }}
                     />
                   </div>
                 </div>
 
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Purpose *</label>
-                  <input
-                    type="text"
-                    value={permissionFormData.purpose}
-                    onChange={(e) => setPermissionFormData(prev => ({ ...prev, purpose: e.target.value }))}
-                    placeholder="Enter purpose for permission"
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-400">Comments (Optional)</label>
-                  <textarea
-                    value={permissionFormData.comments}
-                    onChange={(e) => setPermissionFormData(prev => ({ ...prev, comments: e.target.value }))}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                    rows={2}
-                  />
-                </div>
-
-                {/* Photo Evidence */}
-                <div className="pt-2 border-t border-slate-100 dark:border-slate-700/50">
-                  <LocationPhotoCapture
-                    label="Live Photo Evidence"
-                    onCapture={(loc, photo) => {
-                      setEvidenceFile(photo.file);
-                      setLocationData(loc);
-                      (photo.file as any).exifLocation = photo.exifLocation;
+                {/* Footer */}
+                <div className="flex items-center justify-end gap-3 border-t border-slate-100 bg-slate-50 px-6 py-4 dark:border-slate-800 dark:bg-slate-800/50">
+                  <button
+                    onClick={() => {
+                      setShowPermissionDialog(false);
+                      resetPermissionForm();
                     }}
-                    onClear={() => {
-                      setEvidenceFile(null);
-                      setLocationData(null);
-                    }}
-                  />
+                    className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleCreatePermission}
+                    disabled={loading}
+                    className="rounded-lg bg-gradient-to-r from-green-500 to-green-500 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-green-500/30 hover:from-green-600 hover:to-green-600 disabled:opacity-50"
+                  >
+                    {loading ? 'Creating...' : 'Create Permission'}
+                  </button>
                 </div>
-              </div>
-
-              {/* Footer */}
-              <div className="flex items-center justify-end gap-3 border-t border-slate-100 bg-slate-50 px-6 py-4 dark:border-slate-800 dark:bg-slate-800/50">
-                <button
-                  onClick={() => {
-                    setShowPermissionDialog(false);
-                    resetPermissionForm();
-                  }}
-                  className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleCreatePermission}
-                  disabled={loading}
-                  className="rounded-lg bg-gradient-to-r from-green-500 to-green-500 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-green-500/30 hover:from-green-600 hover:to-green-600 disabled:opacity-50"
-                >
-                  {loading ? 'Creating...' : 'Create Permission'}
-                </button>
               </div>
             </div>
-          </div>
+          </Portal>
         )}
 
         {/* QR Code Dialog */}
         {showQRDialog && selectedQR && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Permission QR Code</h2>
-                <button
-                  onClick={() => {
-                    setShowQRDialog(false);
-                    setSelectedQR(null);
-                  }}
-                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
-                >
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
+          <Portal>
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => {
+                setShowQRDialog(false);
+                setSelectedQR(null);
+              }} />
+              <div className="relative z-50 w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">Permission QR Code</h2>
+                  <button
+                    onClick={() => {
+                      setShowQRDialog(false);
+                      setSelectedQR(null);
+                    }}
+                    className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+                  >
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
 
-              <div className="space-y-4 text-center">
-                {selectedQR.qrCode ? (
-                  <>
-                    <div className="mx-auto flex h-64 w-64 items-center justify-center rounded-lg border-2 border-slate-300 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-                      <QRCodeSVG
-                        value={selectedQR.outpassUrl || (typeof window !== 'undefined' ? `${window.location.origin}/outpass/${selectedQR.qrCode}` : `/outpass/${selectedQR.qrCode}`)}
-                        size={240}
-                        level="H"
-                        includeMargin={true}
-                      />
-                    </div>
-                    <div className="space-y-2 text-sm text-slate-600 dark:text-slate-400">
-                      <p className="font-medium text-slate-900 dark:text-white">Employee: {selectedQR.employeeId?.employee_name || selectedQR.employeeNumber}</p>
-                      <p>Date: {formatDate(selectedQR.date)}</p>
-                      <p>Time: {formatTime(selectedQR.permissionStartTime)} - {formatTime(selectedQR.permissionEndTime)}</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-500">QR Code: {selectedQR.qrCode}</p>
-                    </div>
-                    <div className="pt-2">
-                      <a
-                        href={selectedQR.outpassUrl || `/outpass/${selectedQR.qrCode}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600 transition-colors"
-                      >
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                        </svg>
-                        View Outpass
-                      </a>
-                    </div>
-                  </>
-                ) : (
-                  <div className="text-sm text-slate-500 dark:text-slate-400">Loading QR Code...</div>
-                )}
+                <div className="space-y-4 text-center">
+                  {selectedQR.qrCode ? (
+                    <>
+                      <div className="mx-auto flex h-64 w-64 items-center justify-center rounded-lg border-2 border-slate-300 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+                        <QRCodeSVG
+                          value={selectedQR.outpassUrl || (typeof window !== 'undefined' ? `${window.location.origin}/outpass/${selectedQR.qrCode}` : `/outpass/${selectedQR.qrCode}`)}
+                          size={240}
+                          level="H"
+                          includeMargin={true}
+                        />
+                      </div>
+                      <div className="space-y-2 text-sm text-slate-600 dark:text-slate-400">
+                        <p className="font-medium text-slate-900 dark:text-white">Employee: {selectedQR.employeeId?.employee_name || selectedQR.employeeNumber}</p>
+                        <p>Date: {formatDate(selectedQR.date)}</p>
+                        <p>Time: {formatTime(selectedQR.permissionStartTime)} - {formatTime(selectedQR.permissionEndTime)}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-500">QR Code: {selectedQR.qrCode}</p>
+                      </div>
+                      <div className="pt-2">
+                        <a
+                          href={selectedQR.outpassUrl || `/outpass/${selectedQR.qrCode}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600 transition-colors"
+                        >
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                          </svg>
+                          View Outpass
+                        </a>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-sm text-slate-500 dark:text-slate-400">Loading QR Code...</div>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
+          </Portal>
+        )}
+
+
+        {/* Evidence Viewer Dialog */}
+        {showEvidenceDialog && selectedEvidenceItem && (
+          <Portal>
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowEvidenceDialog(false)} />
+              <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+                <div className="mb-4 flex items-center justify-between">
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-900 dark:text-white">Evidence & Location</h2>
+                    <p className="text-sm text-slate-500 dark:text-slate-400">
+                      {selectedEvidenceItem.employeeName} • {formatDate(selectedEvidenceItem.date)}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setShowEvidenceDialog(false)}
+                    className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+                  >
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+
+                <div className="space-y-6">
+                  {/* Photo Evidence */}
+                  {selectedEvidenceItem.photoEvidence && (
+                    <div>
+                      <h3 className="mb-3 text-sm font-medium text-slate-900 dark:text-white">Photo Evidence</h3>
+                      <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
+                        <img
+                          src={selectedEvidenceItem.photoEvidence.url}
+                          alt="Evidence"
+                          className="h-auto w-full object-contain"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Location Map */}
+                  {selectedEvidenceItem.geoLocation && (
+                    <div>
+                      <h3 className="mb-3 text-sm font-medium text-slate-900 dark:text-white">Captured Location</h3>
+                      <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
+                        <iframe
+                          width="100%"
+                          height="300"
+                          style={{ border: 0 }}
+                          loading="lazy"
+                          allowFullScreen
+                          referrerPolicy="no-referrer-when-downgrade"
+                          src={`https://www.google.com/maps/embed/v1/place?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&q=${selectedEvidenceItem.geoLocation.latitude},${selectedEvidenceItem.geoLocation.longitude}`}
+                        />
+                        <div className="bg-slate-50 p-3 dark:bg-slate-800">
+                          <div className="flex items-start gap-2">
+                            <svg className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                            <div>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">Captured at</p>
+                              <p className="text-sm font-medium text-slate-900 dark:text-white">
+                                {new Date(selectedEvidenceItem.geoLocation.capturedAt).toLocaleString()}
+                              </p>
+                              {selectedEvidenceItem.geoLocation.address && (
+                                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                  {selectedEvidenceItem.geoLocation.address}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </Portal>
         )}
 
       </div>

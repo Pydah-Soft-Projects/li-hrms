@@ -439,13 +439,7 @@ function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {
 
       {/* Main Content */}
       <div className={`transition-all duration-300 ${sidebarCollapsed ? 'ml-[70px]' : 'ml-64'}`}>
-        <header className="sticky top-0 z-30 bg-white border-b border-gray-200 h-16 flex items-center justify-between px-6">
-          <div className="font-semibold text-gray-800">
-            {/* Dynamic Title if needed, or simple welcome */}
-            Welcome, {user?.name}
-          </div>
-          <div></div>
-        </header>
+
 
         <main className="p-6">
           {children}
