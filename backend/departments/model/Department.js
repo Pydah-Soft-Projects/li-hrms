@@ -19,11 +19,25 @@ const departmentSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    // Deprecated: Single HOD (Global) - Use divisionHODs instead
     hod: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       default: null,
     },
+    // Division-specific HOD assignments
+    divisionHODs: [
+      {
+        division: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'Division',
+        },
+        hod: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+        }
+      }
+    ],
     hr: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',

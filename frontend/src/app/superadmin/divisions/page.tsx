@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { api, Division, Department } from '@/lib/api';
+import { api, Division, Department, Designation } from '@/lib/api';
 import Spinner from '@/components/Spinner';
 
 interface Shift {
@@ -40,6 +40,12 @@ export default function DivisionsPage() {
     const [selectedDeptIds, setSelectedDeptIds] = useState<string[]>([]);
     const [selectedShiftIds, setSelectedShiftIds] = useState<string[]>([]);
 
+    // Hierarchical Shift Assignment State
+    const [targetScope, setTargetScope] = useState<'division' | 'department' | 'designation'>('division');
+    const [targetDeptId, setTargetDeptId] = useState('');
+    const [targetDesigId, setTargetDesigId] = useState('');
+    const [designations, setDesignations] = useState<Designation[]>([]); // For the selected department
+
     useEffect(() => {
         loadData();
     }, []);
@@ -49,15 +55,15 @@ export default function DivisionsPage() {
             setLoading(true);
             const [divRes, deptRes, shiftRes, managerRes] = await Promise.all([
                 api.getDivisions(),
-                api.getDepartments(),
+                api.getDepartments(true), // Fetch populated departments with designations
                 api.getShifts(),
                 api.getUsers({ role: 'manager' })
             ]);
 
-            if (divRes.success) setDivisions(divRes.data);
-            if (deptRes.success) setDepartments(deptRes.data);
-            if (shiftRes.success) setShifts(shiftRes.data);
-            if (managerRes.success) setManagers(managerRes.data);
+            if (divRes.success) setDivisions(divRes.data || []);
+            if (deptRes.success) setDepartments(deptRes.data || []);
+            if (shiftRes.success) setShifts(shiftRes.data || []);
+            if (managerRes.success) setManagers(managerRes.data || []);
         } catch (err) {
             console.error('Error loading division data:', err);
             setError('Failed to load data');
@@ -65,6 +71,73 @@ export default function DivisionsPage() {
             setLoading(false);
         }
     };
+
+    // Update designations list when department is selected
+    useEffect(() => {
+        if (targetDeptId) {
+            const dept = departments.find(d => d._id === targetDeptId);
+            if (dept && dept.designations) {
+                setDesignations(dept.designations);
+            } else {
+                setDesignations([]);
+            }
+        } else {
+            setDesignations([]);
+        }
+    }, [targetDeptId, departments]);
+
+    // Fetch existing shift assignments when scope/target changes
+    useEffect(() => {
+        if (!showShiftDialog) return;
+
+        const loadExistingShifts = async () => {
+            let existingShifts: string[] = [];
+            const divisionId = showShiftDialog._id;
+
+            if (targetScope === 'division') {
+                // Load division defaults
+                existingShifts = showShiftDialog.shifts?.map(s => typeof s === 'string' ? s : s._id) || [];
+            }
+            else if (targetScope === 'department' && targetDeptId) {
+                // Load department overrides for this division
+                const dept = departments.find(d => d._id === targetDeptId);
+                if (dept && dept.divisionDefaults) {
+                    const defaultForDiv = dept.divisionDefaults.find(dd => dd.division === divisionId || (dd.division as any)?._id === divisionId);
+                    if (defaultForDiv) {
+                        existingShifts = defaultForDiv.shifts; // These are usually strings (IDs)
+                    }
+                }
+            }
+            else if (targetScope === 'designation' && targetDesigId && targetDeptId) {
+                // Load designation overrides for this department AND division
+                try {
+                    setLoading(true); // Reuse loading or use local loading? Local is better for UI responsiveness, but reusing main for simplicity
+                    const res = await api.getDesignation(targetDesigId);
+                    if (res.success && res.data) {
+                        const des = res.data as Designation;
+                        if (des.departmentShifts) {
+                            const shiftConfig = des.departmentShifts.find(ds =>
+                                (ds.division?.toString() === divisionId || (ds.division as any)?._id === divisionId) &&
+                                (ds.department?.toString() === targetDeptId || (ds.department as any)?._id === targetDeptId)
+                            );
+                            if (shiftConfig) {
+                                // Extract IDs. If populated (unlikely from this endpoint but possible), map to ID.
+                                existingShifts = shiftConfig.shifts.map((s: any) => typeof s === 'string' ? s : s._id);
+                            }
+                        }
+                    }
+                } catch (err) {
+                    console.error("Error fetching designation shifts", err);
+                } finally {
+                    setLoading(false);
+                }
+            }
+
+            setSelectedShiftIds(existingShifts);
+        };
+
+        loadExistingShifts();
+    }, [targetScope, targetDeptId, targetDesigId, showShiftDialog, departments]);
 
     const handleCreateDivision = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -125,8 +198,38 @@ export default function DivisionsPage() {
     const handleAssignShifts = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!showShiftDialog) return;
+
+        const payload: { shifts: string[]; targetType?: string; targetId?: string | { designationId: string; departmentId: string } } = { shifts: selectedShiftIds };
+
+        if (targetScope === 'division') {
+            payload.targetType = 'division_general';
+        } else if (targetScope === 'department') {
+            if (!targetDeptId) {
+                setError('Please select a department');
+                return;
+            }
+            payload.targetType = 'department_in_division';
+            payload.targetId = targetDeptId;
+        } else if (targetScope === 'designation') {
+            if (!targetDeptId) {
+                setError('Please select a department');
+                return;
+            }
+            if (!targetDesigId) {
+                setError('Please select a designation');
+                return;
+            }
+            // Case 4: Designation in Department in Division
+            payload.targetType = 'designation_in_dept_in_div';
+            payload.targetId = {
+                designationId: targetDesigId,
+                departmentId: targetDeptId
+            };
+        }
+
         try {
-            const res = await api.assignShiftsToDivision(showShiftDialog._id, { shifts: selectedShiftIds, targetType: 'division_general' });
+            // Assert payload properties as they are definitely assigned above
+            const res = await api.assignShiftsToDivision(showShiftDialog._id, payload as any);
             if (res.success) {
                 setShowShiftDialog(null);
                 loadData();
@@ -159,6 +262,21 @@ export default function DivisionsPage() {
         setDescription('');
         setManagerId('');
         setError('');
+    };
+
+    const resetShiftForm = () => {
+        setTargetScope('division');
+        setTargetDeptId('');
+        setTargetDesigId('');
+        setSelectedShiftIds([]);
+        setError('');
+    };
+
+    const openShiftDialog = (div: Division) => {
+        setShowShiftDialog(div);
+        resetShiftForm();
+        // Pre-select current division defaults (only for division scope initially)
+        setSelectedShiftIds(div.shifts?.map(s => typeof s === 'string' ? s : s._id) || []);
     };
 
     if (loading && divisions.length === 0) return <div className="p-8"><Spinner /></div>;
@@ -211,10 +329,10 @@ export default function DivisionsPage() {
                                         {div.departments?.length || 0} Departments
                                     </button>
                                     <button
-                                        onClick={() => { setShowShiftDialog(div); setSelectedShiftIds(div.shifts?.map(s => typeof s === 'string' ? s : s._id) || []); }}
+                                        onClick={() => openShiftDialog(div)}
                                         className="rounded-lg bg-amber-50 px-3 py-2 font-medium text-amber-700 hover:bg-amber-100 dark:bg-amber-900/30 dark:text-amber-400"
                                     >
-                                        {div.shifts?.length || 0} Shifts
+                                        Assign Shifts
                                     </button>
                                 </div>
                             </div>
@@ -242,9 +360,9 @@ export default function DivisionsPage() {
                                     <textarea value={description} onChange={e => setDescription(e.target.value)} className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm dark:border-slate-700 dark:bg-slate-900" rows={3} />
                                 </div>
                                 <div>
-                                    <label className="mb-2 block text-sm font-medium">Division Manager</label>
+                                    <label className="mb-2 block text-sm font-medium">Division Manager (Optional)</label>
                                     <select value={managerId} onChange={e => setManagerId(e.target.value)} className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm dark:border-slate-700 dark:bg-slate-900">
-                                        <option value="">Select Manager</option>
+                                        <option value="">Select Manager (Optional)</option>
                                         {managers.map(user => <option key={user._id} value={user._id}>{user.name} ({user.email})</option>)}
                                     </select>
                                 </div>
@@ -292,9 +410,75 @@ export default function DivisionsPage() {
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowShiftDialog(null)} />
                         <div className="relative z-50 w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950">
-                            <h2 className="text-xl font-semibold mb-6">Assign Division Baseline Shifts</h2>
+                            <h2 className="text-xl font-semibold mb-4">Assign Shifts - {showShiftDialog.name}</h2>
+
                             <form onSubmit={handleAssignShifts} className="space-y-4">
-                                <div className="max-h-96 overflow-y-auto rounded-2xl border border-slate-100 p-2 dark:border-slate-800">
+                                {/* Scope Selector */}
+                                <div className="space-y-2">
+                                    <label className="text-xs font-semibold uppercase tracking-wider text-slate-500">Target Scope</label>
+                                    <div className="flex rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+                                        {(['division', 'department', 'designation'] as const).map((scope) => (
+                                            <button
+                                                key={scope}
+                                                type="button"
+                                                onClick={() => { setTargetScope(scope); setSelectedShiftIds([]); }}
+                                                className={`flex-1 rounded-lg py-2 text-xs font-semibold capitalize transition-all ${targetScope === scope
+                                                    ? 'bg-white text-blue-600 shadow-sm dark:bg-slate-700 dark:text-blue-400'
+                                                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                                                    }`}
+                                            >
+                                                {scope}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <p className="text-[10px] text-slate-500">
+                                        {targetScope === 'division' && "Default shifts for everyone in this Division."}
+                                        {targetScope === 'department' && "Override shifts for a specific Department within this Division."}
+                                        {targetScope === 'designation' && "Override shifts for a specific Designation within a Department."}
+                                    </p>
+                                </div>
+
+                                {/* Dynamic Selectors */}
+                                {targetScope !== 'division' && (
+                                    <div>
+                                        <label className="mb-2 block text-sm font-medium">Select Department</label>
+                                        <select
+                                            value={targetDeptId}
+                                            onChange={e => setTargetDeptId(e.target.value)}
+                                            className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm dark:border-slate-700 dark:bg-slate-900"
+                                            required
+                                        >
+                                            <option value="">-- Choose Department --</option>
+                                            {/* Show only linked departments for this division */}
+                                            {showShiftDialog.departments?.map((d: any) => {
+                                                const deptDetails = departments.find(dept => dept._id === (typeof d === 'string' ? d : d._id));
+                                                return deptDetails ? (
+                                                    <option key={deptDetails._id} value={deptDetails._id}>{deptDetails.name}</option>
+                                                ) : null;
+                                            })}
+                                        </select>
+                                    </div>
+                                )}
+
+                                {targetScope === 'designation' && targetDeptId && (
+                                    <div>
+                                        <label className="mb-2 block text-sm font-medium">Select Designation</label>
+                                        <select
+                                            value={targetDesigId}
+                                            onChange={e => setTargetDesigId(e.target.value)}
+                                            className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm dark:border-slate-700 dark:bg-slate-900"
+                                            required
+                                        >
+                                            <option value="">-- Choose Designation --</option>
+                                            {designations.map(desig => (
+                                                <option key={desig._id} value={desig._id}>{desig.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
+
+                                <div className="max-h-60 overflow-y-auto rounded-2xl border border-slate-100 p-2 dark:border-slate-800">
+                                    <label className="mb-2 block px-2 text-xs font-semibold uppercase text-slate-500">Select Shifts</label>
                                     {shifts.map(shift => (
                                         <label key={shift._id} className="flex items-center gap-3 rounded-xl p-3 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors">
                                             <input
@@ -310,8 +494,13 @@ export default function DivisionsPage() {
                                         </label>
                                     ))}
                                 </div>
+
+                                {error && <p className="text-sm text-red-500">{error}</p>}
+
                                 <div className="flex gap-3 pt-4">
-                                    <button type="submit" className="flex-1 rounded-2xl bg-amber-600 px-4 py-3 text-sm font-semibold text-white hover:bg-amber-700 shadow-lg shadow-amber-500/30">Apply Baseline Shifts</button>
+                                    <button type="submit" className="flex-1 rounded-2xl bg-amber-600 px-4 py-3 text-sm font-semibold text-white hover:bg-amber-700 shadow-lg shadow-amber-500/30">
+                                        Save Assignments
+                                    </button>
                                     <button type="button" onClick={() => setShowShiftDialog(null)} className="flex-1 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">Cancel</button>
                                 </div>
                             </form>

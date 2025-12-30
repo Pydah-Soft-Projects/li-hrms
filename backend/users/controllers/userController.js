@@ -76,16 +76,25 @@ exports.registerUser = async (req, res) => {
     }
 
     // Validate role-specific requirements
-    if (role === 'hod' && !department) {
+    if (role === 'hod' && (!department || !req.body.division)) {
       return res.status(400).json({
         success: false,
-        message: 'HOD must be assigned to a department',
+        message: 'HOD must be assigned to a department AND a division',
       });
     }
 
 
     // Build roles array
     const userRoles = roles && roles.length > 0 ? roles : [role];
+
+    // Build division mapping if division is provided (for HOD/Manager)
+    let divisionMapping = [];
+    if (role === 'hod' && req.body.division && department) {
+      divisionMapping = [{
+        division: req.body.division,
+        departments: [department]
+      }];
+    }
 
     // Build user object conditionally to avoid null values on unique sparse fields
     const userData = {
@@ -100,6 +109,7 @@ exports.registerUser = async (req, res) => {
       departmentType: departmentType || 'single',
       featureControl: featureControl || [],
       createdBy: req.user?._id,
+      divisionMapping: divisionMapping, // Store the division context
     };
 
     // Only add employeeId and employeeRef if they have values (sparse index)
@@ -109,9 +119,20 @@ exports.registerUser = async (req, res) => {
     // Create user
     const user = await User.create(userData);
 
-    // Valid HOD Sync: Update Department with HOD ID
-    if (role === 'hod' && department) {
-      await Department.findByIdAndUpdate(department, { hod: user._id });
+    // Valid HOD Sync: Update Department with HOD ID for specific Division
+    if (role === 'hod' && department && req.body.division) {
+      const Department = require('../../departments/model/Department');
+      const dept = await Department.findById(department);
+      if (dept) {
+        // Remove existing HOD for this division if any
+        const existingIndex = dept.divisionHODs.findIndex(dh => dh.division.toString() === req.body.division);
+        if (existingIndex > -1) {
+          dept.divisionHODs[existingIndex].hod = user._id;
+        } else {
+          dept.divisionHODs.push({ division: req.body.division, hod: user._id });
+        }
+        await dept.save();
+      }
     }
 
     // Auto-assign to workspace if requested
@@ -561,6 +582,14 @@ exports.updateUser = async (req, res) => {
     if (departmentType !== undefined) user.departmentType = departmentType;
     if (featureControl !== undefined) user.featureControl = featureControl;
 
+    // Update Division Mapping if provided (for HOD re-assignment)
+    if (req.body.division && department) {
+      user.divisionMapping = [{
+        division: req.body.division,
+        departments: [department]
+      }];
+    }
+
     await user.save();
 
     // Sync: Reverse Sync (User -> Department)
@@ -592,9 +621,22 @@ exports.updateUser = async (req, res) => {
       );
     }
 
-    // Valid HOD Sync: Update Department with HOD ID
-    if (user.role === 'hod' && user.department) {
-      await Department.findByIdAndUpdate(user.department, { hod: user._id });
+    // Valid HOD Sync: Update Department with HOD ID for Specific Division
+    if (user.role === 'hod' && user.department && user.divisionMapping && user.divisionMapping.length > 0) {
+      // We assume single division for HOD for now based on current logic
+      const divisionId = user.divisionMapping[0].division;
+      if (divisionId) {
+        const dept = await Department.findById(user.department);
+        if (dept) {
+          const existingIndex = dept.divisionHODs.findIndex(dh => dh.division.toString() === divisionId.toString());
+          if (existingIndex > -1) {
+            dept.divisionHODs[existingIndex].hod = user._id;
+          } else {
+            dept.divisionHODs.push({ division: divisionId, hod: user._id });
+          }
+          await dept.save();
+        }
+      }
     }
 
     // Valid HR Sync: Update Departments with HR ID

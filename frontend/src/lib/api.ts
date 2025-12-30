@@ -246,12 +246,27 @@ export interface Setting {
   category: string;
 }
 
+export interface Designation {
+  _id: string;
+  name: string;
+  code: string;
+  description?: string;
+  department?: string | Department;
+  shifts?: string[];
+  divisionDefaults?: { division: string; shifts: string[] }[];
+  departmentShifts?: { division: string; department: string; shifts: string[] }[];
+}
+
 export interface Department {
   _id: string;
   name: string;
   code?: string;
   description?: string;
   hod?: any;
+  divisionHODs?: {
+    division: Division | string;
+    hod: any; // User object
+  }[];
   hr?: any;
   attendanceConfig: {
     lateInLimit: number;
@@ -282,6 +297,8 @@ export interface Department {
   createdAt: string;
   updatedAt: string;
   divisions?: string[];
+  designations?: Designation[];
+  divisionDefaults?: { division: string | Division; shifts: string[] }[];
 }
 
 export interface Division {
@@ -529,6 +546,12 @@ export const api = {
   // Divisions
 
 
+  // Divisions
+  getDivisions: async (isActive?: boolean) => {
+    const query = isActive !== undefined ? `?isActive=${isActive}` : '';
+    return apiRequest<Division[]>(`/divisions${query}`, { method: 'GET' });
+  },
+
   getDivision: async (id: string) => {
     return apiRequest<Division>(`/divisions/${id}`, { method: 'GET' });
   },
@@ -558,7 +581,7 @@ export const api = {
     });
   },
 
-  assignShiftsToDivision: async (id: string, data: { shifts: string[]; targetType: string; targetId?: string }) => {
+  assignShiftsToDivision: async (id: string, data: { shifts: string[]; targetType: string; targetId?: string | { designationId: string; departmentId: string } }) => {
     return apiRequest<any>(`/divisions/${id}/shifts`, {
       method: 'POST',
       body: JSON.stringify(data),
@@ -1434,10 +1457,7 @@ export const api = {
   // DIVISION/DEPARTMENT MANAGEMENT
   // ==========================================
 
-  getDivisions: async (isActive?: boolean) => {
-    const query = isActive !== undefined ? `?isActive=${isActive}` : '';
-    return apiRequest<any>(`/divisions${query}`, { method: 'GET' });
-  },
+
 
   // ==========================================
   // LEAVE/OD SETTINGS

@@ -71,12 +71,19 @@ exports.createDivision = async (req, res, next) => {
     try {
         const division = await Division.create(req.body);
 
-        // If departments are linked during creation, update those departments
         if (req.body.departments && Array.isArray(req.body.departments)) {
             await Department.updateMany(
                 { _id: { $in: req.body.departments } },
                 { $addToSet: { divisions: division._id } }
             );
+        }
+
+        // Auto-sync: Add division to Manager's allowedDivisions list
+        if (req.body.manager) {
+            const User = require('../../users/model/User');
+            await User.findByIdAndUpdate(req.body.manager, {
+                $addToSet: { allowedDivisions: division._id }
+            });
         }
 
         res.status(201).json({
@@ -113,9 +120,30 @@ exports.updateDivision = async (req, res, next) => {
         const newDepartments = req.body.departments || [];
 
         division = await Division.findByIdAndUpdate(req.params.id, req.body, {
-            new: true,
             runValidators: true,
         });
+
+        // Handle Manager Sync
+        if (req.body.manager !== undefined) {
+            const User = require('../../users/model/User');
+            const newManagerId = req.body.manager;
+            const oldManagerId = division.manager ? division.manager.toString() : null;
+
+            if (oldManagerId !== newManagerId) {
+                // Remove division from old Manager
+                if (oldManagerId) {
+                    await User.findByIdAndUpdate(oldManagerId, {
+                        $pull: { allowedDivisions: division._id }
+                    });
+                }
+                // Add division to new Manager
+                if (newManagerId) {
+                    await User.findByIdAndUpdate(newManagerId, {
+                        $addToSet: { allowedDivisions: division._id }
+                    });
+                }
+            }
+        }
 
         // Departments to add this division to
         const addedDepts = newDepartments.filter((d) => !oldDepartments.includes(d));
@@ -185,6 +213,13 @@ exports.deleteDivision = async (req, res, next) => {
         await Designation.updateMany(
             { 'departmentShifts.division': division._id },
             { $pull: { departmentShifts: { division: division._id } } }
+        );
+
+        // Remove division from any users' allowedDivisions (cleanup)
+        const User = require('../../users/model/User');
+        await User.updateMany(
+            { allowedDivisions: division._id },
+            { $pull: { allowedDivisions: division._id } }
         );
 
         await division.deleteOne();

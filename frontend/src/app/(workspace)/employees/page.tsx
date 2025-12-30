@@ -386,7 +386,7 @@ export default function EmployeesPage() {
   // Recompute salary summary (frontend-only) whenever salary or overrides change
   useEffect(() => {
     // Check both gross_salary and proposedSalary (form might use either)
-    const gross = Number(formData.gross_salary || (formData as Employee).proposedSalary || 0);
+    const gross = Number(formData.gross_salary || (formData as any).proposedSalary || 0);
 
     const sumWithOverrides = (items: any[], overrides: Record<string, number | null>) =>
       items.reduce((acc, item) => {
@@ -1428,7 +1428,7 @@ export default function EmployeesPage() {
 
     // Filter by selected division
     const matchesDivision = !selectedDivision ||
-      (emp.division?._id === selectedDivision || emp.division_id === selectedDivision);
+      ((emp as any).division?._id === selectedDivision || emp.division_id === selectedDivision);
 
     return matchesSearch && matchesLeftFilter && matchesDivision;
   });

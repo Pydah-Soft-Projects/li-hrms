@@ -147,6 +147,7 @@ export default function UsersPage() {
     dataScope: 'all' as DataScope,
     allowedDivisions: [] as string[],
     divisionMapping: [] as { division: string; departments: string[] }[],
+    division: '', // Added for HOD selection
   });
 
   // Form state for create from employee
@@ -161,6 +162,7 @@ export default function UsersPage() {
     dataScope: 'all' as DataScope,
     allowedDivisions: [] as string[],
     divisionMapping: [] as { division: string; departments: string[] }[],
+    division: '', // Added for HOD selection
   });
 
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -465,6 +467,11 @@ export default function UsersPage() {
       dataScope: user.dataScope || 'all',
       allowedDivisions: user.allowedDivisions || [],
       divisionMapping: user.divisionMapping || [],
+      division: user.role === 'hod' && user.divisionMapping && user.divisionMapping.length > 0
+        ? (typeof user.divisionMapping[0].division === 'string'
+          ? user.divisionMapping[0].division
+          : user.divisionMapping[0].division._id)
+        : '',
     });
     // Prevent useEffect from reloading defaults and overwriting user data
     previousRoleRef.current = user.role;
@@ -574,6 +581,111 @@ export default function UsersPage() {
   };
 
   const ScopingSelector = ({ data, setData, asEmployee = false }: { data: any, setData: (data: any) => void, asEmployee?: boolean }) => {
+    // Specialized UI for HOD Role
+    if (data.role === 'hod') {
+      const selectedDivisionId = data.division || (data.divisionMapping?.[0]?.division
+        ? (typeof data.divisionMapping[0].division === 'string'
+          ? data.divisionMapping[0].division
+          : data.divisionMapping[0].division._id)
+        : '');
+
+      const selectedDepartmentId = data.department || data.divisionMapping?.[0]?.departments?.[0] || '';
+
+      const handleDivisionChange = (divId: string) => {
+        const newMapping = divId ? [{ division: divId, departments: [] }] : [];
+        setData({
+          ...data,
+          division: divId,
+          department: '', // Reset department when division changes
+          divisionMapping: newMapping,
+          allowedDivisions: divId ? [divId] : [],
+          dataScope: 'division' // Implicitly set datascope
+        });
+      };
+
+      const handleDepartmentChange = (deptId: string) => {
+        if (!selectedDivisionId) return;
+        const newMapping = [{ division: selectedDivisionId, departments: deptId ? [deptId] : [] }];
+        setData({
+          ...data,
+          department: deptId,
+          divisionMapping: newMapping
+        });
+      };
+
+      // Filter departments based on selected division
+      // Check if department has the division ID in its divisions array (which can be objects or strings)
+      const filteredDepartments = departments.filter(d =>
+        d.divisions?.some((div: any) => {
+          const dId = typeof div === 'string' ? div : div._id;
+          return dId === selectedDivisionId;
+        })
+      );
+
+      return (
+        <div className="border-t border-slate-200 dark:border-slate-700 pt-4 space-y-4">
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 dark:bg-amber-900/10 dark:border-amber-800">
+            <h3 className="flex items-center gap-2 text-sm font-bold text-amber-800 dark:text-amber-400 mb-4">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-800/50">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+              </span>
+              HOD Assignment
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                  Select Division *
+                </label>
+                <select
+                  value={selectedDivisionId}
+                  onChange={(e) => handleDivisionChange(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm focus:border-amber-500 focus:ring-amber-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                >
+                  <option value="">-- Choose Division --</option>
+                  {divisions.map(d => (
+                    <option key={d._id} value={d._id}>{d.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                  Select Department *
+                </label>
+                <select
+                  value={selectedDepartmentId}
+                  onChange={(e) => handleDepartmentChange(e.target.value)}
+                  disabled={!selectedDivisionId}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm focus:border-amber-500 focus:ring-amber-500 disabled:opacity-50 disabled:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-white dark:disabled:bg-slate-900"
+                >
+                  <option value="">-- Choose Department --</option>
+                  {filteredDepartments.map(d => (
+                    <option key={d._id} value={d._id}>{d.name}</option>
+                  ))}
+                </select>
+                {selectedDivisionId && filteredDepartments.length === 0 && (
+                  <p className="mt-1 text-xs text-red-500">No departments linked to this division.</p>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-3 flex items-start gap-2 rounded-lg bg-amber-100/50 p-2 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-400">
+              <svg className="h-4 w-4 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p>
+                This user will be assigned as the Head of Department for the selected Department within the selected Division.
+              </p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Default Scoping UI for other roles
     return (
       <div className="border-t border-slate-200 dark:border-slate-700 pt-4 space-y-4">
         <div>
@@ -585,7 +697,7 @@ export default function UsersPage() {
           >
             <option value="all">All Data (Across All Divisions)</option>
             <option value="division">Specific Divisions / Departments</option>
-            {data.role === 'hod' && <option value="department">Single Department Only</option>}
+            {/* option value="department" removed for HOD as it's handled above, but kept if needed for others */}
             <option value="own">Self Only</option>
           </select>
         </div>
@@ -594,7 +706,6 @@ export default function UsersPage() {
           <div className="space-y-4 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
             <label className="block text-sm font-semibold text-slate-900 dark:text-white mb-2">
               Division & Department Access Mapping
-              {data.role === 'hod' && <span className="ml-2 text-xs text-amber-600">(Single Assignment enforced)</span>}
             </label>
 
             <div className="space-y-4">
@@ -632,7 +743,7 @@ export default function UsersPage() {
 
                     {isSelected && (
                       <div className="p-3 border-t border-slate-100 dark:border-slate-700 grid grid-cols-2 gap-2">
-                        {departments.filter(dept => dept.divisions?.includes(div._id)).map(dept => (
+                        {departments.filter(dept => dept.divisions?.some((d: any) => (typeof d === 'string' ? d : d._id) === div._id)).map(dept => (
                           <label key={dept._id} className="flex items-center gap-2 p-1.5 rounded hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer">
                             <input
                               type="checkbox"
@@ -643,7 +754,7 @@ export default function UsersPage() {
                             <span className="text-[11px] text-slate-600 dark:text-slate-400 truncate">{dept.name}</span>
                           </label>
                         ))}
-                        {departments.filter(dept => dept.divisions?.includes(div._id)).length === 0 && (
+                        {departments.filter(dept => dept.divisions?.some((d: any) => (typeof d === 'string' ? d : d._id) === div._id)).length === 0 && (
                           <div className="col-span-2 text-center py-2 text-[10px] text-slate-400">No departments linked to this division</div>
                         )}
                       </div>

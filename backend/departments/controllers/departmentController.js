@@ -17,7 +17,9 @@ exports.getAllDepartments = async (req, res) => {
     }
 
     const departments = await Department.find(query)
-      .populate('hod', 'name email role')
+      .populate('hod', 'name email role') // Legacy
+      .populate('divisionHODs.hod', 'name email role')
+      .populate('divisionHODs.division', 'name code')
       .populate('hr', 'name email role')
       .populate('shifts', 'name startTime endTime duration isActive')
       .populate('designations', 'name code isActive')
@@ -109,7 +111,7 @@ exports.getDepartmentEmployees = async (req, res) => {
 // @access  Private (Super Admin, Sub Admin, HR)
 exports.createDepartment = async (req, res) => {
   try {
-    const { name, code, description, hod } = req.body;
+    const { name, code, description, divisionHODs } = req.body;
 
     if (!name) {
       return res.status(400).json({
@@ -118,14 +120,38 @@ exports.createDepartment = async (req, res) => {
       });
     }
 
-    // Validate HOD if provided
-    if (hod) {
-      const hodUser = await User.findById(hod);
-      if (!hodUser) {
-        return res.status(400).json({
-          success: false,
-          message: 'HOD user not found',
-        });
+    // Validate divisionHODs if provided
+    let validDivisionHODs = [];
+    if (divisionHODs && Array.isArray(divisionHODs)) {
+      for (const dh of divisionHODs) {
+        if (dh.division && dh.hod) {
+          // Check if division exists (optional but good practice)
+          // Check if user exists
+          const userExists = await User.findById(dh.hod);
+          if (!userExists) {
+            return res.status(400).json({
+              success: false,
+              message: `HOD User not found for division assignment`,
+            });
+          }
+
+          // STRICT RULE: Check if this user is already an HOD for ANY department/division
+          const existingAssignment = await Department.findOne({
+            'divisionHODs.hod': dh.hod
+          });
+
+          if (existingAssignment) {
+            return res.status(400).json({
+              success: false,
+              message: `User ${userExists.name} is already an HOD for Department: ${existingAssignment.name}. A user can only be HOD for one department/division.`,
+            });
+          }
+
+          validDivisionHODs.push({
+            division: dh.division,
+            hod: dh.hod
+          });
+        }
       }
     }
 
@@ -133,15 +159,18 @@ exports.createDepartment = async (req, res) => {
       name,
       code: code || undefined,
       description: description || undefined,
-      hod: hod || null,
+      hod: null, // Global HOD is deprecated
+      divisionHODs: validDivisionHODs,
       createdBy: req.user?.userId,
     });
 
-    // Auto-sync: Add department to HOD's departments list
-    if (hod) {
-      await User.findByIdAndUpdate(hod, {
-        $addToSet: { departments: department._id }
-      });
+    // Auto-sync: Add department to Division-specific HODs
+    if (validDivisionHODs.length > 0) {
+      const hodIds = [...new Set(validDivisionHODs.map(dh => dh.hod))];
+      await User.updateMany(
+        { _id: { $in: hodIds } },
+        { $addToSet: { departments: department._id } }
+      );
     }
 
     res.status(201).json({
@@ -221,21 +250,81 @@ exports.updateDepartment = async (req, res) => {
     if (code !== undefined) department.code = code;
     if (description !== undefined) department.description = description;
 
-    // Handle HOD Sync
-    if (hod !== undefined) {
-      // If HOD changed, remove department from old HOD
-      if (department.hod && department.hod.toString() !== (hod || '')) {
-        await User.findByIdAndUpdate(department.hod, {
-          $pull: { departments: department._id }
-        });
+    // Handle Division HODs Sync
+    if (req.body.divisionHODs !== undefined) {
+      const newDivisionHODs = req.body.divisionHODs;
+
+      // Validate structure (minimal validation, trust valid IDs or frontend checks primarily, but safeguard)
+      let validDivisionHODs = [];
+      if (Array.isArray(newDivisionHODs)) {
+        for (const dh of newDivisionHODs) {
+          if (dh.division && dh.hod) {
+            // Check if user exists 
+            const userExists = await User.findById(dh.hod);
+            if (!userExists) {
+              return res.status(400).json({ success: false, message: 'Invalid HOD User ID' });
+            }
+
+            // STRICT RULE: Check if this user is already an HOD for ANY OTHER department/division
+            // Query for existing assignments of this HOD
+            const existingAssignments = await Department.find({
+              'divisionHODs.hod': dh.hod
+            });
+
+            for (const existingDept of existingAssignments) {
+              // If it's a different department, BLOCK.
+              if (existingDept._id.toString() !== department._id.toString()) {
+                return res.status(400).json({
+                  success: false,
+                  message: `User ${userExists.name} is already HOD for ${existingDept.name}. Cannot assign to multiple departments.`,
+                });
+              }
+            }
+
+            // Check for duplicates in the incoming payload (Internal consistency)
+            const duplicateInPayload = newDivisionHODs.filter(d => d.hod === dh.hod).length > 1;
+            if (duplicateInPayload) {
+              return res.status(400).json({
+                success: false,
+                message: `User ${userExists.name} cannot be assigned to multiple divisions in the same request.`,
+              });
+            }
+
+            validDivisionHODs.push({ division: dh.division, hod: dh.hod });
+          }
+        }
       }
-      // Add department to new HOD
-      if (hod) {
-        await User.findByIdAndUpdate(hod, {
-          $addToSet: { departments: department._id }
-        });
+
+      // Sync User Departments:
+      // 1. Add department to new HODs
+      if (validDivisionHODs.length > 0) {
+        const newHodIds = [...new Set(validDivisionHODs.map(dh => dh.hod))];
+        await User.updateMany(
+          { _id: { $in: newHodIds } },
+          { $addToSet: { departments: department._id } }
+        );
       }
-      department.hod = hod || null;
+
+      // 2. Remove department from HODs who are no longer associated (Global HOD or any Division HOD)
+      // Get all previous HODs (division only, global deprecated)
+      const oldDivisionHodIds = department.divisionHODs ? department.divisionHODs.map(dh => dh.hod.toString()) : [];
+      const allOldHods = new Set([...oldDivisionHodIds].filter(id => id));
+
+      // Get all new HODs (division only)
+      const newDivisionHodIds = validDivisionHODs.map(dh => dh.hod);
+      const allNewHods = new Set([...newDivisionHodIds].filter(id => id));
+
+      // Find removed HODs
+      const removedHods = [...allOldHods].filter(id => !allNewHods.has(id));
+
+      if (removedHods.length > 0) {
+        await User.updateMany(
+          { _id: { $in: removedHods } },
+          { $pull: { departments: department._id } }
+        );
+      }
+
+      department.divisionHODs = validDivisionHODs;
     }
 
     // Handle HR Sync
@@ -349,17 +438,24 @@ exports.deleteDepartment = async (req, res) => {
   }
 };
 
-// @desc    Assign HOD to department
+// @desc    Assign HOD to department (Division Specific)
 // @route   PUT /api/departments/:id/assign-hod
 // @access  Private (Super Admin, Sub Admin, HR)
 exports.assignHOD = async (req, res) => {
   try {
-    const { hodId } = req.body;
+    const { hodId, divisionId } = req.body;
 
     if (!hodId) {
       return res.status(400).json({
         success: false,
         message: 'HOD ID is required',
+      });
+    }
+
+    if (!divisionId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Division ID is required for HOD assignment',
       });
     }
 
@@ -379,24 +475,49 @@ exports.assignHOD = async (req, res) => {
       });
     }
 
-    // Sync: Remove from old HOD
-    if (department.hod) {
-      await User.findByIdAndUpdate(department.hod, {
+    // Find existing HOD for this division in this department
+    const existingEntryIndex = department.divisionHODs.findIndex(
+      dh => dh.division.toString() === divisionId
+    );
+    const oldHodId = existingEntryIndex > -1 ? department.divisionHODs[existingEntryIndex].hod : null;
+
+    // Sync: Remove this department from old HOD's list (if it was their only link to this department)
+    // Actually, simply pulling the department from the old HOD is safer, assuming they don't lead *another* division in this same dept.
+    // However, to be precise: "User.departments" is a list of departments they are associated with.
+    // If they are removed as HOD for this division, do we remove the department from them?
+    // Yes, generally. But we should check if they are HOD for *other* divisions in this same dept?
+    // For simplicity, we pull the department. If they are HOD for another division, re-adding it is idempotent.
+    // A better approach: distinct lists. But User.departments is simple.
+    // Let's stick to the existing pattern: Pull department from old HOD.
+    if (oldHodId) {
+      await User.findByIdAndUpdate(oldHodId, {
         $pull: { departments: department._id }
       });
     }
 
-    // Sync: Add to new HOD
+    // Sync: Add department to new HOD
     await User.findByIdAndUpdate(hodId, {
       $addToSet: { departments: department._id }
     });
 
-    department.hod = hodId;
+    // Update Department Model
+    if (existingEntryIndex > -1) {
+      department.divisionHODs[existingEntryIndex].hod = hodId;
+    } else {
+      department.divisionHODs.push({
+        division: divisionId,
+        hod: hodId
+      });
+    }
+
+    // Also update legacy field if this is the first HOD or just as a fallback
+    // department.hod = hodId; // Optional: Keep strictly division-based now.
+
     await department.save();
 
     res.status(200).json({
       success: true,
-      message: 'HOD assigned successfully',
+      message: 'HOD assigned successfully to division',
       data: department,
     });
   } catch (error) {
