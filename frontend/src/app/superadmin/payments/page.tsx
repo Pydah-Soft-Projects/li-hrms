@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
-import { api, PayrollBatch, PayrollBatchStatus, Department } from "@/lib/api";
+import { api, PayrollBatch, PayrollBatchStatus, Department, Division } from "@/lib/api";
 import { auth } from "@/lib/auth";
 import Spinner from "@/components/Spinner";
 
@@ -21,15 +21,19 @@ const statusLabels: Record<PayrollBatchStatus, string> = {
     complete: "Completed"
 };
 
+
+
 export default function PaymentsPage() {
     const router = useRouter();
     const user = auth.getUser();
     const [batches, setBatches] = useState<PayrollBatch[]>([]);
     const [loading, setLoading] = useState(true);
     const [departments, setDepartments] = useState<Department[]>([]);
+    const [divisions, setDivisions] = useState<Division[]>([]);
 
     // Filters
     const [month, setMonth] = useState<string>(new Date().toISOString().slice(0, 7));
+    const [selectedDivision, setSelectedDivision] = useState<string>("");
     const [selectedDept, setSelectedDept] = useState<string>("all");
     const [selectedStatus, setSelectedStatus] = useState<string>("all");
     const [page, setPage] = useState(1);
@@ -60,11 +64,23 @@ export default function PaymentsPage() {
 
     useEffect(() => {
         fetchDepartments();
+        fetchDivisions();
     }, []);
 
     useEffect(() => {
         fetchBatches();
-    }, [month, selectedDept, selectedStatus, page]);
+    }, [month, selectedDept, selectedDivision, selectedStatus, page]);
+
+    const fetchDivisions = async () => {
+        try {
+            const response = await api.getDivisions();
+            if (response.success && response.data) {
+                setDivisions(response.data || []);
+            }
+        } catch (error) {
+            console.error("Error fetching divisions:", error);
+        }
+    };
 
     const fetchDepartments = async () => {
         try {
@@ -86,6 +102,7 @@ export default function PaymentsPage() {
                 limit: 10
             };
 
+            if (selectedDivision && selectedDivision !== "all") params.divisionId = selectedDivision;
             if (selectedDept !== "all") params.departmentId = selectedDept;
             if (selectedStatus !== "all") params.status = selectedStatus;
 
@@ -195,6 +212,25 @@ export default function PaymentsPage() {
                             onChange={(e) => setMonth(e.target.value)}
                         />
                     </div>
+
+                    <div>
+                        <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Division</label>
+                        <select
+                            className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                            value={selectedDivision}
+                            onChange={(e) => {
+                                setSelectedDivision(e.target.value);
+                                setSelectedDept("all");
+                            }}
+                        >
+                            <option value="">All Divisions</option>
+                            {divisions.map((div) => (
+                                <option key={div._id} value={div._id}>
+                                    {div.name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
                     <div>
                         <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Department</label>
                         <select
@@ -203,11 +239,17 @@ export default function PaymentsPage() {
                             onChange={(e) => setSelectedDept(e.target.value)}
                         >
                             <option value="all">All Departments</option>
-                            {departments.map((dept) => (
-                                <option key={dept._id} value={dept._id}>
-                                    {dept.name}
-                                </option>
-                            ))}
+                            {departments
+                                .filter(dept => {
+                                    if (!selectedDivision || selectedDivision === "all") return true;
+                                    const currentDiv = divisions.find(d => d._id === selectedDivision);
+                                    return currentDiv?.departments?.some((d: any) => d === dept._id || d._id === dept._id);
+                                })
+                                .map((dept) => (
+                                    <option key={dept._id} value={dept._id}>
+                                        {dept.name}
+                                    </option>
+                                ))}
                         </select>
                     </div>
                     <div>
@@ -234,6 +276,7 @@ export default function PaymentsPage() {
                         <thead>
                             <tr className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
                                 <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Batch Info</th>
+                                <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Division</th>
                                 <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Department</th>
                                 <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Period</th>
                                 <th className="px-6 py-4 text-center text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Employees</th>
@@ -245,7 +288,7 @@ export default function PaymentsPage() {
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
                             {loading ? (
                                 <tr>
-                                    <td colSpan={7} className="px-6 py-12 text-center text-slate-500 dark:text-slate-400">
+                                    <td colSpan={8} className="px-6 py-12 text-center text-slate-500 dark:text-slate-400">
                                         <div className="flex justify-center items-center">
                                             <Spinner />
                                             Loading batches...
@@ -254,7 +297,7 @@ export default function PaymentsPage() {
                                 </tr>
                             ) : batches.length === 0 ? (
                                 <tr>
-                                    <td colSpan={7} className="px-6 py-12 text-center text-slate-500 dark:text-slate-400">
+                                    <td colSpan={8} className="px-6 py-12 text-center text-slate-500 dark:text-slate-400">
                                         <div className="flex flex-col items-center justify-center">
                                             <div className="w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-3">
                                                 <SearchIcon className="w-6 h-6 text-slate-400" />
@@ -278,7 +321,14 @@ export default function PaymentsPage() {
                                             </div>
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap">
-                                            <div className="text-sm text-slate-900 dark:text-slate-200">{batch.department?.name || 'Unknown'}</div>
+                                            <div className="text-sm text-slate-900 dark:text-white font-medium">
+                                                {(batch.division as any)?.name || 'N/A'}
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <div className="text-sm text-slate-900 dark:text-white font-medium">
+                                                {(batch.department as any)?.name || 'Unknown Department'}
+                                            </div>
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap">
                                             <div className="text-sm text-slate-900 dark:text-slate-200">{batch.monthName || batch.month}</div>
@@ -372,54 +422,56 @@ export default function PaymentsPage() {
             </div>
 
             {/* Action Dialog - Fixed to avoid grey screen */}
-            {openDialog && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                    <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-fade-in border border-slate-100 dark:border-slate-700">
-                        <div className="p-6">
-                            <div className="flex items-center justify-center w-12 h-12 mx-auto bg-blue-100 dark:bg-blue-900/30 rounded-full mb-4">
-                                <CheckCircleIcon className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-                            </div>
+            {
+                openDialog && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-fade-in border border-slate-100 dark:border-slate-700">
+                            <div className="p-6">
+                                <div className="flex items-center justify-center w-12 h-12 mx-auto bg-blue-100 dark:bg-blue-900/30 rounded-full mb-4">
+                                    <CheckCircleIcon className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                                </div>
 
-                            <h3 className="text-xl font-bold text-center text-slate-900 dark:text-white mb-2">
-                                {actionType && actionDialogTitle[actionType]}
-                            </h3>
+                                <h3 className="text-xl font-bold text-center text-slate-900 dark:text-white mb-2">
+                                    {actionType && actionDialogTitle[actionType]}
+                                </h3>
 
-                            <p className="text-sm text-center text-slate-500 dark:text-slate-400 mb-6">
-                                Are you sure you want to <strong>{actionType}</strong> the payroll batch for
-                                <br />
-                                <span className="font-medium text-slate-900 dark:text-white">{selectedBatch?.department?.name}</span> ({selectedBatch?.monthName || selectedBatch?.month})?
-                            </p>
+                                <p className="text-sm text-center text-slate-500 dark:text-slate-400 mb-6">
+                                    Are you sure you want to <strong>{actionType}</strong> the payroll batch for
+                                    <br />
+                                    <span className="font-medium text-slate-900 dark:text-white">{selectedBatch?.department?.name}</span> ({selectedBatch?.monthName || selectedBatch?.month})?
+                                </p>
 
-                            <textarea
-                                className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none mb-4 min-h-[100px]"
-                                placeholder="Reason / Comments (Optional)"
-                                value={actionReason}
-                                onChange={(e) => setActionReason(e.target.value)}
-                            ></textarea>
+                                <textarea
+                                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none mb-4 min-h-[100px]"
+                                    placeholder="Reason / Comments (Optional)"
+                                    value={actionReason}
+                                    onChange={(e) => setActionReason(e.target.value)}
+                                ></textarea>
 
-                            <div className="flex gap-3">
-                                <button
-                                    type="button"
-                                    className="flex-1 px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-xl text-slate-700 dark:text-slate-300 font-medium hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
-                                    onClick={() => setOpenDialog(false)}
-                                    disabled={actionLoading}
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="button"
-                                    className={`flex-1 px-4 py-2.5 rounded-xl font-medium text-white shadow-lg shadow-blue-500/30 transition-all transform active:scale-95 ${getButtonColorClass(actionType)} ${actionLoading ? 'opacity-70 cursor-not-allowed' : ''}`}
-                                    onClick={handleActionConfirm}
-                                    disabled={actionLoading}
-                                >
-                                    {actionLoading ? 'Processing...' : 'Confirm'}
-                                </button>
+                                <div className="flex gap-3">
+                                    <button
+                                        type="button"
+                                        className="flex-1 px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-xl text-slate-700 dark:text-slate-300 font-medium hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                                        onClick={() => setOpenDialog(false)}
+                                        disabled={actionLoading}
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className={`flex-1 px-4 py-2.5 rounded-xl font-medium text-white shadow-lg shadow-blue-500/30 transition-all transform active:scale-95 ${getButtonColorClass(actionType)} ${actionLoading ? 'opacity-70 cursor-not-allowed' : ''}`}
+                                        onClick={handleActionConfirm}
+                                        disabled={actionLoading}
+                                    >
+                                        {actionLoading ? 'Processing...' : 'Confirm'}
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
-        </div>
+                )
+            }
+        </div >
     );
 }
 

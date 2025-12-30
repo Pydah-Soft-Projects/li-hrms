@@ -9,29 +9,31 @@ const Department = require('../../departments/model/Department');
  */
 class PayrollBatchService {
     /**
-     * Create a new payroll batch for a department
+     * Create a new payroll batch for a department in a division
      */
-    static async createBatch(departmentId, month, userId) {
+    static async createBatch(departmentId, divisionId, month, userId) {
         try {
             const [year, monthNum] = month.split('-').map(Number);
 
-            // Check if batch already exists
+            // Check if batch already exists for this Division + Department
             const existingBatch = await PayrollBatch.findOne({
                 department: departmentId,
+                division: divisionId,
                 month
             });
 
             if (existingBatch) {
-                throw new Error('Payroll batch already exists for this department and month');
+                throw new Error('Payroll batch already exists for this division, department and month');
             }
 
-            // Generate batch number
-            const batchNumber = await PayrollBatch.generateBatchNumber(departmentId, month);
+            // Generate batch number with Division context
+            const batchNumber = await PayrollBatch.generateBatchNumber(departmentId, divisionId, month);
 
             // Create batch
             const batch = new PayrollBatch({
                 batchNumber,
                 department: departmentId,
+                division: divisionId,
                 month,
                 year,
                 monthNumber: monthNum,

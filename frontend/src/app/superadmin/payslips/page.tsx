@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from "next/navigation";
-import { api } from '@/lib/api';
+import { api, Division, Department, Designation } from '@/lib/api';
 import { toast } from 'react-toastify';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -19,15 +19,7 @@ interface Employee {
   esi_number?: string;
 }
 
-interface Department {
-  _id: string;
-  name: string;
-}
 
-interface Designation {
-  _id: string;
-  name: string;
-}
 
 interface PayrollRecord {
   _id: string;
@@ -88,12 +80,14 @@ export default function PayslipsPage() {
   const [loading, setLoading] = useState(false);
   const [payrollRecords, setPayrollRecords] = useState<PayrollRecord[]>([]);
   const [filteredRecords, setFilteredRecords] = useState<PayrollRecord[]>([]);
+  const [divisions, setDivisions] = useState<Division[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [designations, setDesignations] = useState<Designation[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
 
   // Filters
   const [selectedMonth, setSelectedMonth] = useState('');
+  const [selectedDivision, setSelectedDivision] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState('');
   const [selectedDesignation, setSelectedDesignation] = useState('');
   const [selectedEmployee, setSelectedEmployee] = useState('');
@@ -123,6 +117,9 @@ export default function PayslipsPage() {
     }
     setSelectedMonth(defaultMonth);
 
+    setSelectedMonth(defaultMonth);
+
+    fetchDivisions();
     fetchDepartments();
     fetchEmployees();
   }, []);
@@ -137,11 +134,22 @@ export default function PayslipsPage() {
         setSelectedDesignation('');
       }
     }
-  }, [selectedMonth, selectedDepartment]);
+  }, [selectedMonth, selectedDepartment, selectedDivision]);
 
   useEffect(() => {
     applyFilters();
   }, [payrollRecords, searchQuery, selectedDesignation, selectedEmployee, statusFilter]);
+
+  const fetchDivisions = async () => {
+    try {
+      const response = await api.getDivisions();
+      if (response.success) {
+        setDivisions(response.data || []);
+      }
+    } catch (error) {
+      console.error('Error fetching divisions:', error);
+    }
+  };
 
   const fetchDepartments = async () => {
     try {
@@ -182,6 +190,7 @@ export default function PayslipsPage() {
     setLoading(true);
     try {
       const params: any = { month: selectedMonth };
+      if (selectedDivision) params.divisionId = selectedDivision;
       if (selectedDepartment) params.departmentId = selectedDepartment;
 
       const response = await api.getPayrollRecords(params);
@@ -566,6 +575,27 @@ export default function PayslipsPage() {
               />
             </div>
 
+            {/* Division Filter */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                Division
+              </label>
+              <select
+                value={selectedDivision}
+                onChange={(e) => {
+                  setSelectedDivision(e.target.value);
+                  setSelectedDepartment(''); // Reset department
+                  setSelectedDesignation(''); // Reset designation
+                }}
+                className="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-slate-700 dark:text-white"
+              >
+                <option value="">All Divisions</option>
+                {divisions.map(div => (
+                  <option key={div._id} value={div._id}>{div.name}</option>
+                ))}
+              </select>
+            </div>
+
             {/* Department Filter */}
             <div>
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
@@ -577,9 +607,16 @@ export default function PayslipsPage() {
                 className="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-slate-700 dark:text-white"
               >
                 <option value="">All Departments</option>
-                {departments.map(dept => (
-                  <option key={dept._id} value={dept._id}>{dept.name}</option>
-                ))}
+                {departments
+                  .filter(dept => {
+                    if (!selectedDivision) return true;
+                    // Find selected division and check if department is in its list
+                    const currentDiv = divisions.find(d => d._id === selectedDivision);
+                    return currentDiv?.departments?.some((d: any) => d === dept._id || d._id === dept._id);
+                  })
+                  .map(dept => (
+                    <option key={dept._id} value={dept._id}>{dept.name}</option>
+                  ))}
               </select>
             </div>
 

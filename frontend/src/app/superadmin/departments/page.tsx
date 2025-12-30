@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { api } from '@/lib/api';
+import { api, Department, Designation, Division, Shift } from '@/lib/api';
 import BulkUpload from '@/components/BulkUpload';
 import {
   DEPARTMENT_TEMPLATE_HEADERS,
@@ -14,46 +14,7 @@ import {
 } from '@/lib/bulkUpload';
 import Spinner from '@/components/Spinner';
 
-interface Designation {
-  _id: string;
-  name: string;
-  code?: string;
-  description?: string;
-  department?: string | any; // Made optional/any for independent designations
-  paidLeaves: number;
-  deductionRules: any[];
-  shifts?: any[];
-  departmentShifts?: Array<{
-    department: { _id: string; name: string; code?: string };
-    shifts: any[];
-    _id?: string;
-  }>;
-  isActive: boolean;
-}
 
-interface Department {
-  _id: string;
-  name: string;
-  code?: string;
-  description?: string;
-  hod?: any;
-  divisionHODs?: Array<{
-    division: { _id: string; name: string } | string;
-    hod: { _id: string; name: string; email: string } | string;
-  }>;
-  designations?: Designation[]; // Added designations array
-  shifts?: any[];
-  isActive?: boolean;
-}
-
-interface Shift {
-  _id: string;
-  name: string;
-  startTime: string;
-  endTime: string;
-  duration: number;
-  isActive: boolean;
-}
 
 export default function DepartmentsPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -86,7 +47,7 @@ export default function DepartmentsPage() {
   const [selectedDesignationShiftIds, setSelectedDesignationShiftIds] = useState<string[]>([]);
 
   // Division HOD state
-  const [divisions, setDivisions] = useState<any[]>([]);
+  const [divisions, setDivisions] = useState<Division[]>([]);
   const [divisionHODMap, setDivisionHODMap] = useState<Record<string, string>>({}); // { divisionId: hodId }
 
   // Designation form state
@@ -212,40 +173,9 @@ export default function DepartmentsPage() {
         name,
         code: code || undefined,
         description: description || undefined,
-        hod: hodId || undefined,
         divisionHODs: Object.entries(divisionHODMap)
           .filter(([_, hId]) => hId) // Only send if HOD is selected
           .map(([divId, hId]) => ({ division: divId, hod: hId })),
-      };
-
-      const loadDesignations = async (departmentId: string) => {
-        try {
-          const response = await api.getDesignations(departmentId);
-          if (response.success && response.data) {
-            setDesignations(response.data);
-          }
-        } catch (err) {
-          console.error('Error loading designations:', err);
-        }
-      };
-
-      const loadUnlinkedDesignations = async (departmentId: string) => {
-        try {
-          const globalRes = await api.getAllDesignations();
-          const linkedRes = await api.getDesignations(departmentId);
-
-          if (globalRes.success && linkedRes.success) {
-            const globalDesigs = globalRes.data || [];
-            const linkedDesigs = linkedRes.data || [];
-            const linkedIds = linkedDesigs.map(d => d._id);
-
-            // Filter out designations that are already linked to this department
-            const available = globalDesigs.filter(d => !linkedIds.includes(d._id));
-            setUnlinkedDesignations(available);
-          }
-        } catch (err) {
-          console.error('Error loading unlinked designations:', err);
-        }
       };
 
       const response = await api.createDepartment(data);
@@ -1265,12 +1195,12 @@ export default function DepartmentsPage() {
                                       {designation.departmentShifts.flatMap((ds) =>
                                         ds.shifts?.map((shift: any) => (
                                           <button
-                                            key={`${ds.department._id}-${shift._id}`}
+                                            key={`${(ds.department as any)._id}-${shift._id}`}
                                             onClick={() => setShowShiftBreakdownDialog(designation)}
                                             className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-700/10 hover:bg-emerald-100 transition-colors dark:bg-emerald-400/10 dark:text-emerald-400 dark:ring-emerald-400/20 dark:hover:bg-emerald-400/20 cursor-pointer"
-                                            title={`${ds.department.name}`}
+                                            title={`${(ds.department as any).name}`}
                                           >
-                                            {shift.name} ({ds.department.name})
+                                            {shift.name} ({(ds.department as any).name})
                                           </button>
                                         )) || []
                                       )}
@@ -1495,9 +1425,9 @@ export default function DepartmentsPage() {
                         </span>
                       </h3>
                       {showShiftBreakdownDialog.departmentShifts.map((ds) => (
-                        <div key={ds.department._id} className="rounded-xl border border-emerald-200 bg-emerald-50/30 p-4 dark:border-emerald-800 dark:bg-emerald-900/20">
+                        <div key={(ds.department as any)._id} className="rounded-xl border border-emerald-200 bg-emerald-50/30 p-4 dark:border-emerald-800 dark:bg-emerald-900/20">
                           <h4 className="mb-3 font-medium text-emerald-900 dark:text-emerald-300">
-                            {ds.department.name} {ds.department.code && `(${ds.department.code})`}
+                            {(ds.department as any).name} {(ds.department as any).code && `(${(ds.department as any).code})`}
                           </h4>
                           <div className="space-y-2">
                             {ds.shifts && ds.shifts.length > 0 ? (

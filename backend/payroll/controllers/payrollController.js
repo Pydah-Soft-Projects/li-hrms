@@ -713,11 +713,16 @@ exports.getPayrollRecords = async (req, res) => {
       }
     }
 
-    // If departmentId is provided, filter by employees in that department (within scope)
+    // If departmentId or divisionId is provided, filter by employees in that scope
     let employeeIds = null;
-    if (departmentId) {
-      const employees = await Employee.find({ ...req.scopeFilter, department_id: departmentId }).select('_id');
+    if (departmentId || (req.query.divisionId)) {
+      const empQuery = { ...req.scopeFilter };
+      if (departmentId) empQuery.department_id = departmentId;
+      if (req.query.divisionId) empQuery.division_id = req.query.divisionId;
+
+      const employees = await Employee.find(empQuery).select('_id');
       employeeIds = employees.map((emp) => emp._id);
+
       if (employeeIds.length === 0) {
         return res.status(200).json({
           success: true,
@@ -725,7 +730,26 @@ exports.getPayrollRecords = async (req, res) => {
           data: [],
         });
       }
-      query.employeeId = { $in: employeeIds };
+      // If we already have a list of employeeIds (from specific employee filter), intersection is needed
+      if (query.employeeId) {
+        // query.employeeId might be a single ID or $in array. 
+        // For simplicity, if both filters exist, we can just add $in with the intersection, 
+        // but since query.employeeId usually comes from direct selection, it's safer to just let the $in overlap happen or 
+        // simpler: if specific employee is selected, ignore list filter? No, user might select emp + div. 
+        // Let's use $in intersection logic if needed, but Mongoose doesn't support implicit AND on same field easily in basic object.
+        // Actually line 678 sets query.employeeId = employeeId. 
+        // If employeeId is passed, we probably don't need to filter by div/dept for discovery, but for validation.
+        // Let's assume if employeeId is passed, we check if they are in the list.
+        const validIds = new Set(employeeIds.map(id => id.toString()));
+        if (Array.isArray(query.employeeId.$in)) {
+          query.employeeId.$in = query.employeeId.$in.filter(id => validIds.has(id.toString()));
+        } else if (query.employeeId && !validIds.has(query.employeeId.toString())) {
+          // Employee not in the selected division/dept
+          return res.status(200).json({ success: true, count: 0, data: [] });
+        }
+      } else {
+        query.employeeId = { $in: employeeIds };
+      }
     }
 
     const payrollRecords = await PayrollRecord.find(query)

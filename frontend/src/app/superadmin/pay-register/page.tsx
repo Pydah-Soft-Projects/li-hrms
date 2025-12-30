@@ -2,18 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from "next/navigation";
-import { api, apiRequest } from '@/lib/api';
+import { api, apiRequest, Employee, Division } from '@/lib/api';
 import { toast } from 'react-toastify';
 import ArrearsPayrollSection from '@/components/Arrears/ArrearsPayrollSection';
 import Spinner from '@/components/Spinner';
 
-interface Employee {
-  _id: string;
-  emp_no: string;
-  employee_name: string;
-  department_id?: string | { _id: string; name: string };
-  designation_id?: string | { _id: string; name: string };
-}
+
 
 
 interface DailyRecord {
@@ -105,6 +99,8 @@ export default function PayRegisterPage() {
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [activeTable, setActiveTable] = useState<TableType>('present');
   const [departments, setDepartments] = useState<any[]>([]);
+  const [divisions, setDivisions] = useState<Division[]>([]);
+  const [selectedDivision, setSelectedDivision] = useState<string>('');
   const [selectedDepartment, setSelectedDepartment] = useState<string>('');
   const [leaveTypes, setLeaveTypes] = useState<any[]>([]);
   const [calculatingId, setCalculatingId] = useState<string | null>(null);
@@ -172,9 +168,21 @@ export default function PayRegisterPage() {
 
   useEffect(() => {
     loadShifts();
+    loadDivisions();
     loadDepartments();
     loadLeaveTypes();
   }, []);
+
+  const loadDivisions = async () => {
+    try {
+      const response = await api.getDivisions(); // Assuming getDivisions exists and returns all
+      if (response.success) {
+        setDivisions(response.data || []);
+      }
+    } catch (err) {
+      console.error('Error loading divisions:', err);
+    }
+  };
 
   const loadLeaveTypes = async () => {
     try {
@@ -190,11 +198,12 @@ export default function PayRegisterPage() {
   useEffect(() => {
     loadPayRegisters();
     checkBatchLocks();
-  }, [year, month, selectedDepartment]);
+  }, [year, month, selectedDepartment, selectedDivision]);
 
   const checkBatchLocks = async () => {
     try {
-      const response = await api.getPayrollBatches({ month: monthStr });
+      const divId = selectedDivision && selectedDivision.trim() !== '' ? selectedDivision : undefined;
+      const response = await api.getPayrollBatches({ month: monthStr, divisionId: divId });
       if (response && response.data) {
         const statusMap = new Map<string, { status: string, permissionGranted: boolean, batchId: string }>();
         // response.data is array of batches
@@ -217,8 +226,8 @@ export default function PayRegisterPage() {
   const loadDepartments = async () => {
     try {
       const response = await api.getDepartments(true);
-      if (response.success && response.data) {
-        setDepartments(response.data);
+      if (response.success) {
+        setDepartments(response.data || []);
       }
     } catch (err) {
       console.error('Error loading departments:', err);
@@ -242,10 +251,10 @@ export default function PayRegisterPage() {
       console.log('[Pay Register] Loading pay registers:', { monthStr, selectedDepartment });
 
       // Ensure we pass undefined instead of empty string
-      const deptId = selectedDepartment && selectedDepartment.trim() !== '' ? selectedDepartment : undefined;
-      console.log('[Pay Register] Calling API with departmentId:', deptId);
-
-      const response = await api.getEmployeesWithPayRegister(monthStr, deptId);
+      const targetDeptId = selectedDepartment && selectedDepartment.trim() !== '' ? selectedDepartment : undefined;
+      const targetDivId = selectedDivision && selectedDivision.trim() !== '' ? selectedDivision : undefined;
+      console.log('[Pay Register] Calling API with departmentId:', targetDeptId, 'divisionId:', targetDivId);
+      const response = await api.getEmployeesWithPayRegister(monthStr, targetDeptId, targetDivId);
 
       console.log('[Pay Register] API Response:', {
         success: response.success,
@@ -829,6 +838,28 @@ export default function PayRegisterPage() {
             />
           </div>
 
+          {/* Division Filter */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+              Division
+            </label>
+            <select
+              value={selectedDivision}
+              onChange={(e) => {
+                setSelectedDivision(e.target.value);
+                setSelectedDepartment(''); // Reset department when division changes
+              }}
+              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-white"
+            >
+              <option value="">All Divisions</option>
+              {divisions.map((div) => (
+                <option key={div._id} value={div._id}>
+                  {div.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {/* Department Filter */}
           <div>
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
@@ -840,11 +871,23 @@ export default function PayRegisterPage() {
               className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-white"
             >
               <option value="">All Departments</option>
-              {departments.map((dept) => (
-                <option key={dept._id} value={dept._id}>
-                  {dept.name}
-                </option>
-              ))}
+              <option value="">All Departments</option>
+              {departments
+                .filter(dept => {
+                  if (!selectedDivision) return true;
+                  const currentDivision = divisions.find(d => d._id === selectedDivision);
+                  // Check if department ID is in the division's departments list
+                  // The departments array in Division might be strings or objects depending on API
+                  // Assuming strings based on usual behavior, but safe check needed
+                  return currentDivision?.departments?.some((d: any) =>
+                    d === dept._id || d._id === dept._id
+                  );
+                })
+                .map((dept) => (
+                  <option key={dept._id} value={dept._id}>
+                    {dept.name}
+                  </option>
+                ))}
             </select>
           </div>
 

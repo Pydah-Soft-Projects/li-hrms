@@ -6,9 +6,14 @@ const PayrollBatch = require('../model/PayrollBatch');
  * @route   POST /api/payroll-batch/calculate
  * @access  Private (SuperAdmin, HR)
  */
+/**
+ * @desc    Create payroll batch for department(s)
+ * @route   POST /api/payroll-batch/calculate
+ * @access  Private (SuperAdmin, HR)
+ */
 exports.calculatePayrollBatch = async (req, res) => {
     try {
-        const { departmentId, month, calculateAll } = req.body;
+        const { departmentId, divisionId, month, calculateAll } = req.body;
 
         if (!month) {
             return res.status(400).json({
@@ -19,24 +24,65 @@ exports.calculatePayrollBatch = async (req, res) => {
 
         const userId = req.user._id || req.user.userId || req.user.id;
         const batches = [];
+        const errors = [];
 
         if (calculateAll) {
-            // Calculate for all departments
+            // Calculate for all Valid (Division, Department) pairs
             const Department = require('../../departments/model/Department');
+            // Fetch depts and populate their divisions
             const departments = await Department.find({ is_active: true });
 
             for (const dept of departments) {
-                try {
-                    const batch = await PayrollBatchService.createBatch(dept._id, month, userId);
-                    batches.push(batch);
-                } catch (error) {
-                    console.error(`Error creating batch for department ${dept.name}:`, error.message);
+                // If department is not linked to any division, skip or log warning?
+                // Per strict rules, we need a division.
+                if (!dept.divisions || dept.divisions.length === 0) {
+                    console.warn(`Department ${dept.name} has no linked divisions. Skipping payroll batch.`);
+                    continue;
+                }
+
+                for (const divId of dept.divisions) {
+                    try {
+                        const batch = await PayrollBatchService.createBatch(dept._id, divId, month, userId);
+                        batches.push(batch);
+                    } catch (error) {
+                        // Ignore "already exists" for bulk, log others
+                        if (!error.message.includes('already exists')) {
+                            console.error(`Error creating batch for Dept ${dept.name} in Div ${divId}:`, error.message);
+                            errors.push({ department: dept.name, division: divId, error: error.message });
+                        }
+                    }
                 }
             }
         } else if (departmentId) {
-            // Calculate for specific department
-            const batch = await PayrollBatchService.createBatch(departmentId, month, userId);
-            batches.push(batch);
+            // specific department
+            let targetDivId = divisionId;
+
+            if (!targetDivId) {
+                const Department = require('../../departments/model/Department');
+                const dept = await Department.findById(departmentId);
+
+                if (dept && dept.divisions && dept.divisions.length === 1) {
+                    targetDivId = dept.divisions[0]; // Auto-infer if only one
+                } else if (dept && dept.divisions && dept.divisions.length > 1) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Department belongs to multiple Divisions. Please specify divisionId.'
+                    });
+                } else {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Department is not linked to any Division. Cannot create batch.'
+                    });
+                }
+            }
+
+            try {
+                const batch = await PayrollBatchService.createBatch(departmentId, targetDivId, month, userId);
+                batches.push(batch);
+            } catch (err) {
+                throw err;
+            }
+
         } else {
             return res.status(400).json({
                 success: false,
@@ -47,7 +93,8 @@ exports.calculatePayrollBatch = async (req, res) => {
         res.status(201).json({
             success: true,
             message: `Created ${batches.length} payroll batch(es)`,
-            data: batches
+            data: batches,
+            errors: errors.length > 0 ? errors : undefined
         });
     } catch (error) {
         console.error('Error calculating payroll batch:', error);
@@ -65,17 +112,24 @@ exports.calculatePayrollBatch = async (req, res) => {
  */
 exports.getPayrollBatches = async (req, res) => {
     try {
-        const { month, departmentId, status, page = 1, limit = 20 } = req.query;
+        const { month, departmentId, divisionId, status, page = 1, limit = 20 } = req.query;
 
         const query = {};
         if (month) query.month = month;
         if (departmentId) query.department = departmentId;
+        if (divisionId) query.division = divisionId;
         if (status) query.status = status;
+
+        // Apply Scope Filter from Middleware if present
+        if (req.scopeFilter) {
+            Object.assign(query, req.scopeFilter);
+        }
 
         const skip = (parseInt(page) - 1) * parseInt(limit);
 
         const batches = await PayrollBatch.find(query)
             .populate('department', 'name code')
+            .populate('division', 'name code') // Populate Division
             .populate('createdBy', 'name email')
             .sort({ createdAt: -1 })
             .skip(skip)
@@ -605,5 +659,118 @@ exports.rollbackBatch = async (req, res) => {
             success: false,
             message: error.message || 'Error rolling back batch'
         });
+    }
+};
+
+/**
+ * @desc    Migrate existing batches to include Division ID
+ * @route   POST /api/payroll/batches/migrate
+ * @access  Private (Super Admin)
+ */
+exports.migrateBatchDivisions = async (req, res) => {
+    try {
+        console.log('--- Starting Payroll Batch Division Migration ---');
+
+        // Find batches where division is missing
+        const batches = await PayrollBatch.find({
+            $or: [
+                { division: { $exists: false } },
+                { division: null }
+            ]
+        });
+
+        console.log(`Found ${batches.length} batches to migrate.`);
+
+        let updatedCount = 0;
+        let skippedCount = 0;
+        let errors = [];
+        const Department = require('../../departments/model/Department');
+        const PayrollRecord = require('../model/PayrollRecord');
+        const Employee = require('../../employees/model/Employee'); // Ensure Employee model is loaded
+
+        for (const batch of batches) {
+            try {
+                // Strategy 1: Look for any Payroll Record linked to this batch
+                // We use payrollBatchId field in PayrollRecord
+                let divisionId = null;
+
+                // Attempt to find a record for this batch
+                // Since batchId might not be directly stored on all old records if they were legacy, check implementation.
+                // Assuming newer records have payrollBatchId. Old records might just match by department/month.
+
+                // Let's rely on finding *any* employee in this batch's department and month that has a calculated record
+                const record = await PayrollRecord.findOne({
+                    month: batch.month,
+                    // We need to resolve employee who is in this batch. 
+                    // Batch has department_id. 
+                    // Let's find a record for an employee in this department for this month.
+                }).populate({
+                    path: 'employeeId',
+                    match: { department_id: batch.department_id },
+                    select: 'division_id'
+                });
+
+                // The above query finds a record, but populate match doesn't filter the root finding. 
+                // We need to be more specific.
+
+                // Better approach: Find ONE employee record that effectively belongs to this batch
+                const linkedRecord = await PayrollRecord.findOne({ payrollBatchId: batch._id }).populate('employeeId');
+
+                if (linkedRecord && linkedRecord.employeeId && linkedRecord.employeeId.division_id) {
+                    divisionId = linkedRecord.employeeId.division_id;
+                } else {
+                    // Fallback: If no direct link (legacy), find any record for this Dept+Month
+                    // and check that employee's current division. 
+                    // NOTE: Employee might have moved, but this is best effort for legacy.
+                    // Actually, if we use the department, we can look up the department's linked divisions.
+                    // If department has only 1 division, we use that.
+                    const dept = await Department.findById(batch.department_id);
+                    if (dept && dept.divisions && dept.divisions.length === 1) {
+                        divisionId = dept.divisions[0];
+                    } else {
+                        // Department has multiple divisions or none.
+                        // Try to find ANY record for this month and department
+                        // This is expensive but necessary
+                        const potentialRecords = await PayrollRecord.find({ month: batch.month }).populate('employeeId');
+                        const match = potentialRecords.find(r => r.employeeId && r.employeeId.department_id && r.employeeId.department_id.toString() === batch.department_id.toString());
+                        if (match && match.employeeId.division_id) {
+                            divisionId = match.employeeId.division_id;
+                        }
+                    }
+                }
+
+                if (divisionId) {
+                    batch.division = divisionId;
+                    await batch.save();
+                    updatedCount++;
+                    console.log(`Updated Batch ${batch.batchNumber} (${batch.month}) with Division ${divisionId}`);
+                } else {
+                    console.warn(`Could not resolve Division for Batch ${batch.batchNumber} (Dept: ${batch.department_id})`);
+                    skippedCount++;
+                }
+
+            } catch (err) {
+                console.error(`Error migrating batch ${batch._id}:`, err);
+                errors.push({ batchId: batch._id, error: err.message });
+            }
+        }
+
+        console.log(`Migration Complete. Updated: ${updatedCount}, Skipped: ${skippedCount}, Errors: ${errors.length}`);
+
+        res.status(200).json({
+            success: true,
+            message: 'Batch migration completed',
+            stats: {
+                total: batches.length,
+                updated: updatedCount,
+                skipped: skippedCount,
+                errors: errors.length
+            },
+            errors
+        });
+
+    } catch (error) {
+        console.error('Migration Fatal Error:', error);
+        res.status(500).json({ success: false, message: error.message });
     }
 };

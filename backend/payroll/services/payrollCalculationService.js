@@ -176,7 +176,12 @@ async function calculatePayroll(employeeId, month, userId) {
     const department = await Department.findById(departmentId);
 
     // BATCH VALIDATION: Check if payroll batch is locked
-    const existingBatch = await PayrollBatch.findOne({ department: departmentId, month });
+    // Strict Scoping: Check for batch specific to Division + Department
+    const existingBatch = await PayrollBatch.findOne({
+      department: departmentId,
+      division: employee.division_id, // Division Scope
+      month
+    });
     if (existingBatch && ['approved', 'freeze', 'complete'].includes(existingBatch.status)) {
       // Check for permission
       if (!existingBatch.hasValidRecalculationPermission()) {
@@ -860,7 +865,11 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     if (!departmentId) throw new Error('Employee department not found');
 
     // BATCH VALIDATION: Check if payroll batch is locked
-    const existingBatch = await PayrollBatch.findOne({ department: departmentId, month });
+    const existingBatch = await PayrollBatch.findOne({
+      department: departmentId,
+      division: employee.division_id, // Division Scope
+      month
+    });
     if (existingBatch && ['approved', 'freeze', 'complete'].includes(existingBatch.status)) {
       // Check for permission
       if (!existingBatch.hasValidRecalculationPermission()) {
@@ -1291,6 +1300,7 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
         // console.log(`\n--- Updating Payroll Batch for Department: ${employee.department_id} ---`); // Optional logging
         let batch = await PayrollBatch.findOne({
           department: employee.department_id,
+          division: employee.division_id, // Strict Scope
           month: month
         });
 
@@ -1299,6 +1309,7 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
           // Create batch if not exists
           batch = await PayrollBatchService.createBatch(
             employee.department_id,
+            employee.division_id, // Pass Division ID
             month,
             userId
           );

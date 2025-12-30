@@ -351,11 +351,12 @@ exports.getEditHistory = async (req, res) => {
 exports.getEmployeesWithPayRegister = async (req, res) => {
   try {
     const { month } = req.params;
-    const { departmentId, status } = req.query;
+    const { departmentId, divisionId, status } = req.query;
 
     console.log('[Pay Register Controller] getEmployeesWithPayRegister called:', {
       month,
       departmentId,
+      divisionId,
       status,
       query: req.query,
     });
@@ -406,6 +407,22 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
       }
 
       employeeQuery.department_id = deptObjectId;
+    }
+
+    if (divisionId) {
+      console.log('[Pay Register Controller] Filtering employees by divisionId:', divisionId);
+
+      // Convert divisionId to ObjectId if it's a valid ObjectId string
+      let divObjectId;
+      try {
+        divObjectId = mongoose.Types.ObjectId.isValid(divisionId)
+          ? new mongoose.Types.ObjectId(divisionId)
+          : divisionId;
+      } catch (err) {
+        divObjectId = divisionId;
+      }
+
+      employeeQuery.division_id = divObjectId;
     }
 
     const employees = await Employee.find(employeeQuery)

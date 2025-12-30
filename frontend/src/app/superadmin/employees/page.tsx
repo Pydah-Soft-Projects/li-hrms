@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { api } from '@/lib/api';
+import { api, Employee, Department, Division, Designation, EmployeeApplication, Allowance, Deduction } from '@/lib/api';
 import { auth } from '@/lib/auth';
 import BulkUpload from '@/components/BulkUpload';
 import DynamicEmployeeForm from '@/components/DynamicEmployeeForm';
@@ -13,125 +13,7 @@ import {
   validateEmployeeRow,
 } from '@/lib/bulkUpload';
 
-interface Employee {
-  _id: string;
-  emp_no: string;
-  employee_name: string;
-  department_id?: string;
-  designation_id?: string;
-  division_id?: string;
-  department?: { _id: string; name: string; code?: string };
-  designation?: { _id: string; name: string; code?: string };
-  division?: { _id: string; name: string; code?: string };
-  doj?: string;
-  dob?: string;
-  gross_salary?: number;
-  paidLeaves?: number;
-  allottedLeaves?: number;
-  gender?: string;
-  marital_status?: string;
-  blood_group?: string;
-  qualifications?: any[] | string;
-  experience?: number;
-  address?: string;
-  location?: string;
-  aadhar_number?: string;
-  phone_number?: string;
-  alt_phone_number?: string;
-  email?: string;
-  pf_number?: string;
-  esi_number?: string;
-  bank_account_no?: string;
-  bank_name?: string;
-  bank_place?: string;
-  ifsc_code?: string;
-  is_active?: boolean;
-  leftDate?: string | null;
-  leftReason?: string | null;
-  dynamicFields?: any;
-  employeeAllowances?: any[];
-  employeeDeductions?: any[];
-}
 
-interface Department {
-  _id: string;
-  name: string;
-  code?: string;
-  designations?: Designation[];
-}
-
-interface Division {
-  _id: string;
-  name: string;
-  code?: string;
-}
-
-interface Designation {
-  _id: string;
-  name: string;
-  code?: string;
-  department?: string; // Optional/Any now
-}
-
-interface EmployeeApplication {
-  _id: string;
-  emp_no: string;
-  employee_name: string;
-  department_id?: string | { _id: string; name: string; code?: string };
-  designation_id?: string | { _id: string; name: string; code?: string };
-  division_id?: string | { _id: string; name: string; code?: string };
-  department?: { _id: string; name: string; code?: string };
-  designation?: { _id: string; name: string; code?: string };
-  division?: { _id: string; name: string; code?: string };
-  proposedSalary: number;
-  approvedSalary?: number;
-  status: 'pending' | 'approved' | 'rejected';
-  createdBy?: { _id: string; name: string; email: string };
-  approvedBy?: { _id: string; name: string; email: string };
-  rejectedBy?: { _id: string; name: string; email: string };
-  approvalComments?: string;
-  rejectionComments?: string;
-  created_at?: string;
-  approvedAt?: string;
-  rejectedAt?: string;
-  // All other employee fields
-  doj?: string;
-  dob?: string;
-  gender?: string;
-  marital_status?: string;
-  blood_group?: string;
-  qualifications?: any[] | string;
-  experience?: number;
-  address?: string;
-  location?: string;
-  aadhar_number?: string;
-  phone_number?: string;
-  alt_phone_number?: string;
-  email?: string;
-  pf_number?: string;
-  esi_number?: string;
-  bank_account_no?: string;
-  bank_name?: string;
-  bank_place?: string;
-  ifsc_code?: string;
-  is_active?: boolean;
-  employeeAllowances?: Allowance[];
-  employeeDeductions?: Deduction[];
-}
-
-interface Allowance {
-  _id?: string;
-  name: string;
-  amount: number;
-  type: string;
-}
-
-interface Deduction {
-  _id?: string;
-  name: string;
-  amount: number;
-  type: string;
-}
 
 interface FormSettings {
   groups: Array<{
@@ -307,8 +189,8 @@ export default function EmployeesPage() {
     if (!sortConfig) return data;
 
     return [...data].sort((a, b) => {
-      let aValue = a[sortConfig.key];
-      let bValue = b[sortConfig.key];
+      let aValue = (a as any)[sortConfig.key];
+      let bValue = (b as any)[sortConfig.key];
 
       // Handle numbers if strings look like numbers
       if (!isNaN(Number(aValue)) && !isNaN(Number(bValue))) {
@@ -1042,8 +924,8 @@ export default function EmployeesPage() {
     try {
       // Load all departments (no filter)
       const response = await api.getDepartments();
-      if (response.success && response.data) {
-        setDepartments(response.data);
+      if (response.success) {
+        setDepartments((response.data as any) || []);
       }
 
       // Load all designations globally
@@ -2597,14 +2479,11 @@ export default function EmployeesPage() {
 
               <form onSubmit={handleCreateApplication} className="space-y-6">
                 <DynamicEmployeeForm
-                  formData={applicationFormData}
+                  formData={applicationFormData as any}
                   onChange={setApplicationFormData}
                   departments={departments}
                   divisions={divisions}
                   designations={filteredApplicationDesignations as any}
-                  onSubmit={handleCreateApplication}
-                  onCancel={() => setShowApplicationDialog(false)}
-                  formSettings={formSettings}
                 />
                 {/* Allowances & Deductions Overrides */}
                 <div className="space-y-4 rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">

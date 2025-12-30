@@ -94,11 +94,23 @@ const payrollBatchSchema = new mongoose.Schema({
         unique: true,
         index: true
     },
+    // Division Context (New Hierarchy Support)
+    division: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Division',
+        required: [true, 'Division is required for payroll batch'], // Enforce Division context
+        index: true
+    },
     department: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Department',
-        required: true,
+        required: [true, 'Department context is required'],
         index: true
+    },
+    scope: {
+        type: String,
+        enum: ['department', 'division'], // Future-proofing: currently strictly 'department' (dept-in-div)
+        default: 'department'
     },
     month: {
         type: String, // YYYY-MM
@@ -190,7 +202,9 @@ const payrollBatchSchema = new mongoose.Schema({
 });
 
 // Indexes for performance
-payrollBatchSchema.index({ department: 1, month: 1 });
+// Compound index to ensure one batch per department per division per month
+// Updated for Division Hierarchy integration
+payrollBatchSchema.index({ division: 1, department: 1, month: 1, year: 1 }, { unique: true });
 payrollBatchSchema.index({ status: 1, month: 1 });
 payrollBatchSchema.index({ createdAt: -1 });
 
@@ -201,23 +215,35 @@ payrollBatchSchema.virtual('monthName').get(function () {
 });
 
 // Static method to generate batch number
-payrollBatchSchema.statics.generateBatchNumber = async function (departmentId, month) {
+payrollBatchSchema.statics.generateBatchNumber = async function (departmentId, divisionId, month) {
     const Department = mongoose.model('Department');
-    const dept = await Department.findById(departmentId);
+    const Division = mongoose.model('Division');
+
+    const [dept, div] = await Promise.all([
+        Department.findById(departmentId),
+        Division.findById(divisionId)
+    ]);
+
     const deptCode = dept?.code || 'DEPT';
+    const divCode = div?.code || 'DIV';
 
     const [year, monthNum] = month.split('-');
-    const prefix = `PB-${deptCode}-${year}-${monthNum}`;
+    // Batch Number Format: PB-DIV-DEPT-YYYY-MM-SEQ
+    const prefix = `PB-${divCode}-${deptCode}-${year}-${monthNum}`;
 
-    // Find the last batch number for this department and month
+    // Find the last batch number for this prefix
     const lastBatch = await this.findOne({
         batchNumber: new RegExp(`^${prefix}`)
     }).sort({ batchNumber: -1 });
 
     let sequence = 1;
     if (lastBatch) {
-        const lastSequence = parseInt(lastBatch.batchNumber.split('-').pop());
-        sequence = lastSequence + 1;
+        // Extract sequence from the end
+        const parts = lastBatch.batchNumber.split('-');
+        const lastSequence = parseInt(parts[parts.length - 1]);
+        if (!isNaN(lastSequence)) {
+            sequence = lastSequence + 1;
+        }
     }
 
     return `${prefix}-${String(sequence).padStart(3, '0')}`;
@@ -250,9 +276,10 @@ payrollBatchSchema.methods.validateBatch = async function () {
     const Employee = mongoose.model('Employee');
     const PayrollRecord = mongoose.model('PayrollRecord');
 
-    // Get all active employees in department
+    // Get all active employees in department AND division (Strict Scoping)
     const allEmployees = await Employee.find({
         department_id: this.department,
+        division_id: this.division, // VALIDATION UPGRADE: Enforce Division Scope
         is_active: true
     }).select('_id');
 

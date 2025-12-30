@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { api, Department, Division } from '@/lib/api';
+import { api, Department, Division, User, Employee, DataScope } from '@/lib/api';
 import { MODULE_CATEGORIES } from '@/config/moduleCategories';
 import Spinner from '@/components/Spinner';
 
@@ -54,40 +54,7 @@ const CopyIcon = () => (
   </svg>
 );
 
-interface User {
-  _id: string;
-  email: string;
-  name: string;
-  role: string;
-  roles: string[];
-  department?: { _id: string; name: string; code?: string };
-  departments?: { _id: string; name: string; code?: string }[];
-  employeeId?: string;
-  employeeRef?: { emp_no: string; employee_name: string };
-  isActive: boolean;
-  departmentType?: 'single' | 'multiple';
-  lastLogin?: string;
-  createdAt: string;
-  featureControl?: string[];
-  dataScope?: 'all' | 'division' | 'department' | 'own';
-  allowedDivisions?: string[];
-  divisionMapping?: {
-    division: string | Division;
-    departments: string[];
-  }[];
-}
 
-type DataScope = 'all' | 'division' | 'department' | 'own';
-
-interface Employee {
-  _id: string;
-  emp_no: string;
-  employee_name: string;
-  email?: string;
-  phone_number?: string;
-  department_id?: { _id: string; name: string; code?: string };
-  designation_id?: { _id: string; name: string };
-}
 
 interface UserStats {
   totalUsers: number;
@@ -275,7 +242,7 @@ export default function UsersPage() {
       // Handle scoping
       payload.dataScope = formData.dataScope;
       if (formData.dataScope === 'department') {
-        payload.department = formData.department || null;
+        (payload as any).department = formData.department || null;
       } else if (formData.dataScope === 'division') {
         payload.allowedDivisions = formData.allowedDivisions;
         payload.divisionMapping = formData.divisionMapping;
@@ -284,7 +251,7 @@ export default function UsersPage() {
       // Add feature control (always send to ensure overrides work)
       payload.featureControl = formData.featureControl;
 
-      const res = await api.createUser(payload);
+      const res = await api.createUser(payload as any);
 
       if (res.success) {
         setSuccessModalData({
@@ -323,7 +290,7 @@ export default function UsersPage() {
       // Handle scoping
       payload.dataScope = employeeFormData.dataScope || 'all';
       if (payload.dataScope === 'department') {
-        payload.department = employeeFormData.departments[0] || null;
+        (payload as any).department = employeeFormData.departments[0] || null;
       } else if (payload.dataScope === 'division') {
         payload.allowedDivisions = employeeFormData.allowedDivisions;
         payload.divisionMapping = employeeFormData.divisionMapping;
@@ -367,7 +334,7 @@ export default function UsersPage() {
       // Handle scoping
       payload.dataScope = formData.dataScope;
       if (formData.dataScope === 'department') {
-        payload.department = formData.department || null;
+        (payload as any).department = formData.department || null;
       } else if (formData.dataScope === 'division') {
         payload.allowedDivisions = formData.allowedDivisions;
         payload.divisionMapping = formData.divisionMapping;
@@ -505,6 +472,7 @@ export default function UsersPage() {
       dataScope: 'all',
       allowedDivisions: [],
       divisionMapping: [],
+      division: '',
     });
     previousRoleRef.current = '';
   };
@@ -521,6 +489,7 @@ export default function UsersPage() {
       dataScope: 'all',
       allowedDivisions: [],
       divisionMapping: [],
+      division: '',
     });
     previousRoleRef.current = '';
   };

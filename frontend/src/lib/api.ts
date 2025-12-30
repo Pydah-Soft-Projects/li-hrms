@@ -80,6 +80,11 @@ export interface PayrollBatch {
   month: string;
   year: number;
   monthNumber: number;
+  division?: {
+    _id: string;
+    name: string;
+    code: string;
+  } | string;
 
   employeePayrolls: any[]; // Can be IDs or populated objects
   totalEmployees: number;
@@ -252,9 +257,17 @@ export interface Designation {
   code: string;
   description?: string;
   department?: string | Department;
-  shifts?: string[];
-  divisionDefaults?: { division: string; shifts: string[] }[];
-  departmentShifts?: { division: string; department: string; shifts: string[] }[];
+  shifts?: string[] | any[];
+  divisionDefaults?: { division: string | Division; shifts: string[] | any[] }[];
+  departmentShifts?: Array<{
+    division?: string | Division;
+    department: string | Department | { _id: string; name: string; code?: string };
+    shifts: string[] | any[];
+    _id?: string;
+  }>;
+  paidLeaves?: number;
+  deductionRules?: any[];
+  isActive?: boolean;
 }
 
 export interface Department {
@@ -309,6 +322,114 @@ export interface Division {
   manager?: { _id: string; name: string; email: string };
   departments?: (string | Department)[];
   shifts?: (string | Shift)[];
+  isActive?: boolean;
+}
+
+export type DataScope = 'own' | 'department' | 'departments' | 'division' | 'divisions' | 'all';
+
+export interface User {
+  _id: string;
+  email: string;
+  name: string;
+  role: string;
+  roles: string[];
+  department?: any;
+  departmentType?: 'single' | 'multiple';
+  departments?: any[];
+  employeeId?: string;
+  employeeRef?: any;
+  dataScope?: DataScope;
+  allowedDivisions?: any[];
+  divisionMapping?: any[];
+  isActive: boolean;
+  featureControl?: string[];
+  lastLogin?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Employee {
+  _id: string;
+  emp_no: string;
+  employee_name: string;
+  division_id?: any;
+  department_id?: any;
+  designation_id?: any;
+  doj?: string;
+  dob?: string;
+  gross_salary?: number;
+  gender?: string;
+  marital_status?: string;
+  blood_group?: string;
+  qualifications?: any;
+  experience?: number;
+  address?: string;
+  location?: string;
+  aadhar_number?: string;
+  phone_number?: string;
+  alt_phone_number?: string;
+  email?: string;
+  pf_number?: string;
+  esi_number?: string;
+  bank_account_no?: string;
+  bank_name?: string;
+  bank_place?: string;
+  ifsc_code?: string;
+  paidLeaves?: number;
+  allottedLeaves?: number;
+  employeeAllowances?: any[];
+  employeeDeductions?: any[];
+  ctcSalary?: number;
+  calculatedSalary?: number;
+  dynamicFields?: any;
+  is_active: boolean;
+  leftDate?: string;
+  leftReason?: string;
+  created_at?: string;
+  updated_at?: string;
+  // Populated fields (from virtuals or population)
+  department?: any;
+  division?: any;
+  designation?: any;
+}
+
+export interface Allowance {
+  _id?: string;
+  name: string;
+  amount: number;
+  type: string;
+  masterId?: string;
+  code?: string;
+  category?: 'allowance';
+  basedOnPresentDays?: boolean;
+}
+
+export interface Deduction {
+  _id?: string;
+  name: string;
+  amount: number;
+  type: string;
+  masterId?: string;
+  code?: string;
+  category?: 'deduction';
+  basedOnPresentDays?: boolean;
+}
+
+export interface EmployeeApplication extends Partial<Employee> {
+  _id: string;
+  proposedSalary: number;
+  approvedSalary?: number;
+  status: 'pending' | 'approved' | 'rejected';
+  createdBy?: { _id: string; name: string; email: string };
+  approvedBy?: { _id: string; name: string; email: string };
+  rejectedBy?: { _id: string; name: string; email: string };
+  approvalComments?: string;
+  rejectionComments?: string;
+  created_at?: string;
+  approvedAt?: string;
+  rejectedAt?: string;
+  employeeAllowances?: (Allowance & { overrideAmount?: number })[];
+  employeeDeductions?: (Deduction & { overrideAmount?: number })[];
 }
 
 export const api = {
@@ -2208,12 +2329,13 @@ export const api = {
     return apiRequest<any>(`/payroll/payslip/${employeeId}/${month}`, { method: 'GET' });
   },
 
-  getPayrollRecords: async (params?: { month?: string; employeeId?: string; departmentId?: string; status?: string }) => {
+  getPayrollRecords: async (params: { month?: string; employeeId?: string; departmentId?: string; divisionId?: string; status?: string }) => {
     const queryParams = new URLSearchParams();
-    if (params?.month) queryParams.append('month', params.month);
-    if (params?.employeeId) queryParams.append('employeeId', params.employeeId);
-    if (params?.departmentId) queryParams.append('departmentId', params.departmentId);
-    if (params?.status) queryParams.append('status', params.status);
+    if (params.month) queryParams.append('month', params.month);
+    if (params.employeeId) queryParams.append('employeeId', params.employeeId);
+    if (params.departmentId) queryParams.append('departmentId', params.departmentId);
+    if (params.divisionId) queryParams.append('divisionId', params.divisionId);
+    if (params.status) queryParams.append('status', params.status);
     const query = queryParams.toString();
     return apiRequest<any>(`/payroll${query ? `?${query}` : ''}`, { method: 'GET' });
   },
@@ -2233,10 +2355,11 @@ export const api = {
   },
 
   // Payroll Batch API
-  getPayrollBatches: async (params?: { month?: string; departmentId?: string; status?: string; page?: number; limit?: number }) => {
+  getPayrollBatches: async (params?: { month?: string; departmentId?: string; divisionId?: string; status?: string; page?: number; limit?: number }) => {
     const queryParams = new URLSearchParams();
     if (params?.month) queryParams.append('month', params.month);
     if (params?.departmentId) queryParams.append('departmentId', params.departmentId);
+    if (params?.divisionId) queryParams.append('divisionId', params.divisionId);
     if (params?.status) queryParams.append('status', params.status);
     if (params?.page) queryParams.append('page', params.page.toString());
     if (params?.limit) queryParams.append('limit', params.limit.toString());
@@ -2248,7 +2371,7 @@ export const api = {
     return apiRequest<any>(`/payroll-batch/${id}`, { method: 'GET' });
   },
 
-  calculatePayrollBatch: async (data: { departmentId?: string; month: string; calculateAll?: boolean }) => {
+  calculatePayrollBatch: async (data: { departmentId?: string; divisionId?: string; month: string; calculateAll?: boolean }) => {
     return apiRequest<any>(`/payroll-batch/calculate`, {
       method: 'POST',
       body: JSON.stringify(data),
@@ -2367,9 +2490,10 @@ export const api = {
     });
   },
 
-  getEmployeesWithPayRegister: async (month: string, departmentId?: string, status?: string) => {
+  getEmployeesWithPayRegister: async (month: string, departmentId?: string, divisionId?: string, status?: string) => {
     const query = new URLSearchParams();
     if (departmentId) query.append('departmentId', departmentId);
+    if (divisionId) query.append('divisionId', divisionId);
     if (status) query.append('status', status);
     return apiRequest<any>(`/pay-register/employees/${month}${query.toString() ? `?${query.toString()}` : ''}`, {
       method: 'GET',

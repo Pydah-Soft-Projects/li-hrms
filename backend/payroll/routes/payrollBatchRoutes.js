@@ -26,5 +26,6 @@ router.get('/:id/validation', protect, payrollBatchController.validateBatch);
 
 // Bulk Operations
 router.post('/bulk-approve', protect, payrollBatchController.bulkApproveBatches);
+router.post('/migrate', protect, payrollBatchController.migrateBatchDivisions); // One-off migration route
 
 module.exports = router;

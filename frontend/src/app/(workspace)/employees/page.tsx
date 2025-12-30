@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { api } from '@/lib/api';
+import { api, Department, Division, Designation } from '@/lib/api';
 import { auth } from '@/lib/auth';
 import BulkUpload from '@/components/BulkUpload';
 import DynamicEmployeeForm from '@/components/DynamicEmployeeForm';
@@ -53,26 +53,7 @@ interface Employee {
   employeeDeductions?: any[];
 }
 
-interface Department {
-  _id: string;
-  name: string;
-  code?: string;
-  designations?: Designation[];
-}
 
-interface Division {
-  _id: string;
-  name: string;
-  code?: string;
-  departments?: string[];
-}
-
-interface Designation {
-  _id: string;
-  name: string;
-  code?: string;
-  department?: string | any;
-}
 
 interface EmployeeApplication {
   _id: string;
@@ -865,7 +846,7 @@ export default function EmployeesPage() {
     try {
       const res = await api.getDivisions(true); // Fetch only active divisions
       if (res.success) {
-        setDivisions(res.data);
+        setDivisions(res.data || []);
       }
     } catch (err) {
       console.error('Failed to load divisions', err);
