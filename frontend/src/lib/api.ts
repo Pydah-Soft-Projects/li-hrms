@@ -801,7 +801,7 @@ export const api = {
   createEmployee: async (data: any) => {
     return apiRequest<any>('/employees', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: data instanceof FormData ? data : JSON.stringify(data),
     });
   },
 

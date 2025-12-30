@@ -246,6 +246,91 @@ export default function EmployeesPage() {
     columns: [],
   });
 
+  // Pagination & Filtering State
+  const [employeePage, setEmployeePage] = useState(1);
+  const [employeeRowsPerPage, setEmployeeRowsPerPage] = useState(10);
+  const [employeeFilters, setEmployeeFilters] = useState<Record<string, string>>({});
+
+  const [applicationPage, setApplicationPage] = useState(1);
+  const [applicationRowsPerPage, setApplicationRowsPerPage] = useState(10);
+  const [applicationFilters, setApplicationFilters] = useState<Record<string, string>>({});
+
+  // Helper to extract unique values for a column
+  const getUniqueValues = (data: any[], key: string, nestedKey?: string) => {
+    const values = data.map(item => {
+      const val = nestedKey ? item[key]?.[nestedKey] : item[key];
+      return val || '';
+    }).filter((v, i, a) => v && a.indexOf(v) === i);
+    return values.sort();
+  };
+
+
+
+  // Sorting State
+  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
+
+  // Helper to filter data based on column filters
+  // Helper to filter data based on column filters
+  const filterData = (data: any[], filters: Record<string, string>) => {
+    return data.filter(item => {
+      return Object.entries(filters).every(([key, value]) => {
+        if (!value) return true;
+
+        // Special handling for Employee Status
+        if (key === 'status') {
+          if (value === 'Left') return !!item.leftDate;
+          if (value === 'Active') return !item.leftDate && item.is_active !== false;
+          if (value === 'Inactive') return !item.leftDate && item.is_active === false;
+          // Fallback for simple status matching (like in applications tab where it's a string)
+          return String(item.status) === value;
+        }
+
+        // Special handling for Processed By (Applications)
+        if (key === 'processedBy') {
+          const processorName = item.approvedBy?.name || item.rejectedBy?.name;
+          return processorName === value;
+        }
+
+        // Handle nested keys (e.g., department.name)
+        const keys = key.split('.');
+        let itemValue = item;
+        for (const k of keys) {
+          itemValue = itemValue?.[k];
+        }
+        return String(itemValue || '') === value;
+      });
+    });
+  };
+
+  // Sorting Logic
+  const sortData = (data: any[]) => {
+    if (!sortConfig) return data;
+
+    return [...data].sort((a, b) => {
+      let aValue = a[sortConfig.key];
+      let bValue = b[sortConfig.key];
+
+      // Handle numbers if strings look like numbers
+      if (!isNaN(Number(aValue)) && !isNaN(Number(bValue))) {
+        aValue = Number(aValue);
+        bValue = Number(bValue);
+      } else {
+        aValue = String(aValue || '').toLowerCase();
+        bValue = String(bValue || '').toLowerCase();
+      }
+
+      if (aValue < bValue) {
+        return sortConfig.direction === 'asc' ? -1 : 1;
+      }
+      if (aValue > bValue) {
+        return sortConfig.direction === 'asc' ? 1 : -1;
+      }
+      return 0;
+    });
+  };
+
+  // Allowance/Deduction defaults & overrides
+  const [componentDefaults, setComponentDefaults] = useState<{ allowances: any[]; deductions: any[] }>({
   const [componentDefaults, setComponentDefaults] = useState<{ allowances: Allowance[]; deductions: Deduction[] }>({
     allowances: [],
     deductions: [],
@@ -267,7 +352,94 @@ export default function EmployeesPage() {
     netSalary: 0,
     ctcSalary: 0,
   });
-  // Approval dialog allowance/deduction state
+  const [approvalSalarySummary, setApprovalSalarySummary] = useState({
+    totalAllowances: 0,
+    totalDeductions: 0,
+    netSalary: 0,
+    ctcSalary: 0,
+  });
+
+  // Filter Header State
+  const [activeFilterColumn, setActiveFilterColumn] = useState<string | null>(null);
+
+  // Helper to render sortable/filterable header
+  const RenderFilterHeader = ({
+    label,
+    filterKey,
+    nestedKey,
+    options,
+    currentFilters,
+    setFilters
+  }: {
+    label: string,
+    filterKey: string,
+    nestedKey?: string,
+    options: string[],
+    currentFilters: Record<string, string>,
+    setFilters: (filters: Record<string, string>) => void
+  }) => {
+    const isActive = activeFilterColumn === filterKey;
+    const currentFilterValue = currentFilters[filterKey] || '';
+
+    return (
+      <th className="relative px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+        <div className="flex items-center gap-2">
+          <span>{label}</span>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setActiveFilterColumn(isActive ? null : filterKey);
+            }}
+            className={`rounded p-1 hover:bg-slate-200 dark:hover:bg-slate-700 ${currentFilterValue ? 'text-green-600 bg-green-50 dark:bg-green-900/30' : 'text-slate-400'}`}
+          >
+            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 6.707A1 1 0 013 6.586V4z" />
+            </svg>
+          </button>
+        </div>
+
+        {isActive && (
+          <>
+            <div
+              className="fixed inset-0 z-10"
+              onClick={() => setActiveFilterColumn(null)}
+            />
+            <div className="absolute left-0 top-full z-20 mt-1 min-w-[200px] rounded-xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-800">
+              <div className="mb-2 px-2 py-1">
+                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Filter by {label}</span>
+              </div>
+              <div className="max-h-48 overflow-y-auto">
+                <button
+                  onClick={() => {
+                    const newFilters = { ...currentFilters };
+                    delete newFilters[filterKey];
+                    setFilters(newFilters);
+                    setActiveFilterColumn(null);
+                  }}
+                  className={`flex w-full items-center rounded-lg px-3 py-2 text-xs hover:bg-slate-50 dark:hover:bg-slate-700 ${!currentFilterValue ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400' : 'text-slate-700 dark:text-slate-300'}`}
+                >
+                  All
+                </button>
+                {options.map(opt => (
+                  <button
+                    key={opt}
+                    onClick={() => {
+                      setFilters({ ...currentFilters, [filterKey]: opt });
+                      setActiveFilterColumn(null);
+                    }}
+                    className={`flex w-full items-center rounded-lg px-3 py-2 text-xs hover:bg-slate-50 dark:hover:bg-slate-700 ${currentFilterValue === opt ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400' : 'text-slate-700 dark:text-slate-300'}`}
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+      </th>
+    );
+  };
+
   const [approvalComponentDefaults, setApprovalComponentDefaults] = useState<{ allowances: any[]; deductions: any[] }>({
     allowances: [],
     deductions: [],
@@ -277,12 +449,7 @@ export default function EmployeesPage() {
   const [approvalOverrideAllowancesBasedOnPresentDays, setApprovalOverrideAllowancesBasedOnPresentDays] = useState<Record<string, boolean>>({});
   const [approvalOverrideDeductionsBasedOnPresentDays, setApprovalOverrideDeductionsBasedOnPresentDays] = useState<Record<string, boolean>>({});
   const [approvalLoadingComponents, setApprovalLoadingComponents] = useState(false);
-  const [approvalSalarySummary, setApprovalSalarySummary] = useState({
-    totalAllowances: 0,
-    totalDeductions: 0,
-    netSalary: 0,
-    ctcSalary: 0,
-  });
+
 
   // Build override payload: only include rows user changed (matched by masterId or name)
   const buildOverridePayload = (
@@ -894,7 +1061,15 @@ export default function EmployeesPage() {
       setLoadingApplications(true);
       const response = await api.getEmployeeApplications();
       if (response.success) {
-        setApplications(response.data || []);
+        // Normalize applications data for consistent filtering
+        const apps = (response.data || []).map((app: any) => ({
+          ...app,
+          // Ensure department is always an object with name if available in department_id
+          department: app.department || (typeof app.department_id === 'object' ? app.department_id : undefined),
+          // Ensure designation is also normalized if needed (though likely not populated in same way, but good practice)
+          designation: app.designation || (typeof app.designation_id === 'object' ? app.designation_id : undefined)
+        }));
+        setApplications(apps);
         setSelectedApplicationIds([]); // Reset selection on reload
       }
     } catch (err) {
@@ -992,6 +1167,9 @@ export default function EmployeesPage() {
           payload.append(key, String(value));
         }
       });
+
+      // DEBUG: Inspect payload
+      console.log('DEBUG: Final Payload Entries (Standard):', Array.from((payload as any).entries ? (payload as any).entries() : []));
 
       // Handle Qualifications - Map Field IDs to Labels
       const qualities = Array.isArray(formData.qualifications) ? formData.qualifications : [];
@@ -1419,7 +1597,7 @@ export default function EmployeesPage() {
     setError('');
   };
 
-  const filteredEmployees = employees.filter(emp => {
+  const filteredEmployeesBase = employees.filter(emp => {
     // Filter by search term
     const matchesSearch =
       emp.emp_no.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -1437,6 +1615,25 @@ export default function EmployeesPage() {
     return matchesSearch && matchesLeftFilter && matchesDivision;
   });
 
+  // Apply column filters
+  const filteredEmployees = filterData(filteredEmployeesBase, employeeFilters);
+
+  // Sort data
+  const sortedEmployees = sortData(filteredEmployees);
+
+  // Pagination Logic for Employees
+  const totalEmployeePages = Math.ceil(sortedEmployees.length / employeeRowsPerPage);
+  const paginatedEmployees = sortedEmployees.slice(
+    (employeePage - 1) * employeeRowsPerPage,
+    employeePage * employeeRowsPerPage
+  );
+
+
+  const filteredApplicationsBase = applications.filter(app =>
+    app.employee_name?.toLowerCase().includes(applicationSearchTerm.toLowerCase()) ||
+    app.emp_no?.toLowerCase().includes(applicationSearchTerm.toLowerCase()) ||
+    ((app.department_id as any)?.name || app.department?.name || '')?.toLowerCase().includes(applicationSearchTerm.toLowerCase())
+  );
   const filteredApplications = applications.filter(app => {
     const matchesSearch =
       app.employee_name?.toLowerCase().includes(applicationSearchTerm.toLowerCase()) ||
@@ -1447,6 +1644,16 @@ export default function EmployeesPage() {
 
     return matchesSearch && matchesDivision;
   });
+
+  // Apply column filters
+  const filteredApplications = filterData(filteredApplicationsBase, applicationFilters);
+
+  // Pagination Logic for Applications
+  const totalApplicationPages = Math.ceil(filteredApplications.length / applicationRowsPerPage);
+  const paginatedApplications = filteredApplications.slice(
+    (applicationPage - 1) * applicationRowsPerPage,
+    applicationPage * applicationRowsPerPage
+  );
 
   const pendingApplications = filteredApplications.filter(app => app.status === 'pending');
   const approvedApplications = filteredApplications.filter(app => app.status === 'approved');
@@ -1677,52 +1884,130 @@ export default function EmployeesPage() {
       <div className="pointer-events-none fixed inset-0 bg-gradient-to-br from-green-50/40 via-green-50/35 to-transparent dark:from-slate-900/60 dark:via-slate-900/65 dark:to-slate-900/80" />
 
       <div className="relative z-10 mx-auto max-w-[1920px]">
-        {/* Header */}
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        {/* Header - Unified Layout */}
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Employee Management</h1>
             <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
               Manage employee records • Data source: <span className="font-medium text-green-600 dark:text-green-400">{dataSource.toUpperCase()}</span>
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              onClick={() => activeTab === 'employees' ? loadEmployees() : loadApplications()}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-all dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              Refresh
-            </button>
+
+          <div className="flex items-center gap-3">
+            {/* Tab Slider */}
+            <div className="relative flex h-10 items-center rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+              <div
+                className={`absolute h-8 rounded-lg bg-white shadow-sm transition-all duration-300 ease-in-out dark:bg-slate-700 ${activeTab === 'employees' ? 'left-1 w-[calc(50%-4px)]' : 'left-[calc(50%)] w-[calc(50%-4px)]'
+                  }`}
+              />
+              <button
+                onClick={() => setActiveTab('employees')}
+                className={`relative z-10 w-36 px-4 py-1.5 text-sm font-semibold transition-colors ${activeTab === 'employees'
+                  ? 'text-slate-900 dark:text-slate-100'
+                  : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                  }`}
+              >
+                Employees
+              </button>
+              <button
+                onClick={() => setActiveTab('applications')}
+                className={`relative z-10 w-36 px-4 py-1.5 text-sm font-semibold transition-colors flex items-center justify-center gap-2 ${activeTab === 'applications'
+                  ? 'text-slate-900 dark:text-slate-100'
+                  : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                  }`}
+              >
+                Applications
+                {/* Count Badge - Always Visible */}
+                {pendingApplications.length > 0 && (
+                  <span className={`flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] bg-red-500 text-white
+                    
+                    `}>
+                    {pendingApplications.length}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Settings Button - Moved beside slider */}
             <Link
               href="/superadmin/employees/form-settings"
-              className="flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-all hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-blue-500 dark:hover:bg-blue-900/30 dark:hover:text-blue-400"
+              className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+              title="Form Settings"
             >
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
-              Form Settings
             </Link>
+          </div>
+        </div>
+
+        {/* Global Toolbar - Consistent across tabs */}
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          {/* Search Bar - Updates based on active tab */}
+          <div className="relative flex-1 min-w-[300px] max-w-md">
+            <input
+              type="text"
+              placeholder={activeTab === 'employees' ? "Search employees..." : "Search applications..."}
+              value={activeTab === 'employees' ? searchTerm : applicationSearchTerm}
+              onChange={(e) => activeTab === 'employees' ? setSearchTerm(e.target.value) : setApplicationSearchTerm(e.target.value)}
+              className="w-full rounded-2xl border border-slate-200 bg-white pl-11 pr-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+            />
+            <svg className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {/* Pagination Controls could go here ultimately, but we'll add them above tables as requested */}
+
             <button
-              onClick={() => setShowBulkUpload(true)}
-              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+              onClick={() => activeTab === 'employees' ? loadEmployees() : loadApplications()}
+              className="group flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:border-green-300 hover:bg-green-50 hover:text-green-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-green-700 dark:hover:bg-green-900/30 dark:hover:text-green-400"
+              title="Refresh Data"
             >
-              <svg className="mr-2 inline h-4 w-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              <svg className={`h-4 w-4 transition-transform group-hover:rotate-180 ${(loading || loadingApplications) ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
-              Bulk Upload
+              <span className="hidden sm:inline">Refresh</span>
             </button>
-            <button
-              onClick={() => setShowApplicationDialog(true)}
-              className="rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
-            >
-              <svg className="mr-2 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              New Application
-            </button>
+
+            <div className="h-8 w-px bg-slate-200 dark:bg-slate-700 ml-1 mr-1"></div>
+
+            {/* Context Aware Action Buttons */}
+            {activeTab === 'employees' ? (
+              <>
+                <button
+                  onClick={() => setShowBulkUpload(true)}
+                  className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-2.5 text-sm font-medium text-green-700 transition-all hover:bg-green-100 dark:border-green-800 dark:bg-green-900/30 dark:text-green-400"
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  </svg>
+                  <span className="hidden sm:inline">Import</span>
+                </button>
+
+                <button
+                  onClick={openCreateDialog}
+                  className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-500/20 transition-all hover:shadow-green-500/40 hover:scale-[1.02]"
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  New Employee
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => setShowApplicationDialog(true)}
+                className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-500/20 transition-all hover:shadow-green-500/40 hover:scale-[1.02]"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                New Application
+              </button>
+            )}
           </div>
         </div>
 
@@ -1738,33 +2023,6 @@ export default function EmployeesPage() {
           </div>
         )}
 
-        {/* Tabs */}
-        <div className="mb-6 flex gap-2 border-b border-slate-200 dark:border-slate-700">
-          <button
-            onClick={() => setActiveTab('employees')}
-            className={`px-6 py-3 text-sm font-semibold transition-colors ${activeTab === 'employees'
-              ? 'border-b-2 border-green-500 text-green-600 dark:text-green-400'
-              : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-              }`}
-          >
-            Employees
-          </button>
-          <button
-            onClick={() => setActiveTab('applications')}
-            className={`px-6 py-3 text-sm font-semibold transition-colors ${activeTab === 'applications'
-              ? 'border-b-2 border-green-500 text-green-600 dark:text-green-400'
-              : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-              }`}
-          >
-            Applications
-            {pendingApplications.length > 0 && (
-              <span className="ml-2 rounded-full bg-red-500 px-2 py-0.5 text-xs text-white">
-                {pendingApplications.length}
-              </span>
-            )}
-          </button>
-        </div>
-
         {/* Applications Tab */}
         {activeTab === 'applications' && (
           <>
@@ -1778,13 +2036,7 @@ export default function EmployeesPage() {
                   <span>Approve Selected ({selectedApplicationIds.length})</span>
                 </button>
               )}
-              <input
-                type="text"
-                placeholder="Search applications..."
-                value={applicationSearchTerm}
-                onChange={(e) => setApplicationSearchTerm(e.target.value)}
-                className="w-full max-w-md rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-              />
+
             </div>
 
             {/* Applications List */}
@@ -1793,7 +2045,7 @@ export default function EmployeesPage() {
                 <div className="h-10 w-10 animate-spin rounded-full border-2 border-green-500 border-t-transparent"></div>
                 <p className="mt-4 text-sm font-medium text-slate-600 dark:text-slate-400">Loading applications...</p>
               </div>
-            ) : filteredApplications.length === 0 ? (
+            ) : applications.length === 0 ? (
               <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm p-12 text-center shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
                 <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-green-100 to-green-100 dark:from-green-900/30 dark:to-green-900/30">
                   <svg className="h-8 w-8 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1806,10 +2058,10 @@ export default function EmployeesPage() {
             ) : (
               <div className="space-y-6">
                 {/* Pending Applications */}
-                {pendingApplications.length > 0 && (
+                {applications.length > 0 && (
                   <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
                     <div className="border-b border-slate-200 bg-gradient-to-r from-yellow-50 to-amber-50/50 px-6 py-4 dark:border-slate-700 dark:from-yellow-900/20 dark:to-amber-900/10">
-                      <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Pending Approvals ({pendingApplications.length})</h3>
+                      <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Pending Approvals</h3>
                     </div>
                     <div className="overflow-x-auto">
                       <table className="w-full">
@@ -1831,6 +2083,13 @@ export default function EmployeesPage() {
                             </th>
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Emp No</th>
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Name</th>
+                            <RenderFilterHeader
+                              label="Department"
+                              filterKey="department.name"
+                              options={Array.from(new Set(pendingApplications.map(app => app.department?.name).filter(Boolean))) as string[]}
+                              currentFilters={applicationFilters}
+                              setFilters={setApplicationFilters}
+                            />
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Division</th>
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Department</th>
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Proposed Salary</th>
@@ -1839,6 +2098,10 @@ export default function EmployeesPage() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                          {pendingApplications.length === 0 ? (
+                            <tr>
+                              <td colSpan={7} className="px-6 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                                No pending applications found matching your criteria
                           {pendingApplications.map((app) => (
                             <tr key={app._id} className="transition-colors hover:bg-green-50/30 dark:hover:bg-green-900/10">
                               <td className="px-6 py-4">
@@ -1881,7 +2144,48 @@ export default function EmployeesPage() {
                                 )}
                               </td>
                             </tr>
-                          ))}
+                          ) : (
+                            pendingApplications.map((app) => (
+                              <tr key={app._id} className="transition-colors hover:bg-green-50/30 dark:hover:bg-green-900/10">
+                                <td className="px-6 py-4">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedApplicationIds.includes(app._id)}
+                                    onChange={() => toggleSelectApplication(app._id)}
+                                    className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500 dark:border-slate-700 dark:bg-slate-800"
+                                  />
+                                </td>
+                                <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-green-600 dark:text-green-400">
+                                  {app.emp_no}
+                                </td>
+                                <td className="whitespace-nowrap px-6 py-4">
+                                  <div className="text-sm font-medium text-slate-900 dark:text-slate-100">{app.employee_name}</div>
+                                  {app.email && (
+                                    <div className="text-xs text-slate-500 dark:text-slate-400">{app.email}</div>
+                                  )}
+                                </td>
+                                <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
+                                  {(app.department_id as any)?.name || app.department?.name || '-'}
+                                </td>
+                                <td className="whitespace-nowrap px-6 py-4 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                                  ₹{app.proposedSalary.toLocaleString()}
+                                </td>
+                                <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
+                                  {app.createdBy?.name || '-'}
+                                </td>
+                                <td className="whitespace-nowrap px-6 py-4 text-right">
+                                  {(userRole === 'super_admin' || userRole === 'sub_admin') && (
+                                    <button
+                                      onClick={() => openApprovalDialog(app)}
+                                      className="rounded-lg px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-green-500 to-green-500 hover:from-green-600 hover:to-green-600 transition-all"
+                                    >
+                                      Review
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            ))
+                          )}
                         </tbody>
                       </table>
                     </div>
@@ -1889,7 +2193,7 @@ export default function EmployeesPage() {
                 )}
 
                 {/* Approved/Rejected Applications */}
-                {(approvedApplications.length > 0 || rejectedApplications.length > 0) && (
+                {applications.length > 0 && (
                   <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
                     <div className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-green-50/30 px-6 py-4 dark:border-slate-700 dark:from-slate-900 dark:to-green-900/10">
                       <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Processed Applications</h3>
@@ -1897,6 +2201,40 @@ export default function EmployeesPage() {
                     <div className="overflow-x-auto">
                       <table className="w-full">
                         <thead>
+                          <tr className="bg-slate-50 dark:bg-slate-900/50">
+                            <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                              Emp No
+                            </th>
+                            <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                              Name
+                            </th>
+                            <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                              Proposed Salary
+                            </th>
+                            <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                              Approved Salary
+                            </th>
+                            <RenderFilterHeader
+                              label="Status"
+                              filterKey="status"
+                              options={['approved', 'rejected']}
+                              currentFilters={applicationFilters}
+                              setFilters={setApplicationFilters}
+                            />
+                            <RenderFilterHeader
+                              label="Processed By"
+                              filterKey="processedBy"
+                              options={Array.from(new Set([...approvedApplications, ...rejectedApplications].map(app => app.approvedBy?.name || app.rejectedBy?.name).filter(Boolean))) as string[]}
+                              currentFilters={applicationFilters}
+                              setFilters={setApplicationFilters}
+                            />
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                          {paginatedApplications.length === 0 ? (
+                            <tr>
+                              <td colSpan={6} className="px-6 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                                No processed applications found matching your criteria
                           <tr className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-green-50/30 dark:border-slate-700 dark:from-slate-900 dark:to-green-900/10">
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Emp No</th>
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Name</th>
@@ -1937,7 +2275,35 @@ export default function EmployeesPage() {
                                 {app.approvedBy?.name || app.rejectedBy?.name || '-'}
                               </td>
                             </tr>
-                          ))}
+                          ) : (
+                            [...paginatedApplications].map((app) => (
+                              <tr key={app._id} className="transition-colors hover:bg-green-50/30 dark:hover:bg-green-900/10">
+                                <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-green-600 dark:text-green-400">
+                                  {app.emp_no}
+                                </td>
+                                <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-slate-900 dark:text-slate-100">
+                                  {app.employee_name}
+                                </td>
+                                <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
+                                  ₹{app.proposedSalary.toLocaleString()}
+                                </td>
+                                <td className="whitespace-nowrap px-6 py-4 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                                  {app.approvedSalary ? `₹${app.approvedSalary.toLocaleString()}` : '-'}
+                                </td>
+                                <td className="whitespace-nowrap px-6 py-4">
+                                  <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${app.status === 'approved'
+                                    ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                    : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                    }`}>
+                                    {app.status}
+                                  </span>
+                                </td>
+                                <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
+                                  {app.approvedBy?.name || app.rejectedBy?.name || '-'}
+                                </td>
+                              </tr>
+                            ))
+                          )}
                         </tbody>
                       </table>
                     </div>
@@ -1952,6 +2318,14 @@ export default function EmployeesPage() {
         {activeTab === 'employees' && (
           <>
             {/* Employees Header with Search and Filter */}
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-4 rounded-t-2xl border-b border-slate-200 bg-white/50 px-6 py-4 backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/50">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-slate-600 dark:text-slate-400">Show</span>
+                <select
+                  value={employeeRowsPerPage}
+                  onChange={(e) => {
+                    setEmployeeRowsPerPage(Number(e.target.value));
+                    setEmployeePage(1);
             <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
               <div className="flex flex-1 items-center gap-3">
                 <input
@@ -2016,9 +2390,37 @@ export default function EmployeesPage() {
                       setError('Failed to export passwords');
                     }
                   }}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                  className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm font-medium text-slate-700 focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
                 >
-                  Bulk Download Pwds
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+                <span className="text-sm text-slate-600 dark:text-slate-400">entries</span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setEmployeePage(Math.max(1, employeePage - 1))}
+                  disabled={employeePage === 1}
+                  className="rounded-lg border border-slate-200 bg-white p-2 text-slate-500 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                  Page {employeePage} of {totalEmployeePages || 1}
+                </span>
+                <button
+                  onClick={() => setEmployeePage(Math.min(totalEmployeePages, employeePage + 1))}
+                  disabled={employeePage === totalEmployeePages || totalEmployeePages === 0}
+                  className="rounded-lg border border-slate-200 bg-white p-2 text-slate-500 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
                 </button>
               </div>
             </div>
@@ -2029,7 +2431,7 @@ export default function EmployeesPage() {
                 <Spinner className="w-10 h-10" />
                 <p className="mt-4 text-sm font-medium text-slate-600 dark:text-slate-400">Loading employees...</p>
               </div>
-            ) : filteredEmployees.length === 0 ? (
+            ) : employees.length === 0 ? (
               <div className="rounded-3xl border border-slate-200 bg-white/95 p-12 text-center shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
                 <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-green-100 to-green-100 dark:from-green-900/30 dark:to-green-900/30">
                   <svg className="h-8 w-8 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -2044,6 +2446,68 @@ export default function EmployeesPage() {
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>
+                      <tr className="bg-slate-50 dark:bg-slate-900/50">
+                        <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                          <div className="flex items-center gap-2">
+                            <span>Emp No</span>
+                            <button
+                              onClick={() => {
+                                let direction: 'asc' | 'desc' = 'asc';
+                                if (sortConfig && sortConfig.key === 'emp_no' && sortConfig.direction === 'asc') {
+                                  direction = 'desc';
+                                }
+                                setSortConfig({ key: 'emp_no', direction });
+                              }}
+                              className={`rounded p-1 hover:bg-slate-200 dark:hover:bg-slate-700 ${sortConfig?.key === 'emp_no' ? 'text-green-600 bg-green-50 dark:bg-green-900/30' : 'text-slate-400'}`}
+                            >
+                              {sortConfig?.key === 'emp_no' ? (
+                                sortConfig.direction === 'asc' ? (
+                                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                                  </svg>
+                                ) : (
+                                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                  </svg>
+                                )
+                              ) : (
+                                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
+                                </svg>
+                              )}
+                            </button>
+                          </div>
+                        </th>
+                        <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                          Name
+                        </th>
+                        <RenderFilterHeader
+                          label="Department"
+                          filterKey="department.name"
+                          options={Array.from(new Set(employees.map(e => e.department?.name).filter(Boolean))) as string[]}
+                          currentFilters={employeeFilters}
+                          setFilters={setEmployeeFilters}
+                        />
+                        <RenderFilterHeader
+                          label="Designation"
+                          filterKey="designation.name"
+                          options={Array.from(new Set(employees.map(e => e.designation?.name).filter(Boolean))) as string[]}
+                          currentFilters={employeeFilters}
+                          setFilters={setEmployeeFilters}
+                        />
+                        <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                          Phone
+                        </th>
+                        <RenderFilterHeader
+                          label="Status"
+                          filterKey="status"
+                          options={['Active', 'Inactive', 'Left']}
+                          currentFilters={employeeFilters}
+                          setFilters={setEmployeeFilters}
+                        />
+                        <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                          Actions
+                        </th>
                       <tr className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-green-50/30 dark:border-slate-700 dark:from-slate-900 dark:to-green-900/10">
                         <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Emp No</th>
                         <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Name</th>
@@ -2056,21 +2520,26 @@ export default function EmployeesPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                      {filteredEmployees.map((employee) => (
-                        <tr
-                          key={employee.emp_no}
-                          className="transition-colors hover:bg-green-50/30 dark:hover:bg-green-900/10 cursor-pointer"
-                          onClick={() => handleViewEmployee(employee)}
-                        >
-                          <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-green-600 dark:text-green-400">
-                            {employee.emp_no}
+                      {paginatedEmployees.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="px-6 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                            No employees found matching your criteria
                           </td>
-                          <td className="whitespace-nowrap px-6 py-4">
-                            <div className="text-sm font-medium text-slate-900 dark:text-slate-100">{employee.employee_name}</div>
-                            {employee.email && (
-                              <div className="text-xs text-slate-500 dark:text-slate-400">{employee.email}</div>
-                            )}
-                          </td>
+                        </tr>
+                      ) : (
+                        paginatedEmployees.map((employee) => (
+                          <tr
+                            key={employee.emp_no}
+                            className="transition-colors hover:bg-green-50/30 dark:hover:bg-green-900/10 cursor-pointer"
+                            onClick={() => handleViewEmployee(employee)}
+                          >
+                            <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-green-600 dark:text-green-400">
+                              {employee.emp_no}
+                            </td>
+                            <td className="whitespace-nowrap px-6 py-4">
+                              <div className="text-sm font-medium text-slate-900 dark:text-slate-100">{employee.employee_name}</div>
+                              {employee.email && (
+                                <div className="text-xs text-slate-500 dark:text-slate-400">{employee.email}</div>
                           <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
                             {employee.division?.name || '-'}
                           </td>
@@ -2096,48 +2565,67 @@ export default function EmployeesPage() {
                                   Left: {new Date(employee.leftDate).toLocaleDateString()}
                                 </span>
                               )}
-                            </div>
-                          </td>
-                          <td className="whitespace-nowrap px-6 py-4 text-right">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleEdit(employee);
-                              }}
-                              className="mr-2 rounded-lg p-2 text-slate-400 transition-all hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/30 dark:hover:text-blue-400"
-                              title="Edit"
-                            >
-                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                              </svg>
-                            </button>
-                            {employee.leftDate ? (
+                            </td>
+                            <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
+                              {employee.department?.name || '-'}
+                            </td>
+                            <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
+                              {employee.designation?.name || '-'}
+                            </td>
+                            <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
+                              {employee.phone_number || '-'}
+                            </td>
+                            <td className="whitespace-nowrap px-6 py-4">
+                              <div className="flex flex-col gap-1">
+                                <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${employee.is_active !== false
+                                  ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                  : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                                  }`}>
+                                  {employee.is_active !== false ? 'Active' : 'Inactive'}
+                                </span>
+                                {employee.leftDate && (
+                                  <span className="inline-flex rounded-full px-2.5 py-1 text-xs font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+                                    Left: {new Date(employee.leftDate).toLocaleDateString()}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="whitespace-nowrap px-6 py-4 text-right">
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleRemoveLeftDate(employee);
+                                  handleEdit(employee);
                                 }}
-                                className="rounded-lg p-2 text-slate-400 transition-all hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/30 dark:hover:text-green-400"
-                                title="Reactivate Employee"
+                                className="mr-2 rounded-lg p-2 text-slate-400 transition-all hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/30 dark:hover:text-blue-400"
+                                title="Edit"
                               >
                                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                 </svg>
                               </button>
-                            ) : (
-                              <>
+                              {employee.leftDate ? (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    handleSetLeftDate(employee);
+                                    handleRemoveLeftDate(employee);
                                   }}
-                                  className="mr-2 rounded-lg p-2 text-slate-400 transition-all hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
-                                  title="Set Left Date"
+                                  className="rounded-lg p-2 text-slate-400 transition-all hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/30 dark:hover:text-green-400"
+                                  title="Reactivate Employee"
                                 >
                                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                                   </svg>
                                 </button>
+                              ) : (
+                                <>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleSetLeftDate(employee);
+                                    }}
+                                    className="mr-2 rounded-lg p-2 text-slate-400 transition-all hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
+                                    title="Set Left Date"
+                                  >
                                 <button
                                   onClick={async (e) => {
                                     e.stopPropagation();
@@ -2185,15 +2673,66 @@ export default function EmployeesPage() {
                                     </svg>
                                   ) : (
                                     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                                     </svg>
-                                  )}
-                                </button>
-                              </>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
+                                  </button>
+                                  <button
+                                    onClick={async (e) => {
+                                      e.stopPropagation();
+                                      if (!confirm(`Resend credentials to ${employee.employee_name}? This will reset their password.`)) return;
+                                      setIsResending(employee.emp_no);
+                                      try {
+                                        const res = await api.resendEmployeeCredentials(employee.emp_no, {
+                                          passwordMode,
+                                          notificationChannels
+                                        });
+                                        if (res.success) setSuccess('Credentials sent successfully!');
+                                        else setError(res.message || 'Failed to send');
+                                      } catch (err) {
+                                        setError('Failed to resend');
+                                      } finally {
+                                        setIsResending(null);
+                                      }
+                                    }}
+                                    disabled={isResending === employee.emp_no}
+                                    className="ml-2 rounded-lg p-2 text-slate-400 transition-all hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/30 dark:hover:text-green-400 disabled:opacity-50"
+                                    title="Resend Credentials"
+                                  >
+                                    {isResending === employee.emp_no ? (
+                                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-green-500 border-t-transparent" />
+                                    ) : (
+                                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                      </svg>
+                                    )}
+                                  </button>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeactivate(employee.emp_no, employee.is_active !== false);
+                                    }}
+                                    className={`rounded-lg p-2 transition-all ${employee.is_active !== false
+                                      ? 'text-slate-400 hover:bg-orange-50 hover:text-orange-600 dark:hover:bg-orange-900/30 dark:hover:text-orange-400'
+                                      : 'text-slate-400 hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/30 dark:hover:text-green-400'
+                                      }`}
+                                    title={employee.is_active !== false ? 'Deactivate' : 'Activate'}
+                                  >
+                                    {employee.is_active !== false ? (
+                                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                                      </svg>
+                                    ) : (
+                                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                      </svg>
+                                    )}
+                                  </button>
+                                </>
+                              )}
+                            </td>
+                          </tr>
+                        ))
+                      )}
                     </tbody>
                   </table>
                 </div>

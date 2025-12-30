@@ -483,7 +483,7 @@ export default function SuperAdminDashboard() {
         {/* Header */}
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-lg font-semibold tracking-tight text-text-primary">Dashboard</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-text-primary">Dashboard</h1>
             <p className="mt-1 text-xs text-text-secondary font-normal">Overview of your HRMS system</p>
           </div>
 
@@ -617,9 +617,7 @@ export default function SuperAdminDashboard() {
           </div>
 
           {/* Recent Activities Live Feed */}
-          <div className="h-[500px]">
-            <RecentActivityFeed />
-          </div>
+
         </div>
 
         {/* Quick Stats Row */}
