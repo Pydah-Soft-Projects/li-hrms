@@ -32,6 +32,11 @@ const employeeApplicationSchema = new mongoose.Schema(
       ref: 'Department',
       default: null,
     },
+    division_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Division',
+      default: null,
+    },
     designation_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Designation',

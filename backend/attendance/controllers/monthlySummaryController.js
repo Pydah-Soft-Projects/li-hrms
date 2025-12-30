@@ -85,6 +85,18 @@ exports.getAllMonthlySummaries = async (req, res) => {
       query.month = currentMonth;
     }
 
+    // Apply data scope filtering
+    if (req.scopeFilter && Object.keys(req.scopeFilter).length > 0) {
+      // Find employees within scope
+      const allowedEmployees = await Employee.find(req.scopeFilter).select('_id').lean();
+      const allowedIds = allowedEmployees.map(e => e._id);
+
+      if (allowedIds.length === 0) {
+        return res.status(200).json({ success: true, data: [] });
+      }
+      query.employeeId = { $in: allowedIds };
+    }
+
     const summaries = await MonthlyAttendanceSummary.find(query)
       .populate('employeeId', 'employee_name emp_no department_id designation_id')
       .sort({ emp_no: 1 });

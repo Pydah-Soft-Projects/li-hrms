@@ -420,8 +420,11 @@ exports.getEmployeesWithAttendance = async (req, res) => {
   try {
     const { date } = req.query;
 
-    // Get all employees
-    const employees = await Employee.find({ is_active: { $ne: false } })
+    // Get all employees within scope
+    const employees = await Employee.find({
+      ...req.scopeFilter,
+      is_active: { $ne: false }
+    })
       .select('emp_no employee_name department_id designation_id')
       .populate('department_id', 'name')
       .populate('designation_id', 'name');
@@ -476,23 +479,29 @@ exports.getMonthlyAttendance = async (req, res) => {
     const endDateStr = `${year}-${String(month).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
     const daysInMonth = endDate.getDate();
 
-    // Get all active employees
-    const employees = await Employee.find({ is_active: { $ne: false } })
+    // Get all active employees within scope
+    const employees = await Employee.find({
+      ...req.scopeFilter,
+      is_active: { $ne: false }
+    })
+      .populate('division_id', 'name')
       .populate('department_id', 'name')
       .populate('designation_id', 'name')
       .sort({ employee_name: 1 });
 
-    // Get all attendance records for the month
+    // Get all attendance records for the month (filtered by scoped employees)
+    const empNos = employees.map(e => e.emp_no);
     const attendanceRecords = await AttendanceDaily.find({
+      employeeNumber: { $in: empNos },
       date: { $gte: startDate, $lte: endDateStr },
     })
       .populate('shiftId', 'name startTime endTime duration payableShifts')
       .sort({ employeeNumber: 1, date: 1 });
 
-    // Get all approved leaves for this month with full details
-    const startDateObj = new Date(parseInt(year), parseInt(month) - 1, 1);
-    const endDateObj = new Date(parseInt(year), parseInt(month), 0);
+    // Get all approved leaves for this month (filtered by scoped employees)
+    const empIds = employees.map(e => e._id);
     const allLeaves = await Leave.find({
+      employeeId: { $in: empIds },
       status: 'approved',
       $or: [
         { fromDate: { $lte: endDateObj }, toDate: { $gte: startDateObj } },
@@ -505,8 +514,9 @@ exports.getMonthlyAttendance = async (req, res) => {
       .populate('approvals.hod.approvedBy', 'name email')
       .populate('appliedBy', 'name email');
 
-    // Get all approved ODs for this month with full details
+    // Get all approved ODs for this month (filtered by scoped employees)
     const allODs = await OD.find({
+      employeeId: { $in: empIds },
       status: 'approved',
       $or: [
         { fromDate: { $lte: endDateObj }, toDate: { $gte: startDateObj } },
@@ -1158,8 +1168,8 @@ exports.getRecentActivity = async (req, res) => {
     let logQuery = {};
     const isScopeAll = !req.scopeFilter || Object.keys(req.scopeFilter).length === 0 || (req.scopeFilter._id === null && !req.scopeFilter.department_id);
 
-    // If we have a specific scope filter (HR/HOD/Emp)
-    if (!isScopeAll && req.scopeFilter) {
+    // If we have a specific scope filter (Division/HR/HOD/Emp)
+    if (req.scopeFilter && Object.keys(req.scopeFilter).length > 0) {
       // Find allowed Employee Numbers
       const allowedEmployees = await Employee.find(req.scopeFilter).select('emp_no').lean();
       const allowedEmpNos = allowedEmployees.map(e => e.emp_no);

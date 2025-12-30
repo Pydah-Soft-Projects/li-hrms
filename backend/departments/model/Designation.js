@@ -60,9 +60,30 @@ const designationSchema = new mongoose.Schema(
         ref: 'Shift',
       },
     ],
-    // Department-specific shift overrides
+    // Division-specific default shifts (across all departments in that division)
+    divisionDefaults: [
+      {
+        division: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'Division',
+          required: true,
+        },
+        shifts: [
+          {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Shift',
+          },
+        ],
+      },
+    ],
+    // Department-specific shift overrides (contextual to a division)
     departmentShifts: [
       {
+        division: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'Division',
+          required: false, // For backward compatibility, true for new ones
+        },
         department: {
           type: mongoose.Schema.Types.ObjectId,
           ref: 'Department',

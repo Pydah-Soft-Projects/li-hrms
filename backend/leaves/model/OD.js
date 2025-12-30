@@ -274,6 +274,12 @@ const ODSchema = new mongoose.Schema(
       },
     },
 
+    // Division at the time of application
+    division_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Division',
+    },
+
     // Department at the time of application
     department: {
       type: mongoose.Schema.Types.ObjectId,

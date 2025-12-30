@@ -45,6 +45,11 @@ export interface Workspace {
   scopeConfig?: {
     departments?: string[];
     allDepartments?: boolean;
+    divisions?: string[];
+    divisionMapping?: {
+      division: string;
+      departments: string[];
+    }[];
   };
 }
 
@@ -146,6 +151,12 @@ export interface LoginResponse {
     department?: string;
     scope?: 'global' | 'restricted';
     departments?: { _id: string; name: string; code?: string }[];
+    dataScope?: 'all' | 'division' | 'department' | 'own';
+    allowedDivisions?: string[];
+    divisionMapping?: {
+      division: string;
+      departments: string[];
+    }[];
   };
   workspaces?: Workspace[];
   activeWorkspace?: Workspace;
@@ -270,6 +281,17 @@ export interface Department {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  divisions?: string[];
+}
+
+export interface Division {
+  _id: string;
+  name: string;
+  code: string;
+  description?: string;
+  manager?: { _id: string; name: string; email: string };
+  departments?: (string | Department)[];
+  shifts?: (string | Shift)[];
 }
 
 export const api = {
@@ -499,6 +521,45 @@ export const api = {
 
   createDepartment: async (data: Partial<Department>) => {
     return apiRequest<Department>('/departments', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Divisions
+
+
+  getDivision: async (id: string) => {
+    return apiRequest<Division>(`/divisions/${id}`, { method: 'GET' });
+  },
+
+  createDivision: async (data: Partial<Division>) => {
+    return apiRequest<Division>('/divisions', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  updateDivision: async (id: string, data: Partial<Division>) => {
+    return apiRequest<Division>(`/divisions/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  deleteDivision: async (id: string) => {
+    return apiRequest<void>(`/divisions/${id}`, { method: 'DELETE' });
+  },
+
+  linkDepartmentsToDivision: async (id: string, data: { departmentIds: string[]; action: 'link' | 'unlink' }) => {
+    return apiRequest<any>(`/divisions/${id}/departments`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  assignShiftsToDivision: async (id: string, data: { shifts: string[]; targetType: string; targetId?: string }) => {
+    return apiRequest<any>(`/divisions/${id}/shifts`, {
       method: 'POST',
       body: JSON.stringify(data),
     });
@@ -1367,6 +1428,15 @@ export const api = {
   // Delete OD
   deleteOD: async (id: string) => {
     return apiRequest<any>(`/leaves/od/${id}`, { method: 'DELETE' });
+  },
+
+  // ==========================================
+  // DIVISION/DEPARTMENT MANAGEMENT
+  // ==========================================
+
+  getDivisions: async (isActive?: boolean) => {
+    const query = isActive !== undefined ? `?isActive=${isActive}` : '';
+    return apiRequest<any>(`/divisions${query}`, { method: 'GET' });
   },
 
   // ==========================================

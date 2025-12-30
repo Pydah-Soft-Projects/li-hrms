@@ -463,7 +463,10 @@ exports.exportPayrollExcel = async (req, res) => {
         .map((id) => id.trim())
         .filter(Boolean);
     } else if (departmentId) {
-      const emps = await Employee.find({ department_id: departmentId }).select('_id');
+      const emps = await Employee.find({ ...req.scopeFilter, department_id: departmentId }).select('_id');
+      targetEmployeeIds = emps.map((e) => e._id.toString());
+    } else if (req.scopeFilter && Object.keys(req.scopeFilter).length > 0) {
+      const emps = await Employee.find(req.scopeFilter).select('_id');
       targetEmployeeIds = emps.map((e) => e._id.toString());
     }
 
@@ -656,7 +659,7 @@ exports.getPayrollRecords = async (req, res) => {
   try {
     const { month, employeeId, departmentId, status } = req.query;
 
-    const query = {};
+    const query = { ...req.scopeFilter };
 
     // Role-based filtering
     const isAdmin = ['super_admin', 'sub_admin', 'hr'].includes(req.user.role);
@@ -710,10 +713,10 @@ exports.getPayrollRecords = async (req, res) => {
       }
     }
 
-    // If departmentId is provided, filter by employees in that department
+    // If departmentId is provided, filter by employees in that department (within scope)
     let employeeIds = null;
     if (departmentId) {
-      const employees = await Employee.find({ department_id: departmentId }).select('_id');
+      const employees = await Employee.find({ ...req.scopeFilter, department_id: departmentId }).select('_id');
       employeeIds = employees.map((emp) => emp._id);
       if (employeeIds.length === 0) {
         return res.status(200).json({

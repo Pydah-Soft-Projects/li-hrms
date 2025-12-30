@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { api, Department } from '@/lib/api';
+import { api, Department, Division } from '@/lib/api';
 import { MODULE_CATEGORIES } from '@/config/moduleCategories';
 import Spinner from '@/components/Spinner';
 
@@ -69,7 +69,15 @@ interface User {
   lastLogin?: string;
   createdAt: string;
   featureControl?: string[];
+  dataScope?: 'all' | 'division' | 'department' | 'own';
+  allowedDivisions?: string[];
+  divisionMapping?: {
+    division: string | Division;
+    departments: string[];
+  }[];
 }
+
+type DataScope = 'all' | 'division' | 'department' | 'own';
 
 interface Employee {
   _id: string;
@@ -92,6 +100,7 @@ const ROLES = [
   { value: 'super_admin', label: 'Super Admin', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
   { value: 'sub_admin', label: 'Sub Admin', color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' },
   { value: 'hr', label: 'HR', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
+  { value: 'manager', label: 'Manager', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
   { value: 'hod', label: 'HOD', color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' },
 ];
 
@@ -106,6 +115,7 @@ const getRoleLabel = (role: string) => {
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [divisions, setDivisions] = useState<Division[]>([]);
   const [employeesWithoutAccount, setEmployeesWithoutAccount] = useState<Employee[]>([]);
   const [stats, setStats] = useState<UserStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -123,9 +133,7 @@ export default function UsersPage() {
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [generatedPassword, setGeneratedPassword] = useState('');
 
-  // Form state for create/edit
   const [formData, setFormData] = useState({
     email: '',
     name: '',
@@ -136,6 +144,9 @@ export default function UsersPage() {
     password: '',
     autoGeneratePassword: true,
     featureControl: [] as string[],
+    dataScope: 'all' as DataScope,
+    allowedDivisions: [] as string[],
+    divisionMapping: [] as { division: string; departments: string[] }[],
   });
 
   // Form state for create from employee
@@ -147,6 +158,9 @@ export default function UsersPage() {
     departments: [] as string[],
     autoGeneratePassword: true,
     featureControl: [] as string[],
+    dataScope: 'all' as DataScope,
+    allowedDivisions: [] as string[],
+    divisionMapping: [] as { division: string; departments: string[] }[],
   });
 
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -160,21 +174,23 @@ export default function UsersPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [usersRes, deptRes, statsRes] = await Promise.all([
+      const [usersRes, deptRes, divRes, statsRes] = await Promise.all([
         api.getUsers({
           role: roleFilter || undefined,
           isActive: statusFilter ? statusFilter === 'active' : undefined,
           search: search || undefined,
         }),
         api.getDepartments(true),
+        api.getDivisions(),
         api.getUserStats(),
       ]);
 
       if (usersRes.success) setUsers(usersRes.data || []);
       if (deptRes.success) setDepartments(deptRes.data || []);
+      if (divRes.success) setDivisions(divRes.data || []);
       if (statsRes.success) setStats(statsRes.data);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load data');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load data');
     } finally {
       setLoading(false);
     }
@@ -221,9 +237,11 @@ export default function UsersPage() {
         const res = await api.getSetting(settingKey);
 
         if (res.success && res.data?.value?.activeModules) {
+          const defaultScope = formData.role === 'manager' ? 'division' : (formData.role === 'hod' ? 'department' : 'all');
           setFormData(prev => ({
             ...prev,
-            featureControl: res.data?.value?.activeModules || []
+            featureControl: res.data?.value?.activeModules || [],
+            dataScope: defaultScope as DataScope
           }));
         }
       } catch (err) {
@@ -240,7 +258,7 @@ export default function UsersPage() {
     setError('');
 
     try {
-      const payload: any = {
+      const payload: Partial<User> & { autoGeneratePassword?: boolean; password?: string; assignWorkspace?: boolean } = {
         email: formData.email,
         name: formData.name,
         role: formData.role,
@@ -252,11 +270,13 @@ export default function UsersPage() {
         payload.password = formData.password;
       }
 
-      // Handle department assignment based on departmentType
-      if (formData.departmentType === 'single') {
+      // Handle scoping
+      payload.dataScope = formData.dataScope;
+      if (formData.dataScope === 'department') {
         payload.department = formData.department || null;
-      } else {
-        payload.departments = formData.departments || [];
+      } else if (formData.dataScope === 'division') {
+        payload.allowedDivisions = formData.allowedDivisions;
+        payload.divisionMapping = formData.divisionMapping;
       }
 
       // Add feature control (always send to ensure overrides work)
@@ -288,7 +308,7 @@ export default function UsersPage() {
     setError('');
 
     try {
-      const payload: any = {
+      const payload: { employeeId: string; role: string; autoGeneratePassword: boolean; email?: string; dataScope?: DataScope; department?: string | null; allowedDivisions?: string[]; divisionMapping?: any[]; featureControl?: string[] } = {
         employeeId: employeeFormData.employeeId,
         role: employeeFormData.role,
         autoGeneratePassword: employeeFormData.autoGeneratePassword,
@@ -298,13 +318,13 @@ export default function UsersPage() {
         payload.email = employeeFormData.email;
       }
 
-      // Handle department assignment based on departmentType
-      if (employeeFormData.departmentType === 'single') {
-        if (employeeFormData.departments[0]) {
-          payload.department = employeeFormData.departments[0];
-        }
-      } else {
-        payload.departments = employeeFormData.departments || [];
+      // Handle scoping
+      payload.dataScope = employeeFormData.dataScope || 'all';
+      if (payload.dataScope === 'department') {
+        payload.department = employeeFormData.departments[0] || null;
+      } else if (payload.dataScope === 'division') {
+        payload.allowedDivisions = employeeFormData.allowedDivisions;
+        payload.divisionMapping = employeeFormData.divisionMapping;
       }
 
       // Add feature control (always send to ensure overrides work)
@@ -342,11 +362,13 @@ export default function UsersPage() {
         role: formData.role,
       };
 
-      // Handle department assignment based on departmentType
-      if (formData.departmentType === 'single') {
+      // Handle scoping
+      payload.dataScope = formData.dataScope;
+      if (formData.dataScope === 'department') {
         payload.department = formData.department || null;
-      } else {
-        payload.departments = formData.departments || [];
+      } else if (formData.dataScope === 'division') {
+        payload.allowedDivisions = formData.allowedDivisions;
+        payload.divisionMapping = formData.divisionMapping;
       }
 
       // Add feature control (always send to ensure overrides work)
@@ -378,7 +400,12 @@ export default function UsersPage() {
       if (res.success) {
         setSuccess('Password reset successfully');
         if (res.data?.newPassword) {
-          setGeneratedPassword(res.data.newPassword);
+          setSuccessModalData({
+            username: selectedUser.email,
+            password: res.data.newPassword,
+            message: 'Password has been reset successfully.'
+          });
+          setShowSuccessModal(true);
         }
         setShowPasswordDialog(false);
         setSelectedUser(null);
@@ -435,6 +462,9 @@ export default function UsersPage() {
       password: '',
       autoGeneratePassword: false,
       featureControl: user.featureControl || [],
+      dataScope: user.dataScope || 'all',
+      allowedDivisions: user.allowedDivisions || [],
+      divisionMapping: user.divisionMapping || [],
     });
     // Prevent useEffect from reloading defaults and overwriting user data
     previousRoleRef.current = user.role;
@@ -465,6 +495,9 @@ export default function UsersPage() {
       password: '',
       autoGeneratePassword: true,
       featureControl: [],
+      dataScope: 'all',
+      allowedDivisions: [],
+      divisionMapping: [],
     });
     previousRoleRef.current = '';
   };
@@ -478,27 +511,171 @@ export default function UsersPage() {
       departments: [],
       autoGeneratePassword: true,
       featureControl: [],
+      dataScope: 'all',
+      allowedDivisions: [],
+      divisionMapping: [],
     });
     previousRoleRef.current = '';
   };
 
-  // Handle department multi-select for HR
-  const toggleDepartment = (deptId: string, isEmployee = false) => {
-    if (isEmployee) {
-      setEmployeeFormData((prev) => ({
+
+
+  const toggleDivisionMapping = (divisionId: string, deptId: string | null = null, isEmployee = false) => {
+    const setFunc = isEmployee ? setEmployeeFormData : setFormData;
+
+    setFunc((prev: any) => {
+      let newMapping = [...(prev.divisionMapping || [])];
+      let existingDivisionIdx = newMapping.findIndex(m => {
+        const mDivId = typeof m.division === 'string' ? m.division : m.division?._id;
+        return mDivId === divisionId;
+      });
+
+      if (existingDivisionIdx === -1) {
+        newMapping.push({ division: divisionId, departments: [] });
+        existingDivisionIdx = newMapping.length - 1;
+      }
+
+      if (deptId === null) {
+        // Toggle "All Departments" for this division (empty array means all)
+        // If it already has specific departments, clear them to make it "All"
+        // If it's already "All", maybe keep it as is (or remove division?)
+        newMapping[existingDivisionIdx] = { ...newMapping[existingDivisionIdx], departments: [] };
+      } else {
+        // Toggle specific department
+        const currentDepts = [...newMapping[existingDivisionIdx].departments];
+        if (currentDepts.includes(deptId)) {
+          newMapping[existingDivisionIdx] = {
+            ...newMapping[existingDivisionIdx],
+            departments: currentDepts.filter(d => d !== deptId)
+          };
+        } else {
+          newMapping[existingDivisionIdx] = {
+            ...newMapping[existingDivisionIdx],
+            departments: [...currentDepts, deptId]
+          };
+        }
+      }
+
+      // If HOD, restrict to single choice
+      if (prev.role === 'hod') {
+        if (deptId !== null) {
+          newMapping = [{ division: divisionId, departments: [deptId] }];
+        } else {
+          newMapping = [{ division: divisionId, departments: [] }];
+        }
+      }
+
+      return {
         ...prev,
-        departments: prev.departments.includes(deptId)
-          ? prev.departments.filter((d) => d !== deptId)
-          : [...prev.departments, deptId],
-      }));
-    } else {
-      setFormData((prev) => ({
-        ...prev,
-        departments: prev.departments.includes(deptId)
-          ? prev.departments.filter((d) => d !== deptId)
-          : [...prev.departments, deptId],
-      }));
-    }
+        divisionMapping: newMapping,
+        allowedDivisions: newMapping.map(m => typeof m.division === 'string' ? m.division : m.division?._id)
+      };
+    });
+  };
+
+  const ScopingSelector = ({ data, setData, asEmployee = false }: { data: any, setData: (data: any) => void, asEmployee?: boolean }) => {
+    return (
+      <div className="border-t border-slate-200 dark:border-slate-700 pt-4 space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Data Scope *</label>
+          <select
+            value={data.dataScope}
+            onChange={(e) => setData({ ...data, dataScope: e.target.value })}
+            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+          >
+            <option value="all">All Data (Across All Divisions)</option>
+            <option value="division">Specific Divisions / Departments</option>
+            {data.role === 'hod' && <option value="department">Single Department Only</option>}
+            <option value="own">Self Only</option>
+          </select>
+        </div>
+
+        {data.dataScope === 'division' && (
+          <div className="space-y-4 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+            <label className="block text-sm font-semibold text-slate-900 dark:text-white mb-2">
+              Division & Department Access Mapping
+              {data.role === 'hod' && <span className="ml-2 text-xs text-amber-600">(Single Assignment enforced)</span>}
+            </label>
+
+            <div className="space-y-4">
+              {divisions.map((div) => {
+                const isSelected = data.divisionMapping.some((m: any) => {
+                  const mDivId = typeof m.division === 'string' ? m.division : m.division?._id;
+                  return mDivId === div._id;
+                });
+                const mapping = data.divisionMapping.find((m: any) => {
+                  const mDivId = typeof m.division === 'string' ? m.division : m.division?._id;
+                  return mDivId === div._id;
+                });
+
+                return (
+                  <div key={div._id} className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 overflow-hidden">
+                    <div
+                      className={`flex items-center justify-between p-3 cursor-pointer ${isSelected ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                      onClick={() => toggleDivisionMapping(div._id, null, asEmployee)}
+                    >
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          readOnly
+                          className="rounded border-slate-300 text-blue-600"
+                        />
+                        <span className="text-sm font-medium dark:text-white">{div.name}</span>
+                      </div>
+                      {isSelected && (
+                        <span className="text-[10px] font-bold uppercase text-blue-600 dark:text-blue-400">
+                          {mapping?.departments.length === 0 ? 'All Departments' : `${mapping?.departments.length} Departments`}
+                        </span>
+                      )}
+                    </div>
+
+                    {isSelected && (
+                      <div className="p-3 border-t border-slate-100 dark:border-slate-700 grid grid-cols-2 gap-2">
+                        {departments.filter(dept => dept.divisions?.includes(div._id)).map(dept => (
+                          <label key={dept._id} className="flex items-center gap-2 p-1.5 rounded hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={mapping?.departments.includes(dept._id)}
+                              onChange={() => toggleDivisionMapping(div._id, dept._id, asEmployee)}
+                              className="rounded border-slate-300 text-blue-600 scale-75"
+                            />
+                            <span className="text-[11px] text-slate-600 dark:text-slate-400 truncate">{dept.name}</span>
+                          </label>
+                        ))}
+                        {departments.filter(dept => dept.divisions?.includes(div._id)).length === 0 && (
+                          <div className="col-span-2 text-center py-2 text-[10px] text-slate-400">No departments linked to this division</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {data.dataScope === 'department' && (
+          <div>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+              Select Department
+            </label>
+            <select
+              value={data.department || ''}
+              onChange={(e) => setData({ ...data, department: e.target.value })}
+              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            >
+              <option value="">Select Department</option>
+              {departments.map((dept) => (
+                <option key={dept._id} value={dept._id}>
+                  {dept.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
+    );
   };
 
   if (loading && users.length === 0) {
@@ -844,9 +1021,10 @@ export default function UsersPage() {
                       setFormData({
                         ...formData,
                         role,
+                        dataScope: ['hr', 'sub_admin'].includes(role) ? 'all' : (role === 'hod' ? 'division' : 'department'),
                         department: '',
                         departments: [],
-                        departmentType: ['hr'].includes(role) ? 'multiple' : 'single'
+                        divisionMapping: []
                       });
                     }}
                     className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
@@ -861,44 +1039,7 @@ export default function UsersPage() {
 
 
 
-                {formData.departmentType === 'multiple' ? (
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Departments <span className="text-xs text-slate-500">(User can manage multiple departments)</span>
-                    </label>
-                    <div className="max-h-40 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 p-2 space-y-2">
-                      {departments.map((dept) => (
-                        <label key={dept._id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={formData.departments.includes(dept._id)}
-                            onChange={() => toggleDepartment(dept._id)}
-                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                          />
-                          <span className="text-sm text-slate-700 dark:text-slate-300">{dept.name}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Department <span className="text-xs text-slate-500">(User is assigned to one department)</span>
-                    </label>
-                    <select
-                      value={formData.department}
-                      onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                    >
-                      <option value="">Select Department</option>
-                      {departments.map((dept) => (
-                        <option key={dept._id} value={dept._id}>
-                          {dept.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
+                <ScopingSelector data={formData} setData={setFormData} />
 
                 {/* Feature Control */}
                 <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
@@ -1052,8 +1193,9 @@ export default function UsersPage() {
                       setEmployeeFormData({
                         ...employeeFormData,
                         role,
+                        dataScope: ['hr', 'sub_admin'].includes(role) ? 'all' : (role === 'hod' ? 'division' : 'department'),
                         departments: [],
-                        departmentType: ['hr'].includes(role) ? 'multiple' : 'single'
+                        divisionMapping: []
                       });
                     }}
                     className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
@@ -1068,44 +1210,7 @@ export default function UsersPage() {
 
 
 
-                {employeeFormData.departmentType === 'multiple' ? (
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Departments to Manage
-                    </label>
-                    <div className="max-h-40 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 p-2 space-y-2">
-                      {departments.map((dept) => (
-                        <label key={dept._id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={employeeFormData.departments.includes(dept._id)}
-                            onChange={() => toggleDepartment(dept._id, true)}
-                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                          />
-                          <span className="text-sm text-slate-700 dark:text-slate-300">{dept.name}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Department <span className="text-xs text-slate-500">(User is assigned to one department)</span>
-                    </label>
-                    <select
-                      value={employeeFormData.departments[0] || ''}
-                      onChange={(e) => setEmployeeFormData({ ...employeeFormData, departments: e.target.value ? [e.target.value] : [] })}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                    >
-                      <option value="">Select Department</option>
-                      {departments.map((dept) => (
-                        <option key={dept._id} value={dept._id}>
-                          {dept.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
+                <ScopingSelector data={employeeFormData} setData={(val) => setEmployeeFormData(val)} asEmployee={true} />
 
                 {/* Feature Control */}
                 <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
@@ -1214,7 +1319,8 @@ export default function UsersPage() {
                       setFormData({
                         ...formData,
                         role,
-                        departmentType: ['hr'].includes(role) ? 'multiple' : 'single'
+                        dataScope: ['hr', 'sub_admin'].includes(role) ? 'all' : (role === 'hod' ? 'division' : 'department'),
+                        divisionMapping: []
                       });
                     }}
                     disabled={selectedUser.role === 'super_admin'}
@@ -1230,44 +1336,7 @@ export default function UsersPage() {
 
 
 
-                {formData.departmentType === 'multiple' ? (
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Departments <span className="text-xs text-slate-500">(User can manage multiple departments)</span>
-                    </label>
-                    <div className="max-h-40 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 p-2 space-y-2">
-                      {departments.map((dept) => (
-                        <label key={dept._id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={formData.departments.includes(dept._id)}
-                            onChange={() => toggleDepartment(dept._id)}
-                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                          />
-                          <span className="text-sm text-slate-700 dark:text-slate-300">{dept.name}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Department <span className="text-xs text-slate-500">(User is assigned to one department)</span>
-                    </label>
-                    <select
-                      value={formData.department}
-                      onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                    >
-                      <option value="">Select Department</option>
-                      {departments.map((dept) => (
-                        <option key={dept._id} value={dept._id}>
-                          {dept.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
+                <ScopingSelector data={formData} setData={setFormData} />
 
                 {/* Feature Control */}
                 <div className="border-t border-slate-200 dark:border-slate-700 pt-4">

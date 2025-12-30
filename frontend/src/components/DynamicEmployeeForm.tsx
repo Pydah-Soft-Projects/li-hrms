@@ -79,6 +79,7 @@ interface DynamicEmployeeFormProps {
   errors?: Record<string, string>;
   departments?: Array<{ _id: string; name: string }>;
   designations?: Array<{ _id: string; name: string; department: string }>;
+  divisions?: Array<{ _id: string; name: string }>;
   onSettingsLoaded?: (settings: FormSettings) => void;
   simpleUpload?: boolean;
   isViewMode?: boolean;
@@ -93,6 +94,7 @@ export default function DynamicEmployeeForm({
   onSettingsLoaded,
   simpleUpload = false,
   isViewMode = false,
+  divisions = [],
 }: DynamicEmployeeFormProps) {
   const [settings, setSettings] = useState<FormSettings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -136,10 +138,24 @@ export default function DynamicEmployeeForm({
   };
 
   const handleFieldChange = (fieldId: string, value: any) => {
-    onChange({
+    const newData = {
       ...formData,
       [fieldId]: value,
-    });
+    };
+
+    // Cascading logic: Reset department if division changes
+    if (fieldId === 'division_id') {
+      newData.department_id = '';
+      // Optionally reset designation if it's dependent on department
+      newData.designation_id = '';
+    }
+
+    // Reset designation if department changes
+    if (fieldId === 'department_id') {
+      newData.designation_id = '';
+    }
+
+    onChange(newData);
   };
 
   const handleArrayItemChange = (fieldId: string, index: number, value: any) => {
@@ -174,8 +190,8 @@ export default function DynamicEmployeeForm({
     const error = errors[field.id] || errors[fieldId];
     const fieldKey = `${groupId}-${field.id}${arrayIndex !== undefined ? `-${arrayIndex}` : ''}`;
 
-    // Special handling for department_id and designation_id
-    if (field.id === 'department_id') {
+    // Special handling for division_id, department_id and designation_id
+    if (field.id === 'division_id') {
       return (
         <div key={fieldKey}>
           <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -186,11 +202,51 @@ export default function DynamicEmployeeForm({
             onChange={(e) => handleFieldChange(field.id, e.target.value)}
             required={field.isRequired}
             disabled={isViewMode}
+            className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
+              }`}
+          >
+            <option value="">Select Division</option>
+            {divisions.map((div) => (
+              <option key={div._id} value={div._id}>
+                {div.name}
+              </option>
+            ))}
+          </select>
+          {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
+        </div>
+      );
+    }
+
+    if (field.id === 'department_id') {
+      // Filter departments based on selected division if division_id is set
+      let filteredDepartments = departments;
+      if (formData.division_id) {
+        const selectedDivision = (divisions as any[]).find(d => d._id === formData.division_id);
+        if (selectedDivision && selectedDivision.departments) {
+          const linkedDeptIds = selectedDivision.departments.map((d: any) => typeof d === 'string' ? d : d._id);
+          filteredDepartments = departments.filter(d => linkedDeptIds.includes(d._id));
+        } else {
+          // If division is selected but has no departments linked, show nothing or all?
+          // Usually, if division is selected, we should restrict.
+          filteredDepartments = [];
+        }
+      }
+
+      return (
+        <div key={fieldKey}>
+          <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+            {field.label} {field.isRequired && '*'}
+          </label>
+          <select
+            value={value || ''}
+            onChange={(e) => handleFieldChange(field.id, e.target.value)}
+            required={field.isRequired}
+            disabled={isViewMode || (divisions.length > 0 && !formData.division_id)}
             className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
               }`}
           >
-            <option value="">Select Department</option>
-            {departments.map((dept) => (
+            <option value="">{formData.division_id ? 'Select Department' : 'Please select a Division first'}</option>
+            {filteredDepartments.map((dept) => (
               <option key={dept._id} value={dept._id}>
                 {dept.name}
               </option>

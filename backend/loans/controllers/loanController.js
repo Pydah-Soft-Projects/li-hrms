@@ -216,7 +216,7 @@ const calculateEarlySettlement = (loan, settlementDate = new Date()) => {
 exports.getLoans = async (req, res) => {
   try {
     const { status, employeeId, department, requestType, page = 1, limit = 20 } = req.query;
-    const filter = { isActive: true };
+    const filter = { isActive: true, ...(req.scopeFilter || {}) };
 
     if (status) filter.status = status;
     if (employeeId) filter.employeeId = employeeId;
@@ -552,6 +552,7 @@ exports.applyLoan = async (req, res) => {
       remarks,
       department: employee.department_id || employee.department,
       designation: employee.designation_id || employee.designation,
+      division_id: employee.division_id || employee.division,
       appliedBy: req.user._id,
       appliedAt: new Date(),
       status: 'pending',

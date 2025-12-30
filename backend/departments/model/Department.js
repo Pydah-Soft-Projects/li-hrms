@@ -121,6 +121,28 @@ const departmentSchema = new mongoose.Schema(
         default: 0, // 0 = unlimited
       },
     },
+    // Divisions this department belongs to
+    divisions: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Division',
+      },
+    ],
+    // Division-specific default shifts
+    divisionDefaults: [
+      {
+        division: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'Division',
+        },
+        shifts: [
+          {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Shift',
+          },
+        ],
+      },
+    ],
     isActive: {
       type: Boolean,
       default: true,

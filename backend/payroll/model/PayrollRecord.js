@@ -13,6 +13,12 @@ const payrollRecordSchema = new mongoose.Schema(
       required: [true, 'Employee is required'],
       index: true,
     },
+    // Division reference (for scoped reporting)
+    division_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Division',
+      index: true,
+    },
 
     // Employee number for quick reference
     emp_no: {

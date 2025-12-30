@@ -25,26 +25,55 @@ exports.getSettings = async (req, res) => {
 
     // Ensure DOJ is present in basic_info for existing settings
     const basicInfoGroup = settingsObj.groups.find((g) => g.id === 'basic_info');
-    if (basicInfoGroup && !basicInfoGroup.fields.some((f) => f.id === 'doj')) {
-      const dojField = {
-        id: 'doj',
-        label: 'Date of Joining',
-        type: 'date',
-        dataType: 'date',
-        isRequired: false,
-        isSystem: true,
-        dateFormat: 'dd-mm-yyyy',
-        order: 5,
-        isEnabled: true,
-      };
-
-      // Find proposedSalary to adjust its order
-      const proposedSalary = basicInfoGroup.fields.find((f) => f.id === 'proposedSalary');
-      if (proposedSalary && proposedSalary.order <= 5) {
-        proposedSalary.order = 6;
+    if (basicInfoGroup) {
+      if (!basicInfoGroup.fields.some((f) => f.id === 'doj')) {
+        const dojField = {
+          id: 'doj',
+          label: 'Date of Joining',
+          type: 'date',
+          dataType: 'date',
+          isRequired: false,
+          isSystem: true,
+          dateFormat: 'dd-mm-yyyy',
+          order: 6, // Moved to 6
+          isEnabled: true,
+        };
+        basicInfoGroup.fields.push(dojField);
       }
 
-      basicInfoGroup.fields.push(dojField);
+      // Ensure division_id is present
+      if (!basicInfoGroup.fields.some((f) => f.id === 'division_id')) {
+        const divisionField = {
+          id: 'division_id',
+          label: 'Division',
+          type: 'select',
+          dataType: 'string',
+          isRequired: true,
+          isSystem: true,
+          placeholder: 'Select Division',
+          order: 3,
+          isEnabled: true,
+        };
+        basicInfoGroup.fields.push(divisionField);
+      }
+
+      // Re-order fields to accommodate new additions
+      const fieldOrderMap = {
+        emp_no: 1,
+        employee_name: 2,
+        division_id: 3,
+        department_id: 4,
+        designation_id: 5,
+        doj: 6,
+        proposedSalary: 7
+      };
+
+      basicInfoGroup.fields.forEach(f => {
+        if (fieldOrderMap[f.id]) {
+          f.order = fieldOrderMap[f.id];
+        }
+      });
+
       basicInfoGroup.fields.sort((a, b) => (a.order || 0) - (b.order || 0));
     }
 

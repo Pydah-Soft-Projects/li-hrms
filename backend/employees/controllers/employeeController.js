@@ -6,6 +6,7 @@
 const Employee = require('../model/Employee');
 const Department = require('../../departments/model/Department');
 const Designation = require('../../departments/model/Designation');
+const Division = require('../../departments/model/Division');
 const Settings = require('../../settings/model/Settings');
 const EmployeeApplicationFormSettings = require('../../employee-applications/model/EmployeeApplicationFormSettings');
 const User = require('../../users/model/User');
@@ -128,19 +129,22 @@ const resolveEmployeeReferences = async (employees) => {
   const deptIds = [...new Set(employees.map(e => e.department_id).filter(Boolean))];
   const desigIds = [...new Set(employees.map(e => e.designation_id).filter(Boolean))];
 
-  // Fetch departments and designations
-  const [departments, designations] = await Promise.all([
+  // Fetch departments, designations, and divisions
+  const [departments, designations, divisions] = await Promise.all([
     Department.find({ _id: { $in: deptIds } }).select('_id name code'),
     Designation.find({ _id: { $in: desigIds } }).select('_id name code'),
+    Division.find({ _id: { $in: employees.map(e => e.division_id).filter(Boolean) } }).select('_id name code'),
   ]);
 
   // Create lookup maps
   const deptMap = new Map(departments.map(d => [d._id.toString(), d]));
   const desigMap = new Map(designations.map(d => [d._id.toString(), d]));
+  const divMap = new Map(divisions.map(d => [d._id.toString(), d]));
 
   // Resolve references
   return employees.map(emp => ({
     ...emp,
+    division: emp.division_id ? divMap.get(emp.division_id.toString()) : null,
     department: emp.department_id ? deptMap.get(emp.department_id.toString()) : null,
     designation: emp.designation_id ? desigMap.get(emp.designation_id.toString()) : null,
   }));
@@ -343,7 +347,7 @@ const transformEmployeeForResponse = async (employee, populateUsers = true) => {
  */
 exports.getAllEmployees = async (req, res) => {
   try {
-    const { is_active, department_id, designation_id, includeLeft } = req.query;
+    const { is_active, division_id, department_id, designation_id, includeLeft } = req.query;
     const { scopeFilter } = req; // Get scope filter from data scope middleware
     const settings = await getEmployeeSettings();
 
@@ -352,6 +356,7 @@ exports.getAllEmployees = async (req, res) => {
     // Build filters - merge scope filter with query filters
     const filters = { ...scopeFilter };
     if (is_active !== undefined) filters.is_active = is_active === 'true';
+    if (division_id) filters.division_id = division_id;
     if (department_id) filters.department_id = department_id;
     if (designation_id) filters.designation_id = designation_id;
 
@@ -369,14 +374,10 @@ exports.getAllEmployees = async (req, res) => {
       employees = await resolveEmployeeReferences(mssqlEmployees);
     } else {
       // Fetch from MongoDB (default)
-      const query = { ...scopeFilter }; // Start with scope filter
-      if (is_active !== undefined) query.is_active = is_active === 'true';
-      if (department_id) query.department_id = department_id;
-      if (designation_id) query.designation_id = designation_id;
-      if (filters.leftDate !== undefined) query.leftDate = filters.leftDate;
-      if (filters.emp_no) query.emp_no = filters.emp_no; // For employee role
+      const query = { ...filters };
 
       const mongoEmployees = await Employee.find(query)
+        .populate('division_id', 'name code')
         .populate('department_id', 'name code')
         .populate('designation_id', 'name code')
         .sort({ employee_name: 1 });
@@ -386,6 +387,7 @@ exports.getAllEmployees = async (req, res) => {
         const transformed = await transformEmployeeForResponse(emp, true);
         return {
           ...transformed,
+          division: transformed.division_id,
           department: transformed.department_id,
           designation: transformed.designation_id,
           paidLeaves: transformed.paidLeaves !== undefined && transformed.paidLeaves !== null ? Number(transformed.paidLeaves) : 0,
@@ -434,6 +436,7 @@ exports.getEmployee = async (req, res) => {
       }
     } else {
       const mongoEmployee = await Employee.findOne({ emp_no: empNo })
+        .populate('division_id', 'name code')
         .populate('department_id', 'name code')
         .populate('designation_id', 'name code');
 
@@ -441,6 +444,7 @@ exports.getEmployee = async (req, res) => {
         const transformed = await transformEmployeeForResponse(mongoEmployee, true);
         employee = {
           ...transformed,
+          division: transformed.division_id,
           department: transformed.department_id,
           designation: transformed.designation_id,
           // Explicitly ensure paidLeaves and allottedLeaves are included
@@ -501,6 +505,13 @@ exports.createEmployee = async (req, res) => {
       });
     }
 
+    if (!employeeData.division_id) {
+      return res.status(400).json({
+        success: false,
+        message: 'Division is required for new employees',
+      });
+    }
+
     // Check if employee already exists in MongoDB
     const existingMongo = await Employee.findOne({ emp_no: employeeData.emp_no.toUpperCase() });
     if (existingMongo) {
@@ -529,6 +540,17 @@ exports.createEmployee = async (req, res) => {
           success: false,
           message: 'Invalid designation ID',
         });
+      }
+
+      // Check if division is valid
+      if (employeeData.division_id) {
+        const div = await Division.findById(employeeData.division_id);
+        if (!div) {
+          return res.status(400).json({
+            success: false,
+            message: 'Invalid division ID',
+          });
+        }
       }
 
       // Auto-link designation to department if not already linked
@@ -638,6 +660,7 @@ exports.createEmployee = async (req, res) => {
 
     // Fetch the created employee
     const createdEmployee = await Employee.findOne({ emp_no: employeeData.emp_no.toUpperCase() })
+      .populate('division_id', 'name code')
       .populate('department_id', 'name code')
       .populate('designation_id', 'name code');
 
@@ -877,6 +900,7 @@ exports.updateEmployee = async (req, res) => {
 
     // Fetch updated employee
     const updatedEmployeeDoc = await Employee.findOne({ emp_no: empNo })
+      .populate('division_id', 'name code')
       .populate('department_id', 'name code')
       .populate('designation_id', 'name code');
 

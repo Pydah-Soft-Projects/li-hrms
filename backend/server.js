@@ -67,6 +67,10 @@ app.use('/api/shifts', shiftRoutes);
 const departmentRoutes = require('./departments/index.js');
 app.use('/api/departments', departmentRoutes);
 
+// Division routes
+const divisionRoutes = require('./departments/divisionRoutes.js');
+app.use('/api/divisions', divisionRoutes);
+
 // Settings routes
 const settingsRoutes = require('./settings/index.js');
 app.use('/api/settings', settingsRoutes);

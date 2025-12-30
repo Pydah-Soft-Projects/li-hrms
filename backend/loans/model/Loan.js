@@ -258,6 +258,12 @@ const LoanSchema = new mongoose.Schema(
       ref: 'Designation',
     },
 
+    // Division at the time of application
+    division_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Division',
+    },
+
     // Disbursement details
     disbursement: {
       disbursedBy: {

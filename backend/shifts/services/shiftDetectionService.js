@@ -7,6 +7,7 @@
 const Employee = require('../../employees/model/Employee');
 const Department = require('../../departments/model/Department');
 const Designation = require('../../departments/model/Designation');
+const Division = require('../../departments/model/Division');
 const Shift = require('../model/Shift');
 const PreScheduledShift = require('../model/PreScheduledShift');
 const ConfusedShift = require('../model/ConfusedShift');
@@ -96,22 +97,29 @@ const isWithinShiftWindow = (punchTime, shiftStartTime, gracePeriodMinutes = 15)
  */
 const getShiftsForEmployee = async (employeeNumber, date) => {
   try {
-    // Get employee details
-    // Get employee details
+    // Get employee details with all organizational links
     const employee = await Employee.findOne({ emp_no: employeeNumber })
-      .populate('department_id', 'shifts')
-      .populate('designation_id'); // Populate full designation to access departmentShifts
+      .populate('division_id')
+      .populate('department_id')
+      .populate('designation_id');
 
     if (!employee) {
       return { shifts: [], source: 'none' };
     }
 
-    const allCandidateShifts = new Map(); // Use Map to ensure uniqueness by ID
+    const division_id = employee.division_id?._id;
+    const department_id = employee.department_id?._id;
+    const designation_id = employee.designation_id?._id;
+
+    if (!division_id) {
+      console.warn(`[ShiftDetection] Employee ${employeeNumber} has no division_id assigned.`);
+    }
+
+    const allCandidateShifts = new Map();
     let rosteredShift = null;
     let rosterRecordId = null;
 
-    // 1. Check pre-scheduled shift (highest priority for tracking, but not necessarily for locking)
-    const PreScheduledShift = require('../model/PreScheduledShift');
+    // 1. Check pre-scheduled shift (Tier 1 - Highest Priority)
     const preScheduled = await PreScheduledShift.findOne({
       employeeNumber: employeeNumber.toUpperCase(),
       date: date,
@@ -121,48 +129,82 @@ const getShiftsForEmployee = async (employeeNumber, date) => {
       rosteredShift = preScheduled.shiftId;
       rosterRecordId = preScheduled._id;
       allCandidateShifts.set(preScheduled.shiftId._id.toString(), preScheduled.shiftId);
+      // Return early if rostered? No, we might want to allow matching other shifts if it's a deviation
+      // But for source tracking, this wins.
     }
 
-    // 2. Check designation shifts (Department specific -> Global)
-    if (employee.designation_id) {
+    // 2. Designation shifts (Context-Specific & Division Defaults)
+    if (designation_id && employee.designation_id) {
       let shiftIds = [];
+      const desig = employee.designation_id;
 
-      // Check for department-specific override first
-      if (employee.department_id && employee.designation_id.departmentShifts) {
-        const deptOverride = employee.designation_id.departmentShifts.find(
-          ds => ds.department && ds.department.toString() === employee.department_id._id.toString()
+      // Tier 2: (Division + Department) Specific Override
+      if (division_id && department_id && desig.departmentShifts) {
+        const contextOverride = desig.departmentShifts.find(
+          ds => ds.division?.toString() === division_id.toString() &&
+            ds.department?.toString() === department_id.toString()
         );
-
-        if (deptOverride && deptOverride.shifts && deptOverride.shifts.length > 0) {
-          shiftIds = deptOverride.shifts;
+        if (contextOverride && contextOverride.shifts?.length > 0) {
+          shiftIds = contextOverride.shifts;
         }
       }
 
-      // Fallback to global designation shifts if no override found
-      if (shiftIds.length === 0 && employee.designation_id.shifts && employee.designation_id.shifts.length > 0) {
-        shiftIds = employee.designation_id.shifts;
+      // Tier 3: Division-Global Designation Default
+      if (shiftIds.length === 0 && division_id && desig.divisionDefaults) {
+        const divisionDefault = desig.divisionDefaults.find(
+          dd => dd.division?.toString() === division_id.toString()
+        );
+        if (divisionDefault && divisionDefault.shifts?.length > 0) {
+          shiftIds = divisionDefault.shifts;
+        }
+      }
+
+      // Tier 4: Backward Compatibility Fallback (Global designation shifts)
+      if (shiftIds.length === 0 && desig.shifts?.length > 0) {
+        shiftIds = desig.shifts;
       }
 
       if (shiftIds.length > 0) {
-        const designationShifts = await Shift.find({
-          _id: { $in: shiftIds },
-          isActive: true,
-        });
+        const designationShifts = await Shift.find({ _id: { $in: shiftIds }, isActive: true });
         designationShifts.forEach(s => allCandidateShifts.set(s._id.toString(), s));
       }
     }
 
-    // 3. Check department shifts
-    if (employee.department_id && employee.department_id.shifts && employee.department_id.shifts.length > 0) {
-      const departmentShifts = await Shift.find({
-        _id: { $in: employee.department_id.shifts },
-        isActive: true,
-      });
-      departmentShifts.forEach(s => allCandidateShifts.set(s._id.toString(), s));
+    // 3. Department shifts (Tier 5: Division Department Default)
+    if (department_id && employee.department_id) {
+      let deptShiftIds = [];
+      const dept = employee.department_id;
+
+      if (division_id && dept.divisionDefaults) {
+        const divDeptDefault = dept.divisionDefaults.find(
+          dd => dd.division?.toString() === division_id.toString()
+        );
+        if (divDeptDefault && divDeptDefault.shifts?.length > 0) {
+          deptShiftIds = divDeptDefault.shifts;
+        }
+      }
+
+      // Fallback to legacy department shifts if no division-specific default
+      if (deptShiftIds.length === 0 && dept.shifts?.length > 0) {
+        deptShiftIds = dept.shifts;
+      }
+
+      if (deptShiftIds.length > 0) {
+        const departmentShifts = await Shift.find({ _id: { $in: deptShiftIds }, isActive: true });
+        departmentShifts.forEach(s => allCandidateShifts.set(s._id.toString(), s));
+      }
     }
 
-    // 4. Get all general active shifts (fallback)
-    // Only fetch general shifts if no desig/dept/roster shifts found to avoid huge lists
+    // 4. Division Baseline Shifts (Tier 6)
+    if (allCandidateShifts.size === 0 && division_id && employee.division_id) {
+      const division = employee.division_id;
+      if (division.shifts && division.shifts.length > 0) {
+        const divisionShifts = await Shift.find({ _id: { $in: division.shifts }, isActive: true });
+        divisionShifts.forEach(s => allCandidateShifts.set(s._id.toString(), s));
+      }
+    }
+
+    // 5. Global Fallback
     if (allCandidateShifts.size === 0) {
       const generalShifts = await Shift.find({ isActive: true });
       generalShifts.forEach(s => allCandidateShifts.set(s._id.toString(), s));

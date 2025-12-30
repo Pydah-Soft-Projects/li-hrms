@@ -86,10 +86,10 @@ router.post('/upload', authorize('super_admin', 'sub_admin', 'hr'), upload.singl
 router.get('/upload/template', attendanceUploadController.downloadTemplate);
 
 // Monthly Summary Routes
-router.get('/monthly-summary', monthlySummaryController.getAllMonthlySummaries);
-router.get('/monthly-summary/:employeeId', monthlySummaryController.getEmployeeMonthlySummary);
+router.get('/monthly-summary', applyScopeFilter, monthlySummaryController.getAllMonthlySummaries);
+router.get('/monthly-summary/:employeeId', applyScopeFilter, monthlySummaryController.getEmployeeMonthlySummary);
 router.post('/monthly-summary/calculate/:employeeId', authorize('super_admin', 'sub_admin', 'hr'), monthlySummaryController.calculateEmployeeSummary);
-router.post('/monthly-summary/calculate-all', authorize('super_admin', 'sub_admin', 'hr'), monthlySummaryController.calculateAllSummaries);
+router.post('/monthly-summary/calculate-all', applyScopeFilter, authorize('super_admin', 'sub_admin', 'hr'), monthlySummaryController.calculateAllSummaries);
 
 module.exports = router;
 

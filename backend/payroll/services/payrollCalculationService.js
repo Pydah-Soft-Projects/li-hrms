@@ -602,6 +602,7 @@ async function calculatePayroll(employeeId, month, userId) {
     payrollRecord.set('netSalary', Number(finalNetSalary) || 0);
     payrollRecord.set('payableAmountBeforeAdvance', Number(finalPayableAmountBeforeAdvance) || 0);
     payrollRecord.set('status', 'calculated');
+    payrollRecord.set('division_id', employee.division_id);
     payrollRecord.set('attendanceSummaryId', attendanceSummary._id);
 
     // Set earnings fields using set() with dot notation - REQUIRED for nested schemas
@@ -1122,6 +1123,7 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     payrollRecord.set('totalPayableShifts', Number(payableShifts) || 0);
     payrollRecord.set('netSalary', Number(netSalary) || 0);
     payrollRecord.set('payableAmountBeforeAdvance', Number(grossAmountSalary) || 0);
+    payrollRecord.set('division_id', employee.division_id);
     payrollRecord.set('status', 'calculated');
 
     // ===== ATTENDANCE BREAKDOWN (NEW) =====
