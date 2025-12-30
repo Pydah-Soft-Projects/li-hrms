@@ -261,6 +261,7 @@ exports.getMe = async (req, res) => {
           emp_no: userType === 'employee' ? user.emp_no : user.employeeId,
           type: userType,
           featureControl: userType === 'user' ? user.featureControl : undefined,
+          isActive: user.isActive
         },
         workspaces,
         activeWorkspace,

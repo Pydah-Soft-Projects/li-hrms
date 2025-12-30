@@ -48,6 +48,24 @@ exports.getSettings = async (req, res) => {
       basicInfoGroup.fields.sort((a, b) => (a.order || 0) - (b.order || 0));
     }
 
+    // Ensure Email is present in contact_info for existing settings
+    const contactInfoGroup = settingsObj.groups.find((g) => g.id === 'contact_info');
+    if (contactInfoGroup && !contactInfoGroup.fields.some((f) => f.id === 'email')) {
+      const emailField = {
+        id: 'email',
+        label: 'Email',
+        type: 'email',
+        dataType: 'string',
+        isRequired: false,
+        isSystem: true,
+        placeholder: 'example@email.com',
+        order: 2,
+        isEnabled: true,
+      };
+      contactInfoGroup.fields.push(emailField);
+      contactInfoGroup.fields.sort((a, b) => (a.order || 0) - (b.order || 0));
+    }
+
     res.status(200).json({
       success: true,
       data: settingsObj,
