@@ -14,6 +14,7 @@ const Employee = require('../../employees/model/Employee');
 const PERMANENT_FIELDS = [
   'emp_no',
   'employee_name',
+  'division_id',
   'department_id',
   'designation_id',
   'doj',

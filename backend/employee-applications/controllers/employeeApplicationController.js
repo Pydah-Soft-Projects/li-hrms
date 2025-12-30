@@ -162,6 +162,7 @@ exports.createApplication = async (req, res) => {
 
     await application.populate([
       { path: 'createdBy', select: 'name email' },
+      { path: 'division_id', select: 'name' },
       { path: 'department_id', select: 'name code' },
       { path: 'designation_id', select: 'name code' },
     ]);
@@ -393,6 +394,7 @@ exports.getApplications = async (req, res) => {
       .populate('createdBy', 'name email')
       .populate('approvedBy', 'name email')
       .populate('rejectedBy', 'name email')
+      .populate('division_id', 'name')
       .populate('department_id', 'name code')
       .populate('designation_id', 'name code')
       .sort({ created_at: -1 });
@@ -421,6 +423,7 @@ exports.getApplication = async (req, res) => {
       .populate('createdBy', 'name email')
       .populate('approvedBy', 'name email')
       .populate('rejectedBy', 'name email')
+      .populate('division_id', 'name')
       .populate('department_id', 'name code')
       .populate('designation_id', 'name code');
 
@@ -620,6 +623,8 @@ exports.approveApplication = async (req, res) => {
     await result.application.populate([
       { path: 'createdBy', select: 'name email' },
       { path: 'approvedBy', select: 'name email' },
+      { path: 'approvedBy', select: 'name email' },
+      { path: 'division_id', select: 'name' },
       { path: 'department_id', select: 'name code' },
       { path: 'designation_id', select: 'name code' },
     ]);
@@ -742,6 +747,8 @@ exports.rejectApplication = async (req, res) => {
     await application.populate([
       { path: 'createdBy', select: 'name email' },
       { path: 'rejectedBy', select: 'name email' },
+      { path: 'rejectedBy', select: 'name email' },
+      { path: 'division_id', select: 'name' },
       { path: 'department_id', select: 'name code' },
       { path: 'designation_id', select: 'name code' },
     ]);

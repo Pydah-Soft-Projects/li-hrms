@@ -132,7 +132,7 @@ const getWorkflowSettings = async () => {
 exports.getODs = async (req, res) => {
   try {
     const { status, employeeId, department, fromDate, toDate, page = 1, limit = 20 } = req.query;
-    const filter = { isActive: true };
+    const filter = { ...req.scopeFilter, isActive: true };
 
     if (status) filter.status = status;
     if (employeeId) filter.employeeId = employeeId;
@@ -501,6 +501,7 @@ exports.applyOD = async (req, res) => {
       contactNumber,
       expectedOutcome,
       travelDetails,
+      division_id: employee.division_id, // Save division at time of application
       department: employee.department_id || employee.department, // Support both field names
       designation: employee.designation_id || employee.designation, // Support both field names
       appliedBy: req.user._id,

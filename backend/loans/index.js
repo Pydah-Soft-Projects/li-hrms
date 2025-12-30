@@ -3,9 +3,11 @@ const router = express.Router();
 const loanController = require('./controllers/loanController');
 const settingsController = require('./controllers/loanSettingsController');
 const { protect, authorize } = require('../authentication/middleware/authMiddleware');
+const { applyScopeFilter } = require('../shared/middleware/dataScopeMiddleware');
 
 // All routes require authentication
 router.use(protect);
+router.use(applyScopeFilter);
 
 // ==========================================
 // SETTINGS ROUTES (Must come before dynamic routes)

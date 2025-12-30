@@ -216,6 +216,7 @@ const navItems: NavItem[] = [
   { href: '/superadmin/shift-roster', label: 'Shift Roster', icon: ClockIcon, category: 'Time & Attendance', moduleCode: 'SHIFT_ROSTER' },
   { href: '/superadmin/leaves', label: 'Leave & OD', icon: LeaveIcon, category: 'Time & Attendance', moduleCode: 'LEAVE_OD' },
   { href: '/superadmin/shifts', label: 'Shifts', icon: ClockIcon, category: 'Time & Attendance', moduleCode: 'SHIFTS' },
+  { href: '/superadmin/divisions', label: 'Divisions', icon: BuildingIcon, category: 'Organization', moduleCode: 'DIVISIONS' },
   { href: '/superadmin/departments', label: 'Departments', icon: BuildingIcon, category: 'Organization', moduleCode: 'DEPARTMENTS' },
   { href: '/superadmin/settings/departmental', label: 'Departmental Settings', icon: DepartmentSettingsIcon, category: 'Organization', moduleCode: 'DEPARTMENTAL_SETTINGS' },
   { href: '/superadmin/users', label: 'Users', icon: UsersIcon, category: 'Administration', moduleCode: 'USERS' },
@@ -246,6 +247,8 @@ export default function Sidebar() {
     }
   }, []);
 
+  if (!mounted) return null;
+
   // Filter items based on user permissions
   const filteredNavItems = user?.role === 'super_admin'
     ? navItems
@@ -261,6 +264,7 @@ export default function Sidebar() {
       super_admin: 'Super Admin',
       sub_admin: 'Sub Admin',
       hr: 'HR',
+      manager: 'Manager',
       hod: 'HOD',
       employee: 'Employee',
     };

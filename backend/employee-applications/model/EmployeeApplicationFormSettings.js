@@ -319,6 +319,17 @@ EmployeeApplicationFormSettingsSchema.statics.initializeDefault = async function
             isEnabled: true,
           },
           {
+            id: 'division_id',
+            label: 'Division',
+            type: 'select',
+            dataType: 'string',
+            isRequired: true,
+            isSystem: true,
+            placeholder: 'Select Division',
+            order: 3,
+            isEnabled: true,
+          },
+          {
             id: 'department_id',
             label: 'Department',
             type: 'select',
@@ -326,7 +337,7 @@ EmployeeApplicationFormSettingsSchema.statics.initializeDefault = async function
             isRequired: false,
             isSystem: true,
             placeholder: 'Select Department',
-            order: 3,
+            order: 4,
             isEnabled: true,
           },
           {
@@ -337,7 +348,7 @@ EmployeeApplicationFormSettingsSchema.statics.initializeDefault = async function
             isRequired: false,
             isSystem: true,
             placeholder: 'Select Designation',
-            order: 4,
+            order: 5,
             isEnabled: true,
           },
           {
@@ -348,7 +359,7 @@ EmployeeApplicationFormSettingsSchema.statics.initializeDefault = async function
             isRequired: false,
             isSystem: true,
             dateFormat: 'dd-mm-yyyy',
-            order: 5,
+            order: 6,
             isEnabled: true,
           },
           {
@@ -360,7 +371,7 @@ EmployeeApplicationFormSettingsSchema.statics.initializeDefault = async function
             isSystem: true,
             placeholder: '0.00',
             validation: { min: 0 },
-            order: 6,
+            order: 7,
             isEnabled: true,
           },
         ],

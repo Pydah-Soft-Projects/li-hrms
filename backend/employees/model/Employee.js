@@ -21,6 +21,11 @@ const employeeSchema = new mongoose.Schema(
       required: [true, 'Employee name is required'],
       trim: true,
     },
+    division_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Division',
+      default: null, // Will be made required in the controller for new employees
+    },
     department_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Department',
@@ -238,11 +243,20 @@ employeeSchema.index({ is_active: 1 });
 employeeSchema.index({ leftDate: 1 });
 employeeSchema.index({ phone_number: 1 });
 employeeSchema.index({ email: 1 });
+employeeSchema.index({ division_id: 1 });
 
 // Virtual for department population
 employeeSchema.virtual('department', {
   ref: 'Department',
   localField: 'department_id',
+  foreignField: '_id',
+  justOne: true,
+});
+
+// Virtual for division population
+employeeSchema.virtual('division', {
+  ref: 'Division',
+  localField: 'division_id',
   foreignField: '_id',
   justOne: true,
 });

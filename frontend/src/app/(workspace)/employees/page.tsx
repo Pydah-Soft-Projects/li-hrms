@@ -18,6 +18,7 @@ interface Employee {
   _id: string;
   emp_no: string;
   employee_name: string;
+  division_id?: string;
   department_id?: string;
   designation_id?: string;
   department?: { _id: string; name: string; code?: string };
@@ -59,6 +60,13 @@ interface Department {
   designations?: Designation[];
 }
 
+interface Division {
+  _id: string;
+  name: string;
+  code?: string;
+  departments?: string[];
+}
+
 interface Designation {
   _id: string;
   name: string;
@@ -70,6 +78,7 @@ interface EmployeeApplication {
   _id: string;
   emp_no: string;
   employee_name: string;
+  division_id?: string | { _id: string; name: string; code?: string };
   department_id?: string | { _id: string; name: string; code?: string };
   designation_id?: string | { _id: string; name: string; code?: string };
   department?: { _id: string; name: string; code?: string };
@@ -113,6 +122,7 @@ interface EmployeeApplication {
 const initialFormState: Partial<Employee> = {
   emp_no: '',
   employee_name: '',
+  division_id: '',
   department_id: '',
   designation_id: '',
   doj: '',
@@ -146,6 +156,7 @@ export default function EmployeesPage() {
   const [activeTab, setActiveTab] = useState<'employees' | 'applications'>('employees');
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [applications, setApplications] = useState<EmployeeApplication[]>([]);
+  const [divisions, setDivisions] = useState<Division[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [designations, setDesignations] = useState<Designation[]>([]);
   const [filteredDesignations, setFilteredDesignations] = useState<Designation[]>([]);
@@ -168,6 +179,7 @@ export default function EmployeesPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [dataSource, setDataSource] = useState<string>('mongodb');
+  const [selectedDivision, setSelectedDivision] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [applicationSearchTerm, setApplicationSearchTerm] = useState('');
   const [showBulkUpload, setShowBulkUpload] = useState(false);
@@ -374,7 +386,7 @@ export default function EmployeesPage() {
   // Recompute salary summary (frontend-only) whenever salary or overrides change
   useEffect(() => {
     // Check both gross_salary and proposedSalary (form might use either)
-    const gross = Number(formData.gross_salary || (formData as any).proposedSalary || 0);
+    const gross = Number(formData.gross_salary || (formData as Employee).proposedSalary || 0);
 
     const sumWithOverrides = (items: any[], overrides: Record<string, number | null>) =>
       items.reduce((acc, item) => {
@@ -483,6 +495,7 @@ export default function EmployeesPage() {
       setUserRole(user.role);
     }
     loadEmployees();
+    loadDivisions();
     loadDepartments();
     loadFormSettings();
     if (activeTab === 'applications') {
@@ -845,6 +858,17 @@ export default function EmployeesPage() {
       console.error('Error loading employees:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadDivisions = async () => {
+    try {
+      const res = await api.getDivisions(true); // Fetch only active divisions
+      if (res.success) {
+        setDivisions(res.data);
+      }
+    } catch (err) {
+      console.error('Failed to load divisions', err);
     }
   };
 
@@ -1402,7 +1426,11 @@ export default function EmployeesPage() {
     // Filter by left employees (if includeLeftEmployees is false, exclude those with leftDate)
     const matchesLeftFilter = includeLeftEmployees || !emp.leftDate;
 
-    return matchesSearch && matchesLeftFilter;
+    // Filter by selected division
+    const matchesDivision = !selectedDivision ||
+      (emp.division?._id === selectedDivision || emp.division_id === selectedDivision);
+
+    return matchesSearch && matchesLeftFilter && matchesDivision;
   });
 
   const filteredApplications = applications.filter(app =>
@@ -1914,8 +1942,25 @@ export default function EmployeesPage() {
                   placeholder="Search employees..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="flex-1 min-w-[250px] rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  className="flex-1 min-w-[200px] rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                 />
+
+                {/* Division Filter */}
+                <div className="min-w-[150px]">
+                  <select
+                    value={selectedDivision}
+                    onChange={(e) => setSelectedDivision(e.target.value)}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  >
+                    <option value="">All Divisions</option>
+                    {divisions.map((division) => (
+                      <option key={division._id} value={division._id}>
+                        {division.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800 cursor-pointer">
                   <input
                     type="checkbox"
@@ -2178,6 +2223,7 @@ export default function EmployeesPage() {
                 onChange={setApplicationFormData}
                 errors={formErrors}
                 departments={departments}
+                divisions={divisions}
                 designations={filteredApplicationDesignations as any}
               />
 
@@ -2186,7 +2232,7 @@ export default function EmployeesPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Allowances &amp; Deductions</h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                       Defaults come from Department/Global. Enter an amount to override for this employee.
                     </p>
                   </div>
@@ -2423,6 +2469,12 @@ export default function EmployeesPage() {
                     <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{selectedApplication.employee_name}</p>
                   </div>
                   <div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Division</p>
+                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                      {(selectedApplication.division_id as any)?.name || (selectedApplication as any).division?.name || '-'}
+                    </p>
+                  </div>
+                  <div>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Department</p>
                     <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
                       {(selectedApplication.department_id as any)?.name || selectedApplication.department?.name || '-'}
@@ -2590,7 +2642,7 @@ export default function EmployeesPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Allowances &amp; Deductions</h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                       Based on department/global defaults. Adjust overrides as needed before approval.
                     </p>
                   </div>
@@ -2838,6 +2890,7 @@ export default function EmployeesPage() {
                 onChange={setFormData}
                 errors={{}}
                 departments={departments}
+                divisions={divisions}
                 designations={filteredDesignations as any}
                 onSettingsLoaded={setFormSettings}
               />

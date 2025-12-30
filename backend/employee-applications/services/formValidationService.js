@@ -28,6 +28,7 @@ exports.validateFormData = async (formData, settings = null) => {
     const permanentFieldIds = [
       'emp_no',
       'employee_name',
+      'division_id',
       'department_id',
       'designation_id',
       'proposedSalary',
@@ -284,6 +285,7 @@ exports.transformFormData = (formData, settings) => {
   const permanentFieldIds = [
     'emp_no',
     'employee_name',
+    'division_id',
     'department_id',
     'designation_id',
     'proposedSalary',

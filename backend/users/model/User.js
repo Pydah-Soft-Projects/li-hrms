@@ -24,7 +24,7 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ['super_admin', 'sub_admin', 'hr', 'hod', 'employee'],
+      enum: ['super_admin', 'sub_admin', 'hr', 'manager', 'hod', 'employee'],
       required: [true, 'Role is required'],
       default: 'employee',
     },
@@ -37,7 +37,7 @@ const userSchema = new mongoose.Schema(
     roles: [
       {
         type: String,
-        enum: ['super_admin', 'sub_admin', 'hr', 'hod', 'employee'],
+        enum: ['super_admin', 'sub_admin', 'hr', 'manager', 'hod', 'employee'],
       },
     ], // Multi-role support
     department: {
@@ -70,18 +70,39 @@ const userSchema = new mongoose.Schema(
     }, // Link to MongoDB employee
     dataScope: {
       type: String,
-      enum: ['own', 'department', 'departments', 'all'],
+      enum: ['own', 'department', 'departments', 'division', 'divisions', 'all'],
       default: function () {
         switch (this.role) {
           case 'employee': return 'own';
           case 'hod': return 'department';
-          case 'hr': return 'departments';
+          case 'manager': return 'division';
+          case 'hr': return 'divisions';
           case 'sub_admin': return 'all';
           case 'super_admin': return 'all';
           default: return 'own';
         }
       }
     }, // Data access scope
+    allowedDivisions: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Division',
+      }
+    ],
+    divisionMapping: [
+      {
+        division: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'Division',
+        },
+        departments: [
+          {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Department',
+          }
+        ] // If empty, means 'All Departments' in this division
+      }
+    ],
     activeWorkspaceId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Workspace',

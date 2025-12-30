@@ -86,6 +86,10 @@ exports.protect = async (req, res, next) => {
         employeeId: authUser?.employeeId || authEmployee?.emp_no,
         employeeRef: authUser?.employeeRef || authEmployee?._id,
         activeWorkspaceId: authUser?.activeWorkspaceId,
+        // Scoping fields
+        dataScope: authUser?.dataScope || (authEmployee ? 'own' : 'all'),
+        allowedDivisions: authUser?.allowedDivisions || [],
+        divisionMapping: authUser?.divisionMapping || [],
         type: authUser ? 'user' : 'employee'
       };
 
