@@ -55,7 +55,7 @@ export default function ProfilePage() {
     try {
       const response = await api.getCurrentUser();
       if (response.success && response.data) {
-        setUser({ ...response.data.user, isActive: true });
+        setUser(response.data.user);
         setEditData({
           name: response.data.user.name || '',
           phone: response.data.user.phone || '',

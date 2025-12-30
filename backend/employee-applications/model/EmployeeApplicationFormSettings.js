@@ -460,6 +460,17 @@ EmployeeApplicationFormSettingsSchema.statics.initializeDefault = async function
             order: 1,
             isEnabled: true,
           },
+          {
+            id: 'email',
+            label: 'Email',
+            type: 'email',
+            dataType: 'string',
+            isRequired: false,
+            isSystem: true,
+            placeholder: 'example@email.com',
+            order: 2,
+            isEnabled: true,
+          },
         ],
       },
       // Bank Details (System Group)
