@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { api, Department, Designation, Division, Shift } from '@/lib/api';
+import { api, Department, Designation, Division, Shift, User } from '@/lib/api';
 import Swal from 'sweetalert2';
 import BulkUpload from '@/components/BulkUpload';
 import {
@@ -11,7 +11,6 @@ import {
   DESIGNATION_TEMPLATE_SAMPLE,
   validateDepartmentRow,
   validateDesignationRow,
-  ParsedRow,
 } from '@/lib/bulkUpload';
 import Spinner from '@/components/Spinner';
 
@@ -19,7 +18,7 @@ import Spinner from '@/components/Spinner';
 
 export default function DepartmentsPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
-  const [users, setUsers] = useState<any[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [designations, setDesignations] = useState<Designation[]>([]);
   const [unlinkedDesignations, setUnlinkedDesignations] = useState<Designation[]>([]); // New state for linking
@@ -46,6 +45,9 @@ export default function DepartmentsPage() {
   // Shift assignment state
   const [selectedShiftIds, setSelectedShiftIds] = useState<string[]>([]);
   const [selectedDesignationShiftIds, setSelectedDesignationShiftIds] = useState<string[]>([]);
+  const [targetScope, setTargetScope] = useState<'division' | 'department' | 'designation'>('department');
+  const [targetDivisionId, setTargetDivisionId] = useState<string>('');
+  const [targetDesignationId, setTargetDesignationId] = useState<string>('');
 
   // Division HOD state
   const [divisions, setDivisions] = useState<Division[]>([]);
@@ -158,7 +160,7 @@ export default function DepartmentsPage() {
         const currentDesigIds = currentDept?.designations?.map(d => d._id) || [];
 
         // Filter out designations already linked to this department
-        const unlinked = allDesigs.filter((d: any) => !currentDesigIds.includes(d._id));
+        const unlinked = allDesigs.filter((d: Designation) => !currentDesigIds.includes(d._id));
         setUnlinkedDesignations(unlinked);
       }
     } catch (err) {
@@ -232,11 +234,45 @@ export default function DepartmentsPage() {
     setError('');
 
     try {
-      const response = await api.assignShifts(showShiftDialog._id, selectedShiftIds);
+      let response;
+
+      if (targetDivisionId) {
+        // Use hierarchical division-based assignment
+        let targetType = '';
+        let targetId: string | { designationId: string; departmentId: string } = targetDivisionId;
+
+        if (targetScope === 'division') {
+          targetType = 'division_general';
+        } else if (targetScope === 'department') {
+          targetType = 'department_in_division';
+          targetId = showShiftDialog._id;
+        } else if (targetScope === 'designation') {
+          targetType = 'designation_in_division';
+          targetId = {
+            designationId: targetDesignationId,
+            departmentId: showShiftDialog._id
+          };
+        }
+
+        response = await api.assignShiftsToDivision(targetDivisionId, {
+          shifts: selectedShiftIds,
+          targetType,
+          targetId
+        });
+      } else if (targetScope === 'department') {
+        // Fallback to legacy global department assignment if no division context
+        response = await api.assignShifts(showShiftDialog._id, selectedShiftIds);
+      } else {
+        setError('Division context is required for this scope');
+        return;
+      }
 
       if (response.success) {
         setShowShiftDialog(null);
         setSelectedShiftIds([]);
+        setTargetScope('department');
+        setTargetDivisionId('');
+        setTargetDesignationId('');
         loadDepartments();
       } else {
         setError(response.message || 'Failed to assign shifts');
@@ -308,7 +344,7 @@ export default function DepartmentsPage() {
 
     // Check if the department is already linked to the selected division
     const isLinked = dept.divisions?.some(divId =>
-      (typeof divId === 'string' ? divId : (divId as any)._id) === selectedDivisionId
+      (typeof divId === 'string' ? divId : (divId as Division)._id) === selectedDivisionId
     );
 
     if (isLinked) return;
@@ -424,7 +460,7 @@ export default function DepartmentsPage() {
     // Reload shifts to ensure we have the latest data
     loadShifts();
     // Set currently assigned shifts
-    const assignedShiftIds = dept.shifts?.map((s: any) => (typeof s === 'string' ? s : s._id)) || [];
+    const assignedShiftIds = (dept.shifts as (string | Shift)[])?.map((s: string | Shift) => (typeof s === 'string' ? s : s._id)) || [];
     setSelectedShiftIds(assignedShiftIds);
     setError('');
   };
@@ -444,7 +480,7 @@ export default function DepartmentsPage() {
   const handleOpenDesignationShiftDialog = (designation: Designation) => {
     setShowDesignationShiftDialog(designation);
     loadShifts();
-    const assignedShiftIds = designation.shifts?.map((s: any) => (typeof s === 'string' ? s : s._id)) || [];
+    const assignedShiftIds = (designation.shifts as (string | Shift)[])?.map((s: string | Shift) => (typeof s === 'string' ? s : s._id)) || [];
     setSelectedDesignationShiftIds(assignedShiftIds);
     setError('');
   };
@@ -927,9 +963,90 @@ export default function DepartmentsPage() {
                 </div>
 
                 <form onSubmit={handleAssignShifts} className="space-y-5">
+                  {/* Scope Selector */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Target Scope</label>
+                    <div className="flex rounded-2xl bg-slate-100 p-1 dark:bg-slate-800">
+                      {(['division', 'department', 'designation'] as const).map((scope) => (
+                        <button
+                          key={scope}
+                          type="button"
+                          onClick={() => {
+                            setTargetScope(scope);
+                            setSelectedShiftIds([]);
+                            // Reset target IDs when switching scope
+                            if (scope === 'department') {
+                              setTargetDivisionId('');
+                            }
+                          }}
+                          className={`flex-1 rounded-xl py-2 text-xs font-semibold capitalize transition-all ${targetScope === scope
+                            ? 'bg-white text-blue-600 shadow-sm dark:bg-slate-700 dark:text-blue-400'
+                            : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                            }`}
+                        >
+                          {scope}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-slate-500 italic">
+                      {targetScope === 'division' && "General defaults for everyone in the selected Division."}
+                      {targetScope === 'department' && "Specific overrides for this Department."}
+                      {targetScope === 'designation' && "Fine-grained overrides for a specific Designation."}
+                    </p>
+                  </div>
+
+                  {/* Division Selector (Required for Division/Designation scope, Optional for Department scope) */}
+                  {(targetScope === 'division' || targetScope === 'designation' || (targetScope === 'department' && (showShiftDialog.divisions?.length ?? 0) > 0)) && (
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                        {targetScope === 'division' ? 'Target Division' : 'Context Division (Optional)'}
+                      </label>
+                      <select
+                        value={targetDivisionId}
+                        onChange={(e) => setTargetDivisionId(e.target.value)}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        required={targetScope === 'division' || targetScope === 'designation'}
+                      >
+                        <option value="">Select Division</option>
+                        {showShiftDialog.divisions?.map((divId: string | Division) => {
+                          const div = typeof divId === 'string' ? divisions.find(d => d._id === divId) : divId;
+                          const dId = typeof div === 'string' ? div : (div?._id || '');
+                          const dName = typeof div === 'string' ? 'Unknown Division' : (div?.name || 'Unknown Division');
+                          return (
+                            <option key={dId} value={dId}>
+                              {dName}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Designation Selector (For Designation scope) */}
+                  {targetScope === 'designation' && (
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                        Select Designation
+                      </label>
+                      <select
+                        value={targetDesignationId}
+                        onChange={(e) => setTargetDesignationId(e.target.value)}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        required
+                      >
+                        <option value="">Select Designation</option>
+                        {designations.map((desig) => (
+                          <option key={desig._id} value={desig._id}>
+                            {desig.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
                   <div>
                     <label className="mb-3 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Select Shifts (Multiple selection allowed)
+                      Select Shifts
                     </label>
                     {loadingShifts ? (
                       <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-slate-50/50 py-12 dark:border-slate-700 dark:bg-slate-900/50">
@@ -1263,14 +1380,14 @@ export default function DepartmentsPage() {
                                   {/* Global Shifts */}
                                   {designation.shifts && designation.shifts.length > 0 && (
                                     <div className="flex flex-wrap gap-1 mt-1">
-                                      <span className="text-xs font-semibold text-slate-600 dark:text-slate-400 w-full">Global:</span>
-                                      {designation.shifts.map((shift: any) => (
+                                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest w-full">Global Defaults</span>
+                                      {(designation.shifts as Shift[]).map((shift: Shift) => (
                                         <button
                                           key={shift._id}
                                           onClick={() => setShowShiftBreakdownDialog(designation)}
                                           className="inline-flex items-center gap-1 rounded-md bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700 ring-1 ring-inset ring-purple-700/10 hover:bg-purple-100 transition-colors dark:bg-purple-400/10 dark:text-purple-400 dark:ring-purple-400/20 dark:hover:bg-purple-400/20 cursor-pointer"
                                         >
-                                          {shift.name} {shift.startTime ? `(${shift.startTime}-${shift.endTime})` : ''}
+                                          {shift.name} {shift.startTime ? `(${shift.startTime})` : ''}
                                         </button>
                                       ))}
                                     </div>
@@ -1278,19 +1395,40 @@ export default function DepartmentsPage() {
                                   {/* Department-Specific Shifts */}
                                   {designation.departmentShifts && designation.departmentShifts.length > 0 && (
                                     <div className="flex flex-wrap gap-1 mt-1">
-                                      <span className="text-xs font-semibold text-slate-600 dark:text-slate-400 w-full">Dept-Specific:</span>
+                                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest w-full">Dept Overrides</span>
                                       {designation.departmentShifts.flatMap((ds) =>
-                                        ds.shifts?.map((shift: any) => (
+                                        (ds.shifts as Shift[] | undefined)?.map((shift: Shift) => (
                                           <button
                                             key={`${(ds.department as any)._id}-${shift._id}`}
                                             onClick={() => setShowShiftBreakdownDialog(designation)}
                                             className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-700/10 hover:bg-emerald-100 transition-colors dark:bg-emerald-400/10 dark:text-emerald-400 dark:ring-emerald-400/20 dark:hover:bg-emerald-400/20 cursor-pointer"
-                                            title={`${(ds.department as any).name}`}
+                                            title={`${(ds.division as any)?.name ? `${(ds.division as any).name} > ` : ''}${(ds.department as any).name}`}
                                           >
-                                            {shift.name} ({(ds.department as any).name})
+                                            {shift.name} {ds.division ? `(${(ds.division as any).code} > ${(ds.department as any).code || 'Dept'})` : `(${(ds.department as any).name})`}
                                           </button>
                                         )) || []
                                       )}
+
+                                      {/* Division Defaults */}
+                                      {designation.divisionDefaults && designation.divisionDefaults.length > 0 && (
+                                        <div className="flex flex-wrap gap-1 mt-2">
+                                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest w-full">Division Defaults</span>
+                                          {designation.divisionDefaults.map((dd: any) =>
+                                            (dd.shifts as Shift[] | undefined)?.map((shift: Shift) => (
+                                              <button
+                                                key={`${dd.division?._id || dd.division}-${shift._id}`}
+                                                onClick={() => setShowShiftBreakdownDialog(designation)}
+                                                className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-700/10 hover:bg-amber-100 transition-colors dark:bg-amber-900/10 dark:text-amber-400 dark:ring-amber-900/20 dark:hover:bg-amber-900/20 cursor-pointer"
+                                                title={`Division: ${dd.division?.name || 'Unknown'}`}
+                                              >
+                                                {shift.name} ({dd.division?.code || 'Div'})
+                                              </button>
+                                            ))
+                                          )}
+                                        </div>
+                                      )}
+
+
                                     </div>
                                   )}
                                 </div>
@@ -1485,7 +1623,7 @@ export default function DepartmentsPage() {
                         </span>
                       </h3>
                       <div className="space-y-2">
-                        {showShiftBreakdownDialog.shifts.map((shift: any) => (
+                        {(showShiftBreakdownDialog.shifts as Shift[]).map((shift: Shift) => (
                           <div key={shift._id} className="flex items-center justify-between rounded-lg border border-purple-200 bg-white p-3 dark:border-purple-700 dark:bg-slate-900">
                             <div>
                               <p className="font-medium text-slate-900 dark:text-slate-100">{shift.name}</p>
@@ -1518,7 +1656,7 @@ export default function DepartmentsPage() {
                           </h4>
                           <div className="space-y-2">
                             {ds.shifts && ds.shifts.length > 0 ? (
-                              ds.shifts.map((shift: any) => (
+                              (ds.shifts as Shift[]).map((shift: Shift) => (
                                 <div key={shift._id} className="flex items-center justify-between rounded-lg border border-emerald-200 bg-white p-3 dark:border-emerald-700 dark:bg-slate-900">
                                   <div>
                                     <p className="font-medium text-slate-900 dark:text-slate-100">{shift.name}</p>
@@ -1608,101 +1746,106 @@ export default function DepartmentsPage() {
 
                     <div className="mb-4 flex items-start justify-between">
                       <div className="flex-1">
-                        <h3 className="text-xl font-semibold text-slate-900 dark:text-slate-100">{dept.name}</h3>
-                        {dept.code && (
-                          <p className="mt-1 text-sm font-medium text-blue-600 dark:text-blue-400">Code: {dept.code}</p>
-                        )}
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300">
+                            {dept.name}
+                          </h3>
+                          {dept.code && (
+                            <span className="rounded-xl bg-blue-100/80 px-2.5 py-1 text-[10px] font-bold text-blue-700 backdrop-blur-sm dark:bg-blue-900/40 dark:text-blue-400">
+                              {dept.code}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex gap-2 items-center">
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${dept.isActive
+                              ? 'bg-green-100 text-green-700 shadow-sm dark:bg-green-900/30 dark:text-green-400'
+                              : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                              }`}
+                          >
+                            {dept.isActive ? 'Active' : 'Inactive'}
+                          </span>
+                        </div>
                       </div>
-                      <span
-                        className={`ml-3 rounded-full px-3 py-1 text-xs font-semibold ${dept.isActive
-                          ? 'bg-green-100 text-green-700 shadow-sm dark:bg-green-900/30 dark:text-green-400'
-                          : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                          }`}
-                      >
-                        {dept.isActive ? 'Active' : 'Inactive'}
-                      </span>
+                      <div className="flex gap-1">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleOpenEditDialog(dept); }}
+                          className="rounded-xl p-2 text-slate-400 hover:bg-white/50 hover:text-blue-600 dark:hover:bg-slate-800 transition-colors"
+                          title="Edit Department"
+                        >
+                          <EditIcon />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDeleteDepartment(dept._id); }}
+                          className="rounded-xl p-2 text-slate-400 hover:bg-white/50 hover:text-red-600 dark:hover:bg-slate-800 transition-colors"
+                          title="Delete Department"
+                        >
+                          <TrashIcon />
+                        </button>
+                      </div>
                     </div>
-
                     {dept.description && (
                       <p className="mb-4 line-clamp-2 text-sm text-slate-600 dark:text-slate-400">{dept.description}</p>
                     )}
 
-                    <div className="mb-4 space-y-2">
-                      <div className="mb-4 space-y-2">
-                        {/* Deprecated Global HOD display - keep for fallback */}
-                        {dept.hod && (!dept.divisionHODs || dept.divisionHODs.length === 0) && (
-                          <div className="flex items-center gap-2 text-sm">
-                            <span className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
-                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                              </svg>
-                            </span>
-                            <span className="font-medium text-slate-700 dark:text-slate-300">HOD:</span>
-                            <span className="text-slate-600 dark:text-slate-400">{dept.hod.name || dept.hod.email}</span>
-                          </div>
-                        )}
-
-                        {/* Division Specific HODs */}
-                        {dept.divisionHODs && dept.divisionHODs.length > 0 && (
-                          <div className="space-y-2">
-                            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Division HODs</p>
-                            {dept.divisionHODs.map((dh: any, idx: number) => (
-                              <div key={idx} className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-100 dark:bg-slate-800 dark:border-slate-700">
-                                <span className="text-xs font-semibold text-blue-600 dark:text-blue-400" title={dh.division?.name}>
+                    <div className="mb-4 space-y-3">
+                      {/* Division Specific HODs */}
+                      {dept.divisionHODs && dept.divisionHODs.length > 0 ? (
+                        <div className="space-y-2">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Division HODs</p>
+                          {dept.divisionHODs.map((dh: any, idx: number) => (
+                            <div key={idx} className="flex items-center justify-between p-2 rounded-xl bg-white/40 border border-slate-100/50 dark:bg-slate-800/40 dark:border-slate-700/50 backdrop-blur-[2px]">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/40 px-1.5 py-0.5 rounded" title={dh.division?.name}>
                                   {dh.division?.code || dh.division?.name || 'Div'}
                                 </span>
-                                <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                                <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
                                   {dh.hod?.name || dh.hod?.email || 'N/A'}
                                 </span>
                               </div>
-                            ))}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        dept.hod && (
+                          <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 bg-slate-50/50 dark:bg-slate-800/30 p-2 rounded-xl">
+                            <span className="text-blue-500"><UserIcon /></span>
+                            <span className="font-medium">HOD:</span> {dept.hod.name || dept.hod.email}
                           </div>
-                        )}
-                      </div>
+                        )
+                      )}
                     </div>
 
                     {dept.shifts && dept.shifts.length > 0 && (
                       <div className="mb-4">
-                        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">
                           Assigned Shifts
                         </p>
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-wrap gap-1.5">
                           {dept.shifts.map((shift: any) => (
                             <span
                               key={typeof shift === 'string' ? shift : shift._id}
-                              className="inline-flex items-center gap-1 rounded-lg bg-purple-50 px-2.5 py-1 text-xs font-medium text-purple-700 ring-1 ring-inset ring-purple-700/10 dark:bg-purple-400/10 dark:text-purple-400 dark:ring-purple-400/20"
+                              className="inline-flex items-center gap-1 rounded-lg bg-white/60 px-2 py-1 text-[10px] font-bold text-purple-700 border border-purple-100/50 dark:bg-purple-900/20 dark:text-purple-300 dark:border-purple-800/50 shadow-sm"
                             >
-                              {typeof shift === 'string' ? 'Shift' : `${shift.name} (${shift.startTime}-${shift.endTime})`}
+                              {typeof shift === 'string' ? 'Shift' : `${shift.name} (${shift.startTime})`}
                             </span>
                           ))}
                         </div>
                       </div>
                     )}
 
-                    <div className="flex flex-wrap gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">
+                    <div className="flex gap-2 border-t border-slate-100/50 pt-4 dark:border-slate-800/50">
                       <button
-                        onClick={() => handleOpenEditDialog(dept)}
-                        className="group flex-1 rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 px-4 py-2.5 text-sm font-semibold text-blue-700 transition-all hover:from-blue-100 hover:to-indigo-100 hover:shadow-md dark:border-blue-800 dark:from-blue-900/20 dark:to-indigo-900/20 dark:text-blue-300 dark:hover:from-blue-900/30 dark:hover:to-indigo-900/30"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleOpenShiftDialog(dept)}
-                        className="group flex-1 rounded-2xl border border-purple-200 bg-gradient-to-r from-purple-50 to-red-50 px-4 py-2.5 text-sm font-semibold text-purple-700 transition-all hover:from-purple-100 hover:to-red-100 hover:shadow-md dark:border-purple-800 dark:from-purple-900/20 dark:to-red-900/20 dark:text-purple-300 dark:hover:from-purple-900/30 dark:hover:to-red-900/30"
+                        onClick={(e) => { e.stopPropagation(); handleOpenShiftDialog(dept); }}
+                        className="flex-1 rounded-2xl bg-amber-50 px-4 py-2.5 text-xs font-bold text-amber-700 hover:bg-amber-100 transition-all dark:bg-amber-900/30 dark:text-amber-400 dark:hover:bg-amber-900/40 shadow-sm hover:shadow"
                       >
                         Shifts
                       </button>
                       <button
-                        onClick={() => handleOpenDesignationDialog(dept._id)}
-                        className="group flex-1 rounded-2xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-blue-50 px-4 py-2.5 text-sm font-semibold text-indigo-700 transition-all hover:from-indigo-100 hover:to-blue-100 hover:shadow-md dark:border-indigo-800 dark:from-indigo-900/20 dark:to-blue-900/20 dark:text-indigo-300 dark:hover:from-indigo-900/30 dark:hover:to-blue-900/30"
+                        onClick={(e) => { e.stopPropagation(); handleOpenDesignationDialog(dept._id); }}
+                        className="flex-1 rounded-2xl bg-blue-500 px-4 py-2.5 text-xs font-bold text-white hover:bg-blue-600 transition-all shadow-md shadow-blue-500/20 hover:shadow-lg hover:shadow-blue-500/30"
                       >
                         Designations
-                      </button>
-                      <button
-                        onClick={() => handleDeleteDepartment(dept._id)}
-                        className="rounded-2xl border border-red-200 bg-gradient-to-r from-red-50 to-red-50 px-4 py-2.5 text-sm font-semibold text-red-700 transition-all hover:from-red-100 hover:to-red-100 hover:shadow-md dark:border-red-800 dark:from-red-900/20 dark:to-red-900/20 dark:text-red-300 dark:hover:from-red-900/30 dark:hover:to-red-900/30"
-                      >
-                        Delete
                       </button>
                     </div>
                   </div>
