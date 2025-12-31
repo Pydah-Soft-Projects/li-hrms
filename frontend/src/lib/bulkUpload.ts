@@ -18,6 +18,7 @@ export interface BulkUploadResult {
 export const EMPLOYEE_TEMPLATE_HEADERS = [
   'emp_no',
   'employee_name',
+  'division_name',
   'department_name',
   'designation_name',
   'doj',
@@ -46,6 +47,7 @@ export const EMPLOYEE_TEMPLATE_SAMPLE = [
   {
     emp_no: 'EMP001',
     employee_name: 'John Doe',
+    division_name: 'Main Division',
     department_name: 'Information Technology',
     designation_name: 'Software Developer',
     doj: '2024-01-15',
@@ -261,6 +263,21 @@ export const downloadTemplate = (
 };
 
 /**
+ * Match division name to division ID
+ */
+export const matchDivisionByName = (
+  name: string | null,
+  divisions: { _id: string; name: string }[]
+): string | null => {
+  if (!name) return null;
+  const normalizedName = name.toString().toLowerCase().trim();
+  const match = divisions.find(
+    (d) => d.name.toLowerCase().trim() === normalizedName
+  );
+  return match?._id || null;
+};
+
+/**
  * Match department name to department ID
  */
 export const matchDepartmentByName = (
@@ -313,6 +330,7 @@ export const matchUserByName = (
  */
 export const validateEmployeeRow = (
   row: ParsedRow,
+  divisions: { _id: string; name: string }[] = [],
   departments: { _id: string; name: string }[],
   designations: { _id: string; name: string; department: string }[],
   users: { _id: string; name: string; email?: string }[] = []
@@ -323,6 +341,17 @@ export const validateEmployeeRow = (
   // Required fields
   if (!row.emp_no) errors.push('Employee No is required');
   if (!row.employee_name) errors.push('Employee Name is required');
+
+  // Map division
+  if (row.division_name) {
+    const divId = matchDivisionByName(row.division_name as string, divisions);
+    if (!divId) {
+      errors.push(`Division "${row.division_name}" not found`);
+    }
+    mappedRow.division_id = divId;
+  } else {
+    errors.push('Division is required');
+  }
 
   // Map department
   if (row.department_name) {

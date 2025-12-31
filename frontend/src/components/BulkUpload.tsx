@@ -13,7 +13,7 @@ interface BulkUploadProps {
     label: string;
     editable?: boolean;
     type?: 'text' | 'number' | 'date' | 'select';
-    options?: { value: string; label: string }[];
+    options?: { value: string; label: string }[] | ((row: ParsedRow) => { value: string; label: string }[]);
     width?: string;
   }[];
   validateRow?: (row: ParsedRow, index: number) => { isValid: boolean; errors: string[]; mappedRow?: ParsedRow };
@@ -324,43 +324,46 @@ export default function BulkUpload({
                           <td className="whitespace-nowrap px-3 py-2 text-slate-500 dark:text-slate-400">
                             {rowIndex + 1}
                           </td>
-                          {columns.map((col) => (
-                            <td key={col.key} className="px-3 py-2">
-                              {col.editable !== false ? (
-                                col.type === 'select' && col.options ? (
-                                  <select
-                                    value={(row[col.key] as string) || ''}
-                                    onChange={(e) => handleCellChange(rowIndex, col.key, e.target.value)}
-                                    className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                                  >
-                                    <option value="">Select...</option>
-                                    {col.options.map((opt) => (
-                                      <option key={opt.value} value={opt.value}>
-                                        {opt.label}
-                                      </option>
-                                    ))}
-                                  </select>
+                          {columns.map((col) => {
+                            const resolvedOptions = typeof col.options === 'function' ? col.options(row) : col.options;
+                            return (
+                              <td key={col.key} className="px-3 py-2">
+                                {col.editable !== false ? (
+                                  col.type === 'select' && resolvedOptions ? (
+                                    <select
+                                      value={(row[col.key] as string) || ''}
+                                      onChange={(e) => handleCellChange(rowIndex, col.key, e.target.value)}
+                                      className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                    >
+                                      <option value="">Select...</option>
+                                      {resolvedOptions.map((opt) => (
+                                        <option key={opt.value} value={opt.value}>
+                                          {opt.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    <input
+                                      type={col.type || 'text'}
+                                      value={(row[col.key] as string) || ''}
+                                      onChange={(e) =>
+                                        handleCellChange(
+                                          rowIndex,
+                                          col.key,
+                                          col.type === 'number' ? (e.target.value ? Number(e.target.value) : null) : e.target.value
+                                        )
+                                      }
+                                      className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                    />
+                                  )
                                 ) : (
-                                  <input
-                                    type={col.type || 'text'}
-                                    value={(row[col.key] as string) || ''}
-                                    onChange={(e) =>
-                                      handleCellChange(
-                                        rowIndex,
-                                        col.key,
-                                        col.type === 'number' ? (e.target.value ? Number(e.target.value) : null) : e.target.value
-                                      )
-                                    }
-                                    className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                                  />
-                                )
-                              ) : (
-                                <span className="text-slate-700 dark:text-slate-300">
-                                  {row[col.key]?.toString() || '-'}
-                                </span>
-                              )}
-                            </td>
-                          ))}
+                                  <span className="text-slate-700 dark:text-slate-300">
+                                    {row[col.key]?.toString() || '-'}
+                                  </span>
+                                )}
+                              </td>
+                            );
+                          })}
                           <td className="px-3 py-2">
                             {hasRowError ? (
                               <div className="group relative">

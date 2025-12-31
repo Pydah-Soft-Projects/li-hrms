@@ -11,6 +11,7 @@ import {
   EMPLOYEE_TEMPLATE_HEADERS,
   EMPLOYEE_TEMPLATE_SAMPLE,
   validateEmployeeRow,
+  ParsedRow,
 } from '@/lib/bulkUpload';
 
 
@@ -3415,8 +3416,30 @@ export default function EmployeesPage() {
             templateSample={dynamicTemplate.sample}
             templateFilename="employee_template"
             columns={dynamicTemplate.columns.map(col => {
+              if (col.key === 'division_name') {
+                return {
+                  ...col,
+                  type: 'select',
+                  options: divisions.map(d => ({ value: d.name, label: d.name }))
+                };
+              }
               if (col.key === 'department_name') {
-                return { ...col, type: 'select', options: departments.map(d => ({ value: d.name, label: d.name })) };
+                return {
+                  ...col,
+                  type: 'select',
+                  options: (row: ParsedRow) => {
+                    const rowDivName = row.division_name as string;
+                    if (!rowDivName) return [];
+
+                    const div = divisions.find(d => d.name.toLowerCase() === rowDivName.toLowerCase());
+                    if (!div) return [];
+
+                    // Filter departments that belong to this division
+                    return departments
+                      .filter(dept => (dept as any).divisions?.includes(div._id))
+                      .map(d => ({ value: d.name, label: d.name }));
+                  }
+                };
               }
               if (col.key === 'gender') {
                 return { ...col, type: 'select', options: [{ value: 'Male', label: 'Male' }, { value: 'Female', label: 'Female' }, { value: 'Other', label: 'Other' }] };
@@ -3441,7 +3464,7 @@ export default function EmployeesPage() {
             })}
             validateRow={(row) => {
               const mappedUsers = employees.map(e => ({ _id: e._id, name: e.employee_name }));
-              const result = validateEmployeeRow(row, departments, designations as any, mappedUsers);
+              const result = validateEmployeeRow(row, divisions, departments, designations as any, mappedUsers);
               return { isValid: result.isValid, errors: result.errors, mappedRow: result.mappedRow };
             }}
             onSubmit={async (data) => {
@@ -3450,8 +3473,12 @@ export default function EmployeesPage() {
 
               data.forEach((row) => {
                 try {
-                  // Map department and designation names to IDs
-                  const deptId = departments.find(d => d.name.toLowerCase() === (row.department_name as string)?.toLowerCase())?._id;
+                  // Map division, department and designation names to IDs
+                  const divId = divisions.find(d => d.name.toLowerCase() === (row.division_name as string)?.toLowerCase())?._id;
+                  const deptId = departments.find(d =>
+                    d.name.toLowerCase() === (row.department_name as string)?.toLowerCase() &&
+                    (!divId || (d as any).divisions?.includes(divId))
+                  )?._id;
                   const desigId = designations.find(d =>
                     d.name.toLowerCase() === (row.designation_name as string)?.toLowerCase() &&
                     d.department === deptId
@@ -3459,13 +3486,14 @@ export default function EmployeesPage() {
 
                   const employeeData: any = {
                     ...row,
+                    division_id: divId || undefined,
                     department_id: deptId || undefined,
                     designation_id: desigId || undefined,
                     proposedSalary: row.proposedSalary || row.gross_salary || 0
                   };
 
                   // Handle dynamic fields based on form settings
-                  const coreFields = ['emp_no', 'employee_name', 'proposedSalary', 'gross_salary', 'department_id', 'designation_id', 'department_name', 'designation_name', 'doj', 'dob', 'gender', 'marital_status', 'blood_group', 'qualifications', 'experience', 'address', 'location', 'aadhar_number', 'phone_number', 'alt_phone_number', 'email', 'pf_number', 'esi_number', 'bank_account_no', 'bank_name', 'bank_place', 'ifsc_code'];
+                  const coreFields = ['emp_no', 'employee_name', 'proposedSalary', 'gross_salary', 'division_id', 'department_id', 'designation_id', 'division_name', 'department_name', 'designation_name', 'doj', 'dob', 'gender', 'marital_status', 'blood_group', 'qualifications', 'experience', 'address', 'location', 'aadhar_number', 'phone_number', 'alt_phone_number', 'email', 'pf_number', 'esi_number', 'bank_account_no', 'bank_name', 'bank_place', 'ifsc_code'];
 
                   if (formSettings?.groups) {
                     const dynamicFields: any = {};
