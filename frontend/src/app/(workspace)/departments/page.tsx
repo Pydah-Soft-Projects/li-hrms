@@ -1530,14 +1530,13 @@ export default function DepartmentsPage() {
               templateSample={DESIGNATION_TEMPLATE_SAMPLE}
               templateFilename="designation_template"
               columns={[
-                { key: 'name', label: 'Designation Name', width: '180px' },
-                { key: 'code', label: 'Code', width: '100px' },
-                { key: 'department_name', label: 'Department', type: 'select', options: departments.map(d => ({ value: d.name, label: d.name })), width: '180px' },
-                { key: 'description', label: 'Description', width: '200px' },
+                { key: 'name', label: 'Designation Name', width: '220px' },
+                { key: 'code', label: 'Code', width: '120px' },
+                { key: 'description', label: 'Description', width: '300px' },
                 { key: 'paid_leaves', label: 'Paid Leaves', type: 'number', width: '100px' },
               ]}
               validateRow={(row) => {
-                const result = validateDesignationRow(row, departments);
+                const result = validateDesignationRow(row);
                 return { isValid: result.isValid, errors: result.errors };
               }}
               onSubmit={async (data) => {
@@ -1547,14 +1546,6 @@ export default function DepartmentsPage() {
 
                 for (const row of data) {
                   try {
-                    // Find department by name
-                    const dept = departments.find(d => d.name.toLowerCase() === (row.department_name as string)?.toLowerCase());
-                    if (!dept) {
-                      failCount++;
-                      errors.push(`${row.name}: Department not found`);
-                      continue;
-                    }
-
                     const desigData = {
                       name: row.name as string,
                       code: row.code as string || undefined,
@@ -1562,7 +1553,7 @@ export default function DepartmentsPage() {
                       paidLeaves: row.paid_leaves ? Number(row.paid_leaves) : 0,
                     };
 
-                    const response = await api.createDesignation(dept._id, desigData);
+                    const response = await api.createGlobalDesignation(desigData);
                     if (response.success) {
                       successCount++;
                     } else {

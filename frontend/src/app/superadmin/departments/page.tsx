@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { api, Department, Designation, Division, Shift } from '@/lib/api';
+import Swal from 'sweetalert2';
 import BulkUpload from '@/components/BulkUpload';
 import {
   DEPARTMENT_TEMPLATE_HEADERS,
@@ -49,6 +50,7 @@ export default function DepartmentsPage() {
   // Division HOD state
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [divisionHODMap, setDivisionHODMap] = useState<Record<string, string>>({}); // { divisionId: hodId }
+  const [selectedDivisionId, setSelectedDivisionId] = useState<string>('all');
 
   // Designation form state
   const [designationName, setDesignationName] = useState('');
@@ -300,6 +302,62 @@ export default function DepartmentsPage() {
     }
   };
 
+  const handleCardClick = async (dept: Department) => {
+    // If no division is selected, do nothing special
+    if (!selectedDivisionId || selectedDivisionId === 'all') return;
+
+    // Check if the department is already linked to the selected division
+    const isLinked = dept.divisions?.some(divId =>
+      (typeof divId === 'string' ? divId : (divId as any)._id) === selectedDivisionId
+    );
+
+    if (isLinked) return;
+
+    // If not linked, show the interactive "One-Click Link" confirmation
+    const selectedDiv = divisions.find(d => d._id === selectedDivisionId);
+    const divName = selectedDiv?.name || 'this division';
+
+    const result = await Swal.fire({
+      title: 'Link Department?',
+      text: `Would you like to link "${dept.name}" to the "${divName}" division?`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, link it',
+      cancelButtonText: 'No, cancel',
+      confirmButtonColor: '#3b82f6',
+      cancelButtonColor: '#ef4444',
+      background: document.documentElement.classList.contains('dark') ? '#0f172a' : '#ffffff',
+      color: document.documentElement.classList.contains('dark') ? '#f1f5f9' : '#1e293b',
+    });
+
+    if (result.isConfirmed) {
+      try {
+        const response = await api.linkDepartmentsToDivision(selectedDivisionId, {
+          departmentIds: [dept._id],
+          action: 'link'
+        });
+
+        if (response.success) {
+          Swal.fire({
+            title: 'Linked!',
+            text: `Department "${dept.name}" has been successfully linked to "${divName}".`,
+            icon: 'success',
+            timer: 2000,
+            showConfirmButton: false,
+            background: document.documentElement.classList.contains('dark') ? '#0f172a' : '#ffffff',
+            color: document.documentElement.classList.contains('dark') ? '#f1f5f9' : '#1e293b',
+          });
+          loadDepartments(); // Refresh list to reflect brightness change
+        } else {
+          Swal.fire('Error', response.message || 'Failed to link department', 'error');
+        }
+      } catch (err) {
+        console.error('Error linking department to division:', err);
+        Swal.fire('Error', 'An unexpected error occurred.', 'error');
+      }
+    }
+  };
+
   const handleDeleteDepartment = async (id: string) => {
     if (!confirm('Are you sure you want to delete this department?')) return;
 
@@ -441,6 +499,35 @@ export default function DepartmentsPage() {
               Organize and manage your departments with ease
             </p>
           </div>
+
+          {/* Division Filter */}
+          <div className="flex-1 min-w-[200px] max-w-xs">
+            <div className="relative group">
+              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                <svg className="h-4 w-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 8.293A1 1 0 013 7.586V4z" />
+                </svg>
+              </div>
+              <select
+                value={selectedDivisionId}
+                onChange={(e) => setSelectedDivisionId(e.target.value)}
+                className="w-full pl-11 pr-10 py-3 rounded-2xl border border-slate-200 bg-white/50 text-sm font-medium text-slate-700 outline-none transition-all hover:bg-white hover:border-blue-300 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 dark:bg-slate-900/50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-900 dark:focus:border-blue-500/50 appearance-none shadow-sm cursor-pointer"
+              >
+                <option value="all">All Divisions (Full View)</option>
+                {divisions.map((div) => (
+                  <option key={div._id} value={div._id}>
+                    {div.name} ({div.code})
+                  </option>
+                ))}
+              </select>
+              <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
+                <svg className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </div>
+          </div>
+
           <div className="flex flex-wrap gap-3">
             <button
               onClick={() => setShowBulkUploadDept(true)}
@@ -1449,15 +1536,15 @@ export default function DepartmentsPage() {
                       ))}
                     </div>
                   )}
-
-                  {/* Empty State */}
-                  {(!showShiftBreakdownDialog.shifts || showShiftBreakdownDialog.shifts.length === 0) &&
-                    (!showShiftBreakdownDialog.departmentShifts || showShiftBreakdownDialog.departmentShifts.length === 0) && (
-                      <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/50 p-8 text-center dark:border-slate-700 dark:bg-slate-900/30">
-                        <p className="text-sm text-slate-500 dark:text-slate-400">No shifts assigned to this designation yet</p>
-                      </div>
-                    )}
                 </div>
+
+                {/* Empty State */}
+                {(!showShiftBreakdownDialog.shifts || showShiftBreakdownDialog.shifts.length === 0) &&
+                  (!showShiftBreakdownDialog.departmentShifts || showShiftBreakdownDialog.departmentShifts.length === 0) && (
+                    <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/50 p-8 text-center dark:border-slate-700 dark:bg-slate-900/30">
+                      <p className="text-sm text-slate-500 dark:text-slate-400">No shifts assigned to this designation yet</p>
+                    </div>
+                  )}
               </div>
             </div>
           )
@@ -1483,115 +1570,144 @@ export default function DepartmentsPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {departments.map((dept) => (
-                <div
-                  key={dept._id}
-                  className="group relative overflow-hidden rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg shadow-blue-100/40 transition-all hover:border-blue-300 hover:shadow-xl hover:shadow-blue-200/50 dark:border-slate-800 dark:bg-slate-950/95 dark:shadow-none dark:hover:border-slate-700"
-                >
-                  {/* Gradient accent */}
-                  <div className="absolute top-0 left-0 h-1 w-full bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500"></div>
+              {departments.map((dept) => {
+                const isLinked = selectedDivisionId === 'all' || dept.divisions?.some(divId =>
+                  (typeof divId === 'string' ? divId : (divId as any)._id) === selectedDivisionId
+                );
 
-                  <div className="mb-4 flex items-start justify-between">
-                    <div className="flex-1">
-                      <h3 className="text-xl font-semibold text-slate-900 dark:text-slate-100">{dept.name}</h3>
-                      {dept.code && (
-                        <p className="mt-1 text-sm font-medium text-blue-600 dark:text-blue-400">Code: {dept.code}</p>
-                      )}
+                return (
+                  <div
+                    key={dept._id}
+                    onClick={() => handleCardClick(dept)}
+                    className={`group relative overflow-hidden rounded-3xl border bg-white/95 p-6 shadow-lg transition-all 
+                      ${isLinked
+                        ? 'border-slate-200 shadow-blue-100/40 hover:border-blue-300 hover:shadow-xl hover:shadow-blue-200/50'
+                        : 'border-slate-100 opacity-40 grayscale-[0.5] hover:opacity-60 cursor-pointer scale-[0.98]'
+                      }
+                      dark:bg-slate-950/95 dark:shadow-none 
+                      ${isLinked ? 'dark:border-slate-800 dark:hover:border-slate-700' : 'dark:border-slate-900'}
+                    `}
+                  >
+                    {/* Gradient accent */}
+                    {isLinked && (
+                      <div className="absolute top-0 left-0 h-1 w-full bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500"></div>
+                    )}
+                    {!isLinked && (
+                      <div className="absolute inset-0 bg-slate-50/10 backdrop-blur-[1px] pointer-events-none"></div>
+                    )}
+
+                    {!isLinked && (
+                      <div className="absolute top-3 right-3 z-20">
+                        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-slate-500 dark:bg-slate-800 dark:text-slate-400 shadow-sm">
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                          </svg>
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="mb-4 flex items-start justify-between">
+                      <div className="flex-1">
+                        <h3 className="text-xl font-semibold text-slate-900 dark:text-slate-100">{dept.name}</h3>
+                        {dept.code && (
+                          <p className="mt-1 text-sm font-medium text-blue-600 dark:text-blue-400">Code: {dept.code}</p>
+                        )}
+                      </div>
+                      <span
+                        className={`ml-3 rounded-full px-3 py-1 text-xs font-semibold ${dept.isActive
+                          ? 'bg-green-100 text-green-700 shadow-sm dark:bg-green-900/30 dark:text-green-400'
+                          : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                          }`}
+                      >
+                        {dept.isActive ? 'Active' : 'Inactive'}
+                      </span>
                     </div>
-                    <span
-                      className={`ml-3 rounded-full px-3 py-1 text-xs font-semibold ${dept.isActive
-                        ? 'bg-green-100 text-green-700 shadow-sm dark:bg-green-900/30 dark:text-green-400'
-                        : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                        }`}
-                    >
-                      {dept.isActive ? 'Active' : 'Inactive'}
-                    </span>
-                  </div>
 
-                  {dept.description && (
-                    <p className="mb-4 line-clamp-2 text-sm text-slate-600 dark:text-slate-400">{dept.description}</p>
-                  )}
+                    {dept.description && (
+                      <p className="mb-4 line-clamp-2 text-sm text-slate-600 dark:text-slate-400">{dept.description}</p>
+                    )}
 
-                  <div className="mb-4 space-y-2">
                     <div className="mb-4 space-y-2">
-                      {/* Deprecated Global HOD display - keep for fallback */}
-                      {dept.hod && (!dept.divisionHODs || dept.divisionHODs.length === 0) && (
-                        <div className="flex items-center gap-2 text-sm">
-                          <span className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
-                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                            </svg>
-                          </span>
-                          <span className="font-medium text-slate-700 dark:text-slate-300">HOD:</span>
-                          <span className="text-slate-600 dark:text-slate-400">{dept.hod.name || dept.hod.email}</span>
-                        </div>
-                      )}
+                      <div className="mb-4 space-y-2">
+                        {/* Deprecated Global HOD display - keep for fallback */}
+                        {dept.hod && (!dept.divisionHODs || dept.divisionHODs.length === 0) && (
+                          <div className="flex items-center gap-2 text-sm">
+                            <span className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                              </svg>
+                            </span>
+                            <span className="font-medium text-slate-700 dark:text-slate-300">HOD:</span>
+                            <span className="text-slate-600 dark:text-slate-400">{dept.hod.name || dept.hod.email}</span>
+                          </div>
+                        )}
 
-                      {/* Division Specific HODs */}
-                      {dept.divisionHODs && dept.divisionHODs.length > 0 && (
-                        <div className="space-y-2">
-                          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Division HODs</p>
-                          {dept.divisionHODs.map((dh: any, idx: number) => (
-                            <div key={idx} className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-100 dark:bg-slate-800 dark:border-slate-700">
-                              <span className="text-xs font-semibold text-blue-600 dark:text-blue-400" title={dh.division?.name}>
-                                {dh.division?.code || dh.division?.name || 'Div'}
-                              </span>
-                              <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                                {dh.hod?.name || dh.hod?.email || 'N/A'}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {dept.shifts && dept.shifts.length > 0 && (
-                    <div className="mb-4">
-                      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                        Assigned Shifts
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {dept.shifts.map((shift: any) => (
-                          <span
-                            key={typeof shift === 'string' ? shift : shift._id}
-                            className="inline-flex items-center gap-1 rounded-lg bg-purple-50 px-2.5 py-1 text-xs font-medium text-purple-700 ring-1 ring-inset ring-purple-700/10 dark:bg-purple-400/10 dark:text-purple-400 dark:ring-purple-400/20"
-                          >
-                            {typeof shift === 'string' ? 'Shift' : `${shift.name} (${shift.startTime}-${shift.endTime})`}
-                          </span>
-                        ))}
+                        {/* Division Specific HODs */}
+                        {dept.divisionHODs && dept.divisionHODs.length > 0 && (
+                          <div className="space-y-2">
+                            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Division HODs</p>
+                            {dept.divisionHODs.map((dh: any, idx: number) => (
+                              <div key={idx} className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-100 dark:bg-slate-800 dark:border-slate-700">
+                                <span className="text-xs font-semibold text-blue-600 dark:text-blue-400" title={dh.division?.name}>
+                                  {dh.division?.code || dh.division?.name || 'Div'}
+                                </span>
+                                <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                                  {dh.hod?.name || dh.hod?.email || 'N/A'}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
-                  )}
 
-                  <div className="flex flex-wrap gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">
-                    <button
-                      onClick={() => handleOpenEditDialog(dept)}
-                      className="group flex-1 rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 px-4 py-2.5 text-sm font-semibold text-blue-700 transition-all hover:from-blue-100 hover:to-indigo-100 hover:shadow-md dark:border-blue-800 dark:from-blue-900/20 dark:to-indigo-900/20 dark:text-blue-300 dark:hover:from-blue-900/30 dark:hover:to-indigo-900/30"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleOpenShiftDialog(dept)}
-                      className="group flex-1 rounded-2xl border border-purple-200 bg-gradient-to-r from-purple-50 to-red-50 px-4 py-2.5 text-sm font-semibold text-purple-700 transition-all hover:from-purple-100 hover:to-red-100 hover:shadow-md dark:border-purple-800 dark:from-purple-900/20 dark:to-red-900/20 dark:text-purple-300 dark:hover:from-purple-900/30 dark:hover:to-red-900/30"
-                    >
-                      Shifts
-                    </button>
-                    <button
-                      onClick={() => handleOpenDesignationDialog(dept._id)}
-                      className="group flex-1 rounded-2xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-blue-50 px-4 py-2.5 text-sm font-semibold text-indigo-700 transition-all hover:from-indigo-100 hover:to-blue-100 hover:shadow-md dark:border-indigo-800 dark:from-indigo-900/20 dark:to-blue-900/20 dark:text-indigo-300 dark:hover:from-indigo-900/30 dark:hover:to-blue-900/30"
-                    >
-                      Designations
-                    </button>
-                    <button
-                      onClick={() => handleDeleteDepartment(dept._id)}
-                      className="rounded-2xl border border-red-200 bg-gradient-to-r from-red-50 to-red-50 px-4 py-2.5 text-sm font-semibold text-red-700 transition-all hover:from-red-100 hover:to-red-100 hover:shadow-md dark:border-red-800 dark:from-red-900/20 dark:to-red-900/20 dark:text-red-300 dark:hover:from-red-900/30 dark:hover:to-red-900/30"
-                    >
-                      Delete
-                    </button>
+                    {dept.shifts && dept.shifts.length > 0 && (
+                      <div className="mb-4">
+                        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                          Assigned Shifts
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {dept.shifts.map((shift: any) => (
+                            <span
+                              key={typeof shift === 'string' ? shift : shift._id}
+                              className="inline-flex items-center gap-1 rounded-lg bg-purple-50 px-2.5 py-1 text-xs font-medium text-purple-700 ring-1 ring-inset ring-purple-700/10 dark:bg-purple-400/10 dark:text-purple-400 dark:ring-purple-400/20"
+                            >
+                              {typeof shift === 'string' ? 'Shift' : `${shift.name} (${shift.startTime}-${shift.endTime})`}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">
+                      <button
+                        onClick={() => handleOpenEditDialog(dept)}
+                        className="group flex-1 rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 px-4 py-2.5 text-sm font-semibold text-blue-700 transition-all hover:from-blue-100 hover:to-indigo-100 hover:shadow-md dark:border-blue-800 dark:from-blue-900/20 dark:to-indigo-900/20 dark:text-blue-300 dark:hover:from-blue-900/30 dark:hover:to-indigo-900/30"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleOpenShiftDialog(dept)}
+                        className="group flex-1 rounded-2xl border border-purple-200 bg-gradient-to-r from-purple-50 to-red-50 px-4 py-2.5 text-sm font-semibold text-purple-700 transition-all hover:from-purple-100 hover:to-red-100 hover:shadow-md dark:border-purple-800 dark:from-purple-900/20 dark:to-red-900/20 dark:text-purple-300 dark:hover:from-purple-900/30 dark:hover:to-red-900/30"
+                      >
+                        Shifts
+                      </button>
+                      <button
+                        onClick={() => handleOpenDesignationDialog(dept._id)}
+                        className="group flex-1 rounded-2xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-blue-50 px-4 py-2.5 text-sm font-semibold text-indigo-700 transition-all hover:from-indigo-100 hover:to-blue-100 hover:shadow-md dark:border-indigo-800 dark:from-indigo-900/20 dark:to-blue-900/20 dark:text-indigo-300 dark:hover:from-indigo-900/30 dark:hover:to-blue-900/30"
+                      >
+                        Designations
+                      </button>
+                      <button
+                        onClick={() => handleDeleteDepartment(dept._id)}
+                        className="rounded-2xl border border-red-200 bg-gradient-to-r from-red-50 to-red-50 px-4 py-2.5 text-sm font-semibold text-red-700 transition-all hover:from-red-100 hover:to-red-100 hover:shadow-md dark:border-red-800 dark:from-red-900/20 dark:to-red-900/20 dark:text-red-300 dark:hover:from-red-900/30 dark:hover:to-red-900/30"
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )
         }
@@ -1661,14 +1777,13 @@ export default function DepartmentsPage() {
               templateSample={DESIGNATION_TEMPLATE_SAMPLE}
               templateFilename="designation_template"
               columns={[
-                { key: 'name', label: 'Designation Name', width: '180px' },
-                { key: 'code', label: 'Code', width: '100px' },
-                { key: 'department_name', label: 'Department', type: 'select', options: departments.map(d => ({ value: d.name, label: d.name })), width: '180px' },
-                { key: 'description', label: 'Description', width: '200px' },
+                { key: 'name', label: 'Designation Name', width: '220px' },
+                { key: 'code', label: 'Code', width: '120px' },
+                { key: 'description', label: 'Description', width: '300px' },
                 { key: 'paid_leaves', label: 'Paid Leaves', type: 'number', width: '100px' },
               ]}
               validateRow={(row) => {
-                const result = validateDesignationRow(row, departments);
+                const result = validateDesignationRow(row);
                 return { isValid: result.isValid, errors: result.errors };
               }}
               onSubmit={async (data) => {
@@ -1678,14 +1793,6 @@ export default function DepartmentsPage() {
 
                 for (const row of data) {
                   try {
-                    // Find department by name
-                    const dept = departments.find(d => d.name.toLowerCase() === (row.department_name as string)?.toLowerCase());
-                    if (!dept) {
-                      failCount++;
-                      errors.push(`${row.name}: Department not found`);
-                      continue;
-                    }
-
                     const desigData = {
                       name: row.name as string,
                       code: row.code as string || undefined,
@@ -1693,7 +1800,7 @@ export default function DepartmentsPage() {
                       paidLeaves: row.paid_leaves ? Number(row.paid_leaves) : 0,
                     };
 
-                    const response = await api.createDesignation(dept._id, desigData);
+                    const response = await api.createGlobalDesignation(desigData);
                     if (response.success) {
                       successCount++;
                     } else {
@@ -1716,7 +1823,26 @@ export default function DepartmentsPage() {
             />
           )
         }
-      </div >
-    </div >
+      </div>
+    </div>
   );
 }
+
+// Re-using icons from Divisions page
+const EditIcon = () => (
+  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+  </svg>
+);
+
+const TrashIcon = () => (
+  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+  </svg>
+);
+
+const UserIcon = () => (
+  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+  </svg>
+);

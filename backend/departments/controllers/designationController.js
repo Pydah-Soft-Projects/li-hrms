@@ -22,6 +22,10 @@ exports.getAllDesignations = async (req, res) => {
         select: 'name code',
       })
       .populate({
+        path: 'departmentShifts.division',
+        select: 'name code',
+      })
+      .populate({
         path: 'departmentShifts.shifts',
         select: 'name startTime endTime duration isActive',
       })
@@ -69,6 +73,14 @@ exports.getDesignationsByDepartment = async (req, res) => {
     const designations = await Designation.find(query)
       .populate('shifts', 'name startTime endTime duration isActive')
       .populate({
+        path: 'departmentShifts.department',
+        select: 'name code',
+      })
+      .populate({
+        path: 'departmentShifts.division',
+        select: 'name code',
+      })
+      .populate({
         path: 'departmentShifts.shifts',
         select: 'name startTime endTime duration isActive',
       })
@@ -112,6 +124,18 @@ exports.getDesignation = async (req, res) => {
     const designation = await Designation.findById(req.params.id)
       .populate('department', 'name code')
       .populate('shifts', 'name startTime endTime duration isActive')
+      .populate({
+        path: 'departmentShifts.department',
+        select: 'name code',
+      })
+      .populate({
+        path: 'departmentShifts.division',
+        select: 'name code',
+      })
+      .populate({
+        path: 'departmentShifts.shifts',
+        select: 'name startTime endTime duration isActive',
+      })
       .populate('createdBy', 'name email');
 
     if (!designation) {
@@ -489,7 +513,18 @@ exports.assignShifts = async (req, res) => {
     const populatedDesignation = await Designation.findById(req.params.id)
       .populate('department', 'name code')
       .populate('shifts', 'name startTime endTime duration isActive')
-      .populate('departmentShifts.shifts', 'name startTime endTime duration isActive');
+      .populate({
+        path: 'departmentShifts.department',
+        select: 'name code',
+      })
+      .populate({
+        path: 'departmentShifts.division',
+        select: 'name code',
+      })
+      .populate({
+        path: 'departmentShifts.shifts',
+        select: 'name startTime endTime duration isActive',
+      });
 
     res.status(200).json({
       success: true,

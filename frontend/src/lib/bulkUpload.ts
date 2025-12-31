@@ -445,23 +445,12 @@ export const validateDepartmentRow = (
  * Designations are now independent - department is optional
  */
 export const validateDesignationRow = (
-  row: ParsedRow,
-  departments: { _id: string; name: string }[]
+  row: ParsedRow
 ): { isValid: boolean; errors: string[]; mappedRow: ParsedRow } => {
   const errors: string[] = [];
   const mappedRow: ParsedRow = { ...row };
 
   if (!row.name) errors.push('Designation Name is required');
-
-  // Map department if provided (optional for independent designations)
-  if (row.department_name) {
-    const deptId = matchDepartmentByName(row.department_name as string, departments);
-    if (!deptId) {
-      errors.push(`Department "${row.department_name}" not found`);
-    }
-    mappedRow.department_id = deptId;
-  }
-  // Department is now optional - designations can be created independently
 
   return { isValid: errors.length === 0, errors, mappedRow };
 };

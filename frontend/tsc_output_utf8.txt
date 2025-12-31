@@ -1,0 +1,5 @@
+﻿src/app/superadmin/departments/page.tsx(4,63): error TS2792: Cannot find module '@/lib/api'. Did you mean to set the 'moduleResolution' option to 'nodenext', or to add aliases to the 'paths' option?
+src/app/superadmin/departments/page.tsx(5,18): error TS2792: Cannot find module 'sweetalert2'. Did you mean to set the 'moduleResolution' option to 'nodenext', or to add aliases to the 'paths' option?
+src/app/superadmin/departments/page.tsx(6,24): error TS2792: Cannot find module '@/components/BulkUpload'. Did you mean to set the 'moduleResolution' option to 'nodenext', or to add aliases to the 'paths' option?
+src/app/superadmin/departments/page.tsx(15,8): error TS2792: Cannot find module '@/lib/bulkUpload'. Did you mean to set the 'moduleResolution' option to 'nodenext', or to add aliases to the 'paths' option?
+src/app/superadmin/departments/page.tsx(16,21): error TS2792: Cannot find module '@/components/Spinner'. Did you mean to set the 'moduleResolution' option to 'nodenext', or to add aliases to the 'paths' option?
