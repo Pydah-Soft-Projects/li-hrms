@@ -1397,6 +1397,23 @@ export default function LeavesPage() {
 
   const totalPending = pendingLeaves.length + pendingODs.length;
 
+  // Dynamic Column Logic
+  const { showDivision, showDepartment } = useMemo(() => {
+    const isHOD = currentUser?.role === 'hod';
+    if (isHOD) return { showDivision: false, showDepartment: false };
+
+    let dataToCheck: any[] = [];
+    if (activeTab === 'leaves') dataToCheck = leaves;
+    else if (activeTab === 'od') dataToCheck = ods;
+
+    const uniqueDivisions = new Set(dataToCheck.map(item => item.employeeId?.department?.division?.name).filter(Boolean));
+
+    return {
+      showDivision: uniqueDivisions.size > 1,
+      showDepartment: true // Always show department for non-HODs as per requirement
+    };
+  }, [leaves, ods, activeTab, currentUser]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -1544,13 +1561,17 @@ export default function LeavesPage() {
                   {currentUser?.role !== 'employee' && (
                     <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Employee</th>
                   )}
+                  {showDivision && (
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Division</th>
+                  )}
+                  {showDepartment && (
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Department</th>
+                  )}
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Type</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Duration</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Days</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Status</th>
-                  {currentUser?.role !== 'employee' && (
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Applied By</th>
-                  )}
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Applied By</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Date</th>
                 </tr>
               </thead>
@@ -1567,6 +1588,16 @@ export default function LeavesPage() {
                           {leave.employeeId?.employee_name || `${leave.employeeId?.first_name || ''} ${leave.employeeId?.last_name || ''}`.trim() || leave.emp_no}
                         </div>
                         <div className="text-xs text-slate-500">{leave.employeeId?.emp_no || leave.emp_no}</div>
+                      </td>
+                    )}
+                    {showDivision && (
+                      <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
+                        {leave.employeeId?.department?.division?.name || '-'}
+                      </td>
+                    )}
+                    {showDepartment && (
+                      <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
+                        {leave.employeeId?.department?.name || '-'}
                       </td>
                     )}
                     <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300 capitalize">
@@ -1595,7 +1626,7 @@ export default function LeavesPage() {
                 ))}
                 {leaves.length === 0 && (
                   <tr>
-                    <td colSpan={currentUser?.role !== 'employee' ? 7 : 5} className="px-4 py-8 text-center text-slate-500">
+                    <td colSpan={currentUser?.role !== 'employee' ? (7 + (showDivision ? 1 : 0) + (showDepartment ? 1 : 0)) : 5} className="px-4 py-8 text-center text-slate-500">
                       No leave applications found
                     </td>
                   </tr>
@@ -1613,6 +1644,8 @@ export default function LeavesPage() {
                   {currentUser?.role !== 'employee' && (
                     <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Employee</th>
                   )}
+                  {showDivision && <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Division</th>}
+                  {showDepartment && <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Department</th>}
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Type</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Place</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Duration</th>
@@ -1636,6 +1669,16 @@ export default function LeavesPage() {
                           {od.employeeId?.employee_name || `${od.employeeId?.first_name || ''} ${od.employeeId?.last_name || ''}`.trim() || od.emp_no}
                         </div>
                         <div className="text-xs text-slate-500">{od.employeeId?.emp_no || od.emp_no}</div>
+                      </td>
+                    )}
+                    {showDivision && (
+                      <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
+                        {od.employeeId?.department?.division?.name || '-'}
+                      </td>
+                    )}
+                    {showDepartment && (
+                      <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
+                        {od.employeeId?.department?.name || '-'}
                       </td>
                     )}
                     <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300 capitalize">
@@ -1683,43 +1726,81 @@ export default function LeavesPage() {
                   <CalendarIcon />
                   Pending Leaves ({pendingLeaves.length})
                 </h3>
-                <div className="space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                   {pendingLeaves.map((leave) => (
-                    <div key={leave._id} className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-900/50">
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <span className="font-medium text-slate-900 dark:text-white">
-                              {leave.employeeId?.first_name} {leave.employeeId?.last_name}
-                            </span>
-                            <span className="text-xs text-slate-500">({leave.employeeId?.emp_no})</span>
-                            <span className={`px-2 py-0.5 text-xs font-medium rounded ${getStatusColor(leave.status)}`}>
-                              {leave.status.replace('_', ' ')}
-                            </span>
+                    <div key={leave._id} className="group relative flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition-all hover:shadow-md dark:border-slate-700 dark:bg-slate-800">
+
+                      {/* Header */}
+                      <div className="flex items-start justify-between gap-3 mb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600 font-bold dark:bg-blue-900/30 dark:text-blue-400">
+                            {getEmployeeInitials({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: '' } as any)}
                           </div>
-                          <div className="text-sm text-slate-600 dark:text-slate-400 space-y-1">
-                            <div><strong>Type:</strong> {leave.leaveType} | <strong>Days:</strong> {leave.numberOfDays}</div>
-                            <div><strong>From:</strong> {formatDate(leave.fromDate)} <strong>To:</strong> {formatDate(leave.toDate)}</div>
-                            <div><strong>Reason:</strong> {leave.purpose}</div>
+                          <div>
+                            <h4 className="font-semibold text-slate-900 dark:text-white line-clamp-1">
+                              {leave.employeeId?.first_name} {leave.employeeId?.last_name}
+                            </h4>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                              <span>{leave.employeeId?.emp_no}</span>
+                              {leave.employeeId?.department?.name && (
+                                <>
+                                  <span>•</span>
+                                  <span className="truncate max-w-[100px]">{leave.employeeId.department.name}</span>
+                                </>
+                              )}
+                            </p>
                           </div>
                         </div>
-                        {currentUser?.role !== 'employee' && (
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => handleAction(leave._id, 'leave', 'approve')}
-                              className="px-3 py-1.5 text-sm font-medium text-green-700 bg-green-100 rounded-lg hover:bg-green-200 flex items-center gap-1"
-                            >
-                              <CheckIcon /> Approve
-                            </button>
-                            <button
-                              onClick={() => handleAction(leave._id, 'leave', 'reject')}
-                              className="px-3 py-1.5 text-sm font-medium text-red-700 bg-red-100 rounded-lg hover:bg-red-200 flex items-center gap-1"
-                            >
-                              <XIcon /> Reject
-                            </button>
+                        <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(leave.status)}`}>
+                          {leave.status.replace('_', ' ')}
+                        </span>
+                      </div>
+
+                      {/* Content */}
+                      <div className="mb-4 space-y-2.5">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-slate-500 dark:text-slate-400">Type</span>
+                          <span className="font-medium text-slate-700 dark:text-slate-300">{leave.leaveType}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-slate-500 dark:text-slate-400">Duration</span>
+                          <span className="font-medium text-slate-700 dark:text-slate-300">{leave.numberOfDays} Day{leave.numberOfDays !== 1 ? 's' : ''}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-slate-500 dark:text-slate-400">Dates</span>
+                          <span className="font-medium text-slate-700 dark:text-slate-300 text-right">
+                            {formatDate(leave.fromDate)}
+                            {leave.fromDate !== leave.toDate && ` - ${formatDate(leave.toDate)}`}
+                          </span>
+                        </div>
+                        {leave.purpose && (
+                          <div className="pt-2 mt-2 border-t border-slate-100 dark:border-slate-700">
+                            <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 italic">
+                              "{leave.purpose}"
+                            </p>
                           </div>
                         )}
                       </div>
+
+                      {/* Actions */}
+                      {currentUser?.role !== 'employee' && (
+                        <div className="flex items-center gap-2 mt-auto">
+                          <button
+                            onClick={() => handleAction(leave._id, 'leave', 'approve')}
+                            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-green-500/10 py-2 text-sm font-semibold text-green-600 transition-colors hover:bg-green-500 hover:text-white dark:bg-green-500/20 dark:text-green-400 dark:hover:bg-green-500 dark:hover:text-white"
+                            title="Approve Leave"
+                          >
+                            <CheckIcon /> Approve
+                          </button>
+                          <button
+                            onClick={() => handleAction(leave._id, 'leave', 'reject')}
+                            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-500/10 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500 hover:text-white dark:bg-red-500/20 dark:text-red-400 dark:hover:bg-red-500 dark:hover:text-white"
+                            title="Reject Leave"
+                          >
+                            <XIcon /> Reject
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1733,44 +1814,81 @@ export default function LeavesPage() {
                   <BriefcaseIcon />
                   Pending ODs ({pendingODs.length})
                 </h3>
-                <div className="space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                   {pendingODs.map((od) => (
-                    <div key={od._id} className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-900/50">
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <span className="font-medium text-slate-900 dark:text-white">
-                              {od.employeeId?.first_name} {od.employeeId?.last_name}
-                            </span>
-                            <span className="text-xs text-slate-500">({od.employeeId?.emp_no})</span>
-                            <span className={`px-2 py-0.5 text-xs font-medium rounded ${getStatusColor(od.status)}`}>
-                              {od.status.replace('_', ' ')}
-                            </span>
+                    <div key={od._id} className="group relative flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition-all hover:shadow-md dark:border-slate-700 dark:bg-slate-800">
+
+                      {/* Header */}
+                      <div className="flex items-start justify-between gap-3 mb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-purple-100 text-purple-600 font-bold dark:bg-purple-900/30 dark:text-purple-400">
+                            {getEmployeeInitials({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: '' } as any)}
                           </div>
-                          <div className="text-sm text-slate-600 dark:text-slate-400 space-y-1">
-                            <div><strong>Type:</strong> {od.odType} | <strong>Days:</strong> {od.numberOfDays}</div>
-                            <div><strong>Place:</strong> {od.placeVisited}</div>
-                            <div><strong>From:</strong> {formatDate(od.fromDate)} <strong>To:</strong> {formatDate(od.toDate)}</div>
-                            <div><strong>Purpose:</strong> {od.purpose}</div>
+                          <div>
+                            <h4 className="font-semibold text-slate-900 dark:text-white line-clamp-1">
+                              {od.employeeId?.first_name} {od.employeeId?.last_name}
+                            </h4>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                              <span>{od.employeeId?.emp_no}</span>
+                              {od.employeeId?.department?.name && (
+                                <>
+                                  <span>•</span>
+                                  <span className="truncate max-w-[100px]">{od.employeeId.department.name}</span>
+                                </>
+                              )}
+                            </p>
                           </div>
                         </div>
-                        {currentUser?.role !== 'employee' && (
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => handleAction(od._id, 'od', 'approve')}
-                              className="px-3 py-1.5 text-sm font-medium text-green-700 bg-green-100 rounded-lg hover:bg-green-200 flex items-center gap-1"
-                            >
-                              <CheckIcon /> Approve
-                            </button>
-                            <button
-                              onClick={() => handleAction(od._id, 'od', 'reject')}
-                              className="px-3 py-1.5 text-sm font-medium text-red-700 bg-red-100 rounded-lg hover:bg-red-200 flex items-center gap-1"
-                            >
-                              <XIcon /> Reject
-                            </button>
+                        <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(od.status)}`}>
+                          {od.status.replace('_', ' ')}
+                        </span>
+                      </div>
+
+                      {/* Content */}
+                      <div className="mb-4 space-y-2.5">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-slate-500 dark:text-slate-400">Type</span>
+                          <span className="font-medium text-slate-700 dark:text-slate-300">{od.odType}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-slate-500 dark:text-slate-400">Duration</span>
+                          <span className="font-medium text-slate-700 dark:text-slate-300">{od.numberOfDays} Day{od.numberOfDays !== 1 ? 's' : ''}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-slate-500 dark:text-slate-400">Dates</span>
+                          <span className="font-medium text-slate-700 dark:text-slate-300 text-right">
+                            {formatDate(od.fromDate)}
+                            {od.fromDate !== od.toDate && ` - ${formatDate(od.toDate)}`}
+                          </span>
+                        </div>
+                        {od.purpose && (
+                          <div className="pt-2 mt-2 border-t border-slate-100 dark:border-slate-700">
+                            <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 italic">
+                              "{od.purpose}"
+                            </p>
                           </div>
                         )}
                       </div>
+
+                      {/* Actions */}
+                      {currentUser?.role !== 'employee' && (
+                        <div className="flex items-center gap-2 mt-auto">
+                          <button
+                            onClick={() => handleAction(od._id, 'od', 'approve')}
+                            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-green-500/10 py-2 text-sm font-semibold text-green-600 transition-colors hover:bg-green-500 hover:text-white dark:bg-green-500/20 dark:text-green-400 dark:hover:bg-green-500 dark:hover:text-white"
+                            title="Approve OD"
+                          >
+                            <CheckIcon /> Approve
+                          </button>
+                          <button
+                            onClick={() => handleAction(od._id, 'od', 'reject')}
+                            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-500/10 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500 hover:text-white dark:bg-red-500/20 dark:text-red-400 dark:hover:bg-red-500 dark:hover:text-white"
+                            title="Reject OD"
+                          >
+                            <XIcon /> Reject
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

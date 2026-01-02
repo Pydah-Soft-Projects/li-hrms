@@ -3207,6 +3207,7 @@ export default function EmployeesPage() {
                   departments={departments}
                   designations={designations as any}
                   onSettingsLoaded={setFormSettings}
+                  excludeFields={editingEmployee ? ['proposedSalary', 'gross_salary'] : []}
                 />
 
                 {/* Leave Settings (Optional) */}
