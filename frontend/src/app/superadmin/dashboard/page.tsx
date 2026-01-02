@@ -484,7 +484,7 @@ export default function SuperAdminDashboard() {
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-text-primary">Dashboard</h1>
-            <p className="mt-1 text-xs text-text-secondary font-normal">Overview of your HRMS system</p>
+            <p className="mt-1 text-xs text-text-secondary font-normal">Overview of your HRMS </p>
           </div>
 
           <div className="flex items-center gap-2 text-xs font-medium text-text-secondary bg-bg-surface/50 px-3 py-1.5 rounded-full border border-border-base backdrop-blur-sm">
