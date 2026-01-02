@@ -10,7 +10,7 @@ const Designation = require('../model/Designation');
 exports.getAllDepartments = async (req, res) => {
   try {
     const { isActive } = req.query;
-    const query = {};
+    const query = { ...req.scopeFilter };
 
     if (isActive !== undefined) {
       query.isActive = isActive === 'true';

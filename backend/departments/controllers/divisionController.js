@@ -10,7 +10,27 @@ const Shift = require('../../shifts/model/Shift');
  */
 exports.getDivisions = async (req, res, next) => {
     try {
-        const divisions = await Division.find()
+        // Apply scope filter if it exists
+        let query = {};
+        if (req.scopeFilter) {
+            query = { ...req.scopeFilter };
+            // Map division_id to _id for Division model queries
+            if (query.division_id) {
+                query._id = query.division_id;
+                delete query.division_id;
+            }
+            // If there's an $or condition with division_id, map those too
+            if (query.$or) {
+                query.$or = query.$or.map(cond => {
+                    if (cond.division_id) {
+                        return { ...cond, _id: cond.division_id };
+                    }
+                    return cond;
+                });
+            }
+        }
+
+        const divisions = await Division.find(query)
             .populate('departments', 'name code')
             .populate('manager', 'name email');
 

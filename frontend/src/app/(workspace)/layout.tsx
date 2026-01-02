@@ -251,11 +251,21 @@ function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {
           setFeatureControl(response.data.value.activeModules);
         } else {
           // Priority 3: Hardcoded fallback if setting is not found
-          setFeatureControl(['DASHBOARD', 'LEAVE', 'OD', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS']);
+          const managementRoles = ['manager', 'hr', 'hod'];
+          if (managementRoles.includes(user.role)) {
+            setFeatureControl(['DASHBOARD', 'LEAVE', 'OD', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS', 'EMPLOYEES', 'SHIFTS', 'DEPARTMENTS', 'REPORTS']);
+          } else {
+            setFeatureControl(['DASHBOARD', 'LEAVE', 'OD', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS']);
+          }
         }
       } catch (error) {
         console.error('Error fetching RBAC settings:', error);
-        setFeatureControl(['DASHBOARD', 'LEAVE', 'OD', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS']);
+        const managementRoles = ['manager', 'hr', 'hod'];
+        if (managementRoles.includes(user.role)) {
+          setFeatureControl(['DASHBOARD', 'LEAVE', 'OD', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS', 'EMPLOYEES', 'SHIFTS', 'DEPARTMENTS', 'REPORTS']);
+        } else {
+          setFeatureControl(['DASHBOARD', 'LEAVE', 'OD', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS']);
+        }
       }
     };
     fetchFeatureControl();

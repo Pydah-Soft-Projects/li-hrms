@@ -66,7 +66,7 @@ export default function DashboardPage() {
     if (userRole === 'hr' || userRole === 'super_admin' || userRole === 'sub_admin') {
       return <HRDashboard stats={stats} hasPermission={hasPermission} />;
     }
-    if (userRole === 'hod') {
+    if (userRole === 'hod' || userRole === 'manager') {
       return <HODDashboard stats={stats} hasPermission={hasPermission} />;
     }
     return <EmployeeDashboard stats={stats} hasPermission={hasPermission} />;

@@ -675,7 +675,7 @@ export default function LeavesPage() {
         if (currentUser.role === 'employee') {
           odSelf = true; // Employees can always apply for OD
           odOthers = false;
-        } else if (['hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser.role)) {
+        } else if (['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser.role)) {
           odOthers = true;
           odSelf = true;
         }
@@ -758,37 +758,17 @@ export default function LeavesPage() {
             }
           }
         }
-        // 3. HR/Sub-Admin/Super-Admin: Access based on Scope
-        else if (['hr', 'sub_admin', 'super_admin'].includes(currentUser.role)) {
-          console.log('[Workspace Leaves] Loading employees for HR/Admin. Scope:', currentUser.scope);
+        // 3. Manager/HR/Sub-Admin/Super-Admin: Access based on Scope (Backend handles filtering)
+        else if (['manager', 'hr', 'sub_admin', 'super_admin'].includes(currentUser.role)) {
+          console.log(`[Workspace Leaves] Loading employees for ${currentUser.role}.`);
 
-          if (currentUser.scope === 'restricted' && currentUser.departments?.length > 0) {
-            // Fetch employees for assigned departments
-            const allEmployees: Employee[] = [];
-            for (const dept of currentUser.departments) {
-              const deptId = typeof dept === 'object' && dept ? dept._id : dept;
-              const response = await api.getEmployees({ is_active: true, department_id: deptId });
-              if (response.success && response.data) {
-                allEmployees.push(...response.data);
-              }
-            }
-            // Unique
-            const uniqueEmployees = allEmployees.filter((emp, index, self) =>
-              index === self.findIndex((e) => e._id === emp._id)
-            );
-            setEmployees(uniqueEmployees);
-          } else if (currentUser.scope === 'global' || currentUser.role === 'super_admin') {
-            // Fetch all employees? Or rely on server-side pagination/search for "All". 
-            // For dropdown, bringing ALL might be too heavy. 
-            // But existing logic seemingly tried to fetch all if departmentIds was empty? 
-            // Existing logic: if (departmentIds.length > 0) ... else setEmployees([]) 
-            // The previous logic relied on `activeWorkspace` departments. 
+          // For these roles, we rely on the backend applyScopeFilter to return the correct employees
+          // If we want to be explicit for restricted HRs:
+          const query: any = { is_active: true };
 
-            // If it's a "Global" view, we might want to fetch all.
-            const response = await api.getEmployees({ is_active: true });
-            if (response.success && response.data) {
-              setEmployees(response.data);
-            }
+          const response = await api.getEmployees(query);
+          if (response.success && response.data) {
+            setEmployees(response.data);
           }
         }
       } else {

@@ -14,6 +14,7 @@ function getDefaultScope(role) {
         'employee': 'own',
         'hod': 'department',
         'hr': 'departments',
+        'manager': 'division',
         'sub_admin': 'all',
         'super_admin': 'all'
     };
@@ -37,20 +38,46 @@ function buildScopeFilter(user) {
         return {};
     }
 
-    switch (scope) {
-        case 'own':
-            // Employee sees only their own data
-            if (user.employeeRef) {
-                return { $or: [{ _id: user.employeeRef }, { employeeId: user.employeeRef }, { emp_no: user.employeeId }] };
-            } else if (user.employeeId) {
-                return { $or: [{ emp_no: user.employeeId }, { employeeId: user.employeeId }] };
-            } else {
-                return { _id: user._id };
-            }
+    // 1. Own Records Filter (Always allow users to see their own data)
+    let ownFilter = { _id: null };
+    if (user.employeeRef) {
+        ownFilter = {
+            $or: [
+                { _id: user.employeeRef },
+                { employeeId: user.employeeRef },
+                { emp_no: user.employeeId },
+                { employeeNumber: user.employeeId },
+                { appliedBy: user._id }
+            ]
+        };
+    } else if (user.employeeId) {
+        ownFilter = {
+            $or: [
+                { emp_no: user.employeeId },
+                { employeeNumber: user.employeeId },
+                { employeeId: user.employeeId },
+                { appliedBy: user._id }
+            ]
+        };
+    } else {
+        ownFilter = {
+            $or: [
+                { _id: user._id },
+                { appliedBy: user._id }
+            ]
+        };
+    }
 
+    if (scope === 'own') {
+        return ownFilter;
+    }
+
+    // 2. Administrative Scope Filter
+    let administrativeFilter = { _id: null };
+
+    switch (scope) {
         case 'division':
         case 'divisions':
-            // Division-level scoping with Department matrix support
             if (user.divisionMapping && Array.isArray(user.divisionMapping) && user.divisionMapping.length > 0) {
                 const orConditions = [];
                 user.divisionMapping.forEach(mapping => {
@@ -60,27 +87,33 @@ function buildScopeFilter(user) {
                     }
                     orConditions.push(condition);
                 });
-                return orConditions.length === 1 ? orConditions[0] : { $or: orConditions };
+                administrativeFilter = orConditions.length === 1 ? orConditions[0] : { $or: orConditions };
             } else if (user.allowedDivisions && user.allowedDivisions.length > 0) {
-                return { division_id: { $in: user.allowedDivisions } };
+                administrativeFilter = { division_id: { $in: user.allowedDivisions } };
+            } else if (user.departments && user.departments.length > 0) {
+                // Fallback to departments if divisions not setup correctly
+                administrativeFilter = { department_id: { $in: user.departments } };
             }
-            // Fallback to departments if divisions not setup correctly
-            if (user.departments && user.departments.length > 0) {
-                return { department_id: { $in: user.departments } };
-            }
-            return { _id: null };
+            break;
 
         case 'department':
-            if (!user.department) return { _id: null };
-            return { department_id: user.department };
+            if (user.department) {
+                administrativeFilter = { department_id: user.department };
+            }
+            break;
 
         case 'departments':
-            if (!user.departments || user.departments.length === 0) return { _id: null };
-            return { department_id: { $in: user.departments } };
+            if (user.departments && user.departments.length > 0) {
+                administrativeFilter = { department_id: { $in: user.departments } };
+            }
+            break;
 
         default:
-            return { _id: user._id };
+            administrativeFilter = { _id: user._id };
     }
+
+    // Return combined filter: (Own Records) OR (Administrative Scope)
+    return { $or: [ownFilter, administrativeFilter] };
 }
 
 /**

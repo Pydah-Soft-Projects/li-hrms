@@ -46,8 +46,19 @@ exports.getAttendanceCalendar = async (req, res) => {
     const endDate = new Date(targetYear, targetMonth, 0); // Last day of month
     const endDateStr = `${targetYear}-${String(targetMonth).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
 
-    // Get employee to fetch leaves and ODs
-    const employee = await Employee.findOne({ emp_no: employeeNumber.toUpperCase(), is_active: { $ne: false } });
+    // Get employee with scope validation
+    const employee = await Employee.findOne({
+      ...req.scopeFilter,
+      emp_no: employeeNumber.toUpperCase(),
+      is_active: { $ne: false }
+    });
+
+    if (!employee) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied or employee not found',
+      });
+    }
 
     // Fetch attendance records for the month
     const records = await AttendanceDaily.find({
@@ -296,6 +307,19 @@ exports.getAttendanceList = async (req, res) => {
       });
     }
 
+    // Scope validation
+    const allowedEmployee = await Employee.findOne({
+      ...req.scopeFilter,
+      emp_no: employeeNumber.toUpperCase()
+    });
+
+    if (!allowedEmployee) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied or employee not found',
+      });
+    }
+
     const query = {
       employeeNumber: employeeNumber.toUpperCase(),
       date: { $gte: startDate, $lte: endDate },
@@ -372,6 +396,19 @@ exports.getAttendanceDetail = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Employee number and date are required',
+      });
+    }
+
+    // Scope validation
+    const allowedEmployee = await Employee.findOne({
+      ...req.scopeFilter,
+      emp_no: employeeNumber.toUpperCase()
+    });
+
+    if (!allowedEmployee) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied or employee not found',
       });
     }
 
@@ -478,6 +515,10 @@ exports.getMonthlyAttendance = async (req, res) => {
     const endDate = new Date(parseInt(year), parseInt(month), 0);
     const endDateStr = `${year}-${String(month).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
     const daysInMonth = endDate.getDate();
+
+    // Define Obj versions for Leave/OD queries
+    const startDateObj = new Date(parseInt(year), parseInt(month) - 1, 1);
+    const endDateObj = new Date(parseInt(year), parseInt(month), 0, 23, 59, 59, 999);
 
     // Get all active employees within scope
     const employees = await Employee.find({
