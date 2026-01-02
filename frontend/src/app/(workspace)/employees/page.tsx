@@ -143,7 +143,9 @@ const initialFormState: Partial<Employee> = {
   employeeDeductions: [],
 };
 
+// Start of Component
 export default function EmployeesPage() {
+  const [currentUser, setCurrentUser] = useState<any>(null); // To track logged-in user for view logic
   const [activeTab, setActiveTab] = useState<'employees' | 'applications'>('employees');
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [applications, setApplications] = useState<EmployeeApplication[]>([]);
@@ -503,6 +505,7 @@ export default function EmployeesPage() {
     const user = auth.getUser();
     if (user) {
       setUserRole(user.role);
+      setCurrentUser(user);
     }
     loadEmployees();
     loadDivisions();
@@ -1716,13 +1719,90 @@ export default function EmployeesPage() {
     return entity._id || entity.toString();
   };
 
-  const mappedDivs = filteredEmployees.map(e => getEntityId(e.division_id) || getEntityId(e.division));
-  const uniqueDivIds = Array.from(new Set(mappedDivs.filter((x): x is string => !!x)));
-  const commonDivision = uniqueDivIds.length === 1 ? divisions.find(d => d._id === uniqueDivIds[0]) : null;
+  // Determine common Division/Department for Header
+  // Priority 1: Context from filtered employees (excluding self)
+  // Priority 2: User's assigned scope (if they are restricted to a single division/department)
 
-  const mappedDepts = filteredEmployees.map(e => getEntityId(e.department_id) || getEntityId(e.department));
-  const uniqueDeptIds = Array.from(new Set(mappedDepts.filter((x): x is string => !!x)));
-  const commonDepartment = uniqueDeptIds.length === 1 ? departments.find(d => d._id === uniqueDeptIds[0]) : null;
+  // 1. Employee List Context
+  const contextEmployees = filteredEmployees.filter(e => {
+    if (currentUser) {
+      if (currentUser.emp_no && e.emp_no === currentUser.emp_no) return false;
+      if (currentUser.email && e.email && currentUser.email.toLowerCase() === e.email.toLowerCase()) return false;
+      if (currentUser.employeeId && e._id === currentUser.employeeId) return false;
+    }
+    return true;
+  });
+  const employeesForContext = contextEmployees.length > 0 ? contextEmployees : filteredEmployees;
+
+  // Calculate based on list
+  const mappedDivs = employeesForContext.map(e => getEntityId(e.division_id) || getEntityId(e.division));
+  const uniqueDivIdsList = Array.from(new Set(mappedDivs.filter((x): x is string => !!x)));
+  let commonDivision = uniqueDivIdsList.length === 1 ? divisions.find(d => d._id === uniqueDivIdsList[0]) : null;
+
+  const mappedDepts = employeesForContext.map(e => getEntityId(e.department_id) || getEntityId(e.department));
+  const uniqueDeptIdsList = Array.from(new Set(mappedDepts.filter((x): x is string => !!x)));
+  let commonDepartment = uniqueDeptIdsList.length === 1 ? departments.find(d => d._id === uniqueDeptIdsList[0]) : null;
+
+  // 2. User Scope Fallback (Result of "or else check the users thing")
+  if (currentUser) {
+    // Check for Single Division Assignment
+    if (!commonDivision) {
+      let userDivId = '';
+
+      // Case A: Manager with allowedDivisions
+      if (currentUser.role === 'manager' && currentUser.allowedDivisions?.length === 1) {
+        userDivId = typeof currentUser.allowedDivisions[0] === 'string'
+          ? currentUser.allowedDivisions[0]
+          : currentUser.allowedDivisions[0]._id;
+      }
+      // Case B: HOD with divisionMapping
+      else if (currentUser.role === 'hod' && currentUser.divisionMapping?.length === 1) {
+        const mapping = currentUser.divisionMapping[0];
+        userDivId = typeof mapping.division === 'string' ? mapping.division : mapping.division._id;
+      }
+      // Case C: Standard Single Division Assignment
+      else if (currentUser.division) {
+        userDivId = typeof currentUser.division === 'string' ? currentUser.division : currentUser.division._id;
+      }
+
+      if (userDivId) {
+        commonDivision = divisions.find(d => d._id === userDivId) || null;
+      }
+    }
+
+    // Check for Single Department Assignment (Only if Division is determined or consistent)
+    if (!commonDepartment) {
+      let userDeptId = '';
+
+      // Case A: HOD with divisionMapping targeting 1 department
+      if (currentUser.role === 'hod' && currentUser.divisionMapping?.length === 1) {
+        const mapping = currentUser.divisionMapping[0];
+        if (mapping.departments?.length === 1) {
+          const d = mapping.departments[0];
+          userDeptId = typeof d === 'string' ? d : d._id;
+        }
+      }
+      // Case B: Standard Department Assignment
+      else if (currentUser.department) {
+        userDeptId = typeof currentUser.department === 'string' ? currentUser.department : currentUser.department._id;
+      }
+      // Case C: Departments array has exactly 1
+      else if (currentUser.departments?.length === 1) {
+        userDeptId = currentUser.departments[0]._id;
+      }
+
+      if (userDeptId) {
+        // Only show department badge if it belongs to the common division (if one exists), or if no division context prevents it
+        const dept = departments.find(d => d._id === userDeptId);
+        if (dept) {
+          // Verification: Does this department belong to the common division? (If commonDivision is set)
+          // If commonDivision is set, we strictly check if dept is in it. If loosely coupled, we might show it anyway.
+          // Given user request "single division assigned... single department... display those both", we imply validity.
+          commonDepartment = dept;
+        }
+      }
+    }
+  }
 
   const mappedDesigs = filteredEmployees.map(e => getEntityId(e.designation_id) || getEntityId(e.designation));
   const uniqueDesigIds = Array.from(new Set(mappedDesigs.filter((x): x is string => !!x)));
@@ -1860,6 +1940,23 @@ export default function EmployeesPage() {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Context Badges */}
+            {(commonDivision || commonDepartment) && (
+              <div className="hidden items-center gap-2 sm:flex animate-in fade-in slide-in-from-right-4 duration-500">
+                {commonDivision && (
+                  <span className="inline-flex items-center rounded-lg bg-orange-100 px-2.5 py-1 text-xs font-semibold text-orange-800 dark:bg-orange-900/30 dark:text-orange-300 border border-orange-200 dark:border-orange-800">
+                    {commonDivision.name}
+                  </span>
+                )}
+                {commonDepartment && (
+                  <span className="inline-flex items-center rounded-lg bg-purple-100 px-2.5 py-1 text-xs font-semibold text-purple-800 dark:bg-purple-900/30 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                    {commonDepartment.name}
+                  </span>
+                )}
+                <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
+              </div>
+            )}
+
             {/* Tab Slider */}
 
             <div className="relative flex h-10 items-center rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
