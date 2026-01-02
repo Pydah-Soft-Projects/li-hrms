@@ -3,6 +3,7 @@ const Employee = require('../../employees/model/Employee');
 const Workspace = require('../../workspaces/model/Workspace');
 const RoleAssignment = require('../../workspaces/model/RoleAssignment');
 const Department = require('../../departments/model/Department');
+const Division = require('../../departments/model/Division');
 const jwt = require('jsonwebtoken');
 
 // Generate JWT Token
@@ -132,18 +133,32 @@ exports.registerUser = async (req, res) => {
 
     // Valid HOD Sync: Update Department with HOD ID for specific Division
     if (role === 'hod' && department && req.body.division) {
-      const Department = require('../../departments/model/Department');
       const dept = await Department.findById(department);
       if (dept) {
         // Remove existing HOD for this division if any
         const existingIndex = dept.divisionHODs.findIndex(dh => dh.division.toString() === req.body.division);
         if (existingIndex > -1) {
-          dept.divisionHODs[existingIndex].hod = user._id;
-        } else {
-          dept.divisionHODs.push({ division: req.body.division, hod: user._id });
+          dept.divisionHODs.splice(existingIndex, 1);
         }
+        dept.divisionHODs.push({
+          division: req.body.division,
+          hod: user._id
+        });
         await dept.save();
       }
+    }
+
+    // Manager Sync: Update Division manager reference
+    if (role === 'manager' && finalAllowedDivisions && finalAllowedDivisions.length === 1) {
+      const divisionId = finalAllowedDivisions[0];
+      // 1. Unset this user from being manager of any OTHER divisions (safety cleanup)
+      await Division.updateMany(
+        { manager: user._id },
+        { $unset: { manager: "" } }
+      );
+
+      // 2. Set user as manager for the SPECIFIC division
+      await Division.findByIdAndUpdate(divisionId, { manager: user._id });
     }
 
     // Auto-assign to workspace if requested
@@ -655,6 +670,35 @@ exports.updateUser = async (req, res) => {
           { $unset: { hr: "" } }
         );
       }
+    }
+
+    // Sync: Reverse Sync (User -> Division for Managers)
+    if (role === 'manager' && allowedDivisions !== undefined && allowedDivisions.length > 0) {
+      // Currently we enforce 1 division for manager in UI, but allowedDivisions is array
+      const newDivisionId = allowedDivisions[0];
+
+      // 1. Find if user was managing a different division previously (that is NOT the new one)
+      // We can just unset user from ALL divisions first to be safe, or just check 'old' vs 'new'
+      // Safer: Unset user from all divisions
+      await Division.updateMany(
+        { manager: user._id },
+        { $unset: { manager: "" } }
+      );
+
+      // 2. Assign user to the new division
+      await Division.findByIdAndUpdate(newDivisionId, { manager: user._id });
+    } else if (role === 'manager' && allowedDivisions !== undefined && allowedDivisions.length === 0) {
+      // If manager has NO divisions assigned (cleared), remove them from div model
+      await Division.updateMany(
+        { manager: user._id },
+        { $unset: { manager: "" } }
+      );
+    } else if (role !== 'manager' && roleChanged) {
+      // If user WAS a manager but is no longer (role changed), remove them from any division
+      await Division.updateMany(
+        { manager: user._id },
+        { $unset: { manager: "" } }
+      );
     }
 
     // Sync: Handle Single Department Change (mainly for HODs)

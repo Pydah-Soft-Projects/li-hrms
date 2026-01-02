@@ -98,8 +98,11 @@ export default function UsersPage() {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showFromEmployeeDialog, setShowFromEmployeeDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
+
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
+  const [showViewDialog, setShowViewDialog] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [selectedViewUser, setSelectedViewUser] = useState<User | null>(null);
 
   const [formData, setFormData] = useState({
     email: '',
@@ -428,12 +431,17 @@ export default function UsersPage() {
       departments: (m.departments || []).map(d => typeof d === 'string' ? d : d?._id)
     }));
 
+    // For HOD, prioritize the managed department from division mapping
+    const hodDepartmentId = user.role === 'hod' && normalizedMapping.length > 0 && normalizedMapping[0].departments?.length > 0
+      ? normalizedMapping[0].departments[0]
+      : '';
+
     setFormData({
       email: user.email,
       name: user.name,
       role: user.role,
       departmentType: user.departmentType || (user.departments && user.departments.length > 1 ? 'multiple' : 'single'),
-      department: user.department?._id || '',
+      department: hodDepartmentId || user.department?._id || '',
       departments: user.departments?.map((d) => d._id) || [],
       password: '',
       autoGeneratePassword: false,
@@ -555,6 +563,59 @@ export default function UsersPage() {
   };
 
   const ScopingSelector = ({ data, setData, asEmployee = false }: { data: any, setData: (data: any) => void, asEmployee?: boolean }) => {
+    // Specialized UI for Manager Role (Single Division)
+    if (data.role === 'manager') {
+      const selectedDivisionId = data.division || (data.allowedDivisions?.[0]
+        ? (typeof data.allowedDivisions[0] === 'string' ? data.allowedDivisions[0] : (data.allowedDivisions[0] as any)._id)
+        : '');
+
+      const handleManagerDivisionChange = (divId: string) => {
+        setData({
+          ...data,
+          division: divId,
+          allowedDivisions: divId ? [divId] : [],
+          divisionMapping: [], // Managers don't need department mapping usually, or implicit all
+          department: '',
+          departments: [],
+          dataScope: 'division'
+        });
+      };
+
+      return (
+        <div className="border-t border-slate-200 dark:border-slate-700 pt-4 space-y-4">
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 dark:bg-blue-900/10 dark:border-blue-800">
+            <h3 className="flex items-center gap-2 text-sm font-bold text-blue-800 dark:text-blue-400 mb-4">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-800/50">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                </svg>
+              </span>
+              Division Manager Assignment
+            </h3>
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                Select Division *
+              </label>
+              <select
+                value={selectedDivisionId}
+                onChange={(e) => handleManagerDivisionChange(e.target.value)}
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm focus:border-blue-500 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+              >
+                <option value="">-- Choose Division --</option>
+                {divisions.map(d => (
+                  <option key={d._id} value={d._id}>{d.name}</option>
+                ))}
+              </select>
+              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                This user will be assigned as the Manager for the selected Division. They will have access to all data within this division.
+              </p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     // Specialized UI for HOD Role
     if (data.role === 'hod') {
       const selectedDivisionId = data.division || (data.divisionMapping?.[0]?.division
@@ -971,13 +1032,18 @@ export default function UsersPage() {
             <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
               {users.map((user) => (
                 <tr key={user._id} className="hover:bg-slate-50 dark:hover:bg-slate-900/30">
-                  <td className="px-6 py-4">
+                  <td className="px-6 py-4 cursor-pointer" onClick={() => {
+                    setSelectedViewUser(user);
+                    setShowViewDialog(true);
+                  }}>
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-semibold">
                         {user.name?.[0]?.toUpperCase() || '?'}
                       </div>
                       <div>
-                        <div className="font-medium text-slate-900 dark:text-white">{user.name}</div>
+                        <div className="font-medium text-slate-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+                          {user.name}
+                        </div>
                         <div className="text-sm text-slate-500 dark:text-slate-400">{user.email}</div>
                       </div>
                     </div>
@@ -1424,6 +1490,8 @@ export default function UsersPage() {
                 <ScopingSelector data={formData} setData={setFormData} />
 
                 {/* Feature Control */}
+
+                {/* Feature Control */}
                 <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">
                     Feature Access <span className="text-xs text-slate-500">(Override role defaults)</span>
@@ -1519,6 +1587,196 @@ export default function UsersPage() {
           </div>
         )
       }
+      {/* View User Dialog */}
+      {showViewDialog && selectedViewUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm"
+            onClick={() => setShowViewDialog(false)}
+          />
+          <div className="relative z-50 w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-0 shadow-2xl dark:bg-slate-900">
+            {/* Header */}
+            <div className="relative border-b border-slate-100 bg-slate-50/50 p-6 dark:border-slate-800 dark:bg-slate-900/50">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 text-2xl font-bold text-white shadow-lg shadow-blue-500/20">
+                    {selectedViewUser.name?.[0]?.toUpperCase() || '?'}
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                      {selectedViewUser.name}
+                    </h2>
+                    <p className="text-sm text-slate-500 dark:text-slate-400">
+                      {selectedViewUser.email}
+                    </p>
+                    <div className="mt-2 flex items-center gap-2">
+                      <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold ${getRoleColor(selectedViewUser.role)}`}>
+                        {getRoleLabel(selectedViewUser.role)}
+                      </span>
+                      <span className={`inline-flex px-2.5 py-1 text-xs font-semibold rounded-lg ${selectedViewUser.isActive
+                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                        : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                        }`}>
+                        {selectedViewUser.isActive ? 'Active' : 'Inactive'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowViewDialog(false)}
+                  className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 dark:text-slate-500 dark:hover:bg-slate-800"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-8">
+              {/* Access Scope Section */}
+              <section>
+                <div className="mb-4 flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400">
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                    Access Scope & Assignments
+                  </h3>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-800 dark:bg-slate-900/50">
+                  {selectedViewUser.role === 'super_admin' ? (
+                    <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
+                      Super Admin has full global access to all divisions and departments.
+                    </p>
+                  ) : selectedViewUser.dataScope === 'all' ? (
+                    <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
+                      Global Access - Can view data across all divisions and departments.
+                    </p>
+                  ) : selectedViewUser.dataScope === 'own' ? (
+                    <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
+                      Restricted Access - Can only view their own data.
+                    </p>
+                  ) : (
+                    <div className="space-y-4">
+                      {/* Division/Dept Hierarchy Display */}
+                      {(!selectedViewUser.divisionMapping || selectedViewUser.divisionMapping.length === 0) ? (
+                        <div className="text-sm text-slate-500 italic">No specific assignments found.</div>
+                      ) : (
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          {selectedViewUser.divisionMapping.map((mapping: any, idx) => {
+                            const divId = typeof mapping.division === 'string' ? mapping.division : mapping.division?._id;
+                            const divisionName = divisions.find(d => d._id === divId)?.name || 'Unknown Division';
+                            const deptIds = mapping.departments?.map((d: any) => typeof d === 'string' ? d : d._id) || [];
+
+                            return (
+                              <div key={idx} className="rounded-xl border border-white bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+                                <div className="mb-2 font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+                                  {divisionName}
+                                </div>
+                                <div className="pl-3.5 border-l-2 border-slate-100 dark:border-slate-700">
+                                  {deptIds.length === 0 ? (
+                                    <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded dark:bg-blue-900/30 dark:text-blue-400">
+                                      All Departments
+                                    </span>
+                                  ) : (
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {deptIds.map((deptId: string) => {
+                                        const deptName = departments.find(d => d._id === deptId)?.name || 'Unknown Dept';
+                                        return (
+                                          <span key={deptId} className="inline-block rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+                                            {deptName}
+                                          </span>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              {/* Feature Control Section */}
+              <section>
+                <div className="mb-4 flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400">
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                    Feature Controls
+                  </h3>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-950">
+                  {!selectedViewUser.featureControl || selectedViewUser.featureControl.length === 0 ? (
+                    <p className="text-sm text-slate-500 italic">No specific feature overrides. User inherits default role permissions.</p>
+                  ) : (
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {MODULE_CATEGORIES.map(category => {
+                        const enabledModules = category.modules.filter(m => selectedViewUser.featureControl?.includes(m.code));
+                        if (enabledModules.length === 0) return null;
+
+                        return (
+                          <div key={category.code} className="rounded-xl border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900">
+                            <div className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                              <span>{category.icon}</span> {category.name}
+                            </div>
+                            <div className="space-y-1">
+                              {enabledModules.map(m => (
+                                <div key={m.code} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-200">
+                                  <svg className="h-4 w-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                  </svg>
+                                  {m.label}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </section>
+            </div>
+
+            {/* Footer */}
+            <div className="border-t border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/50 flex justify-end gap-3">
+              <button
+                onClick={() => setShowViewDialog(false)}
+                className="rounded-xl px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => {
+                  setShowViewDialog(false);
+                  openEditDialog(selectedViewUser);
+                }}
+                className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 hover:from-blue-600 hover:to-indigo-600"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+                Edit User
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div >
   );
 }
