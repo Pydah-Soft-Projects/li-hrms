@@ -1,0 +1,46 @@
+name: Deploy LI-HRMS Services
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.LIGHTSAIL_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.LIGHTSAIL_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy to Lightsail
+        run: |
+          ssh ${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }} << 'EOF'
+            set -e
+            cd /home/ec2-user/li-hrms
+            git pull origin main
+
+            echo "Installing backend dependencies..."
+            cd backend
+            npm install --production
+
+            echo "Installing biometric dependencies..."
+            cd ../biometric
+            npm install --production
+
+            echo "Installing frontend dependencies (not running)..."
+            cd ../frontend
+            npm install
+
+            echo "Reloading PM2 services..."
+            cd ..
+            pm2 reload ecosystem.config.js
+            pm2 save
+          EOF
