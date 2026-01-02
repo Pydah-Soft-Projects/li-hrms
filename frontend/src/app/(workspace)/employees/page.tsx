@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { api, Department, Division, Designation } from '@/lib/api';
 import { auth } from '@/lib/auth';
@@ -173,12 +174,31 @@ export default function EmployeesPage() {
   const [notificationChannels, setNotificationChannels] = useState({ email: true, sms: true });
   const [isResending, setIsResending] = useState<string | null>(null);
   const [selectedApplicationIds, setSelectedApplicationIds] = useState<string[]>([]);
+  const [employeeFilters, setEmployeeFilters] = useState<Record<string, string>>({});
+  const [applicationFilters, setApplicationFilters] = useState<Record<string, string>>({});
+  const [activeFilterColumn, setActiveFilterColumn] = useState<string | null>(null);
+  const [filterPos, setFilterPos] = useState({ top: 0, left: 0 });
+
+  // Helper to extract unique values for a column
+  const getUniqueValues = (data: any[], key: string, nestedKey?: string) => {
+    const values = data.map(item => {
+      const val = nestedKey ? item[key]?.[nestedKey] : item[key];
+      return val || '';
+    }).filter((v, i, a) => v && a.indexOf(v) === i);
+    return values.sort();
+  };
+
 
   const [dynamicTemplate, setDynamicTemplate] = useState<{ headers: string[]; sample: any[]; columns: any[] }>({
     headers: EMPLOYEE_TEMPLATE_HEADERS,
     sample: EMPLOYEE_TEMPLATE_SAMPLE,
     columns: [],
   });
+
+
+
+
+
 
   // Allowance/Deduction defaults & overrides
   const [componentDefaults, setComponentDefaults] = useState<{ allowances: any[]; deductions: any[] }>({
@@ -833,6 +853,7 @@ export default function EmployeesPage() {
           }
           return {
             ...emp,
+            status: emp.leftDate ? 'Left' : (emp.is_active !== false ? 'Active' : 'Inactive'),
             paidLeaves,
           };
         });
@@ -884,7 +905,13 @@ export default function EmployeesPage() {
       setLoadingApplications(true);
       const response = await api.getEmployeeApplications();
       if (response.success) {
-        setApplications(response.data || []);
+        const apps = (response.data || []).map((app: any) => ({
+          ...app,
+          status: app.status || 'pending',
+          department: app.department || (typeof app.department_id === 'object' ? app.department_id : undefined),
+          designation: app.designation || (typeof app.designation_id === 'object' ? app.designation_id : undefined)
+        }));
+        setApplications(apps);
         setSelectedApplicationIds([]); // Reset selection on reload
       }
     } catch (err) {
@@ -894,7 +921,9 @@ export default function EmployeesPage() {
     }
   };
 
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+
     const { name, value, type } = e.target;
     const processedValue = type === 'number'
       ? (value === '' ? (name === 'paidLeaves' || name === 'allottedLeaves' ? 0 : undefined) : Number(value))
@@ -1415,14 +1444,39 @@ export default function EmployeesPage() {
     const matchesDivision = !selectedDivision ||
       ((emp as any).division?._id === selectedDivision || emp.division_id === selectedDivision);
 
-    return matchesSearch && matchesLeftFilter && matchesDivision;
+    // Filter by active status
+    const matchesActive = includeLeftEmployees || emp.is_active !== false;
+
+
+    // Filter by header filters
+    const matchesHeaderFilters = Object.entries(employeeFilters).every(([key, value]) => {
+      if (!value) return true;
+      const [mainKey, subKey] = key.split('.');
+      const actualValue = subKey ? (emp as any)[mainKey]?.[subKey] : (emp as any)[mainKey];
+      return String(actualValue || '') === value;
+    });
+
+    return matchesSearch && matchesLeftFilter && matchesDivision && matchesActive && matchesHeaderFilters;
   });
 
-  const filteredApplications = applications.filter(app =>
-    app.employee_name?.toLowerCase().includes(applicationSearchTerm.toLowerCase()) ||
-    app.emp_no?.toLowerCase().includes(applicationSearchTerm.toLowerCase()) ||
-    ((app.department_id as any)?.name || app.department?.name || '')?.toLowerCase().includes(applicationSearchTerm.toLowerCase())
-  );
+
+
+  const filteredApplications = applications.filter(app => {
+    const matchesSearch = !applicationSearchTerm ||
+      app.employee_name?.toLowerCase().includes(applicationSearchTerm.toLowerCase()) ||
+      app.emp_no?.toLowerCase().includes(applicationSearchTerm.toLowerCase()) ||
+      ((app.department_id as any)?.name || app.department?.name || '')?.toLowerCase().includes(applicationSearchTerm.toLowerCase());
+
+    const matchesHeaderFilters = Object.entries(applicationFilters).every(([key, value]) => {
+      if (!value) return true;
+      const [mainKey, subKey] = key.split('.');
+      const actualValue = subKey ? (app as any)[mainKey]?.[subKey] : (app as any)[mainKey];
+      return String(actualValue || '') === value;
+    });
+
+    return matchesSearch && matchesHeaderFilters;
+  });
+
 
   const pendingApplications = filteredApplications.filter(app => app.status === 'pending');
   const approvedApplications = filteredApplications.filter(app => app.status === 'approved');
@@ -1646,61 +1700,199 @@ export default function EmployeesPage() {
     setError('');
   };
 
+  const getEntityId = (entity: any) => {
+    if (!entity) return null;
+    if (typeof entity === 'string') return entity;
+    return entity._id || entity.toString();
+  };
+
+  const currentUniqueDivs = Array.from(new Set(filteredEmployees.map(e => getEntityId(e.division_id) || getEntityId(e.division)).filter(Boolean)));
+  const commonDivision = currentUniqueDivs.length === 1 ? divisions.find(d => d._id === currentUniqueDivs[0]) : null;
+
+  const currentUniqueDepts = Array.from(new Set(filteredEmployees.map(e => getEntityId(e.department_id) || getEntityId(e.department)).filter(Boolean)));
+  const commonDepartment = currentUniqueDepts.length === 1 ? departments.find(d => d._id === currentUniqueDepts[0]) : null;
+
+  const currentUniqueDesigs = Array.from(new Set(filteredEmployees.map(e => getEntityId(e.designation_id) || getEntityId(e.designation)).filter(Boolean)));
+  const commonDesignation = currentUniqueDesigs.length === 1 ? designations.find(d => d._id === currentUniqueDesigs[0]) : null;
+
+  const hideDepartmentColumn = !!commonDepartment;
+  const hideDesignationColumn = !!commonDesignation;
+
+  const RenderFilterHeader = ({
+    label,
+    filterKey,
+    nestedKey,
+    options,
+    currentFilters,
+    setFilters
+  }: {
+    label: string,
+    filterKey: string,
+    nestedKey?: string,
+    options: string[],
+    currentFilters: Record<string, string>,
+    setFilters: (filters: Record<string, string>) => void
+  }) => {
+    const isActive = activeFilterColumn === filterKey;
+    const currentFilterValue = currentFilters[filterKey] || '';
+
+    return (
+      <th className="relative px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+        <div className="flex items-center gap-2">
+          <span>{label}</span>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              const rect = e.currentTarget.getBoundingClientRect();
+              setFilterPos({ top: rect.bottom, left: rect.left });
+              setActiveFilterColumn(isActive ? null : filterKey);
+            }}
+            className={`rounded p-1 hover:bg-slate-200 dark:hover:bg-slate-700 ${currentFilterValue ? 'text-green-600 bg-green-50 dark:bg-green-900/30' : 'text-slate-400'}`}
+          >
+            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 6.707A1 1 0 013 6.586V4z" />
+            </svg>
+          </button>
+        </div>
+
+        {isActive && typeof document !== 'undefined' && createPortal(
+          <div className="fixed inset-0 z-[100] flex items-start justify-start">
+            <div
+              className="fixed inset-0"
+              onClick={() => setActiveFilterColumn(null)}
+            />
+            <div
+              className="z-[101] mt-1 min-w-[200px] rounded-xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-800 fixed"
+              style={{
+                top: filterPos.top,
+                left: filterPos.left,
+              }}
+            >
+              <div className="mb-2 px-2 py-1">
+                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Filter by {label}</span>
+              </div>
+              <div className="max-h-48 overflow-y-auto">
+                <button
+                  onClick={() => {
+                    const newFilters = { ...currentFilters };
+                    delete newFilters[filterKey];
+                    setFilters(newFilters);
+                    setActiveFilterColumn(null);
+                  }}
+                  className={`flex w-full items-center rounded-lg px-3 py-2 text-xs hover:bg-slate-50 dark:hover:bg-slate-700 ${!currentFilterValue ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400' : 'text-slate-700 dark:text-slate-300'}`}
+                >
+                  All
+                </button>
+                {options.map(opt => (
+                  <button
+                    key={opt}
+                    onClick={() => {
+                      setFilters({ ...currentFilters, [filterKey]: opt });
+                      setActiveFilterColumn(null);
+                    }}
+                    className={`flex w-full items-center rounded-lg px-3 py-2 text-xs hover:bg-slate-50 dark:hover:bg-slate-700 ${currentFilterValue === opt ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400' : 'text-slate-700 dark:text-slate-300'}`}
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+      </th>
+    );
+  };
+
+
+
   return (
+
+
+
     <div className="relative min-h-screen">
       {/* Background */}
       <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(to_right,#e2e8f01f_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f01f_1px,transparent_1px)] bg-[size:28px_28px] dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.12)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.12)_1px,transparent_1px)]" />
       <div className="pointer-events-none fixed inset-0 bg-gradient-to-br from-green-50/40 via-green-50/35 to-transparent dark:from-slate-900/60 dark:via-slate-900/65 dark:to-slate-900/80" />
 
       <div className="relative z-10 mx-auto max-w-[1920px]">
-        {/* Header */}
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        {/* Header - Unified Layout */}
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
+            {(commonDepartment || commonDesignation) ? (
+              <div className="flex flex-wrap items-center gap-2 mb-1 animate-in fade-in slide-in-from-top-2 duration-500">
+                {commonDepartment && (
+                  <h2 className="text-lg font-semibold text-green-600 dark:text-green-400">
+                    {commonDepartment.name}
+                  </h2>
+                )}
+                {commonDepartment && commonDesignation && (
+                  <span className="text-slate-300 dark:text-slate-600 font-light">/</span>
+                )}
+                {commonDesignation && (
+                  <h2 className="text-lg font-semibold text-blue-600 dark:text-blue-400">
+                    {commonDesignation.name}
+                  </h2>
+                )}
+              </div>
+            ) : commonDivision && (
+              <h2 className="text-lg font-semibold text-green-600 dark:text-green-400 mb-1 animate-in fade-in slide-in-from-top-2 duration-500">
+                {commonDivision.name}
+              </h2>
+            )}
             <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Employee Management</h1>
             <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
               Manage employee records • Data source: <span className="font-medium text-green-600 dark:text-green-400">{dataSource.toUpperCase()}</span>
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              onClick={() => activeTab === 'employees' ? loadEmployees() : loadApplications()}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-all dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              Refresh
-            </button>
+
+          <div className="flex items-center gap-3">
+            {/* Tab Slider */}
+
+            <div className="relative flex h-10 items-center rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+              <div
+                className={`absolute h-8 rounded-lg bg-white shadow-sm transition-all duration-300 ease-in-out dark:bg-slate-700 ${activeTab === 'employees' ? 'left-1 w-[calc(50%-4px)]' : 'left-[calc(50%)] w-[calc(50%-4px)]'
+                  }`}
+              />
+              <button
+                onClick={() => setActiveTab('employees')}
+                className={`relative z-10 w-32 px-4 py-1.5 text-sm font-semibold transition-colors ${activeTab === 'employees'
+                  ? 'text-slate-900 dark:text-slate-100'
+                  : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                  }`}
+              >
+                Employees
+              </button>
+              <button
+                onClick={() => setActiveTab('applications')}
+                className={`relative z-10 w-32 px-4 py-1.5 text-sm font-semibold transition-colors flex items-center justify-center gap-2 ${activeTab === 'applications'
+                  ? 'text-slate-900 dark:text-slate-100'
+                  : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                  }`}
+              >
+                Applications
+                {pendingApplications.length > 0 && (
+                  <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] text-white">
+                    {pendingApplications.length}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Settings Button - Icon only as requested */}
             <Link
               href="/employees/form-settings"
-              className="flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-all hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-blue-500 dark:hover:bg-blue-900/30 dark:hover:text-blue-400"
+              className="flex items-center justify-center rounded-xl border border-slate-200 bg-white p-2.5 text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+              title="Form Settings"
             >
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
-              Form Settings
             </Link>
-            <button
-              onClick={() => setShowBulkUpload(true)}
-              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-            >
-              <svg className="mr-2 inline h-4 w-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-              </svg>
-              Bulk Upload
-            </button>
-            <button
-              onClick={() => setShowApplicationDialog(true)}
-              className="rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
-            >
-              <svg className="mr-2 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              New Application
-            </button>
           </div>
         </div>
+
 
         {/* Messages */}
         {error && (
@@ -1714,34 +1906,9 @@ export default function EmployeesPage() {
           </div>
         )}
 
-        {/* Tabs */}
-        <div className="mb-6 flex gap-2 border-b border-slate-200 dark:border-slate-700">
-          <button
-            onClick={() => setActiveTab('employees')}
-            className={`px-6 py-3 text-sm font-semibold transition-colors ${activeTab === 'employees'
-              ? 'border-b-2 border-green-500 text-green-600 dark:text-green-400'
-              : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-              }`}
-          >
-            Employees
-          </button>
-          <button
-            onClick={() => setActiveTab('applications')}
-            className={`px-6 py-3 text-sm font-semibold transition-colors ${activeTab === 'applications'
-              ? 'border-b-2 border-green-500 text-green-600 dark:text-green-400'
-              : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-              }`}
-          >
-            Applications
-            {pendingApplications.length > 0 && (
-              <span className="ml-2 rounded-full bg-red-500 px-2 py-0.5 text-xs text-white">
-                {pendingApplications.length}
-              </span>
-            )}
-          </button>
-        </div>
 
         {/* Applications Tab */}
+
         {activeTab === 'applications' && (
           <>
             {/* Applications Header */}
@@ -1807,9 +1974,16 @@ export default function EmployeesPage() {
                             </th>
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Emp No</th>
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Name</th>
-                            <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Department</th>
+                            <RenderFilterHeader
+                              label="Department"
+                              filterKey="department.name"
+                              options={Array.from(new Set(applications.map(app => (app.department_id as any)?.name || app.department?.name).filter(Boolean))) as string[]}
+                              currentFilters={applicationFilters}
+                              setFilters={setApplicationFilters}
+                            />
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Proposed Salary</th>
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Created By</th>
+
                             <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Actions</th>
                           </tr>
                         </thead>
@@ -1872,10 +2046,24 @@ export default function EmployeesPage() {
                           <tr className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-green-50/30 dark:border-slate-700 dark:from-slate-900 dark:to-green-900/10">
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Emp No</th>
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Name</th>
+                            <RenderFilterHeader
+                              label="Department"
+                              filterKey="department.name"
+                              options={Array.from(new Set(applications.map(app => (app.department_id as any)?.name || app.department?.name).filter(Boolean))) as string[]}
+                              currentFilters={applicationFilters}
+                              setFilters={setApplicationFilters}
+                            />
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Proposed Salary</th>
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Approved Salary</th>
-                            <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Status</th>
+                            <RenderFilterHeader
+                              label="Status"
+                              filterKey="status"
+                              options={['approved', 'rejected']}
+                              currentFilters={applicationFilters}
+                              setFilters={setApplicationFilters}
+                            />
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Processed By</th>
+
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
@@ -1888,8 +2076,12 @@ export default function EmployeesPage() {
                                 {app.employee_name}
                               </td>
                               <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
+                                {(app.department_id as any)?.name || app.department?.name || '-'}
+                              </td>
+                              <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
                                 ₹{app.proposedSalary.toLocaleString()}
                               </td>
+
                               <td className="whitespace-nowrap px-6 py-4 text-sm font-semibold text-slate-900 dark:text-slate-100">
                                 {app.approvedSalary ? `₹${app.approvedSalary.toLocaleString()}` : '-'}
                               </td>
@@ -1919,83 +2111,101 @@ export default function EmployeesPage() {
         {/* Employees Tab */}
         {activeTab === 'employees' && (
           <>
-            {/* Employees Header with Search and Filter */}
-            <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-              <div className="flex flex-1 items-center gap-3">
+            {/* Global Toolbar - Consistent with superadmin */}
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+              {/* Search Bar */}
+              <div className="relative flex-1 min-w-[300px] max-w-md">
                 <input
                   type="text"
                   placeholder="Search employees..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="flex-1 min-w-[200px] rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  className="w-full rounded-2xl border border-slate-200 bg-white pl-11 pr-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                 />
+                <svg className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </div>
 
-                {/* Division Filter */}
-                <div className="min-w-[150px]">
-                  <select
-                    value={selectedDivision}
-                    onChange={(e) => setSelectedDivision(e.target.value)}
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                  >
-                    <option value="">All Divisions</option>
-                    {divisions.map((division) => (
-                      <option key={division._id} value={division._id}>
-                        {division.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              <div className="flex items-center gap-3">
 
-                <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={includeLeftEmployees}
-                    onChange={(e) => {
-                      setIncludeLeftEmployees(e.target.checked);
-                      loadEmployees();
-                    }}
-                    className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500 dark:border-slate-600"
-                  />
-                  <span className="text-sm text-slate-700 dark:text-slate-300">Include Left Employees</span>
-                </label>
-                <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-1 text-sm dark:border-slate-700 dark:bg-slate-900">
-                  <select
-                    value={passwordMode}
-                    onChange={(e) => setPasswordMode(e.target.value as any)}
-                    className="border-none bg-transparent px-3 py-1.5 focus:ring-0 dark:text-slate-300"
-                  >
-                    <option value="random">Random Pwd</option>
-                    <option value="phone_empno">Last 4 Phone + EmpNo</option>
-                  </select>
-                </div>
+
                 <button
-                  onClick={async () => {
-                    try {
-                      const res = await api.bulkExportEmployeePasswords({ passwordMode });
-                      // res is a Blob from api helper
-                      const url = window.URL.createObjectURL(new Blob([res as any]));
-                      const link = document.createElement('a');
-                      link.href = url;
-                      link.setAttribute('download', 'employee_credentials.csv');
-                      document.body.appendChild(link);
-                      link.click();
-                      link.remove();
-                    } catch (err) {
-                      setError('Failed to export passwords');
-                    }
-                  }}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                  onClick={() => loadEmployees()}
+                  className="group flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:border-green-300 hover:bg-green-50 hover:text-green-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-green-700 dark:hover:bg-green-900/30 dark:hover:text-green-400"
+                  title="Refresh Data"
                 >
-                  Bulk Download Pwds
+                  <svg className={`h-4 w-4 transition-transform group-hover:rotate-180 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  <span className="hidden sm:inline">Refresh</span>
+                </button>
+
+                <div className="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
+
+                {/* Import and New Application Buttons */}
+                <button
+                  onClick={() => setShowBulkUpload(true)}
+                  className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-2.5 text-sm font-medium text-green-700 transition-all hover:bg-green-100 dark:border-green-800 dark:bg-green-900/30 dark:text-green-400"
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  </svg>
+                  <span className="hidden sm:inline">Import</span>
+                </button>
+
+                <button
+                  onClick={() => setShowApplicationDialog(true)}
+                  className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-500/20 transition-all hover:shadow-green-500/40 hover:scale-[1.02]"
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  New Application
                 </button>
               </div>
             </div>
 
-            {/* Employee List */}
+            {/* Employee List with Skeleton Loading */}
             {loading ? (
-              <div className="flex flex-col items-center justify-center rounded-3xl border border-slate-200 bg-white/95 py-16 shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
-                <Spinner className="w-10 h-10" />
-                <p className="mt-4 text-sm font-medium text-slate-600 dark:text-slate-400">Loading employees...</p>
+              <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white/95 shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-green-50/30 dark:border-slate-700 dark:from-slate-900 dark:to-green-900/10">
+                        <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Emp No</th>
+                        <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Name</th>
+                        <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Division</th>
+                        {!hideDepartmentColumn && <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Department</th>}
+
+                        {!hideDesignationColumn && <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Designation</th>}
+                        <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Phone</th>
+                        <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Status</th>
+                        <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Actions</th>
+                      </tr>
+                    </thead>
+
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                      {[...Array(5)].map((_, i) => (
+                        <tr key={i} className="animate-pulse">
+                          <td className="px-6 py-4"><div className="h-4 w-12 rounded bg-slate-200 dark:bg-slate-700" /></td>
+                          <td className="px-6 py-4">
+                            <div className="h-4 w-32 rounded bg-slate-200 dark:bg-slate-700 mb-2" />
+                            <div className="h-3 w-24 rounded bg-slate-100 dark:bg-slate-800" />
+                          </td>
+                          <td className="px-6 py-4"><div className="h-4 w-24 rounded bg-slate-200 dark:bg-slate-700" /></td>
+                          {!hideDepartmentColumn && <td className="px-6 py-4"><div className="h-4 w-24 rounded bg-slate-200 dark:bg-slate-700" /></td>}
+                          {!hideDesignationColumn && <td className="px-6 py-4"><div className="h-4 w-24 rounded bg-slate-200 dark:bg-slate-700" /></td>}
+                          <td className="px-6 py-4"><div className="h-4 w-24 rounded bg-slate-200 dark:bg-slate-700" /></td>
+                          <td className="px-6 py-4"><div className="h-6 w-16 rounded-full bg-slate-200 dark:bg-slate-700" /></td>
+                          <td className="px-6 py-4 text-right"><div className="ml-auto h-8 w-24 rounded bg-slate-200 dark:bg-slate-700" /></td>
+
+
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             ) : filteredEmployees.length === 0 ? (
               <div className="rounded-3xl border border-slate-200 bg-white/95 p-12 text-center shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
@@ -2015,13 +2225,46 @@ export default function EmployeesPage() {
                       <tr className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-green-50/30 dark:border-slate-700 dark:from-slate-900 dark:to-green-900/10">
                         <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Emp No</th>
                         <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Name</th>
-                        <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Department</th>
-                        <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Designation</th>
+
+                        <RenderFilterHeader
+                          label="Division"
+                          filterKey="division.name"
+                          options={Array.from(new Set(employees.map(e => e.division?.name || (e.division_id as any)?.name).filter(Boolean))) as string[]}
+                          currentFilters={employeeFilters}
+                          setFilters={setEmployeeFilters}
+                        />
+                        {!hideDepartmentColumn && (
+                          <RenderFilterHeader
+                            label="Department"
+                            filterKey="department.name"
+                            options={Array.from(new Set(employees.map(e => e.department?.name || (e.department_id as any)?.name).filter(Boolean))) as string[]}
+                            currentFilters={employeeFilters}
+                            setFilters={setEmployeeFilters}
+                          />
+                        )}
+                        {!hideDesignationColumn && (
+                          <RenderFilterHeader
+                            label="Designation"
+                            filterKey="designation.name"
+                            options={Array.from(new Set(employees.map(e => e.designation?.name || (e.designation_id as any)?.name).filter(Boolean))) as string[]}
+                            currentFilters={employeeFilters}
+                            setFilters={setEmployeeFilters}
+                          />
+                        )}
                         <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Phone</th>
-                        <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Status</th>
+                        <RenderFilterHeader
+                          label="Status"
+                          filterKey="status"
+                          options={['Active', 'Inactive', 'Left']}
+                          currentFilters={employeeFilters}
+                          setFilters={setEmployeeFilters}
+                        />
                         <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Actions</th>
+
                       </tr>
+
                     </thead>
+
                     <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                       {filteredEmployees.map((employee) => (
                         <tr
@@ -2039,14 +2282,24 @@ export default function EmployeesPage() {
                             )}
                           </td>
                           <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
-                            {employee.department?.name || '-'}
+                            {employee.division?.name || (employee.division_id as any)?.name || '-'}
                           </td>
-                          <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
-                            {employee.designation?.name || '-'}
-                          </td>
+
+
+                          {!hideDepartmentColumn && (
+                            <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
+                              {employee.department?.name || '-'}
+                            </td>
+                          )}
+                          {!hideDesignationColumn && (
+                            <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
+                              {employee.designation?.name || '-'}
+                            </td>
+                          )}
                           <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
                             {employee.phone_number || '-'}
                           </td>
+
                           <td className="whitespace-nowrap px-6 py-4">
                             <div className="flex flex-col gap-1">
                               <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${employee.is_active !== false
@@ -2173,1143 +2426,22 @@ export default function EmployeesPage() {
       </div>
 
       {/* Application Creation Dialog */}
-      {showApplicationDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowApplicationDialog(false)} />
-          <div className="relative z-50 max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950/95">
-            <div className="mb-6 flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-                  New Employee Application
-                </h2>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                  Create an application for a new employee. Superadmin will review and approve.
-                </p>
-              </div>
-              <button
-                onClick={() => setShowApplicationDialog(false)}
-                className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900"
-              >
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            {error && (
-              <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
-                {error}
-              </div>
-            )}
-
-            <form onSubmit={handleCreateApplication} className="space-y-6">
-              <DynamicEmployeeForm
-                formData={applicationFormData}
-                onChange={setApplicationFormData}
-                errors={formErrors}
-                departments={departments}
-                divisions={divisions}
-                designations={filteredApplicationDesignations as any}
-              />
-
-              {/* Allowances & Deductions Overrides */}
-              <div className="space-y-4 rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Allowances &amp; Deductions</h3>
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      Defaults come from Department/Global. Enter an amount to override for this employee.
-                    </p>
-                  </div>
-                  {loadingComponents && (
-                    <div className="text-xs text-slate-500 dark:text-slate-400">Loading components...</div>
-                  )}
+      {
+        showApplicationDialog && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowApplicationDialog(false)} />
+            <div className="relative z-50 max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950/95">
+              <div className="mb-6 flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
+                    New Employee Application
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    Create an application for a new employee. Superadmin will review and approve.
+                  </p>
                 </div>
-
-                {/* Salary summary */}
-                <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60 md:grid-cols-4">
-                  <div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Proposed / Gross Salary</p>
-                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                      ₹{Number((applicationFormData as any).proposedSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-green-700 dark:text-green-300">Total Allowances</p>
-                    <p className="text-sm font-semibold text-green-700 dark:text-green-300">
-                      ₹{applicationSalarySummary.totalAllowances.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-red-700 dark:text-red-300">Total Deductions</p>
-                    <p className="text-sm font-semibold text-red-700 dark:text-red-300">
-                      ₹{applicationSalarySummary.totalDeductions.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Calculated / CTC</p>
-                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                      ₹{applicationSalarySummary.netSalary.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  {/* Allowances */}
-                  <div className="rounded-xl border border-green-100 bg-green-50/70 p-3 dark:border-green-900/40 dark:bg-green-900/20">
-                    <div className="mb-2 flex items-center justify-between">
-                      <h4 className="text-sm font-semibold text-green-800 dark:text-green-200">Allowances</h4>
-                      <span className="text-xs text-green-700 dark:text-green-300">
-                        {componentDefaults.allowances.length} items
-                      </span>
-                    </div>
-                    <div className="space-y-2">
-                      {componentDefaults.allowances.length === 0 && (
-                        <p className="text-xs text-green-700/70 dark:text-green-200/70">No allowances available.</p>
-                      )}
-                      {componentDefaults.allowances.map((item) => {
-                        const key = getKey(item);
-                        const current = overrideAllowances[key] ?? item.amount ?? 0;
-                        const isFixed = item.type === 'fixed';
-                        const basedOnPresentDays = overrideAllowancesBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
-                        return (
-                          <div key={key} className="rounded-lg border border-green-100 bg-white/70 px-3 py-2 text-xs dark:border-green-900/50 dark:bg-green-950/40">
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex-1">
-                                <div className="font-semibold text-green-900 dark:text-green-100">{item.name}</div>
-                                <div className="text-[11px] text-green-700 dark:text-green-300">
-                                  {item.type === 'percentage'
-                                    ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
-                                    : 'Fixed'}
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <span className="text-[11px] text-green-700 dark:text-green-300">Override</span>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="0.01"
-                                  value={current === null ? '' : current}
-                                  onChange={(e) => handleOverrideChange('allowance', item, e.target.value)}
-                                  className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100"
-                                />
-                              </div>
-                            </div>
-                            {isFixed && (
-                              <div className="mt-2 pt-2 border-t border-green-100 dark:border-green-900/50">
-                                <label className="flex items-start gap-1.5 cursor-pointer">
-                                  <input
-                                    type="checkbox"
-                                    checked={basedOnPresentDays}
-                                    onChange={(e) => {
-                                      setOverrideAllowancesBasedOnPresentDays({
-                                        ...overrideAllowancesBasedOnPresentDays,
-                                        [key]: e.target.checked
-                                      });
-                                    }}
-                                    className="mt-0.5 h-3 w-3 rounded border-green-300 text-green-600 focus:ring-green-500 dark:border-green-700"
-                                  />
-                                  <span className="text-[10px] leading-tight text-green-700 dark:text-green-300">
-                                    Prorate based on present days
-                                  </span>
-                                </label>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Deductions */}
-                  <div className="rounded-xl border border-red-100 bg-red-50/70 p-3 dark:border-red-900/40 dark:bg-red-900/20">
-                    <div className="mb-2 flex items-center justify-between">
-                      <h4 className="text-sm font-semibold text-red-800 dark:text-red-200">Deductions</h4>
-                      <span className="text-xs text-red-700 dark:text-red-300">
-                        {componentDefaults.deductions.length} items
-                      </span>
-                    </div>
-                    <div className="space-y-2">
-                      {componentDefaults.deductions.length === 0 && (
-                        <p className="text-xs text-red-700/70 dark:text-red-200/70">No deductions available.</p>
-                      )}
-                      {componentDefaults.deductions.map((item) => {
-                        const key = getKey(item);
-                        const current = overrideDeductions[key] ?? item.amount ?? 0;
-                        const isFixed = item.type === 'fixed';
-                        const basedOnPresentDays = overrideDeductionsBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
-                        return (
-                          <div key={key} className="rounded-lg border border-red-100 bg-white/70 px-3 py-2 text-xs dark:border-red-900/50 dark:bg-red-950/40">
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex-1">
-                                <div className="font-semibold text-red-900 dark:text-red-100">{item.name}</div>
-                                <div className="text-[11px] text-red-700 dark:text-red-300">
-                                  {item.type === 'percentage'
-                                    ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
-                                    : 'Fixed'}
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <span className="text-[11px] text-red-700 dark:text-red-300">Override</span>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="0.01"
-                                  value={current === null ? '' : current}
-                                  onChange={(e) => handleOverrideChange('deduction', item, e.target.value)}
-                                  className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-red-950 dark:text-red-100"
-                                />
-                              </div>
-                            </div>
-                            {isFixed && (
-                              <div className="mt-2 pt-2 border-t border-red-100 dark:border-red-900/50">
-                                <label className="flex items-start gap-1.5 cursor-pointer">
-                                  <input
-                                    type="checkbox"
-                                    checked={basedOnPresentDays}
-                                    onChange={(e) => {
-                                      setOverrideDeductionsBasedOnPresentDays({
-                                        ...overrideDeductionsBasedOnPresentDays,
-                                        [key]: e.target.checked
-                                      });
-                                    }}
-                                    className="mt-0.5 h-3 w-3 rounded border-red-300 text-red-600 focus:ring-red-500 dark:border-red-700"
-                                  />
-                                  <span className="text-[10px] leading-tight text-red-700 dark:text-red-300">
-                                    Prorate based on present days
-                                  </span>
-                                </label>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Actions */}
-              <div className="flex gap-3 pt-2">
                 <button
-                  type="submit"
-                  className="flex-1 rounded-2xl bg-gradient-to-r from-green-500 to-green-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
-                >
-                  Submit Application
-                </button>
-                <button
-                  type="button"
                   onClick={() => setShowApplicationDialog(false)}
-                  className="flex-1 rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Approval Dialog with Salary Modification */}
-      {showApprovalDialog && selectedApplication && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowApprovalDialog(false)} />
-          <div className="relative z-50 max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950/95">
-            <div className="mb-6 flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-                  Review Employee Application
-                </h2>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                  Review and approve or reject this employee application
-                </p>
-              </div>
-              <button
-                onClick={() => setShowApprovalDialog(false)}
-                className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900"
-              >
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            {error && (
-              <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
-                {error}
-              </div>
-            )}
-
-            <div className="space-y-6">
-              {/* Application Details */}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Application Details</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Employee No</p>
-                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{selectedApplication.emp_no}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Employee Name</p>
-                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{selectedApplication.employee_name}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Division</p>
-                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                      {(selectedApplication.division_id as any)?.name || (selectedApplication as any).division?.name || '-'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Department</p>
-                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                      {(selectedApplication.department_id as any)?.name || selectedApplication.department?.name || '-'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Designation</p>
-                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                      {(selectedApplication.designation_id as any)?.name || selectedApplication.designation?.name || '-'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Created By</p>
-                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{selectedApplication.createdBy?.name || '-'}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Qualifications - Key Feature */}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Qualifications & Certificates</h3>
-                {(() => {
-                  const quals = selectedApplication.qualifications;
-                  if (!quals || (Array.isArray(quals) && quals.length === 0)) {
-                    return <p className="text-sm italic text-slate-500 dark:text-slate-400">No qualifications provided.</p>;
-                  }
-
-                  if (Array.isArray(quals)) {
-                    return (
-                      <div className="grid gap-6 sm:grid-cols-2">
-                        {quals.map((qual: any, idx: number) => {
-                          const certificateUrl = qual.certificateUrl;
-                          const isPDF = certificateUrl?.toLowerCase().endsWith('.pdf');
-                          const displayEntries = Object.entries(qual).filter(([k, v]) =>
-                            k !== 'certificateUrl' && v !== null && v !== undefined && v !== ''
-                          );
-
-                          return (
-                            <div key={idx} className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white transition-all hover:border-blue-300 hover:shadow-lg dark:border-slate-700 dark:bg-slate-900 dark:hover:border-blue-700 flex flex-col h-full">
-                              {/* Card Image Area */}
-                              <div className="aspect-[3/2] w-full overflow-hidden bg-slate-100 dark:bg-slate-800 relative group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80 transition-colors">
-                                {certificateUrl ? (
-                                  isPDF ? (
-                                    <div className="absolute inset-0 flex items-center justify-center">
-                                      <svg className="h-20 w-20 text-red-500 opacity-80 group-hover:scale-110 transition-transform duration-300" fill="currentColor" viewBox="0 0 24 24">
-                                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9v-2h2v2zm0-4H9V7h2v5z" />
-                                      </svg>
-                                      <span className="absolute bottom-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">PDF Document</span>
-                                    </div>
-                                  ) : (
-                                    <img
-                                      src={certificateUrl}
-                                      alt="Certificate Preview"
-                                      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                                    />
-                                  )
-                                ) : (
-                                  <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 dark:text-slate-600">
-                                    <svg className="h-16 w-16 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                    </svg>
-                                    <span className="text-xs font-medium">No Certificate</span>
-                                  </div>
-                                )}
-
-                                {/* Overlay Action */}
-                                {certificateUrl && (
-                                  <a
-                                    href={certificateUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="absolute inset-0 z-10 flex items-center justify-center bg-black/0 opacity-0 transition-all duration-300 group-hover:bg-black/10 group-hover:opacity-100"
-                                  >
-                                    <div className="rounded-full bg-white/90 px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm backdrop-blur-sm hover:bg-white hover:scale-105 transition-all">
-                                      View Full {isPDF ? 'Document' : 'Image'}
-                                    </div>
-                                  </a>
-                                )}
-                              </div>
-
-                              {/* Card Content Area */}
-                              <div className="flex flex-1 flex-col p-5">
-                                <div className="space-y-3">
-                                  {displayEntries.length > 0 ? displayEntries.map(([key, value]) => {
-                                    const fieldLabel = formSettings?.qualifications?.fields?.find((f: any) => f.id === key)?.label || key.replace(/_/g, ' ');
-                                    return (
-                                      <div key={key} className="flex flex-col border-b border-slate-100 pb-2 last:border-0 last:pb-0 dark:border-slate-800">
-                                        <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 dark:text-slate-500 mb-0.5">
-                                          {fieldLabel}
-                                        </span>
-                                        <span className="text-sm font-medium text-slate-900 dark:text-slate-100 line-clamp-1" title={String(value)}>
-                                          {String(value)}
-                                        </span>
-                                      </div>
-                                    );
-                                  }) : <span className="text-sm italic text-slate-400">No Qualification Details</span>}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  }
-
-                  return <p className="text-sm text-slate-900 dark:text-slate-100">{String(quals)}</p>;
-                })()}
-              </div>
-
-              {/* Salary Section - Key Feature */}
-              <div className="rounded-2xl border-2 border-green-200 bg-green-50/50 p-5 dark:border-green-800 dark:bg-green-900/20">
-                <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-green-700 dark:text-green-400">Salary Approval</h3>
-                <div className="space-y-4">
-                  {/* Proposed Salary - Strikethrough if modified */}
-                  <div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Proposed Salary (HR)</p>
-                    <p className={`text-lg font-semibold ${approvalData.approvedSalary !== selectedApplication.proposedSalary ? 'line-through text-slate-400' : 'text-slate-900 dark:text-slate-100'}`}>
-                      ₹{selectedApplication.proposedSalary.toLocaleString()}
-                    </p>
-                  </div>
-
-                  {/* Approved Salary Input */}
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Approved Salary *
-                    </label>
-                    <input
-                      type="number"
-                      value={approvalData.approvedSalary || ''}
-                      onChange={(e) => setApprovalData({ ...approvalData, approvedSalary: Number(e.target.value) })}
-                      required
-                      min="0"
-                      step="0.01"
-                      className="w-full rounded-xl border-2 border-green-400 bg-white px-4 py-2.5 text-lg font-semibold transition-all focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-500/20 dark:border-green-600 dark:bg-slate-900 dark:text-slate-100"
-                      placeholder="Enter approved salary"
-                    />
-                    {approvalData.approvedSalary !== selectedApplication.proposedSalary && (
-                      <p className="mt-2 text-xs text-green-600 dark:text-green-400">
-                        ✓ Salary modified from proposed amount
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Date of Joining */}
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Date of Joining *
-                    </label>
-                    <input
-                      type="date"
-                      value={approvalData.doj || ''}
-                      onChange={(e) => setApprovalData({ ...approvalData, doj: e.target.value })}
-                      required
-                      className="w-full rounded-xl border-2 border-green-400 bg-white px-4 py-2.5 text-sm font-semibold transition-all focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-500/20 dark:border-green-600 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                    <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                      Specify the employee's joining date
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Allowances & Deductions with summary in approval */}
-              <div className="space-y-4 rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Allowances &amp; Deductions</h3>
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      Based on department/global defaults. Adjust overrides as needed before approval.
-                    </p>
-                  </div>
-                  {approvalLoadingComponents && (
-                    <div className="text-xs text-slate-500 dark:text-slate-400">Loading components...</div>
-                  )}
-                </div>
-
-                <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60 md:grid-cols-4">
-                  <div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Approved / Gross Salary</p>
-                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                      ₹{Number(approvalData.approvedSalary || selectedApplication.proposedSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-green-700 dark:text-green-300">Total Allowances</p>
-                    <p className="text-sm font-semibold text-green-700 dark:text-green-300">
-                      ₹{approvalSalarySummary.totalAllowances.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-red-700 dark:text-red-300">Total Deductions</p>
-                    <p className="text-sm font-semibold text-red-700 dark:text-red-300">
-                      ₹{approvalSalarySummary.totalDeductions.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Calculated / CTC</p>
-                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                      ₹{approvalSalarySummary.netSalary.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  {/* Allowances */}
-                  <div className="rounded-xl border border-green-100 bg-green-50/70 p-3 dark:border-green-900/40 dark:bg-green-900/20">
-                    <div className="mb-2 flex items-center justify-between">
-                      <h4 className="text-sm font-semibold text-green-800 dark:text-green-200">Allowances</h4>
-                      <span className="text-xs text-green-700 dark:text-green-300">
-                        {approvalComponentDefaults.allowances.length} items
-                      </span>
-                    </div>
-                    <div className="space-y-2">
-                      {approvalComponentDefaults.allowances.length === 0 && (
-                        <p className="text-xs text-green-700/70 dark:text-green-200/70">No allowances available.</p>
-                      )}
-                      {approvalComponentDefaults.allowances.map((item) => {
-                        const key = getKey(item);
-                        const current = approvalOverrideAllowances[key] ?? item.amount ?? 0;
-                        const isFixed = item.type === 'fixed';
-                        const basedOnPresentDays = approvalOverrideAllowancesBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
-                        return (
-                          <div key={key} className="rounded-lg border border-green-100 bg-white/70 px-3 py-2 text-xs dark:border-green-900/50 dark:bg-green-950/40">
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex-1">
-                                <div className="font-semibold text-green-900 dark:text-green-100">{item.name}</div>
-                                <div className="text-[11px] text-green-700 dark:text-green-300">
-                                  {item.type === 'percentage'
-                                    ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
-                                    : 'Fixed'}
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <span className="text-[11px] text-green-700 dark:text-green-300">Override</span>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="0.01"
-                                  value={current === null ? '' : current}
-                                  onChange={(e) => handleApprovalOverrideChange('allowance', item, e.target.value)}
-                                  className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100"
-                                />
-                              </div>
-                            </div>
-                            {isFixed && (
-                              <div className="mt-2 pt-2 border-t border-green-100 dark:border-green-900/50">
-                                <label className="flex items-start gap-1.5 cursor-pointer">
-                                  <input
-                                    type="checkbox"
-                                    checked={basedOnPresentDays}
-                                    onChange={(e) => {
-                                      setApprovalOverrideAllowancesBasedOnPresentDays({
-                                        ...approvalOverrideAllowancesBasedOnPresentDays,
-                                        [key]: e.target.checked
-                                      });
-                                    }}
-                                    className="mt-0.5 h-3 w-3 rounded border-green-300 text-green-600 focus:ring-green-500 dark:border-green-700"
-                                  />
-                                  <span className="text-[10px] leading-tight text-green-700 dark:text-green-300">
-                                    Prorate based on present days
-                                  </span>
-                                </label>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Deductions */}
-                  <div className="rounded-xl border border-red-100 bg-red-50/70 p-3 dark:border-red-900/40 dark:bg-red-900/20">
-                    <div className="mb-2 flex items-center justify-between">
-                      <h4 className="text-sm font-semibold text-red-800 dark:text-red-200">Deductions</h4>
-                      <span className="text-xs text-red-700 dark:text-red-300">
-                        {approvalComponentDefaults.deductions.length} items
-                      </span>
-                    </div>
-                    <div className="space-y-2">
-                      {approvalComponentDefaults.deductions.length === 0 && (
-                        <p className="text-xs text-red-700/70 dark:text-red-200/70">No deductions available.</p>
-                      )}
-                      {approvalComponentDefaults.deductions.map((item) => {
-                        const key = getKey(item);
-                        const current = approvalOverrideDeductions[key] ?? item.amount ?? 0;
-                        const isFixed = item.type === 'fixed';
-                        const basedOnPresentDays = approvalOverrideDeductionsBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
-                        return (
-                          <div key={key} className="rounded-lg border border-red-100 bg-white/70 px-3 py-2 text-xs dark:border-red-900/50 dark:bg-red-950/40">
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex-1">
-                                <div className="font-semibold text-red-900 dark:text-red-100">{item.name}</div>
-                                <div className="text-[11px] text-red-700 dark:text-red-300">
-                                  {item.type === 'percentage'
-                                    ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
-                                    : 'Fixed'}
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <span className="text-[11px] text-red-700 dark:text-red-300">Override</span>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="0.01"
-                                  value={current === null ? '' : current}
-                                  onChange={(e) => handleApprovalOverrideChange('deduction', item, e.target.value)}
-                                  className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-red-950 dark:text-red-100"
-                                />
-                              </div>
-                            </div>
-                            {isFixed && (
-                              <div className="mt-2 pt-2 border-t border-red-100 dark:border-red-900/50">
-                                <label className="flex items-start gap-1.5 cursor-pointer">
-                                  <input
-                                    type="checkbox"
-                                    checked={basedOnPresentDays}
-                                    onChange={(e) => {
-                                      setApprovalOverrideDeductionsBasedOnPresentDays({
-                                        ...approvalOverrideDeductionsBasedOnPresentDays,
-                                        [key]: e.target.checked
-                                      });
-                                    }}
-                                    className="mt-0.5 h-3 w-3 rounded border-red-300 text-red-600 focus:ring-red-500 dark:border-red-700"
-                                  />
-                                  <span className="text-[10px] leading-tight text-red-700 dark:text-red-300">
-                                    Prorate based on present days
-                                  </span>
-                                </label>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Comments */}
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Comments (Optional)
-                </label>
-                <textarea
-                  value={approvalData.comments}
-                  onChange={(e) => setApprovalData({ ...approvalData, comments: e.target.value })}
-                  rows={3}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 resize-none"
-                  placeholder="Add any comments for this approval..."
-                />
-              </div>
-
-              {/* Actions */}
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={handleApproveApplication}
-                  className="flex-1 rounded-2xl bg-gradient-to-r from-green-500 to-green-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
-                >
-                  Approve & Create Employee
-                </button>
-                <button
-                  onClick={handleRejectApplication}
-                  className="flex-1 rounded-2xl bg-gradient-to-r from-red-500 to-red-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-red-500/30 transition-all hover:from-red-600 hover:to-red-600"
-                >
-                  Reject
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowApprovalDialog(false)}
-                  className="flex-1 rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Employee Dialog */}
-      {showDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowDialog(false)} />
-          <div className="relative z-50 max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950/95">
-            <div className="mb-6 flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-                  {editingEmployee ? 'Edit Employee' : 'Add New Employee'}
-                </h2>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                  {editingEmployee ? 'Update employee information' : 'Enter employee details below'}
-                </p>
-              </div>
-              <button
-                onClick={() => setShowDialog(false)}
-                className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900"
-              >
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            {error && (
-              <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
-                {error}
-              </div>
-            )}
-
-            <form onSubmit={handleSubmit} className="space-y-6">
-              <DynamicEmployeeForm
-                formData={formData}
-                onChange={setFormData}
-                errors={{}}
-                departments={departments}
-                divisions={divisions}
-                designations={filteredDesignations as any}
-                onSettingsLoaded={setFormSettings}
-              />
-
-              {/* Leave Settings */}
-              <div className="rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
-                <h3 className="mb-3 text-base font-semibold text-slate-900 dark:text-slate-100">Leave Settings</h3>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Monthly Paid Leaves
-                    </label>
-                    <input
-                      type="number"
-                      name="paidLeaves"
-                      value={formData.paidLeaves ?? 0}
-                      onChange={handleInputChange}
-                      min="0"
-                      step="0.5"
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                      placeholder="0"
-                    />
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      Monthly recurring paid leaves
-                    </p>
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Yearly Allotted Leaves
-                    </label>
-                    <input
-                      type="number"
-                      name="allottedLeaves"
-                      value={formData.allottedLeaves ?? 0}
-                      onChange={handleInputChange}
-                      min="0"
-                      step="0.5"
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                      placeholder="0"
-                    />
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      Yearly total for without_pay/LOP leaves (for balance tracking)
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Allowances & Deductions Overrides + Salary Summary */}
-              <div className="space-y-4 rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Allowances &amp; Deductions</h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      Defaults come from Department/Global. Enter an amount to override for this employee.
-                    </p>
-                  </div>
-                  {loadingComponents && (
-                    <div className="text-xs text-slate-500 dark:text-slate-400">Loading components...</div>
-                  )}
-                </div>
-
-                {/* Salary summary */}
-                <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
-                  <div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Gross Salary</p>
-                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                      ₹{Number(formData.gross_salary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-green-700 dark:text-green-300">Total Allowances</p>
-                    <p className="text-sm font-semibold text-green-700 dark:text-green-300">
-                      ₹{salarySummary.totalAllowances.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-red-700 dark:text-red-300">Total Deductions</p>
-                    <p className="text-sm font-semibold text-red-700 dark:text-red-300">
-                      ₹{salarySummary.totalDeductions.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">CTC Salary</p>
-                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                      ₹{salarySummary.ctcSalary.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Calculated (Net)</p>
-                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                      ₹{salarySummary.netSalary.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  {/* Allowances */}
-                  <div className="rounded-xl border border-green-100 bg-green-50/70 p-3 dark:border-green-900/40 dark:bg-green-900/20">
-                    <div className="mb-2 flex items-center justify-between">
-                      <h4 className="text-sm font-semibold text-green-800 dark:text-green-200">Allowances</h4>
-                      <span className="text-xs text-green-700 dark:text-green-300">
-                        {componentDefaults.allowances.length} items
-                      </span>
-                    </div>
-                    <div className="space-y-2">
-                      {componentDefaults.allowances.length === 0 && (
-                        <p className="text-xs text-green-700/70 dark:text-green-200/70">No allowances available.</p>
-                      )}
-                      {componentDefaults.allowances.map((item) => {
-                        const key = getKey(item);
-                        const current = overrideAllowances[key] ?? item.amount ?? 0;
-                        const isFixed = item.type === 'fixed';
-                        const basedOnPresentDays = overrideAllowancesBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
-                        return (
-                          <div key={key} className="rounded-lg border border-green-100 bg-white/70 px-3 py-2 text-xs dark:border-green-900/50 dark:bg-green-950/40">
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex-1">
-                                <div className="font-semibold text-green-900 dark:text-green-100">{item.name}</div>
-                                <div className="text-[11px] text-green-700 dark:text-green-300">
-                                  {item.type === 'percentage'
-                                    ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
-                                    : 'Fixed'}
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <span className="text-[11px] text-green-700 dark:text-green-300">Override</span>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="0.01"
-                                  value={current === null ? '' : current}
-                                  onChange={(e) => handleOverrideChange('allowance', item, e.target.value)}
-                                  className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100"
-                                />
-                              </div>
-                            </div>
-                            {isFixed && (
-                              <div className="mt-2 pt-2 border-t border-green-100 dark:border-green-900/50">
-                                <label className="flex items-start gap-1.5 cursor-pointer">
-                                  <input
-                                    type="checkbox"
-                                    checked={basedOnPresentDays}
-                                    onChange={(e) => {
-                                      setOverrideAllowancesBasedOnPresentDays({
-                                        ...overrideAllowancesBasedOnPresentDays,
-                                        [key]: e.target.checked
-                                      });
-                                    }}
-                                    className="mt-0.5 h-3 w-3 rounded border-green-300 text-green-600 focus:ring-green-500 dark:border-green-700"
-                                  />
-                                  <span className="text-[10px] leading-tight text-green-700 dark:text-green-300">
-                                    Prorate based on present days
-                                  </span>
-                                </label>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Deductions */}
-                  <div className="rounded-xl border border-red-100 bg-red-50/70 p-3 dark:border-red-900/40 dark:bg-red-900/20">
-                    <div className="mb-2 flex items-center justify-between">
-                      <h4 className="text-sm font-semibold text-red-800 dark:text-red-200">Deductions</h4>
-                      <span className="text-xs text-red-700 dark:text-red-300">
-                        {componentDefaults.deductions.length} items
-                      </span>
-                    </div>
-                    <div className="space-y-2">
-                      {componentDefaults.deductions.length === 0 && (
-                        <p className="text-xs text-red-700/70 dark:text-red-200/70">No deductions available.</p>
-                      )}
-                      {componentDefaults.deductions.map((item) => {
-                        const key = getKey(item);
-                        const current = overrideDeductions[key] ?? item.amount ?? 0;
-                        const isFixed = item.type === 'fixed';
-                        const basedOnPresentDays = overrideDeductionsBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
-                        return (
-                          <div key={key} className="rounded-lg border border-red-100 bg-white/70 px-3 py-2 text-xs dark:border-red-900/50 dark:bg-red-950/40">
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex-1">
-                                <div className="font-semibold text-red-900 dark:text-red-100">{item.name}</div>
-                                <div className="text-[11px] text-red-700 dark:text-red-300">
-                                  {item.type === 'percentage'
-                                    ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
-                                    : 'Fixed'}
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <span className="text-[11px] text-red-700 dark:text-red-300">Override</span>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="0.01"
-                                  value={current === null ? '' : current}
-                                  onChange={(e) => handleOverrideChange('deduction', item, e.target.value)}
-                                  className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-red-950 dark:text-red-100"
-                                />
-                              </div>
-                            </div>
-                            {isFixed && (
-                              <div className="mt-2 pt-2 border-t border-red-100 dark:border-red-900/50">
-                                <label className="flex items-start gap-1.5 cursor-pointer">
-                                  <input
-                                    type="checkbox"
-                                    checked={basedOnPresentDays}
-                                    onChange={(e) => {
-                                      setOverrideDeductionsBasedOnPresentDays({
-                                        ...overrideDeductionsBasedOnPresentDays,
-                                        [key]: e.target.checked
-                                      });
-                                    }}
-                                    className="mt-0.5 h-3 w-3 rounded border-red-300 text-red-600 focus:ring-red-500 dark:border-red-700"
-                                  />
-                                  <span className="text-[10px] leading-tight text-red-700 dark:text-red-300">
-                                    Prorate based on present days
-                                  </span>
-                                </label>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-
-              {/* Actions */}
-              <div className="flex gap-3 pt-2">
-                <button
-                  type="submit"
-                  className="flex-1 rounded-2xl bg-gradient-to-r from-green-500 to-green-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
-                >
-                  {editingEmployee ? 'Update Employee' : 'Create Employee'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowDialog(false)}
-                  className="flex-1 rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Bulk Upload Dialog */}
-      {showBulkUpload && (
-        <BulkUpload
-          title="Bulk Upload Employees"
-          templateHeaders={dynamicTemplate.headers}
-          templateSample={dynamicTemplate.sample}
-          templateFilename="employee_template"
-          columns={dynamicTemplate.columns.map(col => {
-            if (col.key === 'division_name') {
-              return {
-                ...col,
-                type: 'select',
-                options: divisions.map(d => ({ value: d.name, label: d.name }))
-              };
-            }
-            if (col.key === 'department_name') {
-              return {
-                ...col,
-                type: 'select',
-                options: (row: ParsedRow) => {
-                  const rowDivName = row.division_name as string;
-                  if (!rowDivName) return [];
-
-                  const div = divisions.find(d => d.name.toLowerCase() === rowDivName.toLowerCase());
-                  if (!div) return [];
-
-                  // Filter departments that belong to this division
-                  return departments
-                    .filter(dept => (dept as any).divisions?.includes(div._id))
-                    .map(d => ({ value: d.name, label: d.name }));
-                }
-              };
-            }
-            if (col.key === 'gender') {
-              return { ...col, type: 'select', options: [{ value: 'Male', label: 'Male' }, { value: 'Female', label: 'Female' }, { value: 'Other', label: 'Other' }] };
-            }
-            if (col.key === 'marital_status') {
-              return { ...col, type: 'select', options: [{ value: 'Single', label: 'Single' }, { value: 'Married', label: 'Married' }, { value: 'Divorced', label: 'Divorced' }, { value: 'Widowed', label: 'Widowed' }] };
-            }
-            if (col.key === 'blood_group') {
-              return { ...col, type: 'select', options: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(bg => ({ value: bg, label: bg })) };
-            }
-
-            // Handle userselect fields (like reporting_to)
-            const field = formSettings?.groups?.flatMap((g: any) => g.fields).find((f: any) => f.id === col.key);
-            if (field?.type === 'userselect' || col.key === 'reporting_to') {
-              return {
-                ...col,
-                type: 'select',
-                options: employees.map(e => ({ value: e._id, label: e.employee_name }))
-              };
-            }
-            return col;
-          })}
-          validateRow={(row) => {
-            const mappedUsers = employees.map(e => ({ _id: e._id, name: e.employee_name }));
-            const result = validateEmployeeRow(row, divisions, departments, designations as any, mappedUsers);
-            return { isValid: result.isValid, errors: result.errors, mappedRow: result.mappedRow };
-          }}
-          onSubmit={async (data) => {
-            const batchData: any[] = [];
-            const processingErrors: string[] = [];
-
-            data.forEach((row) => {
-              try {
-                // Map division, department and designation names to IDs
-                const divId = divisions.find(d => d.name.toLowerCase() === (row.division_name as string)?.toLowerCase())?._id;
-                const deptId = departments.find(d =>
-                  d.name.toLowerCase() === (row.department_name as string)?.toLowerCase() &&
-                  (!divId || (d as any).divisions?.includes(divId))
-                )?._id;
-                const desigId = designations.find(d =>
-                  d.name.toLowerCase() === (row.designation_name as string)?.toLowerCase() &&
-                  d.department === deptId
-                )?._id;
-
-                const employeeData: any = {
-                  ...row,
-                  division_id: divId || undefined,
-                  department_id: deptId || undefined,
-                  designation_id: desigId || undefined,
-                  proposedSalary: row.proposedSalary || row.gross_salary || 0
-                };
-
-                // Handle dynamic fields based on form settings
-                const coreFields = ['emp_no', 'employee_name', 'proposedSalary', 'gross_salary', 'division_id', 'department_id', 'designation_id', 'division_name', 'department_name', 'designation_name', 'doj', 'dob', 'gender', 'marital_status', 'blood_group', 'qualifications', 'experience', 'address', 'location', 'aadhar_number', 'phone_number', 'alt_phone_number', 'email', 'pf_number', 'esi_number', 'bank_account_no', 'bank_name', 'bank_place', 'ifsc_code'];
-
-                if (formSettings?.groups) {
-                  const dynamicFields: any = {};
-                  formSettings.groups.forEach((group: any) => {
-                    group.fields.forEach((field: any) => {
-                      if (row[field.id] !== undefined && row[field.id] !== null && row[field.id] !== '') {
-                        const val = parseDynamicField(row[field.id], field);
-                        if (!coreFields.includes(field.id)) {
-                          dynamicFields[field.id] = val;
-                          delete employeeData[field.id];
-                        } else {
-                          employeeData[field.id] = val;
-                        }
-                      }
-                    });
-                  });
-                  if (Object.keys(dynamicFields).length > 0) {
-                    employeeData.dynamicFields = dynamicFields;
-                  }
-                }
-
-                // Handle special case for qualifications if enabled
-                if (formSettings?.qualifications?.isEnabled && row.qualifications) {
-                  const qualDef = {
-                    type: 'array',
-                    itemType: 'object',
-                    fields: formSettings.qualifications.fields
-                  };
-                  employeeData.qualifications = parseDynamicField(row.qualifications, qualDef);
-                }
-
-                batchData.push(employeeData);
-              } catch (err: any) {
-                processingErrors.push(`${row.emp_no || 'Row'}: Failed to process row data`);
-              }
-            });
-
-            if (batchData.length === 0) {
-              return { success: false, message: 'No valid data to upload' };
-            }
-
-            try {
-              const response = await api.bulkCreateEmployeeApplications(batchData);
-              loadApplications();
-              loadEmployees();
-
-              if (response.success) {
-                return {
-                  success: true,
-                  message: `Successfully created ${response.data?.successCount || batchData.length} applications`
-                };
-              } else {
-                const failCount = response.data?.failCount || 0;
-                const backendErrors = response.data?.errors || [];
-                const firstError = backendErrors[0]?.message || response.message;
-
-                return {
-                  success: false,
-                  message: `Completed with errors. Succeeded: ${response.data?.successCount || 0}, Failed: ${failCount}. ${firstError ? 'Error: ' + firstError : ''}`
-                };
-              }
-            } catch (err: any) {
-              console.error('Bulk upload request error:', err);
-              return { success: false, message: 'Failed to send bulk upload request' };
-            }
-          }}
-          onClose={() => setShowBulkUpload(false)}
-        />
-      )}
-
-      {/* Employee View Dialog */}
-      {showViewDialog && viewingEmployee && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowViewDialog(false)} />
-          <div className="relative z-50 max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950/95">
-            <div className="mb-6 flex items-center justify-between">
-              <div>
-                <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-                  {viewingEmployee.employee_name}
-                </h2>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                  Employee No: {viewingEmployee.emp_no}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    setShowViewDialog(false);
-                    handleEdit(viewingEmployee);
-                  }}
-                  className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-400"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={() => setShowViewDialog(false)}
                   className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900"
                 >
                   <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -3317,604 +2449,1737 @@ export default function EmployeesPage() {
                   </svg>
                 </button>
               </div>
-            </div>
 
-            <div className="space-y-6">
-              {/* Status Badge */}
-              <div className="flex items-center gap-2">
-                <span className={viewingEmployee.is_active !== false
-                  ? 'inline-flex rounded-full px-3 py-1 text-sm font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                  : 'inline-flex rounded-full px-3 py-1 text-sm font-medium bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}>
-                  {viewingEmployee.is_active !== false ? 'Active' : 'Inactive'}
-                </span>
-              </div>
-
-              {/* Basic Information */}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Basic Information</h3>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Employee Number</label>
-                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.emp_no || '-'}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Name</label>
-                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.employee_name || '-'}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Department</label>
-                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.department?.name || '-'}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Designation</label>
-                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.designation?.name || '-'}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Date of Joining</label>
-                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.doj ? new Date(viewingEmployee.doj).toLocaleDateString() : '-'}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Date of Birth</label>
-                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.dob ? new Date(viewingEmployee.dob).toLocaleDateString() : '-'}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Gross Salary</label>
-                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.gross_salary ? `₹${viewingEmployee.gross_salary.toLocaleString()}` : '-'}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">CTC Salary</label>
-                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{(viewingEmployee as any).ctcSalary ? `₹${(viewingEmployee as any).ctcSalary.toLocaleString()}` : '-'}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Calculated Salary (Net)</label>
-                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{(viewingEmployee as any).calculatedSalary ? `₹${(viewingEmployee as any).calculatedSalary.toLocaleString()}` : '-'}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Paid Leaves</label>
-                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.paidLeaves ?? '-'}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Gender</label>
-                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.gender || '-'}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Marital Status</label>
-                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.marital_status || '-'}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Blood Group</label>
-                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.blood_group || '-'}</p>
-                  </div>
+              {error && (
+                <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+                  {error}
                 </div>
-              </div>
+              )}
 
-              {/* Contact Information */}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Contact Information</h3>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Phone Number</label>
-                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.phone_number || '-'}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Alternate Phone</label>
-                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.alt_phone_number || '-'}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Email</label>
-                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.email || '-'}</p>
-                  </div>
-                  <div className="sm:col-span-2 lg:col-span-3">
-                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Address</label>
-                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.address || '-'}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Location</label>
-                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.location || '-'}</p>
-                  </div>
-                </div>
-              </div>
+              <form onSubmit={handleCreateApplication} className="space-y-6">
+                <DynamicEmployeeForm
+                  formData={applicationFormData}
+                  onChange={setApplicationFormData}
+                  errors={formErrors}
+                  departments={departments}
+                  divisions={divisions}
+                  designations={filteredApplicationDesignations as any}
+                />
 
-              {/* Professional Information */}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Professional Information</h3>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  <div className="sm:col-span-2 lg:col-span-3">
-                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2 block">Qualifications</label>
-                    <div className="space-y-3">
-                      {(() => {
-                        const quals = viewingEmployee.qualifications;
-                        if (!quals || (Array.isArray(quals) && quals.length === 0)) {
-                          return <p className="text-sm font-medium text-slate-900 dark:text-slate-100">-</p>;
-                        }
-
-                        // Handle array of objects (new format)
-                        if (Array.isArray(quals)) {
-                          return (
-                            <div className="grid gap-6 sm:grid-cols-2">
-                              {quals.map((qual: any, idx: number) => {
-                                const certificateUrl = qual.certificateUrl;
-                                const isPDF = certificateUrl?.toLowerCase().endsWith('.pdf');
-                                // Filter out internal keys like certificateUrl for list display
-                                const displayEntries = Object.entries(qual).filter(([k, v]) =>
-                                  k !== 'certificateUrl' && v !== null && v !== undefined && v !== ''
-                                );
-
-                                return (
-                                  <div key={idx} className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white transition-all hover:border-blue-300 hover:shadow-lg dark:border-slate-700 dark:bg-slate-900 dark:hover:border-blue-700 flex flex-col h-full">
-                                    {/* Card Image Area */}
-                                    <div className="aspect-[3/2] w-full overflow-hidden bg-slate-100 dark:bg-slate-800 relative group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80 transition-colors">
-                                      {certificateUrl ? (
-                                        isPDF ? (
-                                          <div className="absolute inset-0 flex items-center justify-center">
-                                            <svg className="h-20 w-20 text-red-500 opacity-80 group-hover:scale-110 transition-transform duration-300" fill="currentColor" viewBox="0 0 24 24">
-                                              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9v-2h2v2zm0-4H9V7h2v5z" />
-                                            </svg>
-                                            <span className="absolute bottom-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">PDF Document</span>
-                                          </div>
-                                        ) : (
-                                          <img
-                                            src={certificateUrl}
-                                            alt="Certificate Preview"
-                                            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                                          />
-                                        )
-                                      ) : (
-                                        <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 dark:text-slate-600">
-                                          <svg className="h-16 w-16 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                          </svg>
-                                          <span className="text-xs font-medium">No Certificate</span>
-                                        </div>
-                                      )}
-
-                                      {/* Overlay Action */}
-                                      {certificateUrl && (
-                                        <a
-                                          href={certificateUrl}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="absolute inset-0 z-10 flex items-center justify-center bg-black/0 opacity-0 transition-all duration-300 group-hover:bg-black/10 group-hover:opacity-100"
-                                        >
-                                          <div className="rounded-full bg-white/90 px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm backdrop-blur-sm hover:bg-white hover:scale-105 transition-all">
-                                            View Full {isPDF ? 'Document' : 'Image'}
-                                          </div>
-                                        </a>
-                                      )}
-                                    </div>
-
-                                    {/* Card Content Area */}
-                                    <div className="flex flex-1 flex-col p-5">
-                                      <div className="space-y-3">
-                                        {displayEntries.length > 0 ? displayEntries.map(([key, value]) => {
-                                          const fieldLabel = formSettings?.qualifications?.fields?.find((f: any) => f.id === key)?.label || key.replace(/_/g, ' ');
-                                          return (
-                                            <div key={key} className="flex flex-col border-b border-slate-100 pb-2 last:border-0 last:pb-0 dark:border-slate-800">
-                                              <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 dark:text-slate-500 mb-0.5">
-                                                {fieldLabel}
-                                              </span>
-                                              <span className="text-sm font-medium text-slate-900 dark:text-slate-100 line-clamp-1" title={String(value)}>
-                                                {String(value)}
-                                              </span>
-                                            </div>
-                                          );
-                                        }) : <span className="text-sm italic text-slate-400">No Qualification Details</span>}
-                                      </div>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          );
-                        }
-
-                        // Fallback for string
-                        return <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{String(quals)}</p>;
-                      })()}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Experience (Years)</label>
-                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.experience ?? '-'}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Financial Information */}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Financial Information</h3>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">PF Number</label>
-                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.pf_number || '-'}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">ESI Number</label>
-                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.esi_number || '-'}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Aadhar Number</label>
-                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.aadhar_number || '-'}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Bank Details */}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Bank Details</h3>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Account Number</label>
-                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_account_no || '-'}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Bank Name</label>
-                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_name || '-'}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Bank Place</label>
-                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_place || '-'}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">IFSC Code</label>
-                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.ifsc_code || '-'}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Allowances & Deductions - Always show this section */}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Allowances & Deductions</h3>
-
-                {/* Allowances */}
-                {viewingEmployee.employeeAllowances && viewingEmployee.employeeAllowances.length > 0 ? (
-                  <div className="mb-6">
-                    <h4 className="mb-3 text-sm font-semibold text-green-700 dark:text-green-400">Allowances</h4>
-                    <div className="space-y-2">
-                      {viewingEmployee.employeeAllowances.map((allowance: any, idx: number) => (
-                        <div key={idx} className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50/50 p-3 dark:border-green-800 dark:bg-green-900/20">
-                          <div className="flex-1">
-                            <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{allowance.name || '-'}</p>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">
-                              {allowance.type === 'percentage'
-                                ? `${allowance.percentage}% of ${allowance.percentageBase || 'basic'}`
-                                : 'Fixed Amount'}
-                              {allowance.isOverride && (
-                                <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                                  Override
-                                </span>
-                              )}
-                            </p>
-                          </div>
-                          <p className="text-sm font-semibold text-green-700 dark:text-green-400">
-                            {allowance.amount !== null && allowance.amount !== undefined
-                              ? `₹${Number(allowance.amount).toLocaleString()}`
-                              : '-'}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-                    <p className="text-sm text-slate-500 dark:text-slate-400">
-                      No employee-level allowance overrides. Default allowances from Department/Global settings will be used during payroll calculation.
-                    </p>
-                  </div>
-                )}
-
-                {/* Deductions */}
-                {viewingEmployee.employeeDeductions && viewingEmployee.employeeDeductions.length > 0 ? (
-                  <div>
-                    <h4 className="mb-3 text-sm font-semibold text-red-700 dark:text-red-400">Deductions</h4>
-                    <div className="space-y-2">
-                      {viewingEmployee.employeeDeductions.map((deduction: any, idx: number) => (
-                        <div key={idx} className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50/50 p-3 dark:border-red-800 dark:bg-red-900/20">
-                          <div className="flex-1">
-                            <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{deduction.name || '-'}</p>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">
-                              {deduction.type === 'percentage'
-                                ? `${deduction.percentage}% of ${deduction.percentageBase || 'basic'}`
-                                : 'Fixed Amount'}
-                              {deduction.isOverride && (
-                                <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                                  Override
-                                </span>
-                              )}
-                            </p>
-                          </div>
-                          <p className="text-sm font-semibold text-red-700 dark:text-red-400">
-                            {deduction.amount !== null && deduction.amount !== undefined
-                              ? `₹${Number(deduction.amount).toLocaleString()}`
-                              : '-'}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-                    <p className="text-sm text-slate-500 dark:text-slate-400">
-                      No employee-level deduction overrides. Default deductions from Department/Global settings will be used during payroll calculation.
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Left Date Information */}
-              {viewingEmployee.leftDate && (
-                <div className="rounded-2xl border border-orange-200 bg-orange-50/50 p-5 dark:border-orange-800 dark:bg-orange-900/20 mb-5">
-                  <h3 className="mb-4 text-lg font-semibold text-orange-900 dark:text-orange-100">Left Date Information</h3>
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                {/* Allowances & Deductions Overrides */}
+                <div className="space-y-4 rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
+                  <div className="flex items-center justify-between">
                     <div>
-                      <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Left Date</label>
-                      <p className="mt-1 text-sm font-medium text-orange-900 dark:text-orange-100">
-                        {new Date(viewingEmployee.leftDate).toLocaleDateString('en-US', {
-                          year: 'numeric',
-                          month: 'long',
-                          day: 'numeric'
-                        })}
+                      <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Allowances &amp; Deductions</h3>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        Defaults come from Department/Global. Enter an amount to override for this employee.
                       </p>
                     </div>
-                    {viewingEmployee.leftReason && (
+                    {loadingComponents && (
+                      <div className="text-xs text-slate-500 dark:text-slate-400">Loading components...</div>
+                    )}
+                  </div>
+
+                  {/* Salary summary */}
+                  <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60 md:grid-cols-4">
+                    <div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Proposed / Gross Salary</p>
+                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                        ₹{Number((applicationFormData as any).proposedSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-green-700 dark:text-green-300">Total Allowances</p>
+                      <p className="text-sm font-semibold text-green-700 dark:text-green-300">
+                        ₹{applicationSalarySummary.totalAllowances.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-red-700 dark:text-red-300">Total Deductions</p>
+                      <p className="text-sm font-semibold text-red-700 dark:text-red-300">
+                        ₹{applicationSalarySummary.totalDeductions.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Calculated / CTC</p>
+                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                        ₹{applicationSalarySummary.netSalary.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {/* Allowances */}
+                    <div className="rounded-xl border border-green-100 bg-green-50/70 p-3 dark:border-green-900/40 dark:bg-green-900/20">
+                      <div className="mb-2 flex items-center justify-between">
+                        <h4 className="text-sm font-semibold text-green-800 dark:text-green-200">Allowances</h4>
+                        <span className="text-xs text-green-700 dark:text-green-300">
+                          {componentDefaults.allowances.length} items
+                        </span>
+                      </div>
+                      <div className="space-y-2">
+                        {componentDefaults.allowances.length === 0 && (
+                          <p className="text-xs text-green-700/70 dark:text-green-200/70">No allowances available.</p>
+                        )}
+                        {componentDefaults.allowances.map((item) => {
+                          const key = getKey(item);
+                          const current = overrideAllowances[key] ?? item.amount ?? 0;
+                          const isFixed = item.type === 'fixed';
+                          const basedOnPresentDays = overrideAllowancesBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
+                          return (
+                            <div key={key} className="rounded-lg border border-green-100 bg-white/70 px-3 py-2 text-xs dark:border-green-900/50 dark:bg-green-950/40">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex-1">
+                                  <div className="font-semibold text-green-900 dark:text-green-100">{item.name}</div>
+                                  <div className="text-[11px] text-green-700 dark:text-green-300">
+                                    {item.type === 'percentage'
+                                      ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
+                                      : 'Fixed'}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[11px] text-green-700 dark:text-green-300">Override</span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={current === null ? '' : current}
+                                    onChange={(e) => handleOverrideChange('allowance', item, e.target.value)}
+                                    className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100"
+                                  />
+                                </div>
+                              </div>
+                              {isFixed && (
+                                <div className="mt-2 pt-2 border-t border-green-100 dark:border-green-900/50">
+                                  <label className="flex items-start gap-1.5 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={basedOnPresentDays}
+                                      onChange={(e) => {
+                                        setOverrideAllowancesBasedOnPresentDays({
+                                          ...overrideAllowancesBasedOnPresentDays,
+                                          [key]: e.target.checked
+                                        });
+                                      }}
+                                      className="mt-0.5 h-3 w-3 rounded border-green-300 text-green-600 focus:ring-green-500 dark:border-green-700"
+                                    />
+                                    <span className="text-[10px] leading-tight text-green-700 dark:text-green-300">
+                                      Prorate based on present days
+                                    </span>
+                                  </label>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Deductions */}
+                    <div className="rounded-xl border border-red-100 bg-red-50/70 p-3 dark:border-red-900/40 dark:bg-red-900/20">
+                      <div className="mb-2 flex items-center justify-between">
+                        <h4 className="text-sm font-semibold text-red-800 dark:text-red-200">Deductions</h4>
+                        <span className="text-xs text-red-700 dark:text-red-300">
+                          {componentDefaults.deductions.length} items
+                        </span>
+                      </div>
+                      <div className="space-y-2">
+                        {componentDefaults.deductions.length === 0 && (
+                          <p className="text-xs text-red-700/70 dark:text-red-200/70">No deductions available.</p>
+                        )}
+                        {componentDefaults.deductions.map((item) => {
+                          const key = getKey(item);
+                          const current = overrideDeductions[key] ?? item.amount ?? 0;
+                          const isFixed = item.type === 'fixed';
+                          const basedOnPresentDays = overrideDeductionsBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
+                          return (
+                            <div key={key} className="rounded-lg border border-red-100 bg-white/70 px-3 py-2 text-xs dark:border-red-900/50 dark:bg-red-950/40">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex-1">
+                                  <div className="font-semibold text-red-900 dark:text-red-100">{item.name}</div>
+                                  <div className="text-[11px] text-red-700 dark:text-red-300">
+                                    {item.type === 'percentage'
+                                      ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
+                                      : 'Fixed'}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[11px] text-red-700 dark:text-red-300">Override</span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={current === null ? '' : current}
+                                    onChange={(e) => handleOverrideChange('deduction', item, e.target.value)}
+                                    className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-red-950 dark:text-red-100"
+                                  />
+                                </div>
+                              </div>
+                              {isFixed && (
+                                <div className="mt-2 pt-2 border-t border-red-100 dark:border-red-900/50">
+                                  <label className="flex items-start gap-1.5 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={basedOnPresentDays}
+                                      onChange={(e) => {
+                                        setOverrideDeductionsBasedOnPresentDays({
+                                          ...overrideDeductionsBasedOnPresentDays,
+                                          [key]: e.target.checked
+                                        });
+                                      }}
+                                      className="mt-0.5 h-3 w-3 rounded border-red-300 text-red-600 focus:ring-red-500 dark:border-red-700"
+                                    />
+                                    <span className="text-[10px] leading-tight text-red-700 dark:text-red-300">
+                                      Prorate based on present days
+                                    </span>
+                                  </label>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="submit"
+                    className="flex-1 rounded-2xl bg-gradient-to-r from-green-500 to-green-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
+                  >
+                    Submit Application
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowApplicationDialog(false)}
+                    className="flex-1 rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )
+      }
+
+      {/* Approval Dialog with Salary Modification */}
+      {
+        showApprovalDialog && selectedApplication && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowApprovalDialog(false)} />
+            <div className="relative z-50 max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950/95">
+              <div className="mb-6 flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
+                    Review Employee Application
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    Review and approve or reject this employee application
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowApprovalDialog(false)}
+                  className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {error && (
+                <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+                  {error}
+                </div>
+              )}
+
+              <div className="space-y-6">
+                {/* Application Details */}
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                  <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Application Details</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Employee No</p>
+                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{selectedApplication.emp_no}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Employee Name</p>
+                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{selectedApplication.employee_name}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Division</p>
+                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                        {(selectedApplication.division_id as any)?.name || (selectedApplication as any).division?.name || '-'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Department</p>
+                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                        {(selectedApplication.department_id as any)?.name || selectedApplication.department?.name || '-'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Designation</p>
+                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                        {(selectedApplication.designation_id as any)?.name || selectedApplication.designation?.name || '-'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Created By</p>
+                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{selectedApplication.createdBy?.name || '-'}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Qualifications - Key Feature */}
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                  <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Qualifications & Certificates</h3>
+                  {(() => {
+                    const quals = selectedApplication.qualifications;
+                    if (!quals || (Array.isArray(quals) && quals.length === 0)) {
+                      return <p className="text-sm italic text-slate-500 dark:text-slate-400">No qualifications provided.</p>;
+                    }
+
+                    if (Array.isArray(quals)) {
+                      return (
+                        <div className="grid gap-6 sm:grid-cols-2">
+                          {quals.map((qual: any, idx: number) => {
+                            const certificateUrl = qual.certificateUrl;
+                            const isPDF = certificateUrl?.toLowerCase().endsWith('.pdf');
+                            const displayEntries = Object.entries(qual).filter(([k, v]) =>
+                              k !== 'certificateUrl' && v !== null && v !== undefined && v !== ''
+                            );
+
+                            return (
+                              <div key={idx} className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white transition-all hover:border-blue-300 hover:shadow-lg dark:border-slate-700 dark:bg-slate-900 dark:hover:border-blue-700 flex flex-col h-full">
+                                {/* Card Image Area */}
+                                <div className="aspect-[3/2] w-full overflow-hidden bg-slate-100 dark:bg-slate-800 relative group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80 transition-colors">
+                                  {certificateUrl ? (
+                                    isPDF ? (
+                                      <div className="absolute inset-0 flex items-center justify-center">
+                                        <svg className="h-20 w-20 text-red-500 opacity-80 group-hover:scale-110 transition-transform duration-300" fill="currentColor" viewBox="0 0 24 24">
+                                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9v-2h2v2zm0-4H9V7h2v5z" />
+                                        </svg>
+                                        <span className="absolute bottom-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">PDF Document</span>
+                                      </div>
+                                    ) : (
+                                      <img
+                                        src={certificateUrl}
+                                        alt="Certificate Preview"
+                                        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                                      />
+                                    )
+                                  ) : (
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 dark:text-slate-600">
+                                      <svg className="h-16 w-16 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                      </svg>
+                                      <span className="text-xs font-medium">No Certificate</span>
+                                    </div>
+                                  )}
+
+                                  {/* Overlay Action */}
+                                  {certificateUrl && (
+                                    <a
+                                      href={certificateUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="absolute inset-0 z-10 flex items-center justify-center bg-black/0 opacity-0 transition-all duration-300 group-hover:bg-black/10 group-hover:opacity-100"
+                                    >
+                                      <div className="rounded-full bg-white/90 px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm backdrop-blur-sm hover:bg-white hover:scale-105 transition-all">
+                                        View Full {isPDF ? 'Document' : 'Image'}
+                                      </div>
+                                    </a>
+                                  )}
+                                </div>
+
+                                {/* Card Content Area */}
+                                <div className="flex flex-1 flex-col p-5">
+                                  <div className="space-y-3">
+                                    {displayEntries.length > 0 ? displayEntries.map(([key, value]) => {
+                                      const fieldLabel = formSettings?.qualifications?.fields?.find((f: any) => f.id === key)?.label || key.replace(/_/g, ' ');
+                                      return (
+                                        <div key={key} className="flex flex-col border-b border-slate-100 pb-2 last:border-0 last:pb-0 dark:border-slate-800">
+                                          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 dark:text-slate-500 mb-0.5">
+                                            {fieldLabel}
+                                          </span>
+                                          <span className="text-sm font-medium text-slate-900 dark:text-slate-100 line-clamp-1" title={String(value)}>
+                                            {String(value)}
+                                          </span>
+                                        </div>
+                                      );
+                                    }) : <span className="text-sm italic text-slate-400">No Qualification Details</span>}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    }
+
+                    return <p className="text-sm text-slate-900 dark:text-slate-100">{String(quals)}</p>;
+                  })()}
+                </div>
+
+                {/* Salary Section - Key Feature */}
+                <div className="rounded-2xl border-2 border-green-200 bg-green-50/50 p-5 dark:border-green-800 dark:bg-green-900/20">
+                  <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-green-700 dark:text-green-400">Salary Approval</h3>
+                  <div className="space-y-4">
+                    {/* Proposed Salary - Strikethrough if modified */}
+                    <div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Proposed Salary (HR)</p>
+                      <p className={`text-lg font-semibold ${approvalData.approvedSalary !== selectedApplication.proposedSalary ? 'line-through text-slate-400' : 'text-slate-900 dark:text-slate-100'}`}>
+                        ₹{selectedApplication.proposedSalary.toLocaleString()}
+                      </p>
+                    </div>
+
+                    {/* Approved Salary Input */}
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                        Approved Salary *
+                      </label>
+                      <input
+                        type="number"
+                        value={approvalData.approvedSalary || ''}
+                        onChange={(e) => setApprovalData({ ...approvalData, approvedSalary: Number(e.target.value) })}
+                        required
+                        min="0"
+                        step="0.01"
+                        className="w-full rounded-xl border-2 border-green-400 bg-white px-4 py-2.5 text-lg font-semibold transition-all focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-500/20 dark:border-green-600 dark:bg-slate-900 dark:text-slate-100"
+                        placeholder="Enter approved salary"
+                      />
+                      {approvalData.approvedSalary !== selectedApplication.proposedSalary && (
+                        <p className="mt-2 text-xs text-green-600 dark:text-green-400">
+                          ✓ Salary modified from proposed amount
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Date of Joining */}
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                        Date of Joining *
+                      </label>
+                      <input
+                        type="date"
+                        value={approvalData.doj || ''}
+                        onChange={(e) => setApprovalData({ ...approvalData, doj: e.target.value })}
+                        required
+                        className="w-full rounded-xl border-2 border-green-400 bg-white px-4 py-2.5 text-sm font-semibold transition-all focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-500/20 dark:border-green-600 dark:bg-slate-900 dark:text-slate-100"
+                      />
+                      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                        Specify the employee's joining date
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Allowances & Deductions with summary in approval */}
+                <div className="space-y-4 rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Allowances &amp; Deductions</h3>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        Based on department/global defaults. Adjust overrides as needed before approval.
+                      </p>
+                    </div>
+                    {approvalLoadingComponents && (
+                      <div className="text-xs text-slate-500 dark:text-slate-400">Loading components...</div>
+                    )}
+                  </div>
+
+                  <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60 md:grid-cols-4">
+                    <div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Approved / Gross Salary</p>
+                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                        ₹{Number(approvalData.approvedSalary || selectedApplication.proposedSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-green-700 dark:text-green-300">Total Allowances</p>
+                      <p className="text-sm font-semibold text-green-700 dark:text-green-300">
+                        ₹{approvalSalarySummary.totalAllowances.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-red-700 dark:text-red-300">Total Deductions</p>
+                      <p className="text-sm font-semibold text-red-700 dark:text-red-300">
+                        ₹{approvalSalarySummary.totalDeductions.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Calculated / CTC</p>
+                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                        ₹{approvalSalarySummary.netSalary.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {/* Allowances */}
+                    <div className="rounded-xl border border-green-100 bg-green-50/70 p-3 dark:border-green-900/40 dark:bg-green-900/20">
+                      <div className="mb-2 flex items-center justify-between">
+                        <h4 className="text-sm font-semibold text-green-800 dark:text-green-200">Allowances</h4>
+                        <span className="text-xs text-green-700 dark:text-green-300">
+                          {approvalComponentDefaults.allowances.length} items
+                        </span>
+                      </div>
+                      <div className="space-y-2">
+                        {approvalComponentDefaults.allowances.length === 0 && (
+                          <p className="text-xs text-green-700/70 dark:text-green-200/70">No allowances available.</p>
+                        )}
+                        {approvalComponentDefaults.allowances.map((item) => {
+                          const key = getKey(item);
+                          const current = approvalOverrideAllowances[key] ?? item.amount ?? 0;
+                          const isFixed = item.type === 'fixed';
+                          const basedOnPresentDays = approvalOverrideAllowancesBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
+                          return (
+                            <div key={key} className="rounded-lg border border-green-100 bg-white/70 px-3 py-2 text-xs dark:border-green-900/50 dark:bg-green-950/40">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex-1">
+                                  <div className="font-semibold text-green-900 dark:text-green-100">{item.name}</div>
+                                  <div className="text-[11px] text-green-700 dark:text-green-300">
+                                    {item.type === 'percentage'
+                                      ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
+                                      : 'Fixed'}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[11px] text-green-700 dark:text-green-300">Override</span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={current === null ? '' : current}
+                                    onChange={(e) => handleApprovalOverrideChange('allowance', item, e.target.value)}
+                                    className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100"
+                                  />
+                                </div>
+                              </div>
+                              {isFixed && (
+                                <div className="mt-2 pt-2 border-t border-green-100 dark:border-green-900/50">
+                                  <label className="flex items-start gap-1.5 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={basedOnPresentDays}
+                                      onChange={(e) => {
+                                        setApprovalOverrideAllowancesBasedOnPresentDays({
+                                          ...approvalOverrideAllowancesBasedOnPresentDays,
+                                          [key]: e.target.checked
+                                        });
+                                      }}
+                                      className="mt-0.5 h-3 w-3 rounded border-green-300 text-green-600 focus:ring-green-500 dark:border-green-700"
+                                    />
+                                    <span className="text-[10px] leading-tight text-green-700 dark:text-green-300">
+                                      Prorate based on present days
+                                    </span>
+                                  </label>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Deductions */}
+                    <div className="rounded-xl border border-red-100 bg-red-50/70 p-3 dark:border-red-900/40 dark:bg-red-900/20">
+                      <div className="mb-2 flex items-center justify-between">
+                        <h4 className="text-sm font-semibold text-red-800 dark:text-red-200">Deductions</h4>
+                        <span className="text-xs text-red-700 dark:text-red-300">
+                          {approvalComponentDefaults.deductions.length} items
+                        </span>
+                      </div>
+                      <div className="space-y-2">
+                        {approvalComponentDefaults.deductions.length === 0 && (
+                          <p className="text-xs text-red-700/70 dark:text-red-200/70">No deductions available.</p>
+                        )}
+                        {approvalComponentDefaults.deductions.map((item) => {
+                          const key = getKey(item);
+                          const current = approvalOverrideDeductions[key] ?? item.amount ?? 0;
+                          const isFixed = item.type === 'fixed';
+                          const basedOnPresentDays = approvalOverrideDeductionsBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
+                          return (
+                            <div key={key} className="rounded-lg border border-red-100 bg-white/70 px-3 py-2 text-xs dark:border-red-900/50 dark:bg-red-950/40">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex-1">
+                                  <div className="font-semibold text-red-900 dark:text-red-100">{item.name}</div>
+                                  <div className="text-[11px] text-red-700 dark:text-red-300">
+                                    {item.type === 'percentage'
+                                      ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
+                                      : 'Fixed'}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[11px] text-red-700 dark:text-red-300">Override</span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={current === null ? '' : current}
+                                    onChange={(e) => handleApprovalOverrideChange('deduction', item, e.target.value)}
+                                    className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-red-950 dark:text-red-100"
+                                  />
+                                </div>
+                              </div>
+                              {isFixed && (
+                                <div className="mt-2 pt-2 border-t border-red-100 dark:border-red-900/50">
+                                  <label className="flex items-start gap-1.5 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={basedOnPresentDays}
+                                      onChange={(e) => {
+                                        setApprovalOverrideDeductionsBasedOnPresentDays({
+                                          ...approvalOverrideDeductionsBasedOnPresentDays,
+                                          [key]: e.target.checked
+                                        });
+                                      }}
+                                      className="mt-0.5 h-3 w-3 rounded border-red-300 text-red-600 focus:ring-red-500 dark:border-red-700"
+                                    />
+                                    <span className="text-[10px] leading-tight text-red-700 dark:text-red-300">
+                                      Prorate based on present days
+                                    </span>
+                                  </label>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Comments */}
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Comments (Optional)
+                  </label>
+                  <textarea
+                    value={approvalData.comments}
+                    onChange={(e) => setApprovalData({ ...approvalData, comments: e.target.value })}
+                    rows={3}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 resize-none"
+                    placeholder="Add any comments for this approval..."
+                  />
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={handleApproveApplication}
+                    className="flex-1 rounded-2xl bg-gradient-to-r from-green-500 to-green-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
+                  >
+                    Approve & Create Employee
+                  </button>
+                  <button
+                    onClick={handleRejectApplication}
+                    className="flex-1 rounded-2xl bg-gradient-to-r from-red-500 to-red-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-red-500/30 transition-all hover:from-red-600 hover:to-red-600"
+                  >
+                    Reject
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowApprovalDialog(false)}
+                    className="flex-1 rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      }
+
+      {/* Employee Dialog */}
+      {
+        showDialog && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowDialog(false)} />
+            <div className="relative z-50 max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950/95">
+              <div className="mb-6 flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
+                    {editingEmployee ? 'Edit Employee' : 'Add New Employee'}
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    {editingEmployee ? 'Update employee information' : 'Enter employee details below'}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowDialog(false)}
+                  className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {error && (
+                <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+                  {error}
+                </div>
+              )}
+
+              <form onSubmit={handleSubmit} className="space-y-6">
+                <DynamicEmployeeForm
+                  formData={formData}
+                  onChange={setFormData}
+                  errors={{}}
+                  departments={departments}
+                  divisions={divisions}
+                  designations={filteredDesignations as any}
+                  onSettingsLoaded={setFormSettings}
+                />
+
+                {/* Leave Settings */}
+                <div className="rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
+                  <h3 className="mb-3 text-base font-semibold text-slate-900 dark:text-slate-100">Leave Settings</h3>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                        Monthly Paid Leaves
+                      </label>
+                      <input
+                        type="number"
+                        name="paidLeaves"
+                        value={formData.paidLeaves ?? 0}
+                        onChange={handleInputChange}
+                        min="0"
+                        step="0.5"
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        placeholder="0"
+                      />
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        Monthly recurring paid leaves
+                      </p>
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                        Yearly Allotted Leaves
+                      </label>
+                      <input
+                        type="number"
+                        name="allottedLeaves"
+                        value={formData.allottedLeaves ?? 0}
+                        onChange={handleInputChange}
+                        min="0"
+                        step="0.5"
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        placeholder="0"
+                      />
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        Yearly total for without_pay/LOP leaves (for balance tracking)
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Allowances & Deductions Overrides + Salary Summary */}
+                <div className="space-y-4 rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Allowances &amp; Deductions</h3>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        Defaults come from Department/Global. Enter an amount to override for this employee.
+                      </p>
+                    </div>
+                    {loadingComponents && (
+                      <div className="text-xs text-slate-500 dark:text-slate-400">Loading components...</div>
+                    )}
+                  </div>
+
+                  {/* Salary summary */}
+                  <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+                    <div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Gross Salary</p>
+                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                        ₹{Number(formData.gross_salary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-green-700 dark:text-green-300">Total Allowances</p>
+                      <p className="text-sm font-semibold text-green-700 dark:text-green-300">
+                        ₹{salarySummary.totalAllowances.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-red-700 dark:text-red-300">Total Deductions</p>
+                      <p className="text-sm font-semibold text-red-700 dark:text-red-300">
+                        ₹{salarySummary.totalDeductions.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">CTC Salary</p>
+                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                        ₹{salarySummary.ctcSalary.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Calculated (Net)</p>
+                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                        ₹{salarySummary.netSalary.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {/* Allowances */}
+                    <div className="rounded-xl border border-green-100 bg-green-50/70 p-3 dark:border-green-900/40 dark:bg-green-900/20">
+                      <div className="mb-2 flex items-center justify-between">
+                        <h4 className="text-sm font-semibold text-green-800 dark:text-green-200">Allowances</h4>
+                        <span className="text-xs text-green-700 dark:text-green-300">
+                          {componentDefaults.allowances.length} items
+                        </span>
+                      </div>
+                      <div className="space-y-2">
+                        {componentDefaults.allowances.length === 0 && (
+                          <p className="text-xs text-green-700/70 dark:text-green-200/70">No allowances available.</p>
+                        )}
+                        {componentDefaults.allowances.map((item) => {
+                          const key = getKey(item);
+                          const current = overrideAllowances[key] ?? item.amount ?? 0;
+                          const isFixed = item.type === 'fixed';
+                          const basedOnPresentDays = overrideAllowancesBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
+                          return (
+                            <div key={key} className="rounded-lg border border-green-100 bg-white/70 px-3 py-2 text-xs dark:border-green-900/50 dark:bg-green-950/40">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex-1">
+                                  <div className="font-semibold text-green-900 dark:text-green-100">{item.name}</div>
+                                  <div className="text-[11px] text-green-700 dark:text-green-300">
+                                    {item.type === 'percentage'
+                                      ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
+                                      : 'Fixed'}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[11px] text-green-700 dark:text-green-300">Override</span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={current === null ? '' : current}
+                                    onChange={(e) => handleOverrideChange('allowance', item, e.target.value)}
+                                    className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100"
+                                  />
+                                </div>
+                              </div>
+                              {isFixed && (
+                                <div className="mt-2 pt-2 border-t border-green-100 dark:border-green-900/50">
+                                  <label className="flex items-start gap-1.5 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={basedOnPresentDays}
+                                      onChange={(e) => {
+                                        setOverrideAllowancesBasedOnPresentDays({
+                                          ...overrideAllowancesBasedOnPresentDays,
+                                          [key]: e.target.checked
+                                        });
+                                      }}
+                                      className="mt-0.5 h-3 w-3 rounded border-green-300 text-green-600 focus:ring-green-500 dark:border-green-700"
+                                    />
+                                    <span className="text-[10px] leading-tight text-green-700 dark:text-green-300">
+                                      Prorate based on present days
+                                    </span>
+                                  </label>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Deductions */}
+                    <div className="rounded-xl border border-red-100 bg-red-50/70 p-3 dark:border-red-900/40 dark:bg-red-900/20">
+                      <div className="mb-2 flex items-center justify-between">
+                        <h4 className="text-sm font-semibold text-red-800 dark:text-red-200">Deductions</h4>
+                        <span className="text-xs text-red-700 dark:text-red-300">
+                          {componentDefaults.deductions.length} items
+                        </span>
+                      </div>
+                      <div className="space-y-2">
+                        {componentDefaults.deductions.length === 0 && (
+                          <p className="text-xs text-red-700/70 dark:text-red-200/70">No deductions available.</p>
+                        )}
+                        {componentDefaults.deductions.map((item) => {
+                          const key = getKey(item);
+                          const current = overrideDeductions[key] ?? item.amount ?? 0;
+                          const isFixed = item.type === 'fixed';
+                          const basedOnPresentDays = overrideDeductionsBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
+                          return (
+                            <div key={key} className="rounded-lg border border-red-100 bg-white/70 px-3 py-2 text-xs dark:border-red-900/50 dark:bg-red-950/40">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex-1">
+                                  <div className="font-semibold text-red-900 dark:text-red-100">{item.name}</div>
+                                  <div className="text-[11px] text-red-700 dark:text-red-300">
+                                    {item.type === 'percentage'
+                                      ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
+                                      : 'Fixed'}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[11px] text-red-700 dark:text-red-300">Override</span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={current === null ? '' : current}
+                                    onChange={(e) => handleOverrideChange('deduction', item, e.target.value)}
+                                    className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-red-950 dark:text-red-100"
+                                  />
+                                </div>
+                              </div>
+                              {isFixed && (
+                                <div className="mt-2 pt-2 border-t border-red-100 dark:border-red-900/50">
+                                  <label className="flex items-start gap-1.5 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={basedOnPresentDays}
+                                      onChange={(e) => {
+                                        setOverrideDeductionsBasedOnPresentDays({
+                                          ...overrideDeductionsBasedOnPresentDays,
+                                          [key]: e.target.checked
+                                        });
+                                      }}
+                                      className="mt-0.5 h-3 w-3 rounded border-red-300 text-red-600 focus:ring-red-500 dark:border-red-700"
+                                    />
+                                    <span className="text-[10px] leading-tight text-red-700 dark:text-red-300">
+                                      Prorate based on present days
+                                    </span>
+                                  </label>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+
+                {/* Actions */}
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="submit"
+                    className="flex-1 rounded-2xl bg-gradient-to-r from-green-500 to-green-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
+                  >
+                    {editingEmployee ? 'Update Employee' : 'Create Employee'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowDialog(false)}
+                    className="flex-1 rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )
+      }
+
+      {/* Bulk Upload Dialog */}
+      {
+        showBulkUpload && (
+          <BulkUpload
+            title="Bulk Upload Employees"
+            templateHeaders={dynamicTemplate.headers}
+            templateSample={dynamicTemplate.sample}
+            templateFilename="employee_template"
+            columns={dynamicTemplate.columns.map(col => {
+              if (col.key === 'division_name') {
+                return {
+                  ...col,
+                  type: 'select',
+                  options: divisions.map(d => ({ value: d.name, label: d.name }))
+                };
+              }
+              if (col.key === 'department_name') {
+                return {
+                  ...col,
+                  type: 'select',
+                  options: (row: ParsedRow) => {
+                    const rowDivName = row.division_name as string;
+                    if (!rowDivName) return [];
+
+                    const div = divisions.find(d => d.name.toLowerCase() === rowDivName.toLowerCase());
+                    if (!div) return [];
+
+                    // Filter departments that belong to this division
+                    return departments
+                      .filter(dept => (dept as any).divisions?.includes(div._id))
+                      .map(d => ({ value: d.name, label: d.name }));
+                  }
+                };
+              }
+              if (col.key === 'gender') {
+                return { ...col, type: 'select', options: [{ value: 'Male', label: 'Male' }, { value: 'Female', label: 'Female' }, { value: 'Other', label: 'Other' }] };
+              }
+              if (col.key === 'marital_status') {
+                return { ...col, type: 'select', options: [{ value: 'Single', label: 'Single' }, { value: 'Married', label: 'Married' }, { value: 'Divorced', label: 'Divorced' }, { value: 'Widowed', label: 'Widowed' }] };
+              }
+              if (col.key === 'blood_group') {
+                return { ...col, type: 'select', options: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(bg => ({ value: bg, label: bg })) };
+              }
+
+              // Handle userselect fields (like reporting_to)
+              const field = formSettings?.groups?.flatMap((g: any) => g.fields).find((f: any) => f.id === col.key);
+              if (field?.type === 'userselect' || col.key === 'reporting_to') {
+                return {
+                  ...col,
+                  type: 'select',
+                  options: employees.map(e => ({ value: e._id, label: e.employee_name }))
+                };
+              }
+              return col;
+            })}
+            validateRow={(row) => {
+              const mappedUsers = employees.map(e => ({ _id: e._id, name: e.employee_name }));
+              const result = validateEmployeeRow(row, divisions, departments, designations as any, mappedUsers);
+              return { isValid: result.isValid, errors: result.errors, mappedRow: result.mappedRow };
+            }}
+            onSubmit={async (data) => {
+              const batchData: any[] = [];
+              const processingErrors: string[] = [];
+
+              data.forEach((row) => {
+                try {
+                  // Map division, department and designation names to IDs
+                  const divId = divisions.find(d => d.name.toLowerCase() === (row.division_name as string)?.toLowerCase())?._id;
+                  const deptId = departments.find(d =>
+                    d.name.toLowerCase() === (row.department_name as string)?.toLowerCase() &&
+                    (!divId || (d as any).divisions?.includes(divId))
+                  )?._id;
+                  const desigId = designations.find(d =>
+                    d.name.toLowerCase() === (row.designation_name as string)?.toLowerCase() &&
+                    d.department === deptId
+                  )?._id;
+
+                  const employeeData: any = {
+                    ...row,
+                    division_id: divId || undefined,
+                    department_id: deptId || undefined,
+                    designation_id: desigId || undefined,
+                    proposedSalary: row.proposedSalary || row.gross_salary || 0
+                  };
+
+                  // Handle dynamic fields based on form settings
+                  const coreFields = ['emp_no', 'employee_name', 'proposedSalary', 'gross_salary', 'division_id', 'department_id', 'designation_id', 'division_name', 'department_name', 'designation_name', 'doj', 'dob', 'gender', 'marital_status', 'blood_group', 'qualifications', 'experience', 'address', 'location', 'aadhar_number', 'phone_number', 'alt_phone_number', 'email', 'pf_number', 'esi_number', 'bank_account_no', 'bank_name', 'bank_place', 'ifsc_code'];
+
+                  if (formSettings?.groups) {
+                    const dynamicFields: any = {};
+                    formSettings.groups.forEach((group: any) => {
+                      group.fields.forEach((field: any) => {
+                        if (row[field.id] !== undefined && row[field.id] !== null && row[field.id] !== '') {
+                          const val = parseDynamicField(row[field.id], field);
+                          if (!coreFields.includes(field.id)) {
+                            dynamicFields[field.id] = val;
+                            delete employeeData[field.id];
+                          } else {
+                            employeeData[field.id] = val;
+                          }
+                        }
+                      });
+                    });
+                    if (Object.keys(dynamicFields).length > 0) {
+                      employeeData.dynamicFields = dynamicFields;
+                    }
+                  }
+
+                  // Handle special case for qualifications if enabled
+                  if (formSettings?.qualifications?.isEnabled && row.qualifications) {
+                    const qualDef = {
+                      type: 'array',
+                      itemType: 'object',
+                      fields: formSettings.qualifications.fields
+                    };
+                    employeeData.qualifications = parseDynamicField(row.qualifications, qualDef);
+                  }
+
+                  batchData.push(employeeData);
+                } catch (err: any) {
+                  processingErrors.push(`${row.emp_no || 'Row'}: Failed to process row data`);
+                }
+              });
+
+              if (batchData.length === 0) {
+                return { success: false, message: 'No valid data to upload' };
+              }
+
+              try {
+                const response = await api.bulkCreateEmployeeApplications(batchData);
+                loadApplications();
+                loadEmployees();
+
+                if (response.success) {
+                  return {
+                    success: true,
+                    message: `Successfully created ${response.data?.successCount || batchData.length} applications`
+                  };
+                } else {
+                  const failCount = response.data?.failCount || 0;
+                  const backendErrors = response.data?.errors || [];
+                  const firstError = backendErrors[0]?.message || response.message;
+
+                  return {
+                    success: false,
+                    message: `Completed with errors. Succeeded: ${response.data?.successCount || 0}, Failed: ${failCount}. ${firstError ? 'Error: ' + firstError : ''}`
+                  };
+                }
+              } catch (err: any) {
+                console.error('Bulk upload request error:', err);
+                return { success: false, message: 'Failed to send bulk upload request' };
+              }
+            }}
+            onClose={() => setShowBulkUpload(false)}
+          />
+        )
+      }
+
+      {/* Employee View Dialog */}
+      {
+        showViewDialog && viewingEmployee && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowViewDialog(false)} />
+            <div className="relative z-50 max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950/95">
+              <div className="mb-6 flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+                    {viewingEmployee.employee_name}
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    Employee No: {viewingEmployee.emp_no}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setShowViewDialog(false);
+                      handleEdit(viewingEmployee);
+                    }}
+                    className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-400"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => setShowViewDialog(false)}
+                    className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900"
+                  >
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                {/* Status Badge */}
+                <div className="flex items-center gap-2">
+                  <span className={viewingEmployee.is_active !== false
+                    ? 'inline-flex rounded-full px-3 py-1 text-sm font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                    : 'inline-flex rounded-full px-3 py-1 text-sm font-medium bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}>
+                    {viewingEmployee.is_active !== false ? 'Active' : 'Inactive'}
+                  </span>
+                </div>
+
+                {/* Basic Information */}
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                  <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Basic Information</h3>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Employee Number</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.emp_no || '-'}</p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Name</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.employee_name || '-'}</p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Department</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.department?.name || '-'}</p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Designation</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.designation?.name || '-'}</p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Date of Joining</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.doj ? new Date(viewingEmployee.doj).toLocaleDateString() : '-'}</p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Date of Birth</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.dob ? new Date(viewingEmployee.dob).toLocaleDateString() : '-'}</p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Gross Salary</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.gross_salary ? `₹${viewingEmployee.gross_salary.toLocaleString()}` : '-'}</p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">CTC Salary</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{(viewingEmployee as any).ctcSalary ? `₹${(viewingEmployee as any).ctcSalary.toLocaleString()}` : '-'}</p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Calculated Salary (Net)</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{(viewingEmployee as any).calculatedSalary ? `₹${(viewingEmployee as any).calculatedSalary.toLocaleString()}` : '-'}</p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Paid Leaves</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.paidLeaves ?? '-'}</p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Gender</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.gender || '-'}</p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Marital Status</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.marital_status || '-'}</p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Blood Group</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.blood_group || '-'}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Contact Information */}
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                  <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Contact Information</h3>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Phone Number</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.phone_number || '-'}</p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Alternate Phone</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.alt_phone_number || '-'}</p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Email</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.email || '-'}</p>
+                    </div>
+                    <div className="sm:col-span-2 lg:col-span-3">
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Address</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.address || '-'}</p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Location</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.location || '-'}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Professional Information */}
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                  <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Professional Information</h3>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <div className="sm:col-span-2 lg:col-span-3">
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2 block">Qualifications</label>
+                      <div className="space-y-3">
+                        {(() => {
+                          const quals = viewingEmployee.qualifications;
+                          if (!quals || (Array.isArray(quals) && quals.length === 0)) {
+                            return <p className="text-sm font-medium text-slate-900 dark:text-slate-100">-</p>;
+                          }
+
+                          // Handle array of objects (new format)
+                          if (Array.isArray(quals)) {
+                            return (
+                              <div className="grid gap-6 sm:grid-cols-2">
+                                {quals.map((qual: any, idx: number) => {
+                                  const certificateUrl = qual.certificateUrl;
+                                  const isPDF = certificateUrl?.toLowerCase().endsWith('.pdf');
+                                  // Filter out internal keys like certificateUrl for list display
+                                  const displayEntries = Object.entries(qual).filter(([k, v]) =>
+                                    k !== 'certificateUrl' && v !== null && v !== undefined && v !== ''
+                                  );
+
+                                  return (
+                                    <div key={idx} className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white transition-all hover:border-blue-300 hover:shadow-lg dark:border-slate-700 dark:bg-slate-900 dark:hover:border-blue-700 flex flex-col h-full">
+                                      {/* Card Image Area */}
+                                      <div className="aspect-[3/2] w-full overflow-hidden bg-slate-100 dark:bg-slate-800 relative group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80 transition-colors">
+                                        {certificateUrl ? (
+                                          isPDF ? (
+                                            <div className="absolute inset-0 flex items-center justify-center">
+                                              <svg className="h-20 w-20 text-red-500 opacity-80 group-hover:scale-110 transition-transform duration-300" fill="currentColor" viewBox="0 0 24 24">
+                                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9v-2h2v2zm0-4H9V7h2v5z" />
+                                              </svg>
+                                              <span className="absolute bottom-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">PDF Document</span>
+                                            </div>
+                                          ) : (
+                                            <img
+                                              src={certificateUrl}
+                                              alt="Certificate Preview"
+                                              className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                                            />
+                                          )
+                                        ) : (
+                                          <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 dark:text-slate-600">
+                                            <svg className="h-16 w-16 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                            </svg>
+                                            <span className="text-xs font-medium">No Certificate</span>
+                                          </div>
+                                        )}
+
+                                        {/* Overlay Action */}
+                                        {certificateUrl && (
+                                          <a
+                                            href={certificateUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="absolute inset-0 z-10 flex items-center justify-center bg-black/0 opacity-0 transition-all duration-300 group-hover:bg-black/10 group-hover:opacity-100"
+                                          >
+                                            <div className="rounded-full bg-white/90 px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm backdrop-blur-sm hover:bg-white hover:scale-105 transition-all">
+                                              View Full {isPDF ? 'Document' : 'Image'}
+                                            </div>
+                                          </a>
+                                        )}
+                                      </div>
+
+                                      {/* Card Content Area */}
+                                      <div className="flex flex-1 flex-col p-5">
+                                        <div className="space-y-3">
+                                          {displayEntries.length > 0 ? displayEntries.map(([key, value]) => {
+                                            const fieldLabel = formSettings?.qualifications?.fields?.find((f: any) => f.id === key)?.label || key.replace(/_/g, ' ');
+                                            return (
+                                              <div key={key} className="flex flex-col border-b border-slate-100 pb-2 last:border-0 last:pb-0 dark:border-slate-800">
+                                                <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 dark:text-slate-500 mb-0.5">
+                                                  {fieldLabel}
+                                                </span>
+                                                <span className="text-sm font-medium text-slate-900 dark:text-slate-100 line-clamp-1" title={String(value)}>
+                                                  {String(value)}
+                                                </span>
+                                              </div>
+                                            );
+                                          }) : <span className="text-sm italic text-slate-400">No Qualification Details</span>}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            );
+                          }
+
+                          // Fallback for string
+                          return <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{String(quals)}</p>;
+                        })()}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Experience (Years)</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.experience ?? '-'}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Financial Information */}
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                  <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Financial Information</h3>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">PF Number</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.pf_number || '-'}</p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">ESI Number</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.esi_number || '-'}</p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Aadhar Number</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.aadhar_number || '-'}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bank Details */}
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                  <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Bank Details</h3>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Account Number</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_account_no || '-'}</p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Bank Name</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_name || '-'}</p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Bank Place</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_place || '-'}</p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">IFSC Code</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.ifsc_code || '-'}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Allowances & Deductions - Always show this section */}
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                  <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Allowances & Deductions</h3>
+
+                  {/* Allowances */}
+                  {viewingEmployee.employeeAllowances && viewingEmployee.employeeAllowances.length > 0 ? (
+                    <div className="mb-6">
+                      <h4 className="mb-3 text-sm font-semibold text-green-700 dark:text-green-400">Allowances</h4>
+                      <div className="space-y-2">
+                        {viewingEmployee.employeeAllowances.map((allowance: any, idx: number) => (
+                          <div key={idx} className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50/50 p-3 dark:border-green-800 dark:bg-green-900/20">
+                            <div className="flex-1">
+                              <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{allowance.name || '-'}</p>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">
+                                {allowance.type === 'percentage'
+                                  ? `${allowance.percentage}% of ${allowance.percentageBase || 'basic'}`
+                                  : 'Fixed Amount'}
+                                {allowance.isOverride && (
+                                  <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                    Override
+                                  </span>
+                                )}
+                              </p>
+                            </div>
+                            <p className="text-sm font-semibold text-green-700 dark:text-green-400">
+                              {allowance.amount !== null && allowance.amount !== undefined
+                                ? `₹${Number(allowance.amount).toLocaleString()}`
+                                : '-'}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+                      <p className="text-sm text-slate-500 dark:text-slate-400">
+                        No employee-level allowance overrides. Default allowances from Department/Global settings will be used during payroll calculation.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Deductions */}
+                  {viewingEmployee.employeeDeductions && viewingEmployee.employeeDeductions.length > 0 ? (
+                    <div>
+                      <h4 className="mb-3 text-sm font-semibold text-red-700 dark:text-red-400">Deductions</h4>
+                      <div className="space-y-2">
+                        {viewingEmployee.employeeDeductions.map((deduction: any, idx: number) => (
+                          <div key={idx} className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50/50 p-3 dark:border-red-800 dark:bg-red-900/20">
+                            <div className="flex-1">
+                              <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{deduction.name || '-'}</p>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">
+                                {deduction.type === 'percentage'
+                                  ? `${deduction.percentage}% of ${deduction.percentageBase || 'basic'}`
+                                  : 'Fixed Amount'}
+                                {deduction.isOverride && (
+                                  <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                    Override
+                                  </span>
+                                )}
+                              </p>
+                            </div>
+                            <p className="text-sm font-semibold text-red-700 dark:text-red-400">
+                              {deduction.amount !== null && deduction.amount !== undefined
+                                ? `₹${Number(deduction.amount).toLocaleString()}`
+                                : '-'}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+                      <p className="text-sm text-slate-500 dark:text-slate-400">
+                        No employee-level deduction overrides. Default deductions from Department/Global settings will be used during payroll calculation.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Left Date Information */}
+                {viewingEmployee.leftDate && (
+                  <div className="rounded-2xl border border-orange-200 bg-orange-50/50 p-5 dark:border-orange-800 dark:bg-orange-900/20 mb-5">
+                    <h3 className="mb-4 text-lg font-semibold text-orange-900 dark:text-orange-100">Left Date Information</h3>
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                       <div>
-                        <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Reason</label>
+                        <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Left Date</label>
                         <p className="mt-1 text-sm font-medium text-orange-900 dark:text-orange-100">
-                          {viewingEmployee.leftReason}
+                          {new Date(viewingEmployee.leftDate).toLocaleDateString('en-US', {
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric'
+                          })}
+                        </p>
+                      </div>
+                      {viewingEmployee.leftReason && (
+                        <div>
+                          <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Reason</label>
+                          <p className="mt-1 text-sm font-medium text-orange-900 dark:text-orange-100">
+                            {viewingEmployee.leftReason}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                    <div className="mt-4">
+                      <button
+                        onClick={() => {
+                          setShowViewDialog(false);
+                          handleRemoveLeftDate(viewingEmployee);
+                        }}
+                        className="rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
+                      >
+                        Reactivate Employee
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Leave Information */}
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                  <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Leave Information</h3>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Monthly Paid Leaves</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                        {viewingEmployee.paidLeaves !== undefined && viewingEmployee.paidLeaves !== null
+                          ? `${viewingEmployee.paidLeaves} days/month`
+                          : '0 days/month'}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        Recurring monthly paid leaves
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Yearly Allotted Leaves</label>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                        {viewingEmployee.allottedLeaves !== undefined && viewingEmployee.allottedLeaves !== null
+                          ? `${viewingEmployee.allottedLeaves} days/year`
+                          : '0 days/year'}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        Total for without_pay/LOP leaves (for balance tracking)
+                      </p>
+                    </div>
+                    {((viewingEmployee as any).ctcSalary !== undefined && (viewingEmployee as any).ctcSalary !== null) && (
+                      <div>
+                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">CTC Salary</label>
+                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                          ₹{Number((viewingEmployee as any).ctcSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                        </p>
+                      </div>
+                    )}
+                    {((viewingEmployee as any).calculatedSalary !== undefined && (viewingEmployee as any).calculatedSalary !== null) && (
+                      <div>
+                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Calculated Salary (Net)</label>
+                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                          ₹{Number((viewingEmployee as any).calculatedSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                         </p>
                       </div>
                     )}
                   </div>
-                  <div className="mt-4">
-                    <button
-                      onClick={() => {
-                        setShowViewDialog(false);
-                        handleRemoveLeftDate(viewingEmployee);
-                      }}
-                      className="rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
-                    >
-                      Reactivate Employee
-                    </button>
-                  </div>
                 </div>
-              )}
 
-              {/* Leave Information */}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Leave Information</h3>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Monthly Paid Leaves</label>
-                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                      {viewingEmployee.paidLeaves !== undefined && viewingEmployee.paidLeaves !== null
-                        ? `${viewingEmployee.paidLeaves} days/month`
-                        : '0 days/month'}
-                    </p>
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      Recurring monthly paid leaves
-                    </p>
+                {/* Reporting Authority Section - Check both root and dynamicFields, handle both reporting_to and reporting_to_ */}
+                {((viewingEmployee as any).reporting_to || (viewingEmployee as any).reporting_to_ || viewingEmployee.dynamicFields?.reporting_to || viewingEmployee.dynamicFields?.reporting_to_) && (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                    <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Reporting Authority</h3>
+                    {(() => {
+                      const reportingTo = (viewingEmployee as any).reporting_to || (viewingEmployee as any).reporting_to_ || viewingEmployee.dynamicFields?.reporting_to || viewingEmployee.dynamicFields?.reporting_to_;
+                      console.log('Displaying reporting_to:', reportingTo);
+
+                      if (!reportingTo || !Array.isArray(reportingTo) || reportingTo.length === 0) {
+                        return <p className="text-sm text-slate-500 dark:text-slate-400">No reporting managers assigned</p>;
+                      }
+
+                      const isPopulated = reportingTo[0] && typeof reportingTo[0] === 'object' && reportingTo[0].name;
+                      console.log('Is populated:', isPopulated, 'First item:', reportingTo[0]);
+
+                      return (
+                        <div className="space-y-2">
+                          {isPopulated ? (
+                            reportingTo.map((user: any, idx: number) => (
+                              <div key={idx} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
+                                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                  </svg>
+                                </div>
+                                <div className="flex-1">
+                                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{user.name || 'Unknown'}</p>
+                                  <p className="text-xs text-slate-500 dark:text-slate-400">{user.email || ''}</p>
+                                </div>
+                                {user.role && (
+                                  <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                                    {user.role}
+                                  </span>
+                                )}
+                              </div>
+                            ))
+                          ) : (
+                            // Fallback if not populated (show IDs)
+                            reportingTo.map((id: any, idx: number) => (
+                              <div key={idx} className="text-sm text-slate-600 dark:text-slate-400">
+                                {typeof id === 'object' ? id._id || JSON.stringify(id) : id}
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Yearly Allotted Leaves</label>
-                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                      {viewingEmployee.allottedLeaves !== undefined && viewingEmployee.allottedLeaves !== null
-                        ? `${viewingEmployee.allottedLeaves} days/year`
-                        : '0 days/year'}
-                    </p>
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      Total for without_pay/LOP leaves (for balance tracking)
-                    </p>
+                )}
+
+                {/* Dynamic Fields */}
+                {viewingEmployee.dynamicFields && Object.keys(viewingEmployee.dynamicFields).length > 0 && (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                    <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Additional Information</h3>
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                      {Object.entries(viewingEmployee.dynamicFields)
+                        .filter(([key]) => key !== 'reporting_to' && key !== 'reporting_to_' && key !== 'qualifications')
+                        .map(([key, value]) => {
+                          if (value === null || value === undefined || value === '') {
+                            return null;
+                          }
+                          const underscoreRegex = new RegExp('_', 'g');
+                          const wordBoundaryRegex = new RegExp('\\b\\w', 'g');
+                          const displayKey = key.replace(underscoreRegex, ' ').replace(wordBoundaryRegex, (l: string) => l.toUpperCase());
+
+                          let displayValue: string = '';
+                          if (Array.isArray(value)) {
+                            displayValue = value.length > 0 ? JSON.stringify(value) : '-';
+                          } else if (typeof value === 'object') {
+                            displayValue = JSON.stringify(value, null, 2);
+                          } else {
+                            displayValue = String(value);
+                          }
+
+                          const isComplexType = Array.isArray(value) || typeof value === 'object';
+                          const colSpanClass = isComplexType ? 'sm:col-span-2 lg:col-span-3' : '';
+                          const whitespaceClass = isComplexType ? 'whitespace-pre-wrap' : '';
+                          const paragraphClassName = 'mt-1 text-sm font-medium text-slate-900 dark:text-slate-100 ' + whitespaceClass;
+
+                          return (
+                            <div key={key} className={colSpanClass}>
+                              <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{displayKey}</label>
+                              <p className={paragraphClassName}>
+                                {displayValue}
+                              </p>
+                            </div>
+                          );
+                        })}
+                    </div>
                   </div>
-                  {((viewingEmployee as any).ctcSalary !== undefined && (viewingEmployee as any).ctcSalary !== null) && (
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">CTC Salary</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                        ₹{Number((viewingEmployee as any).ctcSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                  )}
-                  {((viewingEmployee as any).calculatedSalary !== undefined && (viewingEmployee as any).calculatedSalary !== null) && (
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Calculated Salary (Net)</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                        ₹{Number((viewingEmployee as any).calculatedSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                  )}
-                </div>
+                )}
               </div>
-
-              {/* Reporting Authority Section - Check both root and dynamicFields, handle both reporting_to and reporting_to_ */}
-              {((viewingEmployee as any).reporting_to || (viewingEmployee as any).reporting_to_ || viewingEmployee.dynamicFields?.reporting_to || viewingEmployee.dynamicFields?.reporting_to_) && (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                  <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Reporting Authority</h3>
-                  {(() => {
-                    const reportingTo = (viewingEmployee as any).reporting_to || (viewingEmployee as any).reporting_to_ || viewingEmployee.dynamicFields?.reporting_to || viewingEmployee.dynamicFields?.reporting_to_;
-                    console.log('Displaying reporting_to:', reportingTo);
-
-                    if (!reportingTo || !Array.isArray(reportingTo) || reportingTo.length === 0) {
-                      return <p className="text-sm text-slate-500 dark:text-slate-400">No reporting managers assigned</p>;
-                    }
-
-                    const isPopulated = reportingTo[0] && typeof reportingTo[0] === 'object' && reportingTo[0].name;
-                    console.log('Is populated:', isPopulated, 'First item:', reportingTo[0]);
-
-                    return (
-                      <div className="space-y-2">
-                        {isPopulated ? (
-                          reportingTo.map((user: any, idx: number) => (
-                            <div key={idx} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
-                              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                </svg>
-                              </div>
-                              <div className="flex-1">
-                                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{user.name || 'Unknown'}</p>
-                                <p className="text-xs text-slate-500 dark:text-slate-400">{user.email || ''}</p>
-                              </div>
-                              {user.role && (
-                                <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-400">
-                                  {user.role}
-                                </span>
-                              )}
-                            </div>
-                          ))
-                        ) : (
-                          // Fallback if not populated (show IDs)
-                          reportingTo.map((id: any, idx: number) => (
-                            <div key={idx} className="text-sm text-slate-600 dark:text-slate-400">
-                              {typeof id === 'object' ? id._id || JSON.stringify(id) : id}
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
-
-              {/* Dynamic Fields */}
-              {viewingEmployee.dynamicFields && Object.keys(viewingEmployee.dynamicFields).length > 0 && (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                  <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Additional Information</h3>
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    {Object.entries(viewingEmployee.dynamicFields)
-                      .filter(([key]) => key !== 'reporting_to' && key !== 'reporting_to_' && key !== 'qualifications')
-                      .map(([key, value]) => {
-                        if (value === null || value === undefined || value === '') {
-                          return null;
-                        }
-                        const underscoreRegex = new RegExp('_', 'g');
-                        const wordBoundaryRegex = new RegExp('\\b\\w', 'g');
-                        const displayKey = key.replace(underscoreRegex, ' ').replace(wordBoundaryRegex, (l: string) => l.toUpperCase());
-
-                        let displayValue: string = '';
-                        if (Array.isArray(value)) {
-                          displayValue = value.length > 0 ? JSON.stringify(value) : '-';
-                        } else if (typeof value === 'object') {
-                          displayValue = JSON.stringify(value, null, 2);
-                        } else {
-                          displayValue = String(value);
-                        }
-
-                        const isComplexType = Array.isArray(value) || typeof value === 'object';
-                        const colSpanClass = isComplexType ? 'sm:col-span-2 lg:col-span-3' : '';
-                        const whitespaceClass = isComplexType ? 'whitespace-pre-wrap' : '';
-                        const paragraphClassName = 'mt-1 text-sm font-medium text-slate-900 dark:text-slate-100 ' + whitespaceClass;
-
-                        return (
-                          <div key={key} className={colSpanClass}>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{displayKey}</label>
-                            <p className={paragraphClassName}>
-                              {displayValue}
-                            </p>
-                          </div>
-                        );
-                      })}
-                  </div>
-                </div>
-              )}
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Left Date Modal */}
-      {showLeftDateModal && selectedEmployeeForLeftDate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowLeftDateModal(false)} />
-          <div className="relative z-50 w-full max-w-md rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950/95">
-            <div className="mb-6 flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-                  Set Employee Left Date
-                </h2>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                  {selectedEmployeeForLeftDate.employee_name} ({selectedEmployeeForLeftDate.emp_no})
-                </p>
-              </div>
-              <button
-                onClick={() => {
-                  setShowLeftDateModal(false);
-                  setSelectedEmployeeForLeftDate(null);
-                  setLeftDateForm({ leftDate: '', leftReason: '' });
-                }}
-                className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900"
-              >
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            {error && (
-              <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
-                {error}
-              </div>
-            )}
-
-            {success && (
-              <div className="mb-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400">
-                {success}
-              </div>
-            )}
-
-            <form onSubmit={handleSubmitLeftDate} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  Left Date <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="date"
-                  required
-                  value={leftDateForm.leftDate}
-                  onChange={(e) => setLeftDateForm({ ...leftDateForm, leftDate: e.target.value })}
-                  max={new Date().toISOString().split('T')[0]}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                />
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                  The employee will be included in pay register for this month, but excluded from future months.
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  Reason for Leaving (Optional)
-                </label>
-                <textarea
-                  value={leftDateForm.leftReason}
-                  onChange={(e) => setLeftDateForm({ ...leftDateForm, leftReason: e.target.value })}
-                  rows={3}
-                  placeholder="Enter reason for leaving..."
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-4">
+      {
+        showLeftDateModal && selectedEmployeeForLeftDate && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowLeftDateModal(false)} />
+            <div className="relative z-50 w-full max-w-md rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950/95">
+              <div className="mb-6 flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
+                    Set Employee Left Date
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    {selectedEmployeeForLeftDate.employee_name} ({selectedEmployeeForLeftDate.emp_no})
+                  </p>
+                </div>
                 <button
-                  type="button"
                   onClick={() => {
                     setShowLeftDateModal(false);
                     setSelectedEmployeeForLeftDate(null);
                     setLeftDateForm({ leftDate: '', leftReason: '' });
                   }}
-                  className="rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                  className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900"
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="rounded-xl bg-gradient-to-r from-red-500 to-orange-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-red-500/30 transition-all hover:from-red-600 hover:to-orange-600"
-                >
-                  Set Left Date
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
                 </button>
               </div>
-            </form>
+
+              {error && (
+                <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+                  {error}
+                </div>
+              )}
+
+              {success && (
+                <div className="mb-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400">
+                  {success}
+                </div>
+              )}
+
+              <form onSubmit={handleSubmitLeftDate} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    Left Date <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={leftDateForm.leftDate}
+                    onChange={(e) => setLeftDateForm({ ...leftDateForm, leftDate: e.target.value })}
+                    max={new Date().toISOString().split('T')[0]}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  />
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    The employee will be included in pay register for this month, but excluded from future months.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    Reason for Leaving (Optional)
+                  </label>
+                  <textarea
+                    value={leftDateForm.leftReason}
+                    onChange={(e) => setLeftDateForm({ ...leftDateForm, leftReason: e.target.value })}
+                    rows={3}
+                    placeholder="Enter reason for leaving..."
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowLeftDateModal(false);
+                      setSelectedEmployeeForLeftDate(null);
+                      setLeftDateForm({ leftDate: '', leftReason: '' });
+                    }}
+                    className="rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="rounded-xl bg-gradient-to-r from-red-500 to-orange-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-red-500/30 transition-all hover:from-red-600 hover:to-orange-600"
+                  >
+                    Set Left Date
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
-    </div>
+        )
+      }
+    </div >
   );
 }
 
