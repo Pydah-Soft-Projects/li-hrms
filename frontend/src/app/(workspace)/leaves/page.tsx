@@ -619,9 +619,9 @@ export default function LeavesPage() {
         if (currentUser.role === 'employee') {
           leaveSelf = true; // Employees can always apply for themselves
           leaveOthers = false;
-        } else if (['hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser.role)) {
+        } else if (['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser.role)) {
           leaveOthers = true;
-          leaveSelf = true; // Admins/HODs should also be able to apply
+          leaveSelf = true; // Admins/Managers/HODs should also be able to apply
         }
       }
 
@@ -748,27 +748,37 @@ export default function LeavesPage() {
 
         }
         // 2. HOD: Access to own department employees
-        else if (currentUser.role === 'hod') {
-          const deptId = typeof currentUser.department === 'object' && currentUser.department ? currentUser.department._id : currentUser.department;
-
-          if (deptId) {
-            const response = await api.getEmployees({ is_active: true, department_id: deptId });
-            if (response.success && response.data) {
-              setEmployees(response.data);
-            }
-          }
-        }
-        // 3. Manager/HR/Sub-Admin/Super-Admin: Access based on Scope (Backend handles filtering)
-        else if (['manager', 'hr', 'sub_admin', 'super_admin'].includes(currentUser.role)) {
+        else if (['hod', 'manager', 'hr', 'sub_admin', 'super_admin'].includes(currentUser.role)) {
           console.log(`[Workspace Leaves] Loading employees for ${currentUser.role}.`);
 
-          // For these roles, we rely on the backend applyScopeFilter to return the correct employees
-          // If we want to be explicit for restricted HRs:
           const query: any = { is_active: true };
+          if (currentUser.role === 'hod') {
+            const deptId = typeof currentUser.department === 'object' && currentUser.department ? currentUser.department._id : currentUser.department;
+            if (deptId) {
+              query.department_id = deptId;
+            }
+          }
 
           const response = await api.getEmployees(query);
           if (response.success && response.data) {
-            setEmployees(response.data);
+            let employeesList = response.data;
+
+            // Ensure current user is included in the list (if they have an emp_no)
+            const identifier = (currentUser as any).emp_no || currentUser.employeeId;
+            const selfExists = employeesList.some((emp: any) => emp.emp_no === identifier || emp._id === currentUser.id);
+
+            if (!selfExists && identifier) {
+              try {
+                const selfRes = await api.getEmployee(identifier);
+                if (selfRes.success && selfRes.data) {
+                  employeesList = [selfRes.data, ...employeesList];
+                }
+              } catch (err) {
+                console.error('Error fetching self for list:', err);
+              }
+            }
+
+            setEmployees(employeesList);
           }
         }
       } else {
@@ -1406,7 +1416,7 @@ export default function LeavesPage() {
               Manage leave applications and on-duty requests
             </p>
           </div>
-          {(canApplyForSelf || canApplyForOthers || currentUser?.role === 'employee' || ['hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser?.role)) && (
+          {(canApplyForSelf || canApplyForOthers || currentUser?.role === 'employee' || ['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser?.role)) && (
             <button
               onClick={() => openApplyDialog('leave')}
               className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-green-500 to-green-600 text-white text-xs font-semibold shadow-sm hover:shadow-md transition-all"

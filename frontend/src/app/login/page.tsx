@@ -81,7 +81,7 @@ export default function LoginPage() {
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-white px-6 py-12">
       {/* LiquidEther Background - Same as home page */}
-      <div className="absolute inset-0 z-0 w-full h-full">
+      {/* <div className="absolute inset-0 z-0 w-full h-full">
         <LiquidEther
           colors={['#22c55e', '#10b981', '#16a34a']}
           mouseForce={20}
@@ -99,7 +99,7 @@ export default function LoginPage() {
           autoResumeDelay={3000}
           autoRampDuration={0.6}
         />
-      </div>
+      </div> */}
 
       {/* Login Content */}
       <div className="relative z-10 w-full max-w-md">

@@ -41,7 +41,7 @@ export default function Home() {
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-white">
       {/* LiquidEther Background */}
-      <div className="absolute inset-0 z-0 w-full h-full">
+      {/* <div className="absolute inset-0 z-0 w-full h-full">
         <LiquidEther
           colors={['#22c55e', '#10b981', '#16a34a']}
           mouseForce={20}
@@ -59,7 +59,7 @@ export default function Home() {
           autoResumeDelay={3000}
           autoRampDuration={0.6}
         />
-      </div>
+      </div> */}
 
       {/* Content */}
       <main className="relative z-10 flex min-h-screen w-full flex-col items-center justify-center px-6 py-16">

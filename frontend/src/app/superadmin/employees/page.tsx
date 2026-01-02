@@ -1885,13 +1885,13 @@ export default function EmployeesPage() {
                 </button>
 
                 <button
-                  onClick={openCreateDialog}
+                  onClick={() => setShowApplicationDialog(true)}
                   className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-500/20 transition-all hover:shadow-green-500/40 hover:scale-[1.02]"
                 >
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                   </svg>
-                  New Employee
+                  New Application
                 </button>
               </>
             ) : (
@@ -1980,6 +1980,7 @@ export default function EmployeesPage() {
                             </th>
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Emp No</th>
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Name</th>
+                            <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Division</th>
                             <RenderFilterHeader
                               label="Department"
                               filterKey="department.name"
@@ -1987,8 +1988,6 @@ export default function EmployeesPage() {
                               currentFilters={applicationFilters}
                               setFilters={setApplicationFilters}
                             />
-                            <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Division</th>
-                            <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Department</th>
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Proposed Salary</th>
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Created By</th>
                             <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Actions</th>
@@ -1997,7 +1996,7 @@ export default function EmployeesPage() {
                         <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                           {pendingApplications.length === 0 ? (
                             <tr>
-                              <td colSpan={7} className="px-6 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                              <td colSpan={8} className="px-6 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
                                 No pending applications found matching your criteria
                               </td>
                             </tr>
@@ -2069,6 +2068,12 @@ export default function EmployeesPage() {
                               Name
                             </th>
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                              Division
+                            </th>
+                            <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                              Department
+                            </th>
+                            <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
                               Proposed Salary
                             </th>
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
@@ -2093,7 +2098,7 @@ export default function EmployeesPage() {
                         <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                           {paginatedApplications.length === 0 ? (
                             <tr>
-                              <td colSpan={6} className="px-6 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                              <td colSpan={8} className="px-6 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
                                 No processed applications found matching your criteria
                               </td>
                             </tr>
@@ -2108,6 +2113,9 @@ export default function EmployeesPage() {
                                 </td>
                                 <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
                                   {(app.division_id as any)?.name || app.division?.name || '-'}
+                                </td>
+                                <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
+                                  {(app.department_id as any)?.name || app.department?.name || '-'}
                                 </td>
                                 <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
                                   ₹{app.proposedSalary.toLocaleString()}
@@ -2486,6 +2494,49 @@ export default function EmployeesPage() {
                   divisions={divisions}
                   designations={filteredApplicationDesignations as any}
                 />
+
+                {/* Leave Settings (Optional) */}
+                <div className="rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
+                  <h3 className="mb-3 text-base font-semibold text-slate-900 dark:text-slate-100">Leave Settings (Optional)</h3>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                        Monthly Paid Leaves
+                      </label>
+                      <input
+                        type="number"
+                        name="paidLeaves"
+                        value={applicationFormData.paidLeaves ?? ''}
+                        onChange={handleApplicationInputChange}
+                        min="0"
+                        step="0.5"
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        placeholder="Optional"
+                      />
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        Monthly recurring paid leaves
+                      </p>
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                        Yearly Allotted Leaves
+                      </label>
+                      <input
+                        type="number"
+                        name="allottedLeaves"
+                        value={applicationFormData.allottedLeaves ?? ''}
+                        onChange={handleApplicationInputChange}
+                        min="0"
+                        step="0.5"
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        placeholder="Optional"
+                      />
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        Yearly total for without_pay/LOP leaves
+                      </p>
+                    </div>
+                  </div>
+                </div>
                 {/* Allowances & Deductions Overrides */}
                 <div className="space-y-4 rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
                   <div className="flex items-center justify-between">
@@ -3158,9 +3209,9 @@ export default function EmployeesPage() {
                   onSettingsLoaded={setFormSettings}
                 />
 
-                {/* Leave Settings */}
+                {/* Leave Settings (Optional) */}
                 <div className="rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
-                  <h3 className="mb-3 text-base font-semibold text-slate-900 dark:text-slate-100">Leave Settings</h3>
+                  <h3 className="mb-3 text-base font-semibold text-slate-900 dark:text-slate-100">Leave Settings (Optional)</h3>
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
                       <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -3169,12 +3220,12 @@ export default function EmployeesPage() {
                       <input
                         type="number"
                         name="paidLeaves"
-                        value={formData.paidLeaves ?? 0}
+                        value={formData.paidLeaves ?? ''}
                         onChange={handleInputChange}
                         min="0"
                         step="0.5"
                         className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                        placeholder="0"
+                        placeholder="Optional"
                       />
                       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                         Monthly recurring paid leaves
@@ -3187,15 +3238,15 @@ export default function EmployeesPage() {
                       <input
                         type="number"
                         name="allottedLeaves"
-                        value={formData.allottedLeaves ?? 0}
+                        value={formData.allottedLeaves ?? ''}
                         onChange={handleInputChange}
                         min="0"
                         step="0.5"
                         className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                        placeholder="0"
+                        placeholder="Optional"
                       />
                       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        Yearly total for without_pay/LOP leaves (for balance tracking)
+                        Yearly total for without_pay/LOP leaves
                       </p>
                     </div>
                   </div>

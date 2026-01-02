@@ -47,6 +47,9 @@ exports.registerUser = async (req, res) => {
       scope,
       departmentType,
       featureControl,
+      dataScope,
+      allowedDivisions,
+      divisionMapping,
     } = req.body;
 
     // Validate required fields
@@ -87,13 +90,19 @@ exports.registerUser = async (req, res) => {
     // Build roles array
     const userRoles = roles && roles.length > 0 ? roles : [role];
 
-    // Build division mapping if division is provided (for HOD/Manager)
-    let divisionMapping = [];
-    if (role === 'hod' && req.body.division && department) {
-      divisionMapping = [{
+    // Build division mapping if division is provided (legacy HOD selection)
+    let finalDivisionMapping = divisionMapping || [];
+    if (role === 'hod' && req.body.division && department && finalDivisionMapping.length === 0) {
+      finalDivisionMapping = [{
         division: req.body.division,
         departments: [department]
       }];
+    }
+
+    // Build allowed divisions if mapping exists but allowedDivisions is empty
+    let finalAllowedDivisions = allowedDivisions || [];
+    if (finalAllowedDivisions.length === 0 && finalDivisionMapping.length > 0) {
+      finalAllowedDivisions = finalDivisionMapping.map(m => m.division);
     }
 
     // Build user object conditionally to avoid null values on unique sparse fields
@@ -109,7 +118,9 @@ exports.registerUser = async (req, res) => {
       departmentType: departmentType || 'single',
       featureControl: featureControl || [],
       createdBy: req.user?._id,
-      divisionMapping: divisionMapping, // Store the division context
+      dataScope: dataScope || undefined, // Use model default if not provided
+      allowedDivisions: finalAllowedDivisions,
+      divisionMapping: finalDivisionMapping,
     };
 
     // Only add employeeId and employeeRef if they have values (sparse index)
@@ -195,6 +206,9 @@ exports.registerUser = async (req, res) => {
         employeeRef: user.employeeRef,
         scope: user.scope,
         departmentType: user.departmentType,
+        dataScope: user.dataScope,
+        allowedDivisions: user.allowedDivisions,
+        divisionMapping: user.divisionMapping,
         isActive: user.isActive,
         createdAt: user.createdAt,
       },
@@ -237,6 +251,9 @@ exports.createUserFromEmployee = async (req, res) => {
       scope,
       departmentType,
       featureControl,
+      dataScope,
+      allowedDivisions,
+      divisionMapping,
     } = req.body;
 
     // Find employee (including password for inheritance)
@@ -331,6 +348,9 @@ exports.createUserFromEmployee = async (req, res) => {
       scope: scope || 'global',
       departmentType: departmentType || (role === 'hr' ? 'multiple' : 'single'),
       featureControl: featureControl || [],
+      dataScope: dataScope || undefined,
+      allowedDivisions: allowedDivisions || (divisionMapping ? divisionMapping.map(m => m.division) : []),
+      divisionMapping: divisionMapping || [],
       createdBy: req.user?._id,
     });
 
@@ -402,6 +422,9 @@ exports.createUserFromEmployee = async (req, res) => {
         employeeRef: user.employeeRef,
         scope: user.scope,
         departmentType: user.departmentType,
+        dataScope: user.dataScope,
+        allowedDivisions: user.allowedDivisions,
+        divisionMapping: user.divisionMapping,
         isActive: user.isActive,
       },
       employee: {
@@ -460,6 +483,8 @@ exports.getAllUsers = async (req, res) => {
       User.find(query)
         .populate('department', 'name code')
         .populate('departments', 'name code')
+        .populate('divisionMapping.division', 'name code')
+        .populate('divisionMapping.departments', 'name code')
         .populate('employeeRef', 'emp_no employee_name')
         .select('-password')
         .sort({ createdAt: -1 })
@@ -494,6 +519,8 @@ exports.getUser = async (req, res) => {
     const user = await User.findById(req.params.id)
       .populate('department', 'name code')
       .populate('departments', 'name code')
+      .populate('divisionMapping.division', 'name code')
+      .populate('divisionMapping.departments', 'name code')
       .populate('employeeRef')
       .select('-password');
 
@@ -542,7 +569,22 @@ exports.getUser = async (req, res) => {
 // @access  Private (Super Admin, Sub Admin, HR)
 exports.updateUser = async (req, res) => {
   try {
-    const { name, role, roles, department, departments, isActive, employeeId, employeeRef, scope, departmentType, featureControl } = req.body;
+    const {
+      name,
+      role,
+      roles,
+      department,
+      departments,
+      isActive,
+      employeeId,
+      employeeRef,
+      scope,
+      departmentType,
+      featureControl,
+      dataScope,
+      allowedDivisions,
+      divisionMapping
+    } = req.body;
 
     const user = await User.findById(req.params.id);
     if (!user) {
@@ -581,6 +623,9 @@ exports.updateUser = async (req, res) => {
     if (scope !== undefined) user.scope = scope;
     if (departmentType !== undefined) user.departmentType = departmentType;
     if (featureControl !== undefined) user.featureControl = featureControl;
+    if (dataScope !== undefined) user.dataScope = dataScope;
+    if (allowedDivisions !== undefined) user.allowedDivisions = allowedDivisions;
+    if (divisionMapping !== undefined) user.divisionMapping = divisionMapping;
 
     // Update Division Mapping if provided (for HOD re-assignment)
     if (req.body.division && department) {
@@ -698,6 +743,8 @@ exports.updateUser = async (req, res) => {
     const updatedUser = await User.findById(user._id)
       .populate('department', 'name code')
       .populate('departments', 'name code')
+      .populate('divisionMapping.division', 'name code')
+      .populate('divisionMapping.departments', 'name code')
       .select('-password');
 
     res.status(200).json({

@@ -421,6 +421,13 @@ export default function UsersPage() {
   // Open edit dialog
   const openEditDialog = (user: User) => {
     setSelectedUser(user);
+
+    // Normalize divisionMapping to IDs
+    const normalizedMapping = (user.divisionMapping || []).map(m => ({
+      division: typeof m.division === 'string' ? m.division : m.division?._id,
+      departments: (m.departments || []).map(d => typeof d === 'string' ? d : d?._id)
+    }));
+
     setFormData({
       email: user.email,
       name: user.name,
@@ -432,12 +439,10 @@ export default function UsersPage() {
       autoGeneratePassword: false,
       featureControl: user.featureControl || [],
       dataScope: user.dataScope || 'all',
-      allowedDivisions: user.allowedDivisions || [],
-      divisionMapping: user.divisionMapping || [],
-      division: user.role === 'hod' && user.divisionMapping && user.divisionMapping.length > 0
-        ? (typeof user.divisionMapping[0].division === 'string'
-          ? user.divisionMapping[0].division
-          : user.divisionMapping[0].division._id)
+      allowedDivisions: user.allowedDivisions?.map(d => typeof d === 'string' ? d : d?._id) || [],
+      divisionMapping: normalizedMapping,
+      division: user.role === 'hod' && normalizedMapping.length > 0
+        ? normalizedMapping[0].division
         : '',
     });
     // Prevent useEffect from reloading defaults and overwriting user data
