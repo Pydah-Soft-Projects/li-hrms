@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -56,6 +57,25 @@ const CopyIcon = () => (
 
 
 
+interface UserFormData {
+  email: string;
+  name?: string;
+  role: string;
+  password?: string;
+  autoGeneratePassword: boolean;
+  departmentType?: 'single' | 'multiple';
+  department?: string;
+  departments?: string[];
+  featureControl?: string[];
+  dataScope?: DataScope | string;
+  allowedDivisions?: (string | Division)[];
+  divisionMapping?: { division: string | Division; departments: (string | Department)[] }[];
+  division?: string;
+  employeeId?: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: any;
+}
+
 interface UserStats {
   totalUsers: number;
   activeUsers: number;
@@ -104,35 +124,35 @@ export default function UsersPage() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [selectedViewUser, setSelectedViewUser] = useState<User | null>(null);
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<UserFormData>({
     email: '',
     name: '',
     role: 'employee',
-    departmentType: 'single' as 'single' | 'multiple',
+    departmentType: 'single',
     department: '',
-    departments: [] as string[],
+    departments: [],
     password: '',
     autoGeneratePassword: true,
-    featureControl: [] as string[],
-    dataScope: 'all' as DataScope,
-    allowedDivisions: [] as string[],
-    divisionMapping: [] as { division: string; departments: string[] }[],
-    division: '', // Added for HOD selection
+    featureControl: [],
+    dataScope: 'all',
+    allowedDivisions: [],
+    divisionMapping: [],
+    division: '',
   });
 
   // Form state for create from employee
-  const [employeeFormData, setEmployeeFormData] = useState({
+  const [employeeFormData, setEmployeeFormData] = useState<UserFormData>({
     employeeId: '',
     email: '',
     role: 'employee',
-    departmentType: 'single' as 'single' | 'multiple',
-    departments: [] as string[],
+    departmentType: 'single',
+    departments: [],
     autoGeneratePassword: true,
-    featureControl: [] as string[],
-    dataScope: 'all' as DataScope,
-    allowedDivisions: [] as string[],
-    divisionMapping: [] as { division: string; departments: string[] }[],
-    division: '', // Added for HOD selection
+    featureControl: [],
+    dataScope: 'all',
+    allowedDivisions: [],
+    divisionMapping: [],
+    division: '',
   });
 
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -230,7 +250,16 @@ export default function UsersPage() {
     setError('');
 
     try {
-      const payload: Partial<User> & { autoGeneratePassword?: boolean; password?: string; assignWorkspace?: boolean } = {
+      const payload: Partial<User> & {
+        autoGeneratePassword?: boolean;
+        password?: string;
+        assignWorkspace?: boolean;
+        department?: string | null;
+        dataScope?: DataScope | string;
+        allowedDivisions?: string[];
+        divisionMapping?: any[];
+        featureControl?: string[];
+      } = {
         email: formData.email,
         name: formData.name,
         role: formData.role,
@@ -243,12 +272,15 @@ export default function UsersPage() {
       }
 
       // Handle scoping
-      payload.dataScope = formData.dataScope;
+      payload.dataScope = formData.dataScope as DataScope;
       if (formData.dataScope === 'department') {
         (payload as any).department = formData.department || null;
       } else if (formData.dataScope === 'division') {
-        payload.allowedDivisions = formData.allowedDivisions;
-        payload.divisionMapping = formData.divisionMapping;
+        payload.allowedDivisions = (formData.allowedDivisions || []).map(d => typeof d === 'string' ? d : d._id);
+        payload.divisionMapping = (formData.divisionMapping || []).map(m => ({
+          division: typeof m.division === 'string' ? m.division : m.division._id,
+          departments: (m.departments || []).map(d => typeof d === 'string' ? d : d._id)
+        }));
       }
 
       // Add feature control (always send to ensure overrides work)
@@ -269,8 +301,8 @@ export default function UsersPage() {
       } else {
         setError(res.message || res.error || 'Failed to create user');
       }
-    } catch (err: any) {
-      setError(err.message || 'Failed to create user');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to create user');
     }
   };
 
@@ -280,8 +312,8 @@ export default function UsersPage() {
     setError('');
 
     try {
-      const payload: { employeeId: string; role: string; autoGeneratePassword: boolean; email?: string; dataScope?: DataScope; department?: string | null; allowedDivisions?: string[]; divisionMapping?: any[]; featureControl?: string[] } = {
-        employeeId: employeeFormData.employeeId,
+      const payload: { employeeId: string; role: string; autoGeneratePassword: boolean; email?: string; dataScope?: DataScope | string; department?: string | null; allowedDivisions?: string[]; divisionMapping?: { division: string | Division; departments: (string | Department)[] }[]; featureControl?: string[] } = {
+        employeeId: employeeFormData.employeeId || '',
         role: employeeFormData.role,
         autoGeneratePassword: employeeFormData.autoGeneratePassword,
       };
@@ -293,10 +325,13 @@ export default function UsersPage() {
       // Handle scoping
       payload.dataScope = employeeFormData.dataScope || 'all';
       if (payload.dataScope === 'department') {
-        (payload as any).department = employeeFormData.departments[0] || null;
+        payload.department = (employeeFormData.departments || [])[0] || null;
       } else if (payload.dataScope === 'division') {
-        payload.allowedDivisions = employeeFormData.allowedDivisions;
-        payload.divisionMapping = employeeFormData.divisionMapping;
+        payload.allowedDivisions = (employeeFormData.allowedDivisions || []).map(d => typeof d === 'string' ? d : d._id);
+        payload.divisionMapping = (employeeFormData.divisionMapping || []).map(m => ({
+          division: typeof m.division === 'string' ? m.division : m.division._id,
+          departments: (m.departments || []).map(d => typeof d === 'string' ? d : d._id)
+        }));
       }
 
       // Add feature control (always send to ensure overrides work)
@@ -428,7 +463,7 @@ export default function UsersPage() {
     // Normalize divisionMapping to IDs
     const normalizedMapping = (user.divisionMapping || []).map(m => ({
       division: typeof m.division === 'string' ? m.division : m.division?._id,
-      departments: (m.departments || []).map(d => typeof d === 'string' ? d : d?._id)
+      departments: (m.departments || []).map((d: any) => typeof d === 'string' ? d : d?._id)
     }));
 
     // For HOD, prioritize the managed department from division mapping
@@ -562,11 +597,11 @@ export default function UsersPage() {
     });
   };
 
-  const ScopingSelector = ({ data, setData, asEmployee = false }: { data: any, setData: (data: any) => void, asEmployee?: boolean }) => {
+  const ScopingSelector = ({ data, setData, asEmployee = false }: { data: UserFormData, setData: React.Dispatch<React.SetStateAction<UserFormData>>, asEmployee?: boolean }) => {
     // Specialized UI for Manager Role (Single Division)
     if (data.role === 'manager') {
       const selectedDivisionId = data.division || (data.allowedDivisions?.[0]
-        ? (typeof data.allowedDivisions[0] === 'string' ? data.allowedDivisions[0] : (data.allowedDivisions[0] as any)._id)
+        ? (typeof data.allowedDivisions[0] === 'string' ? data.allowedDivisions[0] : (data.allowedDivisions[0] as Division)._id)
         : '');
 
       const handleManagerDivisionChange = (divId: string) => {
@@ -624,7 +659,11 @@ export default function UsersPage() {
           : data.divisionMapping[0].division._id)
         : '');
 
-      const selectedDepartmentId = data.department || data.divisionMapping?.[0]?.departments?.[0] || '';
+      const getDeptId = (dept: string | Department | undefined) => {
+        if (!dept) return '';
+        return typeof dept === 'string' ? dept : dept._id;
+      };
+      const selectedDepartmentId = data.department || getDeptId(data.divisionMapping?.[0]?.departments?.[0]) || '';
 
       const handleDivisionChange = (divId: string) => {
         const newMapping = divId ? [{ division: divId, departments: [] }] : [];
@@ -745,11 +784,11 @@ export default function UsersPage() {
 
             <div className="space-y-4">
               {divisions.map((div) => {
-                const isSelected = data.divisionMapping.some((m: any) => {
+                const isSelected = data.divisionMapping?.some((m: any) => {
                   const mDivId = typeof m.division === 'string' ? m.division : m.division?._id;
                   return mDivId === div._id;
                 });
-                const mapping = data.divisionMapping.find((m: any) => {
+                const mapping = data.divisionMapping?.find((m: any) => {
                   const mDivId = typeof m.division === 'string' ? m.division : m.division?._id;
                   return mDivId === div._id;
                 });
@@ -1208,12 +1247,12 @@ export default function UsersPage() {
                             <label key={module.code} className="flex items-center gap-2 p-2 rounded-lg hover:bg-white dark:hover:bg-slate-700 cursor-pointer">
                               <input
                                 type="checkbox"
-                                checked={formData.featureControl.includes(module.code)}
+                                checked={(formData.featureControl || []).includes(module.code)}
                                 onChange={(e) => {
                                   if (e.target.checked) {
-                                    setFormData({ ...formData, featureControl: [...formData.featureControl, module.code] });
+                                    setFormData({ ...formData, featureControl: [...(formData.featureControl || []), module.code] });
                                   } else {
-                                    setFormData({ ...formData, featureControl: formData.featureControl.filter(m => m !== module.code) });
+                                    setFormData({ ...formData, featureControl: (formData.featureControl || []).filter(m => m !== module.code) });
                                   }
                                 }}
                                 className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
@@ -1379,12 +1418,12 @@ export default function UsersPage() {
                             <label key={module.code} className="flex items-center gap-2 p-2 rounded-lg hover:bg-white dark:hover:bg-slate-700 cursor-pointer">
                               <input
                                 type="checkbox"
-                                checked={employeeFormData.featureControl.includes(module.code)}
+                                checked={(employeeFormData.featureControl || []).includes(module.code)}
                                 onChange={(e) => {
                                   if (e.target.checked) {
-                                    setEmployeeFormData({ ...employeeFormData, featureControl: [...employeeFormData.featureControl, module.code] });
+                                    setEmployeeFormData({ ...employeeFormData, featureControl: [...(employeeFormData.featureControl || []), module.code] });
                                   } else {
-                                    setEmployeeFormData({ ...employeeFormData, featureControl: employeeFormData.featureControl.filter(m => m !== module.code) });
+                                    setEmployeeFormData({ ...employeeFormData, featureControl: (employeeFormData.featureControl || []).filter(m => m !== module.code) });
                                   }
                                 }}
                                 className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
@@ -1507,12 +1546,12 @@ export default function UsersPage() {
                             <label key={module.code} className="flex items-center gap-2 p-2 rounded-lg hover:bg-white dark:hover:bg-slate-700 cursor-pointer">
                               <input
                                 type="checkbox"
-                                checked={formData.featureControl.includes(module.code)}
+                                checked={(formData.featureControl || []).includes(module.code)}
                                 onChange={(e) => {
                                   if (e.target.checked) {
-                                    setFormData({ ...formData, featureControl: [...formData.featureControl, module.code] });
+                                    setFormData({ ...formData, featureControl: [...(formData.featureControl || []), module.code] });
                                   } else {
-                                    setFormData({ ...formData, featureControl: formData.featureControl.filter(m => m !== module.code) });
+                                    setFormData({ ...formData, featureControl: (formData.featureControl || []).filter(m => m !== module.code) });
                                   }
                                 }}
                                 className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"

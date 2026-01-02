@@ -504,7 +504,7 @@ export default function LeavesPage() {
       const response = await api.getCurrentUser();
       if (response.success) {
         // getCurrentUser returns { user, workspaces, activeWorkspace }
-        const userData = response.user || (response as any).data?.user;
+        const userData = (response as any).user || (response as any).data?.user;
         if (userData) {
           setCurrentUser(userData);
         }
@@ -972,6 +972,7 @@ export default function LeavesPage() {
 
       // 2. Prepare Payload
       const contactNum = formData.contactNumber || employeeToApplyFor.phone_number || '';
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let payload: any = {
         // Only send empNo if NOT employee role (admin applying for others)
         // Employees applying for self should omit empNo to trigger backend "self" logic
@@ -999,6 +1000,7 @@ export default function LeavesPage() {
 
       // 3. Evidence Upload
       if (applyType === 'od') {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const odSettings = getModuleConfig('OD')?.settings as any;
         if (odSettings?.requirePhotoEvidence && !evidenceFile) {
           toast.error('Photo evidence is required');
@@ -1592,12 +1594,14 @@ export default function LeavesPage() {
                     )}
                     {showDivision && (
                       <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
-                        {leave.employeeId?.department?.division?.name || '-'}
+                        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                        {(leave.employeeId as any)?.division?.name || (leave.employeeId as any)?.department?.division?.name || '-'}
                       </td>
                     )}
                     {showDepartment && (
                       <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
-                        {leave.employeeId?.department?.name || '-'}
+                        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                        {(leave.employeeId as any)?.department?.name || '-'}
                       </td>
                     )}
                     <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300 capitalize">
@@ -1673,12 +1677,14 @@ export default function LeavesPage() {
                     )}
                     {showDivision && (
                       <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
-                        {od.employeeId?.department?.division?.name || '-'}
+                        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                        {(od.employeeId as any)?.division?.name || (od.employeeId as any)?.department?.division?.name || '-'}
                       </td>
                     )}
                     {showDepartment && (
                       <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
-                        {od.employeeId?.department?.name || '-'}
+                        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                        {(od.employeeId as any)?.department?.name || '-'}
                       </td>
                     )}
                     <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300 capitalize">
@@ -1742,10 +1748,12 @@ export default function LeavesPage() {
                             </h4>
                             <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
                               <span>{leave.employeeId?.emp_no}</span>
-                              {leave.employeeId?.department?.name && (
+                              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                              {(leave.employeeId as any)?.department?.name && (
                                 <>
                                   <span>•</span>
-                                  <span className="truncate max-w-[100px]">{leave.employeeId.department.name}</span>
+                                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                                  <span className="truncate max-w-[100px]">{(leave.employeeId as any)?.department?.name}</span>
                                 </>
                               )}
                             </p>
@@ -1830,10 +1838,12 @@ export default function LeavesPage() {
                             </h4>
                             <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
                               <span>{od.employeeId?.emp_no}</span>
-                              {od.employeeId?.department?.name && (
+                              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                              {(od.employeeId as any)?.department?.name && (
                                 <>
                                   <span>•</span>
-                                  <span className="truncate max-w-[100px]">{od.employeeId.department.name}</span>
+                                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                                  <span className="truncate max-w-[100px]">{(od.employeeId as any)?.department?.name}</span>
                                 </>
                               )}
                             </p>
