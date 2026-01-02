@@ -295,8 +295,8 @@ exports.applyLeave = async (req, res) => {
     // Use empNo as primary identifier (from frontend)
     if (empNo) {
       // Check if user has permission to apply for others
-      // Allow super_admin, hr, sub_admin (backward compatibility)
-      const hasRolePermission = ['hr', 'sub_admin', 'super_admin'].includes(req.user.role);
+      // Allow super_admin, hr, sub_admin, manager (backward compatibility)
+      const hasRolePermission = ['hr', 'sub_admin', 'super_admin', 'manager'].includes(req.user.role);
 
       console.log(`[Apply Leave] User ${req.user._id} (${req.user.role}) applying for employee ${empNo}`);
       console.log(`[Apply Leave] Has role permission: ${hasRolePermission} `);
@@ -345,6 +345,28 @@ exports.applyLeave = async (req, res) => {
 
       // Find employee by emp_no (checks MongoDB first, then MSSQL based on settings)
       employee = await findEmployeeByEmpNo(empNo);
+
+      // Enforce Manager Scope
+      if (req.user.role === 'manager' && employee) {
+        // We need to fetch division details if not populated
+        const employeeDivisionId = employee.division_id
+          ? employee.division_id.toString()
+          : (employee.division ? employee.division._id.toString() : null);
+
+        // Check if req.user.allowedDivisions contains employeeDivisionId
+        const allowedDivisions = req.user.allowedDivisions || [];
+        const isScoped = allowedDivisions.some(div =>
+          (typeof div === 'string' ? div : div._id.toString()) === employeeDivisionId
+        );
+
+        if (!isScoped && employeeDivisionId) {
+          console.log(`[Apply Leave] ❌ Manager ${req.user._id} blocked from applying for employee ${empNo} in division ${employeeDivisionId}`);
+          return res.status(403).json({
+            success: false,
+            error: 'You are not authorized to apply for employees outside your assigned division.',
+          });
+        }
+      }
     } else if (employeeId) {
       // Legacy: Check if user has permission to apply for others
       // Allow super_admin, hr, sub_admin (backward compatibility)
@@ -968,7 +990,6 @@ exports.processLeaveAction = async (req, res) => {
         }
 
         if (currentApprover === 'hod') {
-          // HOD approval - move to HR
           leave.status = 'hod_approved';
           leave.approvals.hod = {
             status: 'approved',
@@ -976,10 +997,81 @@ exports.processLeaveAction = async (req, res) => {
             approvedAt: new Date(),
             comments,
           };
-          leave.workflow.currentStep = 'hr';
-          leave.workflow.nextApprover = 'hr';
-          historyEntry.action = 'approved';
+
+          // Determine next step dynamically
+          let nextStepRole = 'hr'; // Default
+          if (leave.workflow?.approvalChain?.length > 0) {
+            const currentIndex = leave.workflow.approvalChain.findIndex(s => s.role === 'hod');
+            if (currentIndex !== -1 && currentIndex < leave.workflow.approvalChain.length - 1) {
+              nextStepRole = leave.workflow.approvalChain[currentIndex + 1].role;
+            } else if (currentIndex === leave.workflow.approvalChain.length - 1) {
+              nextStepRole = null; // Final
+            }
+          }
+
+          if (nextStepRole) {
+            leave.workflow.currentStep = nextStepRole;
+            leave.workflow.nextApprover = nextStepRole;
+            historyEntry.action = 'approved';
+          } else {
+            // Final approval if chain ended at HOD (rare but possible)
+            leave.status = 'approved';
+            leave.workflow.currentStep = 'completed';
+            leave.workflow.nextApprover = null;
+            historyEntry.action = 'approved';
+          }
+        } else if (currentApprover === 'manager') {
+          leave.status = 'manager_approved';
+          leave.approvals.manager = {
+            status: 'approved',
+            approvedBy: req.user._id,
+            approvedAt: new Date(),
+            comments,
+          };
+
+          // Determine next step dynamically
+          let nextStepRole = 'hr'; // Default fallback
+          if (leave.workflow?.approvalChain?.length > 0) {
+            const currentIndex = leave.workflow.approvalChain.findIndex(s => s.role === 'manager');
+            if (currentIndex !== -1 && currentIndex < leave.workflow.approvalChain.length - 1) {
+              nextStepRole = leave.workflow.approvalChain[currentIndex + 1].role;
+            } else if (currentIndex === leave.workflow.approvalChain.length - 1) {
+              nextStepRole = null; // Final
+            }
+          }
+
+          if (nextStepRole) {
+            leave.workflow.currentStep = nextStepRole;
+            leave.workflow.nextApprover = nextStepRole;
+            historyEntry.action = 'approved';
+          } else {
+            leave.status = 'approved';
+            leave.workflow.currentStep = 'completed';
+            leave.workflow.nextApprover = null;
+            historyEntry.action = 'approved';
+          }
         } else if (currentApprover === 'hr' || currentApprover === 'final_authority') {
+          // ... (existing HR logic)
+          const { validateLeaveRequest } = require('../../shared/services/conflictValidationService');
+          const validation = await validateLeaveRequest(
+            leave.employeeId,
+            leave.emp_no,
+            leave.fromDate,
+            leave.toDate,
+            leave.isHalfDay || false,
+            leave.halfDayType || null,
+            false // approvedOnly = false for approval (check all approved records)
+          );
+
+          if (!validation.isValid) {
+            return res.status(400).json({
+              success: false,
+              error: validation.errors[0] || 'Cannot approve: Conflict with existing approved records',
+              validationErrors: validation.errors,
+              conflictingODs: validation.conflictingODs,
+            });
+          }
+
           // Final approval
           leave.status = 'approved';
           leave.approvals.hr = {
@@ -1007,6 +1099,14 @@ exports.processLeaveAction = async (req, res) => {
         if (currentApprover === 'hod') {
           leave.status = 'hod_rejected';
           leave.approvals.hod = {
+            status: 'rejected',
+            approvedBy: req.user._id,
+            approvedAt: new Date(),
+            comments,
+          };
+        } else if (currentApprover === 'manager') {
+          leave.status = 'manager_rejected';
+          leave.approvals.manager = {
             status: 'rejected',
             approvedBy: req.user._id,
             approvedAt: new Date(),

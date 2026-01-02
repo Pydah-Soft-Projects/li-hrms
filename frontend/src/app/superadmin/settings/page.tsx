@@ -2287,6 +2287,111 @@ export default function SettingsPage() {
                       </div>
                     </div>
 
+                    {/* Manager Approval Configuration */}
+                    <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-blue-900/10">
+                      <div className="flex items-center justify-between mb-4">
+                        <div>
+                          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Include Manager Approval</h3>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">Require division manager approval</p>
+                        </div>
+                        <label className="relative inline-flex cursor-pointer items-center">
+                          <input
+                            type="checkbox"
+                            checked={leaveSettings?.workflow?.steps?.some(s => s.approverRole === 'manager') || false}
+                            onChange={(e) => {
+                              const enabled = e.target.checked;
+                              setLeaveSettings(prev => {
+                                if (!prev) return null;
+                                let steps = [...(prev.workflow?.steps || [])];
+                                if (enabled) {
+                                  // Add manager if not present - insert after HOD by default
+                                  if (!steps.some(s => s.approverRole === 'manager')) {
+                                    const hodIndex = steps.findIndex(s => s.approverRole === 'hod');
+                                    const insertIndex = hodIndex !== -1 ? hodIndex + 1 : 1;
+                                    steps.splice(insertIndex, 0, { stepOrder: 0, stepName: 'Manager Approval', approverRole: 'manager' });
+                                  }
+                                } else {
+                                  steps = steps.filter(s => s.approverRole !== 'manager');
+                                }
+                                // Re-index
+                                steps = steps.map((s, i) => ({ ...s, stepOrder: i + 1 }));
+                                return { ...prev, workflow: { ...prev.workflow, steps } };
+                              });
+                            }}
+                            className="peer sr-only"
+                          />
+                          <div className="peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-blue-600 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-blue-800"></div>
+                        </label>
+                      </div>
+
+                      {/* Manager Position Sector - HIDDEN IF MANAGER IS FINAL AUTHORITY */}
+                      {leaveSettings?.workflow?.steps?.some(s => s.approverRole === 'manager') && leaveSettings?.workflow?.finalAuthority?.role !== 'manager' && (
+                        <div className="mt-4 space-y-3 border-t border-slate-200/50 pt-4 dark:border-slate-700/50">
+                          <p className="text-xs font-medium text-slate-700 dark:text-slate-300 mb-2">Manager Approval Position</p>
+                          <div className="flex flex-col gap-2">
+                            <label className="flex cursor-pointer items-center gap-3">
+                              <input
+                                type="radio"
+                                name="managerPosition"
+                                checked={(() => {
+                                  const steps = leaveSettings?.workflow?.steps || [];
+                                  const mgrIdx = steps.findIndex(s => s.approverRole === 'manager');
+                                  const hrIdx = steps.findIndex(s => s.approverRole === 'hr');
+                                  return mgrIdx !== -1 && hrIdx !== -1 && mgrIdx < hrIdx;
+                                })()}
+                                onChange={() => {
+                                  setLeaveSettings(prev => {
+                                    if (!prev) return null;
+                                    let steps = prev.workflow.steps.filter(s => s.approverRole !== 'manager');
+                                    const managerStep = { stepName: 'Manager Approval', approverRole: 'manager', stepOrder: 0 };
+
+                                    const hrIndex = steps.findIndex(s => s.approverRole === 'hr');
+                                    // Insert before HR
+                                    if (hrIndex !== -1) steps.splice(hrIndex, 0, managerStep);
+                                    else steps.push(managerStep);
+
+                                    steps = steps.map((s, i) => ({ ...s, stepOrder: i + 1 }));
+                                    return { ...prev, workflow: { ...prev.workflow, steps } };
+                                  });
+                                }}
+                                className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+                              />
+                              <span className="text-sm text-slate-600 dark:text-slate-400">After HOD, Before HR</span>
+                            </label>
+                            <label className="flex cursor-pointer items-center gap-3">
+                              <input
+                                type="radio"
+                                name="managerPosition"
+                                checked={(() => {
+                                  const steps = leaveSettings?.workflow?.steps || [];
+                                  const mgrIdx = steps.findIndex(s => s.approverRole === 'manager');
+                                  const hrIdx = steps.findIndex(s => s.approverRole === 'hr');
+                                  return mgrIdx !== -1 && hrIdx !== -1 && mgrIdx > hrIdx;
+                                })()}
+                                onChange={() => {
+                                  setLeaveSettings(prev => {
+                                    if (!prev) return null;
+                                    let steps = prev.workflow.steps.filter(s => s.approverRole !== 'manager');
+                                    const managerStep = { stepName: 'Manager Approval', approverRole: 'manager', stepOrder: 0 };
+
+                                    const hrIndex = steps.findIndex(s => s.approverRole === 'hr');
+                                    // Insert after HR
+                                    if (hrIndex !== -1) steps.splice(hrIndex + 1, 0, managerStep);
+                                    else steps.push(managerStep);
+
+                                    steps = steps.map((s, i) => ({ ...s, stepOrder: i + 1 }));
+                                    return { ...prev, workflow: { ...prev.workflow, steps } };
+                                  });
+                                }}
+                                className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+                              />
+                              <span className="text-sm text-slate-600 dark:text-slate-400">After HR (Final Review)</span>
+                            </label>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
                     {/* Workflow Steps */}
                     <div className="rounded-2xl border border-slate-200 dark:border-slate-700">
                       <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-800">
@@ -2329,16 +2434,85 @@ export default function SettingsPage() {
                     {/* Final Authority */}
                     <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-blue-900/10">
                       <h3 className="mb-4 text-sm font-semibold text-slate-900 dark:text-slate-100">Final Approval Authority</h3>
-                      <div className="space-y-3">
+                      <div className="flex flex-col gap-3">
+                        {/* Manager Option */}
+                        {leaveSettings?.workflow?.steps?.some(s => s.approverRole === 'manager') && (
+                          <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 transition-all hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800">
+                            <input
+                              type="radio"
+                              name="finalAuthority"
+                              checked={leaveSettings?.workflow?.finalAuthority?.role === 'manager'}
+                              onChange={() => setLeaveSettings(prev => {
+                                if (!prev) return null;
+                                let steps = [...prev.workflow.steps];
+                                // Remove HR if present, as Manager is final
+                                steps = steps.filter(s => s.approverRole !== 'hr');
+                                // Ensure Manager is last (logic handles this by removing subsequent)
+
+                                return {
+                                  ...prev,
+                                  workflow: {
+                                    ...prev.workflow,
+                                    steps,
+                                    finalAuthority: { ...prev.workflow.finalAuthority, role: 'manager' }
+                                  }
+                                };
+                              })}
+                              className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Manager (Division Head)</span>
+                          </label>
+                        )}
+
+                        {/* HR Option */}
+                        <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 transition-all hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800">
+                          <input
+                            type="radio"
+                            name="finalAuthority"
+                            checked={leaveSettings?.workflow?.finalAuthority?.role === 'hr'}
+                            onChange={() => setLeaveSettings(prev => {
+                              if (!prev) return null;
+                              let steps = [...prev.workflow.steps];
+                              // Add HR if missing
+                              if (!steps.some(s => s.approverRole === 'hr')) {
+                                steps.push({ stepOrder: steps.length + 1, stepName: 'HR Approval', approverRole: 'hr' });
+                              }
+                              return {
+                                ...prev,
+                                workflow: {
+                                  ...prev.workflow,
+                                  steps,
+                                  finalAuthority: { ...prev.workflow.finalAuthority, role: 'hr' }
+                                }
+                              };
+                            })}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">HR</span>
+                        </label>
+
+                        {/* Super Admin Option */}
                         <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 transition-all hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800">
                           <input
                             type="radio"
                             name="finalAuthority"
                             checked={leaveSettings?.workflow?.finalAuthority?.role === 'super_admin'}
-                            onChange={() => setLeaveSettings(prev => ({
-                              ...prev!,
-                              workflow: { ...prev!.workflow, finalAuthority: { ...(prev!.workflow?.finalAuthority || {}), role: 'super_admin', anyHRCanApprove: prev!.workflow?.finalAuthority?.anyHRCanApprove ?? true } }
-                            }))}
+                            onChange={() => setLeaveSettings(prev => {
+                              if (!prev) return null;
+                              let steps = [...prev.workflow.steps];
+                              // Add HR if missing (Super Admin usually includes HR flow)
+                              if (!steps.some(s => s.approverRole === 'hr')) {
+                                steps.push({ stepOrder: steps.length + 1, stepName: 'HR Approval', approverRole: 'hr' });
+                              }
+                              return {
+                                ...prev,
+                                workflow: {
+                                  ...prev.workflow,
+                                  steps,
+                                  finalAuthority: { ...prev.workflow.finalAuthority, role: 'super_admin' }
+                                }
+                              };
+                            })}
                             className="h-4 w-4 text-blue-600 focus:ring-blue-500"
                           />
                           <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Super Admin</span>

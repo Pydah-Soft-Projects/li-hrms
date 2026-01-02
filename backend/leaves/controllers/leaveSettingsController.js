@@ -105,7 +105,7 @@ exports.getSettings = async (req, res) => {
 exports.saveSettings = async (req, res) => {
   try {
     const { type } = req.params;
-    const { types, statuses, settings } = req.body;
+    const { types, statuses, settings, workflow } = req.body;
 
     console.log('=== Save Settings Request ===');
     console.log('Type:', type);
@@ -131,6 +131,7 @@ exports.saveSettings = async (req, res) => {
       // Update existing
       if (types) leaveSettings.types = types;
       if (statuses) leaveSettings.statuses = statuses;
+      if (workflow) leaveSettings.workflow = workflow;
       if (settings) {
         // Deep merge settings to preserve existing properties
         const existingSettings = leaveSettings.settings || {};
@@ -164,7 +165,9 @@ exports.saveSettings = async (req, res) => {
       leaveSettings = new LeaveSettings({
         type,
         types: types || (type === 'leave' ? DEFAULT_LEAVE_TYPES : DEFAULT_OD_TYPES),
+        types: types || (type === 'leave' ? DEFAULT_LEAVE_TYPES : DEFAULT_OD_TYPES),
         statuses: statuses || DEFAULT_STATUSES,
+        workflow: workflow || {},
         settings: settings || {},
         createdBy: req.user._id,
         updatedBy: req.user._id,

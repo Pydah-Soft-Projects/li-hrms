@@ -191,6 +191,35 @@ const LeaveSettingsSchema = new mongoose.Schema(
       },
     },
 
+    // Workflow configuration
+    workflow: {
+      isEnabled: {
+        type: Boolean,
+        default: true
+      },
+      steps: [
+        {
+          stepOrder: Number,
+          stepName: String,
+          approverRole: {
+            type: String,
+            enum: ['hod', 'hr', 'manager', 'super_admin']
+          }
+        }
+      ],
+      finalAuthority: {
+        role: {
+          type: String,
+          enum: ['hr', 'super_admin', 'manager'],
+          default: 'hr'
+        },
+        anyHRCanApprove: {
+          type: Boolean,
+          default: true
+        }
+      }
+    },
+
     // Is this settings configuration active
     isActive: {
       type: Boolean,

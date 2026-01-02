@@ -87,7 +87,7 @@ const LeaveSchema = new mongoose.Schema(
     // Current status
     status: {
       type: String,
-      enum: ['draft', 'pending', 'hod_approved', 'hod_rejected', 'hr_approved', 'hr_rejected', 'principal_approved', 'principal_rejected', 'approved', 'rejected', 'cancelled'],
+      enum: ['draft', 'pending', 'hod_approved', 'hod_rejected', 'manager_approved', 'manager_rejected', 'hr_approved', 'hr_rejected', 'principal_approved', 'principal_rejected', 'approved', 'rejected', 'cancelled'],
       default: 'draft',
     },
 
@@ -173,6 +173,19 @@ const LeaveSchema = new mongoose.Schema(
     // Approvals record
     approvals: {
       hod: {
+        status: {
+          type: String,
+          enum: ['pending', 'approved', 'rejected', 'forwarded', null],
+          default: null,
+        },
+        approvedBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+        },
+        approvedAt: Date,
+        comments: String,
+      },
+      manager: {
         status: {
           type: String,
           enum: ['pending', 'approved', 'rejected', 'forwarded', null],
@@ -430,6 +443,8 @@ LeaveSchema.virtual('statusDisplay').get(function () {
     pending: 'Pending',
     hod_approved: 'HOD Approved',
     hod_rejected: 'HOD Rejected',
+    manager_approved: 'Manager Approved',
+    manager_rejected: 'Manager Rejected',
     hr_approved: 'HR Approved',
     hr_rejected: 'HR Rejected',
     approved: 'Approved',
