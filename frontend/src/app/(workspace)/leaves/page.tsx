@@ -8,7 +8,6 @@ import { toast, ToastContainer } from 'react-toastify';
 import Swal from 'sweetalert2';
 import 'react-toastify/dist/ReactToastify.css';
 import Spinner from '@/components/Spinner';
-import WorkflowTimeline from '@/components/WorkflowTimeline';
 import LocationPhotoCapture from '@/components/LocationPhotoCapture';
 
 
@@ -58,13 +57,6 @@ const SearchIcon = () => (
 const UserIcon = () => (
   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-  </svg>
-);
-
-const SettingsIcon = () => (
-  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
   </svg>
 );
 
@@ -322,7 +314,7 @@ const buildDateRange = (fromDate: string, toDate: string, isHalfDay?: boolean, h
   start.setHours(0, 0, 0, 0);
   end.setHours(0, 0, 0, 0);
 
-  let current = new Date(start);
+  const current = new Date(start);
   while (current <= end) {
     const isSingleHalf = isHalfDay && start.getTime() === end.getTime();
     dates.push({
@@ -446,9 +438,14 @@ export default function LeavesPage() {
 
   // Load employees and permissions when user or workspace changes
   useEffect(() => {
-    if (currentUser && activeWorkspace) {
-      loadEmployees();
-      checkWorkspacePermission();
+    if (currentUser) {
+      // For Admins/HR/HODs, we can load employees even if activeWorkspace is not yet ready
+      // as they have a broader scope. For employees, we load self.
+      const isAdmin = ['hr', 'super_admin', 'sub_admin', 'manager', 'hod'].includes(currentUser.role);
+      if (isAdmin || activeWorkspace) {
+        loadEmployees();
+        checkWorkspacePermission();
+      }
     }
   }, [currentUser, activeWorkspace?._id]);
 
@@ -494,8 +491,9 @@ export default function LeavesPage() {
         if (pendingODsRes.success) setPendingODs(pendingODsRes.data || []);
       }
 
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to load data');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to load data';
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -506,7 +504,7 @@ export default function LeavesPage() {
       const response = await api.getCurrentUser();
       if (response.success) {
         // getCurrentUser returns { user, workspaces, activeWorkspace }
-        const userData = (response as any).user || (response as any).data?.user;
+        const userData = response.user || (response as any).data?.user;
         if (userData) {
           setCurrentUser(userData);
         }
@@ -519,10 +517,12 @@ export default function LeavesPage() {
   const checkWorkspacePermission = async () => {
     try {
       const workspaceId = activeWorkspace?._id;
+      const isAdmin = currentUser && ['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser.role);
+
       console.log('[Workspace Leaves] Checking permissions for workspace:', workspaceId, activeWorkspace?.name);
 
-      if (!workspaceId) {
-        console.log('[Workspace Leaves] No workspace ID found');
+      if (!workspaceId && !isAdmin) {
+        console.log('[Workspace Leaves] No workspace ID found and not an admin. Resetting permissions.');
         setCanApplyLeaveForSelf(false);
         setCanApplyLeaveForOthers(false);
         setCanApplyODForSelf(false);
