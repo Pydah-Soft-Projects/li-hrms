@@ -2308,7 +2308,16 @@ export default function SettingsPage() {
                                   if (!steps.some(s => s.approverRole === 'manager')) {
                                     const hodIndex = steps.findIndex(s => s.approverRole === 'hod');
                                     const insertIndex = hodIndex !== -1 ? hodIndex + 1 : 1;
-                                    steps.splice(insertIndex, 0, { stepOrder: 0, stepName: 'Manager Approval', approverRole: 'manager' });
+                                    steps.splice(insertIndex, 0, {
+                                      stepOrder: 0,
+                                      stepName: 'Manager Approval',
+                                      approverRole: 'manager',
+                                      availableActions: ['approve', 'reject'],
+                                      approvedStatus: 'pending',
+                                      rejectedStatus: 'rejected',
+                                      nextStepOnApprove: null,
+                                      isActive: true
+                                    });
                                   }
                                 } else {
                                   steps = steps.filter(s => s.approverRole !== 'manager');
@@ -2343,7 +2352,16 @@ export default function SettingsPage() {
                                   setLeaveSettings(prev => {
                                     if (!prev) return null;
                                     let steps = prev.workflow.steps.filter(s => s.approverRole !== 'manager');
-                                    const managerStep = { stepName: 'Manager Approval', approverRole: 'manager', stepOrder: 0 };
+                                    const managerStep: WorkflowStep = {
+                                      stepName: 'Manager Approval',
+                                      approverRole: 'manager',
+                                      stepOrder: 0,
+                                      availableActions: ['approve', 'reject'],
+                                      approvedStatus: 'pending',
+                                      rejectedStatus: 'rejected',
+                                      nextStepOnApprove: null,
+                                      isActive: true
+                                    };
 
                                     const hrIndex = steps.findIndex(s => s.approverRole === 'hr');
                                     // Insert before HR
@@ -2372,7 +2390,16 @@ export default function SettingsPage() {
                                   setLeaveSettings(prev => {
                                     if (!prev) return null;
                                     let steps = prev.workflow.steps.filter(s => s.approverRole !== 'manager');
-                                    const managerStep = { stepName: 'Manager Approval', approverRole: 'manager', stepOrder: 0 };
+                                    const managerStep: WorkflowStep = {
+                                      stepName: 'Manager Approval',
+                                      approverRole: 'manager',
+                                      stepOrder: 0,
+                                      availableActions: ['approve', 'reject'],
+                                      approvedStatus: 'pending',
+                                      rejectedStatus: 'rejected',
+                                      nextStepOnApprove: null,
+                                      isActive: true
+                                    };
 
                                     const hrIndex = steps.findIndex(s => s.approverRole === 'hr');
                                     // Insert after HR
@@ -2454,7 +2481,10 @@ export default function SettingsPage() {
                                   workflow: {
                                     ...prev.workflow,
                                     steps,
-                                    finalAuthority: { ...prev.workflow.finalAuthority, role: 'manager' }
+                                    finalAuthority: {
+                                      anyHRCanApprove: prev.workflow.finalAuthority?.anyHRCanApprove ?? false,
+                                      role: 'manager'
+                                    }
                                   }
                                 };
                               })}
@@ -2475,14 +2505,26 @@ export default function SettingsPage() {
                               let steps = [...prev.workflow.steps];
                               // Add HR if missing
                               if (!steps.some(s => s.approverRole === 'hr')) {
-                                steps.push({ stepOrder: steps.length + 1, stepName: 'HR Approval', approverRole: 'hr' });
+                                steps.push({
+                                  stepOrder: steps.length + 1,
+                                  stepName: 'HR Approval',
+                                  approverRole: 'hr',
+                                  availableActions: ['approve', 'reject'],
+                                  approvedStatus: 'approved',
+                                  rejectedStatus: 'rejected',
+                                  nextStepOnApprove: null,
+                                  isActive: true
+                                });
                               }
                               return {
                                 ...prev,
                                 workflow: {
                                   ...prev.workflow,
                                   steps,
-                                  finalAuthority: { ...prev.workflow.finalAuthority, role: 'hr' }
+                                  finalAuthority: {
+                                    anyHRCanApprove: prev.workflow.finalAuthority?.anyHRCanApprove ?? false,
+                                    role: 'hr'
+                                  }
                                 }
                               };
                             })}
@@ -2502,14 +2544,26 @@ export default function SettingsPage() {
                               let steps = [...prev.workflow.steps];
                               // Add HR if missing (Super Admin usually includes HR flow)
                               if (!steps.some(s => s.approverRole === 'hr')) {
-                                steps.push({ stepOrder: steps.length + 1, stepName: 'HR Approval', approverRole: 'hr' });
+                                steps.push({
+                                  stepOrder: steps.length + 1,
+                                  stepName: 'HR Approval',
+                                  approverRole: 'hr',
+                                  availableActions: ['approve', 'reject'],
+                                  approvedStatus: 'approved',
+                                  rejectedStatus: 'rejected',
+                                  nextStepOnApprove: null,
+                                  isActive: true
+                                });
                               }
                               return {
                                 ...prev,
                                 workflow: {
                                   ...prev.workflow,
                                   steps,
-                                  finalAuthority: { ...prev.workflow.finalAuthority, role: 'super_admin' }
+                                  finalAuthority: {
+                                    anyHRCanApprove: prev.workflow.finalAuthority?.anyHRCanApprove ?? false,
+                                    role: 'super_admin'
+                                  }
                                 }
                               };
                             })}
