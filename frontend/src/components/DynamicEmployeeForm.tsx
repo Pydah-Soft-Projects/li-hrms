@@ -83,6 +83,7 @@ interface DynamicEmployeeFormProps {
   onSettingsLoaded?: (settings: FormSettings) => void;
   simpleUpload?: boolean;
   isViewMode?: boolean;
+  excludeFields?: string[];
 }
 
 export default function DynamicEmployeeForm({
@@ -95,6 +96,7 @@ export default function DynamicEmployeeForm({
   simpleUpload = false,
   isViewMode = false,
   divisions = [],
+  excludeFields = [],
 }: DynamicEmployeeFormProps) {
   const [settings, setSettings] = useState<FormSettings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -183,6 +185,8 @@ export default function DynamicEmployeeForm({
   };
 
   const renderField = (field: Field, groupId: string, arrayIndex?: number) => {
+    if (excludeFields.includes(field.id)) return null;
+
     const fieldId = arrayIndex !== undefined ? `${field.id}[${arrayIndex}]` : field.id;
     const value = arrayIndex !== undefined
       ? formData[field.id]?.[arrayIndex]
@@ -913,6 +917,8 @@ export default function DynamicEmployeeForm({
     };
 
     const renderQualificationField = (field: QualificationsField, qualIndex: number) => {
+      if (excludeFields.includes(field.id)) return null;
+
       const value = qualifications[qualIndex]?.[field.id] || '';
       const error = errors[`qualifications[${qualIndex}].${field.id}`];
 

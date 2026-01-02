@@ -1,11 +1,14 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { api } from '@/lib/api';
 import { QRCodeSVG } from 'qrcode.react';
 import LocationPhotoCapture from '@/components/LocationPhotoCapture';
 import Spinner from '@/components/Spinner';
+import { useWorkspace } from '@/contexts/WorkspaceContext';
+import { CheckIcon, XIcon, CalendarIcon, BriefcaseIcon, ClockIcon } from 'lucide-react';
+import { getEmployeeInitials } from '@/lib/utils';
 
 const Portal = ({ children }: { children: React.ReactNode }) => {
   const [mounted, setMounted] = useState(false);
@@ -86,7 +89,7 @@ interface Employee {
   _id: string;
   emp_no: string;
   employee_name: string;
-  department?: { _id: string; name: string };
+  department?: { _id: string; name: string; division?: { name: string } };
   designation?: { _id: string; name: string };
 }
 
@@ -154,7 +157,8 @@ interface PermissionRequest {
 }
 
 export default function OTAndPermissionsPage() {
-  const [activeTab, setActiveTab] = useState<'ot' | 'permissions'>('ot');
+  const { currentUser } = useWorkspace();
+  const [activeTab, setActiveTab] = useState<'ot' | 'permissions' | 'pending'>('ot');
   const [loading, setLoading] = useState(false);
   const [otRequests, setOTRequests] = useState<OTRequest[]>([]);
   const [permissions, setPermissions] = useState<PermissionRequest[]>([]);
@@ -216,6 +220,29 @@ export default function OTAndPermissionsPage() {
   const [permissionValidationError, setPermissionValidationError] = useState<string>('');
 
   // Evidence State
+  // Derived State
+  const pendingOTs = otRequests.filter(req => req.status === 'pending');
+  const pendingPermissions = permissions.filter(req => req.status === 'pending');
+  const totalPending = pendingOTs.length + pendingPermissions.length;
+
+  // Dynamic Column Logic
+  const { showDivision, showDepartment } = useMemo(() => {
+    const isHOD = currentUser?.role === 'hod';
+    if (isHOD) return { showDivision: false, showDepartment: false };
+
+    let dataToCheck: any[] = [];
+    if (activeTab === 'ot') dataToCheck = otRequests;
+    else if (activeTab === 'permissions') dataToCheck = permissions;
+    else dataToCheck = [...otRequests, ...permissions];
+
+    const uniqueDivisions = new Set(dataToCheck.map(item => item.employeeId?.department?.division?.name).filter(Boolean));
+
+    return {
+      showDivision: uniqueDivisions.size > 1,
+      showDepartment: true
+    };
+  }, [otRequests, permissions, activeTab, currentUser]);
+
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
   const [locationData, setLocationData] = useState<any | null>(null);
 
@@ -239,11 +266,32 @@ export default function OTAndPermissionsPage() {
         if (otRes.success) {
           setOTRequests(otRes.data || []);
         }
-      } else {
+      } else if (activeTab === 'permissions') {
         const permRes = await api.getPermissions(permissionFilters);
         if (permRes.success) {
           setPermissions(permRes.data || []);
         }
+      } else if (activeTab === 'pending') {
+        // Load both for pending dashboard
+        const [otRes, permRes] = await Promise.all([
+          api.getOTRequests({ ...otFilters, status: 'pending' }), // Optimize filters if backend supports?
+          // Actually, we probably want ALL pending, ignoring date filters?
+          // Or respect filters? The user might filter pending by date.
+          // Let's use the current filters but maybe force status 'pending' if the user hasn't selected it?
+          // But 'otFilters' has 'status'. If user switches to Pending tab, we might want to ignore the 'status' filter in the state 
+          // and fetch ALL pending?
+          // In Leaves page, 'pending' tab uses 'pendingLeaves' variable which comes from 'leaves' array.
+          // 'leaves' array is loaded with NO status filter (all leaves).
+          // Here, 'otRequests' only loads with 'otFilters'.
+          // If I act like Leaves page, I should load ALL OT and ALL Perms (or at least pending ones).
+          // Let's load ALL Pending for now.
+          api.getPermissions({ ...permissionFilters, status: 'pending' })
+        ]);
+
+        // Wait, if I load specific 'pending' here, I overwrite 'otRequests' with ONLY pending items.
+        // If I switch back to 'OT' tab later, it reloads 'ot' data. This is fine.
+        if (otRes.success) setOTRequests(otRes.data || []);
+        if (permRes.success) setPermissions(permRes.data || []);
       }
 
       // Load employees and shifts
@@ -682,6 +730,18 @@ export default function OTAndPermissionsPage() {
                 </svg>
                 Permissions ({permissions.length})
               </button>
+              <button
+                onClick={() => setActiveTab('pending')}
+                className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${activeTab === 'pending'
+                  ? 'bg-gradient-to-r from-yellow-500 to-orange-500 text-white shadow-lg shadow-orange-500/30'
+                  : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
+                  }`}
+              >
+                <svg className="mr-2 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Pending ({totalPending})
+              </button>
             </div>
 
             <button
@@ -787,6 +847,198 @@ export default function OTAndPermissionsPage() {
           <div className="flex items-center justify-center py-12">
             <Spinner />
           </div>
+        ) : activeTab === 'pending' ? (
+          <div className="space-y-8 animate-in fade-in duration-500">
+            {/* Pending OT Requests */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Pending Overtime Requests</h3>
+                <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-semibold text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
+                  {pendingOTs.length}
+                </span>
+              </div>
+
+              {pendingOTs.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center dark:border-slate-700">
+                  <ClockIcon className="mx-auto h-12 w-12 text-slate-400" />
+                  <h3 className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">No pending OT requests</h3>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">All caught up! There are no overtime requests requiring your approval.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {pendingOTs.map((ot) => (
+                    <div key={ot._id} className="group relative flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition-all hover:shadow-md dark:border-slate-700 dark:bg-slate-800">
+                      {/* Header */}
+                      <div className="flex items-start justify-between gap-3 mb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600 font-bold dark:bg-blue-900/30 dark:text-blue-400">
+                            {getEmployeeInitials({
+                              employee_name: ot.employeeId?.employee_name || '',
+                              // OT object structure might differ slightly, defaulting fields
+                              first_name: ot.employeeId?.employee_name?.split(' ')[0],
+                              last_name: '',
+                              emp_no: ''
+                            } as any)}
+                          </div>
+                          <div>
+                            <h4 className="font-semibold text-slate-900 dark:text-white line-clamp-1">
+                              {ot.employeeId?.employee_name || ot.employeeNumber}
+                            </h4>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                              <span>{ot.employeeNumber}</span>
+                              {ot.employeeId?.department?.name && (
+                                <>
+                                  <span>•</span>
+                                  <span className="truncate max-w-[100px]">{ot.employeeId.department.name}</span>
+                                </>
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                        <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(ot.status)}`}>
+                          {ot.status}
+                        </span>
+                      </div>
+
+                      {/* Content */}
+                      <div className="mb-4 space-y-2.5">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-slate-500 dark:text-slate-400">Date</span>
+                          <span className="font-medium text-slate-700 dark:text-slate-300">{formatDate(ot.date)}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-slate-500 dark:text-slate-400">Time</span>
+                          <span className="font-medium text-slate-700 dark:text-slate-300">{formatTime(ot.otInTime)} - {formatTime(ot.otOutTime)}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-slate-500 dark:text-slate-400">Total Hours</span>
+                          <span className="font-bold text-blue-600 dark:text-blue-400">{ot.otHours} hrs</span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-slate-500 dark:text-slate-400">Shift</span>
+                          <span className="font-medium text-slate-700 dark:text-slate-300">{ot.shiftId?.name || '-'}</span>
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex items-center gap-2 mt-auto">
+                        <button
+                          onClick={() => handleApprove('ot', ot._id)}
+                          className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-green-500/10 py-2 text-sm font-semibold text-green-600 transition-colors hover:bg-green-500 hover:text-white dark:bg-green-500/20 dark:text-green-400 dark:hover:bg-green-500 dark:hover:text-white"
+                          title="Approve OT"
+                        >
+                          <CheckIcon className="h-4 w-4" /> Approve
+                        </button>
+                        <button
+                          onClick={() => handleReject('ot', ot._id)}
+                          className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-500/10 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500 hover:text-white dark:bg-red-500/20 dark:text-red-400 dark:hover:bg-red-500 dark:hover:text-white"
+                          title="Reject OT"
+                        >
+                          <XIcon className="h-4 w-4" /> Reject
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Pending Permissions Requests */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Pending Permission Requests</h3>
+                <span className="rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-semibold text-purple-600 dark:bg-purple-900/30 dark:text-purple-400">
+                  {pendingPermissions.length}
+                </span>
+              </div>
+
+              {pendingPermissions.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center dark:border-slate-700">
+                  <BriefcaseIcon className="mx-auto h-12 w-12 text-slate-400" />
+                  <h3 className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">No pending permissions</h3>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">All caught up! There are no permission requests requiring your approval.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {pendingPermissions.map((perm) => (
+                    <div key={perm._id} className="group relative flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition-all hover:shadow-md dark:border-slate-700 dark:bg-slate-800">
+                      {/* Header */}
+                      <div className="flex items-start justify-between gap-3 mb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-purple-100 text-purple-600 font-bold dark:bg-purple-900/30 dark:text-purple-400">
+                            {getEmployeeInitials({
+                              employee_name: perm.employeeId?.employee_name || '',
+                              first_name: perm.employeeId?.employee_name?.split(' ')[0],
+                              last_name: '',
+                              emp_no: ''
+                            } as any)}
+                          </div>
+                          <div>
+                            <h4 className="font-semibold text-slate-900 dark:text-white line-clamp-1">
+                              {perm.employeeId?.employee_name || perm.employeeNumber}
+                            </h4>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                              <span>{perm.employeeNumber}</span>
+                              {perm.employeeId?.department?.name && (
+                                <>
+                                  <span>•</span>
+                                  <span className="truncate max-w-[100px]">{perm.employeeId.department.name}</span>
+                                </>
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                        <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(perm.status)}`}>
+                          {perm.status}
+                        </span>
+                      </div>
+
+                      {/* Content */}
+                      <div className="mb-4 space-y-2.5">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-slate-500 dark:text-slate-400">Date</span>
+                          <span className="font-medium text-slate-700 dark:text-slate-300">{formatDate(perm.date)}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-slate-500 dark:text-slate-400">Time Range</span>
+                          <span className="font-medium text-slate-700 dark:text-slate-300">{formatTime(perm.permissionStartTime)} - {formatTime(perm.permissionEndTime)}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-slate-500 dark:text-slate-400">Hours</span>
+                          <span className="font-bold text-purple-600 dark:text-purple-400">{perm.permissionHours} hrs</span>
+                        </div>
+                        {perm.purpose && (
+                          <div className="pt-2 mt-2 border-t border-slate-100 dark:border-slate-700">
+                            <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 italic">
+                              &quot;{perm.purpose}&quot;
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex items-center gap-2 mt-auto">
+                        <button
+                          onClick={() => handleApprove('permission', perm._id)}
+                          className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-green-500/10 py-2 text-sm font-semibold text-green-600 transition-colors hover:bg-green-500 hover:text-white dark:bg-green-500/20 dark:text-green-400 dark:hover:bg-green-500 dark:hover:text-white"
+                          title="Approve Permission"
+                        >
+                          <CheckIcon className="h-4 w-4" /> Approve
+                        </button>
+                        <button
+                          onClick={() => handleReject('permission', perm._id)}
+                          className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-500/10 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500 hover:text-white dark:bg-red-500/20 dark:text-red-400 dark:hover:bg-red-500 dark:hover:text-white"
+                          title="Reject Permission"
+                        >
+                          <XIcon className="h-4 w-4" /> Reject
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         ) : activeTab === 'ot' ? (
           <div className="rounded-xl border border-slate-200 bg-white/80 backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/80">
             <div className="overflow-x-auto">
@@ -794,6 +1046,8 @@ export default function OTAndPermissionsPage() {
                 <thead className="bg-slate-50 dark:bg-slate-800">
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Employee</th>
+                    {showDivision && <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Division</th>}
+                    {showDepartment && <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Department</th>}
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Date</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Shift</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">OT In</th>
@@ -806,7 +1060,8 @@ export default function OTAndPermissionsPage() {
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                   {otRequests.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+
+                      <td colSpan={8 + (showDivision ? 1 : 0) + (showDepartment ? 1 : 0)} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
                         No OT requests found
                       </td>
                     </tr>
@@ -819,6 +1074,8 @@ export default function OTAndPermissionsPage() {
                           </div>
                           <div className="text-xs text-slate-500 dark:text-slate-400">{ot.employeeNumber}</div>
                         </td>
+                        {showDivision && <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">{ot.employeeId?.department?.division?.name || '-'}</td>}
+                        {showDepartment && <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">{ot.employeeId?.department?.name || '-'}</td>}
                         <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">{formatDate(ot.date)}</td>
                         <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">
                           {ot.shiftId?.name || '-'}
@@ -865,6 +1122,8 @@ export default function OTAndPermissionsPage() {
                 <thead className="bg-slate-50 dark:bg-slate-800">
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Employee</th>
+                    {showDivision && <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Division</th>}
+                    {showDepartment && <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Department</th>}
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Date</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Time Range</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Hours</th>
@@ -876,7 +1135,8 @@ export default function OTAndPermissionsPage() {
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                   {permissions.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+
+                      <td colSpan={7 + (showDivision ? 1 : 0) + (showDepartment ? 1 : 0)} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
                         No permission requests found
                       </td>
                     </tr>
@@ -889,6 +1149,8 @@ export default function OTAndPermissionsPage() {
                           </div>
                           <div className="text-xs text-slate-500 dark:text-slate-400">{perm.employeeNumber}</div>
                         </td>
+                        {showDivision && <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">{perm.employeeId?.department?.division?.name || '-'}</td>}
+                        {showDepartment && <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">{perm.employeeId?.department?.name || '-'}</td>}
                         <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">{formatDate(perm.date)}</td>
                         <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">
                           {formatTime(perm.permissionStartTime)} - {formatTime(perm.permissionEndTime)}
