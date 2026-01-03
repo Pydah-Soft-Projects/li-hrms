@@ -523,30 +523,8 @@ export default function EmployeesPage() {
   }, [activeTab]);
 
   useEffect(() => {
-    if (formData.department_id) {
-      const selectedDept = departments.find(d => d._id === formData.department_id);
-      if (selectedDept && selectedDept.designations) {
-        // Polyfill department ID for DynamicEmployeeForm compatibility
-        const validDesignations = selectedDept.designations.map((d: any) => ({
-          ...d,
-          department: selectedDept._id
-        }));
-        setFilteredDesignations(validDesignations);
-      } else {
-        setFilteredDesignations([]);
-      }
-
-      // Reset designation if it doesn't belong to selected department
-      if (formData.designation_id && selectedDept?.designations) {
-        const isValid = selectedDept.designations.find(d => d._id === formData.designation_id);
-        if (!isValid) {
-          setFormData(prev => ({ ...prev, designation_id: '' }));
-        }
-      }
-    } else {
-      setFilteredDesignations([]);
-    }
-  }, [formData.department_id, departments]);
+    setFilteredDesignations(designations);
+  }, [designations]);
 
   // Load allowance/deduction defaults when department and gross salary are set
   useEffect(() => {
@@ -590,39 +568,8 @@ export default function EmployeesPage() {
   }, [showApprovalDialog, selectedApplication, approvalData.approvedSalary]);
 
   useEffect(() => {
-    if (applicationFormData.department_id) {
-      const deptId = typeof applicationFormData.department_id === 'string'
-        ? applicationFormData.department_id
-        : applicationFormData.department_id._id;
-
-      const selectedDept = departments.find(d => d._id === deptId);
-
-      if (selectedDept && selectedDept.designations) {
-        // Polyfill department ID for DynamicEmployeeForm compatibility
-        const validDesignations = selectedDept.designations.map((d: any) => ({
-          ...d,
-          department: selectedDept._id
-        }));
-        setFilteredApplicationDesignations(validDesignations);
-      } else {
-        setFilteredApplicationDesignations([]);
-      }
-
-      // Reset designation if it doesn't belong to selected department
-      if (applicationFormData.designation_id && selectedDept?.designations) {
-        const desigId = typeof applicationFormData.designation_id === 'string'
-          ? applicationFormData.designation_id
-          : applicationFormData.designation_id._id;
-
-        const isValid = selectedDept.designations.find((d: any) => d._id === desigId);
-        if (!isValid) {
-          setApplicationFormData(prev => ({ ...prev, designation_id: '' }));
-        }
-      }
-    } else {
-      setFilteredApplicationDesignations([]);
-    }
-  }, [applicationFormData.department_id, applicationFormData.designation_id, departments]);
+    setFilteredApplicationDesignations(designations);
+  }, [designations]);
 
   const loadFormSettings = async () => {
     try {
@@ -896,16 +843,11 @@ export default function EmployeesPage() {
       if (response.success && response.data) {
         setDepartments(response.data);
 
-        // Flatten designations for Bulk Upload and legacy lookups
-        const allDesignations: Designation[] = [];
-        response.data.forEach((dept: any) => {
-          if (dept.designations && Array.isArray(dept.designations)) {
-            dept.designations.forEach((d: any) => {
-              allDesignations.push({ ...d, department: dept._id });
-            });
-          }
-        });
-        setDesignations(allDesignations);
+        // Load all designations globally
+        const desigRes = await api.getAllDesignations();
+        if (desigRes.success && desigRes.data) {
+          setDesignations(desigRes.data);
+        }
       }
     } catch (err) {
       console.error('Error loading departments:', err);
@@ -3531,6 +3473,13 @@ export default function EmployeesPage() {
                   }
                 };
               }
+              if (col.key === 'designation_name') {
+                return {
+                  ...col,
+                  type: 'select',
+                  options: designations.map(d => ({ value: d.name, label: d.name }))
+                };
+              }
               if (col.key === 'gender') {
                 return { ...col, type: 'select', options: [{ value: 'Male', label: 'Male' }, { value: 'Female', label: 'Female' }, { value: 'Other', label: 'Other' }] };
               }
@@ -3555,7 +3504,31 @@ export default function EmployeesPage() {
             validateRow={(row) => {
               const mappedUsers = employees.map(e => ({ _id: e._id, name: e.employee_name }));
               const result = validateEmployeeRow(row, divisions, departments, designations as any, mappedUsers);
-              return { isValid: result.isValid, errors: result.errors, mappedRow: result.mappedRow };
+
+              const errors = [...result.errors];
+              const fieldErrors = { ...result.fieldErrors };
+
+              // Validate dynamic fields from formSettings
+              if (formSettings?.groups) {
+                formSettings.groups.forEach((group: any) => {
+                  if (!group.isEnabled) return;
+                  group.fields.forEach((field: any) => {
+                    if (!field.isEnabled) return;
+
+                    const value = row[field.id];
+                    const handledFields = ['emp_no', 'employee_name', 'division_name', 'department_name', 'designation_name', 'gender', 'dob', 'doj', 'marital_status', 'blood_group'];
+
+                    if (!handledFields.includes(field.id) && field.isRequired) {
+                      if (value === undefined || value === null || value === '') {
+                        errors.push(`${field.label} is required`);
+                        fieldErrors[field.id] = 'Required';
+                      }
+                    }
+                  });
+                });
+              }
+
+              return { isValid: errors.length === 0, errors, fieldErrors, mappedRow: result.mappedRow };
             }}
             onSubmit={async (data) => {
               const batchData: any[] = [];
@@ -3570,8 +3543,7 @@ export default function EmployeesPage() {
                     (!divId || (d as any).divisions?.includes(divId))
                   )?._id;
                   const desigId = designations.find(d =>
-                    d.name.toLowerCase() === (row.designation_name as string)?.toLowerCase() &&
-                    d.department === deptId
+                    d.name.toLowerCase().trim() === (row.designation_name as string)?.toLowerCase().trim()
                   )?._id;
 
                   const employeeData: any = {

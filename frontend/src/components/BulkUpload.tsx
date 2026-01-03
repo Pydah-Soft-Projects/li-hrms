@@ -16,7 +16,7 @@ interface BulkUploadProps {
     options?: { value: string; label: string }[] | ((row: ParsedRow) => { value: string; label: string }[]);
     width?: string;
   }[];
-  validateRow?: (row: ParsedRow, index: number) => { isValid: boolean; errors: string[]; mappedRow?: ParsedRow };
+  validateRow?: (row: ParsedRow, index: number) => { isValid: boolean; errors: string[]; fieldErrors?: { [key: string]: string }; mappedRow?: ParsedRow };
   onSubmit: (data: ParsedRow[]) => Promise<{ success: boolean; message?: string }>;
   onClose: () => void;
 }
@@ -33,7 +33,7 @@ export default function BulkUpload({
 }: BulkUploadProps) {
   const [step, setStep] = useState<'upload' | 'preview'>('upload');
   const [data, setData] = useState<ParsedRow[]>([]);
-  const [errors, setErrors] = useState<{ [key: number]: string[] }>({});
+  const [errors, setErrors] = useState<{ [key: number]: { rowErrors: string[]; fieldErrors: { [key: string]: string } } }>({});
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -55,13 +55,16 @@ export default function BulkUpload({
     }
 
     // Validate each row if validator provided
-    const rowErrors: { [key: number]: string[] } = {};
+    const rowErrors: { [key: number]: { rowErrors: string[]; fieldErrors: { [key: string]: string } } } = {};
     const processedData = result.data.map((row, index) => {
       let finalRow = row;
       if (validateRow) {
         const validation = validateRow(row, index);
         if (!validation.isValid) {
-          rowErrors[index] = validation.errors;
+          rowErrors[index] = {
+            rowErrors: validation.errors,
+            fieldErrors: validation.fieldErrors || {}
+          };
         }
         if (validation.mappedRow) {
           finalRow = validation.mappedRow;
@@ -95,12 +98,25 @@ export default function BulkUpload({
     // Re-validate the row
     if (validateRow) {
       const validation = validateRow({ ...data[rowIndex], [key]: value }, rowIndex);
+
+      // Update the row with mappedRow if provided (useful for normalization)
+      if (validation.mappedRow) {
+        setData((prev) => {
+          const newData = [...prev];
+          newData[rowIndex] = validation.mappedRow!;
+          return newData;
+        });
+      }
+
       setErrors((prev) => {
         const newErrors = { ...prev };
         if (validation.isValid) {
           delete newErrors[rowIndex];
         } else {
-          newErrors[rowIndex] = validation.errors;
+          newErrors[rowIndex] = {
+            rowErrors: validation.errors,
+            fieldErrors: validation.fieldErrors || {}
+          };
         }
         return newErrors;
       });
@@ -110,7 +126,7 @@ export default function BulkUpload({
   const handleRemoveRow = (rowIndex: number) => {
     setData((prev) => prev.filter((_, i) => i !== rowIndex));
     setErrors((prev) => {
-      const newErrors: { [key: number]: string[] } = {};
+      const newErrors: { [key: number]: { rowErrors: string[]; fieldErrors: { [key: string]: string } } } = {};
       Object.keys(prev).forEach((key) => {
         const idx = parseInt(key);
         if (idx < rowIndex) {
@@ -310,7 +326,9 @@ export default function BulkUpload({
                   </thead>
                   <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                     {data.map((row, rowIndex) => {
-                      const rowErrors = errors[rowIndex] || [];
+                      const rowErrorObj = errors[rowIndex];
+                      const rowErrors = rowErrorObj?.rowErrors || [];
+                      const fieldErrors = rowErrorObj?.fieldErrors || {};
                       const hasRowError = rowErrors.length > 0;
 
                       return (
@@ -326,36 +344,51 @@ export default function BulkUpload({
                           </td>
                           {columns.map((col) => {
                             const resolvedOptions = typeof col.options === 'function' ? col.options(row) : col.options;
+                            const cellError = fieldErrors[col.key];
+
                             return (
-                              <td key={col.key} className="px-3 py-2">
+                              <td key={col.key} className="px-3 py-2 align-top">
                                 {col.editable !== false ? (
-                                  col.type === 'select' && resolvedOptions ? (
-                                    <select
-                                      value={(row[col.key] as string) || ''}
-                                      onChange={(e) => handleCellChange(rowIndex, col.key, e.target.value)}
-                                      className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                                    >
-                                      <option value="">Select...</option>
-                                      {resolvedOptions.map((opt) => (
-                                        <option key={opt.value} value={opt.value}>
-                                          {opt.label}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  ) : (
-                                    <input
-                                      type={col.type || 'text'}
-                                      value={(row[col.key] as string) || ''}
-                                      onChange={(e) =>
-                                        handleCellChange(
-                                          rowIndex,
-                                          col.key,
-                                          col.type === 'number' ? (e.target.value ? Number(e.target.value) : null) : e.target.value
-                                        )
-                                      }
-                                      className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                                    />
-                                  )
+                                  <div className="flex flex-col gap-1">
+                                    {col.type === 'select' && resolvedOptions ? (
+                                      <select
+                                        value={(row[col.key] as string) || ''}
+                                        onChange={(e) => handleCellChange(rowIndex, col.key, e.target.value)}
+                                        className={`w-full rounded-lg border bg-white px-2 py-1.5 text-sm focus:outline-none focus:ring-1 ${cellError
+                                          ? 'border-red-400 focus:border-red-400 focus:ring-red-400'
+                                          : 'border-slate-200 focus:border-blue-400 focus:ring-blue-400 dark:border-slate-700'
+                                          } dark:bg-slate-900 dark:text-slate-100`}
+                                      >
+                                        <option value="">Select...</option>
+                                        {resolvedOptions.map((opt) => (
+                                          <option key={opt.value} value={opt.value}>
+                                            {opt.label}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    ) : (
+                                      <input
+                                        type={col.type || 'text'}
+                                        value={(row[col.key] as string) || ''}
+                                        onChange={(e) =>
+                                          handleCellChange(
+                                            rowIndex,
+                                            col.key,
+                                            col.type === 'number' ? (e.target.value ? Number(e.target.value) : null) : e.target.value
+                                          )
+                                        }
+                                        className={`w-full rounded-lg border bg-white px-2 py-1.5 text-sm focus:outline-none focus:ring-1 ${cellError
+                                          ? 'border-red-400 focus:border-red-400 focus:ring-red-400'
+                                          : 'border-slate-200 focus:border-blue-400 focus:ring-blue-400 dark:border-slate-700'
+                                          } dark:bg-slate-900 dark:text-slate-100`}
+                                      />
+                                    )}
+                                    {cellError && (
+                                      <span className="text-[10px] font-medium text-red-500 animate-in fade-in slide-in-from-top-1">
+                                        {cellError}
+                                      </span>
+                                    )}
+                                  </div>
                                 ) : (
                                   <span className="text-slate-700 dark:text-slate-300">
                                     {row[col.key]?.toString() || '-'}

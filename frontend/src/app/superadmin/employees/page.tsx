@@ -27,6 +27,7 @@ interface FormSettings {
       type: string;
       isEnabled: boolean;
       options?: Array<{ label: string; value: string }>;
+      isRequired?: boolean;
     }>;
   }>;
   qualifications?: {
@@ -3493,6 +3494,13 @@ export default function EmployeesPage() {
                   }
                 };
               }
+              if (col.key === 'designation_name') {
+                return {
+                  ...col,
+                  type: 'select',
+                  options: designations.map(d => ({ value: d.name, label: d.name }))
+                };
+              }
               if (col.key === 'gender') {
                 return { ...col, type: 'select', options: [{ value: 'Male', label: 'Male' }, { value: 'Female', label: 'Female' }, { value: 'Other', label: 'Other' }] };
               }
@@ -3517,7 +3525,36 @@ export default function EmployeesPage() {
             validateRow={(row) => {
               const mappedUsers = employees.map(e => ({ _id: e._id, name: e.employee_name }));
               const result = validateEmployeeRow(row, divisions, departments, designations as any, mappedUsers);
-              return { isValid: result.isValid, errors: result.errors, mappedRow: result.mappedRow };
+
+              const errors = [...result.errors];
+              const fieldErrors = { ...result.fieldErrors };
+
+              // Validate dynamic fields from formSettings
+              if (formSettings?.groups) {
+                formSettings.groups.forEach((group: any) => {
+                  if (!group.isEnabled) return;
+                  group.fields.forEach((field: any) => {
+                    if (!field.isEnabled) return;
+
+                    // Core fields are already validated in validateEmployeeRow, but we check their fieldId mapping
+                    // Some fields in formSettings might have different IDs but we map them to headers in template
+                    const value = row[field.id];
+
+                    // Only validate fields that are NOT already handled by validateEmployeeRow
+                    // validateEmployeeRow handles: emp_no, employee_name, division_name, department_name, designation_name, gender, dob, doj, marital_status, blood_group
+                    const handledFields = ['emp_no', 'employee_name', 'division_name', 'department_name', 'designation_name', 'gender', 'dob', 'doj', 'marital_status', 'blood_group'];
+
+                    if (!handledFields.includes(field.id) && field.isRequired) {
+                      if (value === undefined || value === null || value === '') {
+                        errors.push(`${field.label} is required`);
+                        fieldErrors[field.id] = 'Required';
+                      }
+                    }
+                  });
+                });
+              }
+
+              return { isValid: errors.length === 0, errors, fieldErrors, mappedRow: result.mappedRow };
             }}
             onSubmit={async (data) => {
               const batchData: any[] = [];
@@ -3532,8 +3569,7 @@ export default function EmployeesPage() {
                     (!divId || (d as any).divisions?.includes(divId))
                   )?._id;
                   const desigId = designations.find(d =>
-                    d.name.toLowerCase() === (row.designation_name as string)?.toLowerCase() &&
-                    d.department === deptId
+                    d.name.toLowerCase().trim() === (row.designation_name as string)?.toLowerCase().trim()
                   )?._id;
 
                   const employeeData: any = {

@@ -297,15 +297,12 @@ export const matchDepartmentByName = (
  */
 export const matchDesignationByName = (
   name: string | null,
-  departmentId: string | null,
-  designations: { _id: string; name: string; department: string }[]
+  designations: { _id: string; name: string }[]
 ): string | null => {
   if (!name) return null;
   const normalizedName = name.toString().toLowerCase().trim();
   const match = designations.find(
-    (d) =>
-      d.name.toLowerCase().trim() === normalizedName &&
-      (!departmentId || d.department === departmentId)
+    (d) => d.name.toLowerCase().trim() === normalizedName
   );
   return match?._id || null;
 };
@@ -334,45 +331,60 @@ export const validateEmployeeRow = (
   departments: { _id: string; name: string }[],
   designations: { _id: string; name: string; department: string }[],
   users: { _id: string; name: string; email?: string }[] = []
-): { isValid: boolean; errors: string[]; mappedRow: ParsedRow } => {
+): { isValid: boolean; errors: string[]; mappedRow: ParsedRow; fieldErrors: { [key: string]: string } } => {
   const errors: string[] = [];
+  const fieldErrors: { [key: string]: string } = {};
   const mappedRow: ParsedRow = { ...row };
 
   // Required fields
-  if (!row.emp_no) errors.push('Employee No is required');
-  if (!row.employee_name) errors.push('Employee Name is required');
+  if (!row.emp_no) {
+    errors.push('Employee No is required');
+    fieldErrors.emp_no = 'Required';
+  }
+  if (!row.employee_name) {
+    errors.push('Employee Name is required');
+    fieldErrors.employee_name = 'Required';
+  }
 
   // Map division
   if (row.division_name) {
-    const divId = matchDivisionByName(row.division_name as string, divisions);
-    if (!divId) {
+    const div = divisions.find(d => d.name.toLowerCase().trim() === (row.division_name as string).toLowerCase().trim());
+    if (div) {
+      mappedRow.division_id = div._id;
+      mappedRow.division_name = div.name; // Normalize name for dropdown match
+    } else {
       errors.push(`Division "${row.division_name}" not found`);
+      fieldErrors.division_name = 'Not found';
     }
-    mappedRow.division_id = divId;
   } else {
     errors.push('Division is required');
+    fieldErrors.division_name = 'Required';
   }
 
   // Map department
   if (row.department_name) {
-    const deptId = matchDepartmentByName(row.department_name as string, departments);
-    if (!deptId) {
+    const dept = departments.find(d => d.name.toLowerCase().trim() === (row.department_name as string).toLowerCase().trim());
+    if (dept) {
+      mappedRow.department_id = dept._id;
+      mappedRow.department_name = dept.name; // Normalize name for dropdown match
+    } else {
       errors.push(`Department "${row.department_name}" not found`);
+      fieldErrors.department_name = 'Not found';
     }
-    mappedRow.department_id = deptId;
   }
 
   // Map designation
   if (row.designation_name) {
-    const desigId = matchDesignationByName(
-      row.designation_name as string,
-      mappedRow.department_id as string,
-      designations
+    const desig = designations.find(d =>
+      d.name.toLowerCase().trim() === (row.designation_name as string).toLowerCase().trim()
     );
-    if (!desigId) {
+    if (desig) {
+      mappedRow.designation_id = desig._id;
+      mappedRow.designation_name = desig.name; // Normalize name for dropdown match
+    } else {
       errors.push(`Designation "${row.designation_name}" not found`);
+      fieldErrors.designation_name = 'Not found';
     }
-    mappedRow.designation_id = desigId;
   }
 
   // Map reporting_to (if provided by name)
@@ -380,6 +392,7 @@ export const validateEmployeeRow = (
     // If it's a comma separated list of names
     const names = row.reporting_to.split(',').map(n => n.trim());
     const ids: string[] = [];
+    let hasError = false;
     names.forEach(name => {
       const id = matchUserByName(name, users);
       if (id) {
@@ -389,8 +402,13 @@ export const validateEmployeeRow = (
         ids.push(name);
       } else {
         errors.push(`Reporting manager "${name}" not found`);
+        hasError = true;
       }
     });
+
+    if (hasError) {
+      fieldErrors.reporting_to = 'One or more managers not found';
+    }
     mappedRow.reporting_to = ids.length > 0 ? ids : null;
   } else if (row.reporting_to && Array.isArray(row.reporting_to)) {
     // Already an array of IDs
@@ -400,44 +418,55 @@ export const validateEmployeeRow = (
   // Validate gender
   if (row.gender && !['Male', 'Female', 'Other'].includes(row.gender as string)) {
     errors.push('Gender must be Male, Female, or Other');
+    fieldErrors.gender = 'Invalid gender';
   }
 
   // Validate dates
   if (row.dob && isNaN(new Date(row.dob as string).getTime())) {
     errors.push('Invalid Date of Birth format');
+    fieldErrors.dob = 'Invalid date';
   }
   if (row.doj && isNaN(new Date(row.doj as string).getTime())) {
     errors.push('Invalid Date of Joining format');
+    fieldErrors.doj = 'Invalid date';
   }
 
   // Validate marital status
   if (row.marital_status && !['Single', 'Married', 'Divorced', 'Widowed'].includes(row.marital_status as string)) {
     errors.push('Invalid marital status');
+    fieldErrors.marital_status = 'Invalid status';
   }
 
   // Validate blood group
   if (row.blood_group && !['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].includes(row.blood_group as string)) {
     errors.push('Invalid blood group');
+    fieldErrors.blood_group = 'Invalid group';
   }
 
   return {
     isValid: errors.length === 0,
     errors,
     mappedRow,
+    fieldErrors,
   };
 };
+
 
 /**
  * Validate department row
  */
 export const validateDepartmentRow = (
   row: ParsedRow
-): { isValid: boolean; errors: string[] } => {
+): { isValid: boolean; errors: string[]; fieldErrors: { [key: string]: string } } => {
   const errors: string[] = [];
+  const fieldErrors: { [key: string]: string } = {};
 
-  if (!row.name) errors.push('Department Name is required');
+  if (!row.name) {
+    errors.push('Department Name is required');
+    fieldErrors.name = 'Required';
+  }
 
-  return { isValid: errors.length === 0, errors };
+  return { isValid: errors.length === 0, errors, fieldErrors };
 };
 
 /**
@@ -446,13 +475,17 @@ export const validateDepartmentRow = (
  */
 export const validateDesignationRow = (
   row: ParsedRow
-): { isValid: boolean; errors: string[]; mappedRow: ParsedRow } => {
+): { isValid: boolean; errors: string[]; mappedRow: ParsedRow; fieldErrors: { [key: string]: string } } => {
   const errors: string[] = [];
+  const fieldErrors: { [key: string]: string } = {};
   const mappedRow: ParsedRow = { ...row };
 
-  if (!row.name) errors.push('Designation Name is required');
+  if (!row.name) {
+    errors.push('Designation Name is required');
+    fieldErrors.name = 'Required';
+  }
 
-  return { isValid: errors.length === 0, errors, mappedRow };
+  return { isValid: errors.length === 0, errors, mappedRow, fieldErrors };
 };
 
 
