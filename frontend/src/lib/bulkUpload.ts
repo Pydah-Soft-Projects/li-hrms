@@ -266,13 +266,13 @@ export const downloadTemplate = (
  * Match division name to division ID
  */
 export const matchDivisionByName = (
-  name: string | null,
+  name: string | null | number,
   divisions: { _id: string; name: string }[]
 ): string | null => {
-  if (!name) return null;
-  const normalizedName = name.toString().toLowerCase().trim();
+  if (name === null || name === undefined || name === '') return null;
+  const input = String(name).toLowerCase().trim();
   const match = divisions.find(
-    (d) => d.name.toLowerCase().trim() === normalizedName
+    (d) => d.name.toLowerCase().trim() === input
   );
   return match?._id || null;
 };
@@ -281,13 +281,13 @@ export const matchDivisionByName = (
  * Match department name to department ID
  */
 export const matchDepartmentByName = (
-  name: string | null,
+  name: string | null | number,
   departments: { _id: string; name: string }[]
 ): string | null => {
-  if (!name) return null;
-  const normalizedName = name.toString().toLowerCase().trim();
+  if (name === null || name === undefined || name === '') return null;
+  const input = String(name).toLowerCase().trim();
   const match = departments.find(
-    (d) => d.name.toLowerCase().trim() === normalizedName
+    (d) => d.name.toLowerCase().trim() === input
   );
   return match?._id || null;
 };
@@ -296,15 +296,15 @@ export const matchDepartmentByName = (
  * Match designation name to designation ID within a department
  */
 export const matchDesignationByName = (
-  name: string | null,
+  name: string | null | number,
   designations: { _id: string; name: string; code?: string }[]
 ): string | null => {
-  if (!name) return null;
-  const input = name.toString().toLowerCase().trim();
+  if (name === null || name === undefined || name === '') return null;
+  const input = String(name).toLowerCase().trim();
   const match = designations.find(
     (d) =>
-      d.name.toLowerCase().trim() === input ||
-      (d.code && d.code.toLowerCase().trim() === input)
+      d.name?.toLowerCase().trim() === input ||
+      (d.code && String(d.code).toLowerCase().trim() === input)
   );
   return match?._id || null;
 };
@@ -376,11 +376,11 @@ export const validateEmployeeRow = (
   }
 
   // Map designation
-  if (row.designation_name) {
-    const input = (row.designation_name as string).toLowerCase().trim();
+  if (row.designation_name !== null && row.designation_name !== undefined && row.designation_name !== '') {
+    const input = String(row.designation_name).toLowerCase().trim();
     const desig = designations.find(d =>
-      d.name.toLowerCase().trim() === input ||
-      (d.code && d.code.toLowerCase().trim() === input)
+      d.name?.toLowerCase().trim() === input ||
+      (d.code && String(d.code).toLowerCase().trim() === input)
     );
     if (desig) {
       mappedRow.designation_id = desig._id;

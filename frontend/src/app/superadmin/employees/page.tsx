@@ -3563,15 +3563,14 @@ export default function EmployeesPage() {
               data.forEach((row) => {
                 try {
                   // Map division, department and designation names to IDs
-                  const divId = divisions.find(d => d.name.toLowerCase() === (row.division_name as string)?.toLowerCase())?._id;
+                  const divId = divisions.find(d => d.name.toLowerCase().trim() === String(row.division_name || '').toLowerCase().trim())?._id;
                   const deptId = departments.find(d =>
-                    d.name.toLowerCase() === (row.department_name as string)?.toLowerCase() &&
-                    (!divId || (d as any).divisions?.includes(divId))
+                    d.name.toLowerCase().trim() === String(row.department_name || '').toLowerCase().trim()
                   )?._id;
-                  const desigInput = (row.designation_name as string)?.toLowerCase().trim();
+                  const desigInput = String(row.designation_name || '').toLowerCase().trim();
                   const desigId = designations.find(d =>
-                    d.name.toLowerCase().trim() === desigInput ||
-                    (d.code && d.code.toLowerCase().trim() === desigInput)
+                    d.name?.toLowerCase().trim() === desigInput ||
+                    (d.code && String(d.code).toLowerCase().trim() === desigInput)
                   )?._id;
 
                   const employeeData: any = {
