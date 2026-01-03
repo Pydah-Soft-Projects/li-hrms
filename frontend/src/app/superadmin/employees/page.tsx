@@ -3568,8 +3568,10 @@ export default function EmployeesPage() {
                     d.name.toLowerCase() === (row.department_name as string)?.toLowerCase() &&
                     (!divId || (d as any).divisions?.includes(divId))
                   )?._id;
+                  const desigInput = (row.designation_name as string)?.toLowerCase().trim();
                   const desigId = designations.find(d =>
-                    d.name.toLowerCase().trim() === (row.designation_name as string)?.toLowerCase().trim()
+                    d.name.toLowerCase().trim() === desigInput ||
+                    (d.code && d.code.toLowerCase().trim() === desigInput)
                   )?._id;
 
                   const employeeData: any = {

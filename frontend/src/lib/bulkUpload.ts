@@ -297,12 +297,14 @@ export const matchDepartmentByName = (
  */
 export const matchDesignationByName = (
   name: string | null,
-  designations: { _id: string; name: string }[]
+  designations: { _id: string; name: string; code?: string }[]
 ): string | null => {
   if (!name) return null;
-  const normalizedName = name.toString().toLowerCase().trim();
+  const input = name.toString().toLowerCase().trim();
   const match = designations.find(
-    (d) => d.name.toLowerCase().trim() === normalizedName
+    (d) =>
+      d.name.toLowerCase().trim() === input ||
+      (d.code && d.code.toLowerCase().trim() === input)
   );
   return match?._id || null;
 };
@@ -329,7 +331,7 @@ export const validateEmployeeRow = (
   row: ParsedRow,
   divisions: { _id: string; name: string }[] = [],
   departments: { _id: string; name: string }[],
-  designations: { _id: string; name: string; department: string }[],
+  designations: { _id: string; name: string; department: string; code?: string }[],
   users: { _id: string; name: string; email?: string }[] = []
 ): { isValid: boolean; errors: string[]; mappedRow: ParsedRow; fieldErrors: { [key: string]: string } } => {
   const errors: string[] = [];
@@ -375,8 +377,10 @@ export const validateEmployeeRow = (
 
   // Map designation
   if (row.designation_name) {
+    const input = (row.designation_name as string).toLowerCase().trim();
     const desig = designations.find(d =>
-      d.name.toLowerCase().trim() === (row.designation_name as string).toLowerCase().trim()
+      d.name.toLowerCase().trim() === input ||
+      (d.code && d.code.toLowerCase().trim() === input)
     );
     if (desig) {
       mappedRow.designation_id = desig._id;
