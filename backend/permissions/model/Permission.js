@@ -169,6 +169,44 @@ const permissionSchema = new mongoose.Schema(
         longitude: { type: Number }
       }
     },
+
+    // ==========================================
+    // SECURITY GATE PASS FIELDS
+    // ==========================================
+
+    // Gate Out
+    gateOutTime: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+    gateOutSecret: {
+      type: String, // Unique secret generated for the Gate Out QR
+      select: false, // Hide by default for security
+      default: null,
+    },
+    gateOutVerifiedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+
+    // Gate In
+    gateInTime: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+    gateInSecret: {
+      type: String, // Unique secret generated for the Gate In QR
+      select: false, // Hide by default for security
+      default: null,
+    },
+    gateInVerifiedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
   },
   {
     timestamps: true,
