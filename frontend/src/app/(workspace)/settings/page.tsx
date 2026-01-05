@@ -2275,7 +2275,7 @@ export default function SettingsPage() {
                         <label className="relative inline-flex cursor-pointer items-center">
                           <input
                             type="checkbox"
-                            checked={leaveSettings?.workflow.isEnabled || false}
+                            checked={leaveSettings?.workflow?.isEnabled || false}
                             onChange={(e) => setLeaveSettings(prev => prev ? {
                               ...prev,
                               workflow: { ...prev.workflow, isEnabled: e.target.checked }
@@ -2385,7 +2385,7 @@ export default function SettingsPage() {
                         <label className="relative inline-flex cursor-pointer items-center">
                           <input
                             type="checkbox"
-                            checked={odSettings?.workflow.isEnabled || false}
+                            checked={odSettings?.workflow?.isEnabled || false}
                             onChange={(e) => setODSettings(prev => prev ? {
                               ...prev,
                               workflow: { ...prev.workflow, isEnabled: e.target.checked }

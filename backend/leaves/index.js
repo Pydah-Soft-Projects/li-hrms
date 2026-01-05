@@ -40,6 +40,10 @@ router.get('/od/pending-approvals', authorize('hod', 'hr', 'manager', 'sub_admin
 
 // Get all ODs
 router.get('/od', authorize('hod', 'hr', 'manager', 'sub_admin', 'super_admin'), odController.getODs);
+router.get('/od/pending-approvals', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), odController.getPendingApprovals);
+
+// Get all ODs
+router.get('/od', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), odController.getODs);
 
 // Get single OD
 router.get('/od/:id', odController.getOD);
@@ -54,10 +58,10 @@ router.put('/od/:id', odController.updateOD);
 router.put('/od/:id/cancel', odController.cancelOD);
 
 // Process OD action (approve/reject/forward)
-router.put('/od/:id/action', authorize('hod', 'hr', 'manager', 'sub_admin', 'super_admin'), odController.processODAction);
+router.put('/od/:id/action', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), odController.processODAction);
 
 // Revoke OD approval (within 2-3 hours)
-router.put('/od/:id/revoke', authorize('hod', 'hr', 'manager', 'sub_admin', 'super_admin'), odController.revokeODApproval);
+router.put('/od/:id/revoke', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), odController.revokeODApproval);
 
 // Update OD outcome
 router.put('/od/:id/outcome', odController.updateODOutcome);
@@ -73,7 +77,7 @@ router.delete('/od/:id', authorize('sub_admin', 'super_admin'), odController.del
 router.get('/my', leaveController.getMyLeaves);
 
 // Get pending approvals
-router.get('/pending-approvals', authorize('hod', 'hr', 'manager', 'sub_admin', 'super_admin'), leaveController.getPendingApprovals);
+router.get('/pending-approvals', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), leaveController.getPendingApprovals);
 
 // Get leave statistics
 router.get('/stats', leaveController.getLeaveStats);
@@ -85,13 +89,13 @@ router.get('/approved-records', leaveController.getApprovedRecordsForDate);
 router.get('/conflicts', leaveController.getLeaveConflicts);
 
 // Revoke leave for attendance
-router.post('/:id/revoke-for-attendance', authorize('super_admin', 'sub_admin', 'hr', 'manager', 'hod'), leaveController.revokeLeaveForAttendance);
+router.post('/:id/revoke-for-attendance', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), leaveController.revokeLeaveForAttendance);
 
 // Update leave for attendance (multi-day leave adjustments)
-router.post('/:id/update-for-attendance', authorize('super_admin', 'sub_admin', 'hr', 'manager', 'hod'), leaveController.updateLeaveForAttendance);
+router.post('/:id/update-for-attendance', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), leaveController.updateLeaveForAttendance);
 
 // Get all leaves (with filters)
-router.get('/', authorize('hod', 'hr', 'manager', 'sub_admin', 'super_admin'), applyScopeFilter, leaveController.getLeaves);
+router.get('/', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), applyScopeFilter, leaveController.getLeaves);
 
 // Apply for leave
 router.post('/', leaveController.applyLeave);
@@ -106,10 +110,10 @@ router.put('/:id', leaveController.updateLeave);
 router.put('/:id/cancel', leaveController.cancelLeave);
 
 // Process leave action (approve/reject/forward)
-router.put('/:id/action', authorize('hod', 'hr', 'manager', 'sub_admin', 'super_admin'), leaveController.processLeaveAction);
+router.put('/:id/action', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), leaveController.processLeaveAction);
 
 // Revoke leave approval (within 2-3 hours)
-router.put('/:id/revoke', authorize('hod', 'hr', 'manager', 'sub_admin', 'super_admin'), leaveController.revokeLeaveApproval);
+router.put('/:id/revoke', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), leaveController.revokeLeaveApproval);
 
 // Delete leave
 router.delete('/:id', authorize('sub_admin', 'super_admin'), leaveController.deleteLeave);
@@ -119,10 +123,10 @@ router.delete('/:id', authorize('sub_admin', 'super_admin'), leaveController.del
 // ==========================================
 
 // Validate splits before creating
-router.post('/:id/validate-splits', authorize('hod', 'hr', 'manager', 'sub_admin', 'super_admin'), leaveController.validateLeaveSplits);
+router.post('/:id/validate-splits', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), leaveController.validateLeaveSplits);
 
 // Create splits for a leave
-router.post('/:id/split', authorize('hod', 'hr', 'manager', 'sub_admin', 'super_admin'), leaveController.createLeaveSplits);
+router.post('/:id/split', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), leaveController.createLeaveSplits);
 
 // Get splits for a leave
 router.get('/:id/splits', leaveController.getLeaveSplits);
@@ -131,10 +135,10 @@ router.get('/:id/splits', leaveController.getLeaveSplits);
 router.get('/:id/split-summary', leaveController.getLeaveSplitSummary);
 
 // Update a single split
-router.put('/:id/splits/:splitId', authorize('hod', 'hr', 'manager', 'sub_admin', 'super_admin'), leaveController.updateLeaveSplit);
+router.put('/:id/splits/:splitId', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), leaveController.updateLeaveSplit);
 
 // Delete a split
-router.delete('/:id/splits/:splitId', authorize('hod', 'hr', 'manager', 'sub_admin', 'super_admin'), leaveController.deleteLeaveSplit);
+router.delete('/:id/splits/:splitId', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), leaveController.deleteLeaveSplit);
 
 module.exports = router;
 

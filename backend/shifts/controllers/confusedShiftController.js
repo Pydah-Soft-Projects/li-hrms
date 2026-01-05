@@ -34,7 +34,7 @@ exports.getConfusedShifts = async (req, res) => {
     // Filter by department if provided
     if (department) {
       const employees = await Employee.find({ department_id: department }).select('emp_no');
-      const empNumbers = employees.map(emp => emp.emp_no.toUpperCase());
+      const empNumbers = employees.map(emp => String(emp.emp_no || '').toUpperCase());
       query.employeeNumber = { $in: empNumbers };
     }
 
@@ -58,7 +58,7 @@ exports.getConfusedShifts = async (req, res) => {
           .populate('designation_id', 'shifts');
 
         let allShifts = [];
-        
+
         if (employee) {
           // Get all shifts: designation -> department -> general
           if (employee.designation_id && employee.designation_id.shifts && employee.designation_id.shifts.length > 0) {

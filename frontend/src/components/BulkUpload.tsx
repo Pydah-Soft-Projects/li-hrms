@@ -17,7 +17,7 @@ interface BulkUploadProps {
     width?: string;
   }[];
   validateRow?: (row: ParsedRow, index: number) => { isValid: boolean; errors: string[]; fieldErrors?: { [key: string]: string }; mappedRow?: ParsedRow };
-  onSubmit: (data: ParsedRow[]) => Promise<{ success: boolean; message?: string }>;
+  onSubmit: (data: ParsedRow[]) => Promise<{ success: boolean; message?: string; failedRows?: Array<{ emp_no: string; message: string }> }>;
   onClose: () => void;
 }
 
@@ -162,8 +162,32 @@ export default function BulkUpload({
         }, 1500);
       } else {
         setMessage({ type: 'error', text: result.message || 'Failed to upload data' });
+
+        // Handle server-side row errors
+        if (result.failedRows && result.failedRows.length > 0) {
+          const newErrors: { [key: number]: { rowErrors: string[]; fieldErrors: { [key: string]: string } } } = {};
+
+          result.failedRows.forEach(fail => {
+            // Find index of the row with this emp_no
+            const rowIndex = data.findIndex(row => String(row.emp_no) === String(fail.emp_no));
+            if (rowIndex !== -1) {
+              newErrors[rowIndex] = {
+                rowErrors: [fail.message],
+                fieldErrors: { emp_no: 'Server Error' }
+              };
+            }
+          });
+
+          if (Object.keys(newErrors).length > 0) {
+            setErrors(newErrors);
+            setMessage({
+              type: 'error',
+              text: `${result.message || 'Upload failed'}. Please fix the ${Object.keys(newErrors).length} failed rows and try again.`
+            });
+          }
+        }
       }
-    } catch (err) {
+    } catch (_err) {
       setMessage({ type: 'error', text: 'An error occurred while uploading' });
     } finally {
       setSubmitting(false);

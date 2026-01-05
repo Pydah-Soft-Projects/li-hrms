@@ -51,7 +51,7 @@ const createApplicationInternal = async (rawData, settings, creatorId) => {
     }
   }
 
-  const empNo = applicationData.emp_no.toUpperCase();
+  const empNo = String(applicationData.emp_no || '').toUpperCase();
 
   // Check if employee already exists
   const existingEmployee = await Employee.findOne({ emp_no: empNo });
@@ -189,7 +189,7 @@ exports.createApplication = async (req, res) => {
 exports.bulkCreateApplications = async (req, res) => {
   console.log('[BulkCreateApplications] Received request');
   try {
-    const applications = req.body; // Expecting an array
+    const applications = req.body;
 
     if (!Array.isArray(applications) || applications.length === 0) {
       return res.status(400).json({
@@ -199,17 +199,89 @@ exports.bulkCreateApplications = async (req, res) => {
     }
 
     const settings = await EmployeeApplicationFormSettings.getActiveSettings();
+    const creatorId = req.user._id;
+
+    // 1. Pre-fetch existing and pending emp_no for duplicate checking
+    const empNos = applications.map(app => String(app.emp_no || '').toUpperCase()).filter(Boolean);
+    const [existingEmployees, pendingApps] = await Promise.all([
+      Employee.find({ emp_no: { $in: empNos } }).select('emp_no'),
+      EmployeeApplication.find({ emp_no: { $in: empNos }, status: 'pending' }).select('emp_no')
+    ]);
+
+    const existingEmpSet = new Set(existingEmployees.map(e => e.emp_no.toUpperCase()));
+    const pendingAppSet = new Set(pendingApps.map(a => a.emp_no.toUpperCase()));
+
+    const itemsToInsert = [];
     const results = {
       successCount: 0,
       failCount: 0,
       errors: [],
     };
 
-    // Process one by one on backend for now to capture individual errors
+    const normalizeOverrides = (list) =>
+      Array.isArray(list)
+        ? list
+          .filter((item) => item && (item.masterId || item.name))
+          .map((item) => ({
+            masterId: item.masterId || null,
+            code: item.code || null,
+            name: item.name || '',
+            category: item.category || null,
+            type: item.type || null,
+            amount: item.amount ?? item.overrideAmount ?? null,
+            percentage: item.percentage ?? null,
+            percentageBase: item.percentageBase ?? null,
+            minAmount: item.minAmount ?? null,
+            maxAmount: item.maxAmount ?? null,
+            basedOnPresentDays: item.basedOnPresentDays ?? false,
+            isOverride: true,
+          }))
+        : [];
+
+    // 2. Process and Validate in memory
     for (const appData of applications) {
+      const empNo = String(appData.emp_no || '').toUpperCase();
+
       try {
-        await createApplicationInternal(appData, settings, req.user._id);
-        results.successCount++;
+        // Validation
+        if (settings) {
+          const validation = await validateFormData(appData, settings);
+          if (!validation.isValid) {
+            throw new Error(`Validation: ${Object.values(validation.errors).flat().join(', ')}`);
+          }
+        } else if (!appData.emp_no || !appData.employee_name || !appData.proposedSalary) {
+          throw new Error('Basic validation failed: emp_no, employee_name, and proposedSalary are required');
+        }
+
+        // Duplicate Check
+        if (existingEmpSet.has(empNo)) throw new Error(`Employee with number ${empNo} already exists`);
+        if (pendingAppSet.has(empNo)) throw new Error(`Pending application already exists for employee number ${empNo}`);
+
+        // Transformation
+        const { permanentFields, dynamicFields } = transformFormData(appData, settings);
+
+        // Qualifications
+        if (appData.qualifications) {
+          if (settings && Array.isArray(appData.qualifications)) {
+            permanentFields.qualifications = resolveQualificationLabels(appData.qualifications, settings);
+          } else {
+            permanentFields.qualifications = appData.qualifications;
+          }
+        }
+
+        itemsToInsert.push({
+          ...permanentFields,
+          dynamicFields,
+          emp_no: empNo,
+          employeeAllowances: normalizeOverrides(appData.employeeAllowances),
+          employeeDeductions: normalizeOverrides(appData.employeeDeductions),
+          createdBy: creatorId,
+          status: 'pending',
+        });
+
+        // Add to "seen" set to catch duplicates within the same file
+        pendingAppSet.add(empNo);
+
       } catch (err) {
         results.failCount++;
         results.errors.push({
@@ -217,8 +289,13 @@ exports.bulkCreateApplications = async (req, res) => {
           name: appData.employee_name || 'Unknown',
           message: err.message,
         });
-        console.warn(`[BulkCreate] Failed for ${appData.emp_no}:`, err.message);
       }
+    }
+
+    // 3. Batch Insert
+    if (itemsToInsert.length > 0) {
+      await EmployeeApplication.insertMany(itemsToInsert);
+      results.successCount = itemsToInsert.length;
     }
 
     res.status(200).json({

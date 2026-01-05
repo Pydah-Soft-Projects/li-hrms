@@ -17,17 +17,17 @@ router.use(applyScopeFilter);
 router.get('/settings/:type', settingsController.getSettings);
 
 // Save settings
-router.post('/settings/:type', authorize('super_admin'), settingsController.saveSettings);
-router.put('/settings/:type', authorize('super_admin'), settingsController.saveSettings);
+router.post('/settings/:type', authorize('manager', 'super_admin'), settingsController.saveSettings);
+router.put('/settings/:type', authorize('manager', 'super_admin'), settingsController.saveSettings);
 
 // Get users for workflow configuration
-router.get('/settings/:type/users', authorize('super_admin'), settingsController.getUsersForWorkflow);
+router.get('/settings/:type/users', authorize('manager', 'super_admin'), settingsController.getUsersForWorkflow);
 
 // Get workflow configuration
 router.get('/settings/:type/workflow', settingsController.getWorkflow);
 
 // Update workflow configuration
-router.put('/settings/:type/workflow', authorize('super_admin'), settingsController.updateWorkflow);
+router.put('/settings/:type/workflow', authorize('manager', 'super_admin'), settingsController.updateWorkflow);
 
 // ==========================================
 // LOAN ROUTES
@@ -37,10 +37,10 @@ router.put('/settings/:type/workflow', authorize('super_admin'), settingsControl
 router.get('/my', loanController.getMyLoans);
 
 // Get pending approvals
-router.get('/pending-approvals', authorize('hod', 'hr', 'sub_admin', 'super_admin'), loanController.getPendingApprovals);
+router.get('/pending-approvals', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), loanController.getPendingApprovals);
 
 // Get all loans (with filters)
-router.get('/', authorize('hod', 'hr', 'sub_admin', 'super_admin'), loanController.getLoans);
+router.get('/', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), loanController.getLoans);
 
 // Apply for loan/advance
 router.post('/', loanController.applyLoan);
@@ -55,16 +55,16 @@ router.put('/:id', loanController.updateLoan);
 router.put('/:id/cancel', loanController.cancelLoan);
 
 // Process loan action (approve/reject/forward)
-router.put('/:id/action', authorize('hod', 'hr', 'sub_admin', 'super_admin'), loanController.processLoanAction);
+router.put('/:id/action', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), loanController.processLoanAction);
 
 // Disburse loan
-router.put('/:id/disburse', authorize('hr', 'sub_admin', 'super_admin'), loanController.disburseLoan);
+router.put('/:id/disburse', authorize('manager', 'hr', 'sub_admin', 'super_admin'), loanController.disburseLoan);
 
 // Record EMI payment
-router.post('/:id/pay-emi', authorize('hr', 'sub_admin', 'super_admin'), loanController.payEMI);
+router.post('/:id/pay-emi', authorize('manager', 'hr', 'sub_admin', 'super_admin'), loanController.payEMI);
 
 // Record advance deduction
-router.post('/:id/pay-advance', authorize('hr', 'sub_admin', 'super_admin'), loanController.payAdvance);
+router.post('/:id/pay-advance', authorize('manager', 'hr', 'sub_admin', 'super_admin'), loanController.payAdvance);
 
 // Get transaction history
 router.get('/:id/transactions', loanController.getTransactions);

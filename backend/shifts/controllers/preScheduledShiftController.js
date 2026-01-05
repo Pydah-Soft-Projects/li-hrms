@@ -25,7 +25,7 @@ exports.createPreScheduledShift = async (req, res) => {
     }
 
     // Validate employee exists
-    const employee = await Employee.findOne({ emp_no: employeeNumber.toUpperCase() });
+    const employee = await Employee.findOne({ emp_no: String(employeeNumber || '').toUpperCase() });
     if (!employee) {
       return res.status(404).json({
         success: false,
@@ -44,7 +44,7 @@ exports.createPreScheduledShift = async (req, res) => {
 
     // Check if already scheduled
     const existing = await PreScheduledShift.findOne({
-      employeeNumber: employeeNumber.toUpperCase(),
+      employeeNumber: String(employeeNumber || '').toUpperCase(),
       date: date,
     });
 
@@ -56,7 +56,7 @@ exports.createPreScheduledShift = async (req, res) => {
     }
 
     const preScheduled = await PreScheduledShift.create({
-      employeeNumber: employeeNumber.toUpperCase(),
+      employeeNumber: String(employeeNumber || '').toUpperCase(),
       shiftId,
       date,
       scheduledBy: req.user._id,
@@ -101,7 +101,7 @@ exports.getPreScheduledShifts = async (req, res) => {
     const query = {};
 
     if (employeeNumber) {
-      query.employeeNumber = employeeNumber.toUpperCase();
+      query.employeeNumber = String(employeeNumber || '').toUpperCase();
     }
 
     if (startDate && endDate) {
@@ -177,7 +177,7 @@ exports.bulkCreatePreScheduledShifts = async (req, res) => {
 
         // Check if already exists
         const existing = await PreScheduledShift.findOne({
-          employeeNumber: employeeNumber.toUpperCase(),
+          employeeNumber: String(employeeNumber || '').toUpperCase(),
           date: date,
         });
 
@@ -187,7 +187,7 @@ exports.bulkCreatePreScheduledShifts = async (req, res) => {
         }
 
         await PreScheduledShift.create({
-          employeeNumber: employeeNumber.toUpperCase(),
+          employeeNumber: String(employeeNumber || '').toUpperCase(),
           shiftId,
           date,
           scheduledBy: req.user._id,
@@ -238,10 +238,10 @@ exports.getRoster = async (req, res) => {
     let empNumbersFilter = null;
 
     if (employeeNumber) {
-      query.employeeNumber = employeeNumber.toUpperCase();
+      query.employeeNumber = String(employeeNumber || '').toUpperCase();
     } else if (departmentId) {
       const emps = await Employee.find({ department_id: departmentId }).select('emp_no');
-      empNumbersFilter = emps.map((e) => e.emp_no.toUpperCase());
+      empNumbersFilter = emps.map((e) => String(e.emp_no || '').toUpperCase());
       query.employeeNumber = { $in: empNumbersFilter };
     }
 
@@ -317,12 +317,12 @@ exports.saveRoster = async (req, res) => {
       }
     }
 
-    const empNos = Array.from(new Set(entries.map((e) => (e.employeeNumber || '').toUpperCase()))).filter(Boolean);
+    const empNos = Array.from(new Set(entries.map((e) => String(e.employeeNumber || '').toUpperCase()))).filter(Boolean);
     if (empNos.length === 0) {
       return res.status(400).json({ success: false, message: 'Employee numbers are required in entries' });
     }
     const existingEmps = await Employee.find({ emp_no: { $in: empNos } }).select('emp_no');
-    const existingEmpNos = new Set(existingEmps.map((e) => e.emp_no.toUpperCase()));
+    const existingEmpNos = new Set(existingEmps.map((e) => String(e.emp_no || '').toUpperCase()));
     const missing = empNos.filter((x) => !existingEmpNos.has(x));
     if (missing.length) {
       return res.status(404).json({ success: false, message: `Employees not found: ${missing.join(', ')}` });
@@ -338,7 +338,7 @@ exports.saveRoster = async (req, res) => {
     const bulk = [];
     let skippedCount = 0;
     entries.forEach((e, index) => {
-      const empNo = (e.employeeNumber || '').toUpperCase();
+      const empNo = String(e.employeeNumber || '').toUpperCase();
       if (!empNo || !e.date) {
         skippedCount++;
         console.warn(`[Entry ${index}] Skipping: missing employeeNumber or date:`, e);

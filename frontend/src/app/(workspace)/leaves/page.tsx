@@ -1399,6 +1399,57 @@ export default function LeavesPage() {
 
   const totalPending = pendingLeaves.length + pendingODs.length;
 
+  const canPerformAction = (item: LeaveApplication | ODApplication) => {
+    if (!currentUser) return false;
+
+    // Super Admin can always act (safety override) - Commented out to restrict to workflow
+    // if (currentUser.role === 'super_admin') return true;
+
+    if (currentUser.role === 'employee') return false;
+
+    // If workflow exists and specifies nextApprover
+    if (item.workflow?.nextApprover) {
+      const approver = String(item.workflow.nextApprover).toLowerCase().trim();
+      const userRole = String(currentUser.role).toLowerCase().trim();
+
+      // 1. Direct Role Match
+      if (userRole === approver) return true;
+
+      // 2. ID Match (if approver is a specific User ID)
+      if ((currentUser as any)._id === item.workflow.nextApprover || (currentUser as any).id === item.workflow.nextApprover) return true;
+
+      // 3. Special Aliases
+      // 'reporting_manager' can be approved by 'manager' or 'hod'
+      if (approver === 'reporting_manager' && (userRole === 'manager' || userRole === 'hod')) return true;
+
+      // 'manager' step: allow HOD (Division Head) to approve as they are senior/equivalent in some contexts
+      // Also allow 'manager' to approve of course (covered by direct match), but explicit check doesn't hurt
+      if (approver === 'manager' && (userRole === 'hod' || userRole === 'division_head')) return true;
+
+      // 'hod' step: allow Manager to approve if they are essentially functioning as HOD
+      if (approver === 'hod' && userRole === 'manager') return true;
+
+      // 4. Handle 'final_authority' placeholder
+      // If the workflow step is generic "final authority", allow any major role to see the button.
+      // The backend validation will still enforce strict permissions if needed.
+      if (approver === 'final_authority') {
+        return ['manager', 'hr', 'super_admin', 'hod', 'sub_admin'].includes(userRole);
+      }
+
+      return false;
+    }
+
+    // Safety check: specific status checks preventing duplicates
+    // If I am HOD, and status is hod_approved, I shouldn't see buttons
+    if ((currentUser.role === 'hod' || currentUser.role === 'manager') &&
+      (item.status === 'hod_approved' || item.status === 'manager_approved')) {
+      return false;
+    }
+
+    // Fallback: only true if status allows (pending or forwarded states)
+    return ['pending', 'hod_approved', 'manager_approved'].includes(item.status);
+  };
+
   // Dynamic Column Logic
   const { showDivision, showDepartment } = useMemo(() => {
     const isHOD = currentUser?.role === 'hod';
@@ -1814,6 +1865,24 @@ export default function LeavesPage() {
                             </button>
                           </div>
                         )}
+                      {canPerformAction(leave) && (
+                        <div className="flex items-center gap-2 mt-auto">
+                          <button
+                            onClick={() => handleAction(leave._id, 'leave', 'approve')}
+                            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-green-500/10 py-2 text-sm font-semibold text-green-600 transition-colors hover:bg-green-500 hover:text-white dark:bg-green-500/20 dark:text-green-400 dark:hover:bg-green-500 dark:hover:text-white"
+                            title="Approve Leave"
+                          >
+                            <CheckIcon /> Approve
+                          </button>
+                          <button
+                            onClick={() => handleAction(leave._id, 'leave', 'reject')}
+                            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-500/10 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500 hover:text-white dark:bg-red-500/20 dark:text-red-400 dark:hover:bg-red-500 dark:hover:text-white"
+                            title="Reject Leave"
+                          >
+                            <XIcon /> Reject
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1886,7 +1955,7 @@ export default function LeavesPage() {
                       </div>
 
                       {/* Actions */}
-                      {currentUser?.role !== 'employee' && (
+                      {canPerformAction(od) && (
                         <div className="flex items-center gap-2 mt-auto">
                           <button
                             onClick={() => handleAction(od._id, 'od', 'approve')}
@@ -3039,9 +3108,9 @@ export default function LeavesPage() {
 
                 {/* Approval Actions - HIDDEN for employees AND already forwarded/approved/rejected */}
                 {/* Logic: Hide if final status OR (user is employee) OR (user is HOD and already forwarded) */}
+                {/* Approval Actions - Dynamic based on workflow */}
                 {!['approved', 'rejected', 'cancelled'].includes(selectedItem.status) &&
-                  currentUser?.role !== 'employee' &&
-                  !(currentUser?.role === 'hod' && selectedItem.status === 'hod_approved') && (
+                  canPerformAction(selectedItem) && (
                     <>
                       <p className="text-xs text-slate-500 uppercase font-semibold">Take Action</p>
 
@@ -3058,6 +3127,8 @@ export default function LeavesPage() {
                       <div className="flex flex-wrap gap-2">
                         {/* Approve: Available to all approvers */}
                         {['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser?.role || '') && (
+                        {/* Approve: Dynamic */}
+                        {true && (
                           <button
                             onClick={() => handleDetailAction('approve')}
                             className="px-4 py-2 text-sm font-semibold text-white bg-green-500 rounded-xl hover:bg-green-600 transition-colors flex items-center gap-2"
@@ -3068,6 +3139,8 @@ export default function LeavesPage() {
 
                         {/* Reject: Available to all approvers */}
                         {['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser?.role || '') && (
+                        {/* Reject: Dynamic */}
+                        {true && (
                           <button
                             onClick={() => handleDetailAction('reject')}
                             className="px-4 py-2 text-sm font-semibold text-white bg-red-500 rounded-xl hover:bg-red-600 transition-colors flex items-center gap-2"

@@ -513,7 +513,7 @@ exports.createEmployee = async (req, res) => {
     }
 
     // Check if employee already exists in MongoDB
-    const existingMongo = await Employee.findOne({ emp_no: employeeData.emp_no.toUpperCase() });
+    const existingMongo = await Employee.findOne({ emp_no: String(employeeData.emp_no || '').toUpperCase() });
     if (existingMongo) {
       return res.status(400).json({
         success: false,
@@ -625,7 +625,7 @@ exports.createEmployee = async (req, res) => {
         ...permanentFields,
         qualifications, // Explicitly save resolved qualifications
         dynamicFields: Object.keys(dynamicFields).length > 0 ? dynamicFields : {},
-        emp_no: employeeData.emp_no.toUpperCase(),
+        emp_no: String(employeeData.emp_no || '').toUpperCase(),
         employeeAllowances,
         employeeDeductions,
         password: rawPassword, // Will be hashed by pre-save hook
@@ -645,7 +645,7 @@ exports.createEmployee = async (req, res) => {
       try {
         await createEmployeeMSSQL({
           ...permanentFields,
-          emp_no: employeeData.emp_no.toUpperCase(),
+          emp_no: String(employeeData.emp_no || '').toUpperCase(),
           department_id: permanentFields.department_id?.toString() || null,
           designation_id: permanentFields.designation_id?.toString() || null,
         });
@@ -659,7 +659,7 @@ exports.createEmployee = async (req, res) => {
     }
 
     // Fetch the created employee
-    const createdEmployee = await Employee.findOne({ emp_no: employeeData.emp_no.toUpperCase() })
+    const createdEmployee = await Employee.findOne({ emp_no: String(employeeData.emp_no || '').toUpperCase() })
       .populate('division_id', 'name code')
       .populate('department_id', 'name code')
       .populate('designation_id', 'name code');

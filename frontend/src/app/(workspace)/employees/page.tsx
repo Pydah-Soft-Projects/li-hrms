@@ -3446,13 +3446,10 @@ export default function EmployeesPage() {
                     message: `Successfully created ${response.data?.successCount || batchData.length} applications`
                   };
                 } else {
-                  const failCount = response.data?.failCount || 0;
-                  const backendErrors = response.data?.errors || [];
-                  const firstError = backendErrors[0]?.message || response.message;
-
                   return {
                     success: false,
-                    message: `Completed with errors. Succeeded: ${response.data?.successCount || 0}, Failed: ${failCount}. ${firstError ? 'Error: ' + firstError : ''}`
+                    message: response.message || 'Partial upload failure',
+                    failedRows: response.data?.errors || []
                   };
                 }
               } catch (err: any) {

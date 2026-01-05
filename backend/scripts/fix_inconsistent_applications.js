@@ -24,7 +24,7 @@ async function fixApplications() {
 
         let fixedCount = 0;
         for (const app of approvedApplications) {
-            const employee = await Employee.findOne({ emp_no: app.emp_no.toUpperCase() });
+            const employee = await Employee.findOne({ emp_no: String(app.emp_no || '').toUpperCase() });
             if (!employee) {
                 console.log(`Application for ${app.emp_no} has no employee. Reverting to pending...`);
                 app.status = 'pending';
@@ -38,7 +38,7 @@ async function fixApplications() {
         process.exit(0);
     } catch (error) {
         console.error('Error fixing applications:', error);
-        if(process.env.NODE_ENV !== "test") process.exit(1);
+        if (process.env.NODE_ENV !== "test") process.exit(1);
     }
 }
 
