@@ -207,6 +207,38 @@ const permissionSchema = new mongoose.Schema(
       ref: 'User',
       default: null,
     },
+
+    // Dynamic Workflow Structure
+    workflow: {
+      currentStepRole: { type: String, default: 'hod' },
+      nextApproverRole: { type: String, default: 'hod' },
+      nextApprover: { type: String, default: 'hod' }, // Can be Role or Specific User ID
+      isCompleted: { type: Boolean, default: false },
+      finalAuthority: { type: String }, // Role that is the final stop
+      approvalChain: [
+        {
+          stepOrder: Number,
+          role: String,
+          label: String,
+          status: { type: String, enum: ['pending', 'approved', 'rejected', 'skipped', 'forwarded'], default: 'pending' },
+          isCurrent: { type: Boolean, default: false },
+          actionBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+          actionAt: Date,
+          comments: String
+        }
+      ],
+      history: [
+        {
+          step: String,
+          action: String,
+          actionBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+          actionByName: String,
+          actionByRole: String,
+          comments: String,
+          timestamp: Date,
+        }
+      ]
+    },
   },
   {
     timestamps: true,

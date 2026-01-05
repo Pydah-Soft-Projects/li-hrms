@@ -153,7 +153,10 @@ function buildWorkflowVisibilityFilter(user) {
             },
 
             // 4. Specifically involved in history
-            { 'workflow.history.actionBy': user._id }
+            { 'workflow.history.actionBy': user._id },
+
+            // 5. Global HR Visibility for Approved Records
+            ...(userRole === 'hr' ? [{ status: 'approved' }] : [])
         ]
     };
 }
