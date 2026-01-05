@@ -115,7 +115,7 @@ function validateField(field, value, formData) {
           }
           if (validation.pattern) {
             const regex = new RegExp(validation.pattern);
-            if (!regex.test(value)) {
+            if (!regex.test(String(value))) {
               return validation.custom || `${field.label} format is invalid`;
             }
           }
@@ -161,14 +161,16 @@ function validateField(field, value, formData) {
     case 'tel':
       if (dataType === 'string') {
         const phoneRegex = /^[0-9+\-\s()]+$/;
-        if (!phoneRegex.test(value)) {
+        const valStr = String(value);
+        if (!phoneRegex.test(valStr)) {
           return `${field.label} must be a valid phone number`;
         }
         if (validation) {
-          if (validation.minLength && value.replace(/[^0-9]/g, '').length < validation.minLength) {
+          const digitsOnly = valStr.replace(/[^0-9]/g, '');
+          if (validation.minLength && digitsOnly.length < validation.minLength) {
             return `${field.label} must be at least ${validation.minLength} digits`;
           }
-          if (validation.maxLength && value.replace(/[^0-9]/g, '').length > validation.maxLength) {
+          if (validation.maxLength && digitsOnly.length > validation.maxLength) {
             return `${field.label} must be at most ${validation.maxLength} digits`;
           }
         }

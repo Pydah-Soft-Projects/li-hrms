@@ -3552,7 +3552,7 @@ export default function EmployeesPage() {
                     }
 
                     // Manual validation for phone numbers in preview (must be 10 digits)
-                    if (field.id === 'phone_number' && value) {
+                    if (field.id === 'phone_number' && value !== undefined && value !== null && value !== '') {
                       const digitsOnly = String(value).replace(/\D/g, '');
                       if (digitsOnly.length !== 10) {
                         errors.push('Phone number must be exactly 10 digits');
