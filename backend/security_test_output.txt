@@ -1,0 +1,11 @@
+--- Starting Robust Security Gate Verification ---\n--- Starting Robust Security Gate Verification ---\nConnected to MongoDB.\n[EmployeeModel] Password not modified or missing for TEST_EMP_001, skipping hash.\nCreated Employee Doc: "695b5735d075b75ae14de584"\nCreated Employee Doc: "695b5735d075b75ae14de584"\nCreated Employee User Doc: "695b5735d075b75ae14de59a"\nCreated Employee User Doc: "695b5735d075b75ae14de59a"\n
+--- Setup ---\nEmployee User ID: "695b5735d075b75ae14de59a"\nSecurity User ID: "695b5737d075b75ae14de5d1"\n
+--- Scenario 1: Permission Setup ---\n✅ Created Approved Permission: "695b5737d075b75ae14de5d4"\n
+--- Scenario 2: Unauthorized QR Generation ---\n✅ PASS: Unauthorized user blocked from generating QR.\n
+--- Scenario 3: Valid Gate OUT Generation ---\n✅ PASS: Gate OUT QR Generated. Secret: OUT:695b5737d07...\n
+--- Scenario 4: Gate OUT Verification (Security Scan) ---\n✅ PASS: Gate OUT Verified successfully.\n
+--- Scenario 5: Duplicate Gate OUT Scan ---\n✅ PASS: Double scan blocked.\n
+--- Scenario 6: Premature Gate IN (Buffer Check) ---\n✅ PASS: Premature Gate IN blocked. Wait time: 5 mins\n
+--- Scenario 7: Valid Gate IN Generation ---\n(Mocking time passing...)\n✅ PASS: Gate IN QR Generated. Secret: IN:695b5737d075...\n
+--- Scenario 8: Gate IN Verification ---\n✅ PASS: Gate IN Verified successfully.\n
+Terminiating Check:\nGate Out Time: Mon Jan 05 2026 11:36:23 GMT+0530 (India Standard Time)\nGate In Time: Mon Jan 05 2026 11:46:23 GMT+0530 (India Standard Time)\n✅ PASS: Full Cycle Completed.\n

@@ -991,6 +991,8 @@ exports.processODAction = async (req, res) => {
     if (currentApprover === 'hod' && userRole === 'hod') {
       canProcess = !req.user.department ||
         od.department?.toString() === req.user.department?.toString();
+    } else if (currentApprover === 'manager' && userRole === 'manager') {
+      canProcess = true; // Add division check if needed later, for now allow action
     } else if (currentApprover === 'hr' && userRole === 'hr') {
       canProcess = true;
     } else if (currentApprover === 'final_authority' && userRole === 'hr') {

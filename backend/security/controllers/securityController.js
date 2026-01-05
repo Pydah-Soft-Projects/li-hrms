@@ -188,7 +188,9 @@ exports.verifyGatePass = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Invalid QR Code format' });
         }
 
-        const permission = await Permission.findById(permissionId).populate('employeeId', 'employee_name emp_no');
+        const permission = await Permission.findById(permissionId)
+            .select('+gateOutSecret +gateInSecret')
+            .populate('employeeId', 'employee_name emp_no');
 
         if (!permission) {
             return res.status(404).json({ success: false, message: 'Permission record not found' });

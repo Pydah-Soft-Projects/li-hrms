@@ -67,12 +67,17 @@ async function runVerification() {
             fromDate: new Date(),
             toDate: new Date(),
             reason: 'TEST_VERIFY_ROBUST',
+            purpose: 'Test OD',
+            placeVisited: 'Clients Office',
+            contactNumber: '1234567890',
+            appliedBy: employeeId, // Required
             odType: 'full_day',
             odType_extended: 'full_day',
             numberOfDays: 1,
             status: 'pending',
             workflow: {
                 currentStep: 'manager',
+                nextApprover: 'manager', // Required by controller
                 bt_manager_enabled: true,
                 approvalChain: [
                     { role: 'manager', status: 'pending' },
@@ -116,12 +121,17 @@ async function runVerification() {
             fromDate: new Date(),
             toDate: new Date(),
             reason: 'TEST_VERIFY_ROBUST',
+            purpose: 'Test OD',
+            placeVisited: 'Clients Office',
+            contactNumber: '1234567890',
+            appliedBy: employeeId, // Required
             odType: 'full_day',
             odType_extended: 'full_day',
             numberOfDays: 1,
             status: 'pending',
             workflow: {
                 currentStep: 'manager',
+                nextApprover: 'manager', // Required by controller
                 bt_manager_enabled: true,
                 approvalChain: [
                     { role: 'manager', status: 'pending' } // Manager is LAST
