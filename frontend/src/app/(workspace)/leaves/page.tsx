@@ -3126,9 +3126,7 @@ export default function LeavesPage() {
                       {/* Action Buttons */}
                       <div className="flex flex-wrap gap-2">
                         {/* Approve: Available to all approvers */}
-                        {['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser?.role || '') && (
-                        {/* Approve: Dynamic */}
-                        {true && (
+                        {['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser?.role || '') && true && (
                           <button
                             onClick={() => handleDetailAction('approve')}
                             className="px-4 py-2 text-sm font-semibold text-white bg-green-500 rounded-xl hover:bg-green-600 transition-colors flex items-center gap-2"
@@ -3138,9 +3136,7 @@ export default function LeavesPage() {
                         )}
 
                         {/* Reject: Available to all approvers */}
-                        {['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser?.role || '') && (
-                        {/* Reject: Dynamic */}
-                        {true && (
+                        {['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser?.role || '') && true && (
                           <button
                             onClick={() => handleDetailAction('reject')}
                             className="px-4 py-2 text-sm font-semibold text-white bg-red-500 rounded-xl hover:bg-red-600 transition-colors flex items-center gap-2"
