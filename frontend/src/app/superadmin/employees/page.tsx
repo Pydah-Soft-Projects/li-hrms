@@ -3550,6 +3550,15 @@ export default function EmployeesPage() {
                         fieldErrors[field.id] = 'Required';
                       }
                     }
+
+                    // Manual validation for phone numbers in preview (must be 10 digits)
+                    if (field.id === 'phone_number' && value) {
+                      const digitsOnly = String(value).replace(/\D/g, '');
+                      if (digitsOnly.length !== 10) {
+                        errors.push('Phone number must be exactly 10 digits');
+                        fieldErrors[field.id] = 'Must be 10 digits';
+                      }
+                    }
                   });
                 });
               }
