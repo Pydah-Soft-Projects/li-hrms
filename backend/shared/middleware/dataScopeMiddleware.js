@@ -117,6 +117,48 @@ function buildScopeFilter(user) {
 }
 
 /**
+ * Build workflow visibility filter for sequential travel
+ * Ensures records are only visible once they reach a user's stage or if they've acted on them
+ * @param {Object} user - User object from req.user
+ * @returns {Object} MongoDB filter object
+ */
+function buildWorkflowVisibilityFilter(user) {
+    if (!user) return { _id: null };
+
+    // Super Admin and Sub Admin see everything within their scope immediately
+    if (user.role === 'super_admin' || user.role === 'sub_admin') {
+        return {};
+    }
+
+    const userRole = user.role;
+
+    return {
+        $or: [
+            // 1. Applicant (Owner) - Always sees their own applications
+            { appliedBy: user._id },
+            { employeeId: user.employeeRef },
+
+            // 2. Current Desk (Next Approver) - Visible when it's their turn
+            { 'workflow.nextApprover': userRole },
+            { 'workflow.nextApproverRole': userRole },
+
+            // 3. Past Desks (Audit Trail) - Visible if they already took action
+            {
+                'workflow.approvalChain': {
+                    $elemMatch: {
+                        role: userRole,
+                        status: { $in: ['approved', 'rejected', 'skipped', 'forwarded'] }
+                    }
+                }
+            },
+
+            // 4. Specifically involved in history
+            { 'workflow.history.actionBy': user._id }
+        ]
+    };
+}
+
+/**
  * Middleware to inject scope filter into request
  */
 const applyScopeFilter = async (req, res, next) => {
@@ -193,6 +235,7 @@ function hasAccessToResource(user, resource) {
 module.exports = {
     applyScopeFilter,
     buildScopeFilter,
+    buildWorkflowVisibilityFilter,
     hasAccessToResource,
     getDefaultScope
 };

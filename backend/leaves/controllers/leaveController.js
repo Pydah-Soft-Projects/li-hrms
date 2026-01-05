@@ -10,6 +10,7 @@ const {
   updateLeaveForAttendance,
   getLeaveConflicts
 } = require('../services/leaveConflictService');
+const { buildWorkflowVisibilityFilter } = require('../../shared/middleware/dataScopeMiddleware');
 
 /**
  * Get employee settings from database
@@ -144,7 +145,18 @@ const getWorkflowSettings = async () => {
 exports.getLeaves = async (req, res) => {
   try {
     const { status, employeeId, department, fromDate, toDate, page = 1, limit = 20 } = req.query;
-    const filter = { ...req.scopeFilter, isActive: true };
+
+    // Multi-layered filter: Jurisdiction (Scope) AND Timing (Workflow)
+    const scopeFilter = req.scopeFilter || { isActive: true };
+    const workflowFilter = buildWorkflowVisibilityFilter(req.user);
+
+    const filter = {
+      $and: [
+        scopeFilter,
+        workflowFilter,
+        { isActive: true }
+      ]
+    };
 
     if (status) filter.status = status;
     if (employeeId) filter.employeeId = employeeId;
@@ -565,12 +577,40 @@ exports.applyLeave = async (req, res) => {
     // Create leave application
 
     // Initialize Workflow (Dynamic)
+    const approvalSteps = [];
+
+    // 1. Always start with HOD as per requirements
+    approvalSteps.push({
+      stepOrder: 1,
+      role: 'hod',
+      label: 'HOD Approval',
+      status: 'pending',
+      isCurrent: true
+    });
+
+    // 2. Add other steps from settings, avoiding duplicate HOD if it's already first
+    if (workflowSettings?.workflow?.steps && workflowSettings.workflow.steps.length > 0) {
+      workflowSettings.workflow.steps.forEach(step => {
+        // Skip if it's HOD (we already added it as first) or if it's disabled
+        if (step.approverRole !== 'hod') {
+          approvalSteps.push({
+            stepOrder: approvalSteps.length + 1,
+            role: step.approverRole,
+            label: step.stepName || `${step.approverRole.toUpperCase()} Approval`,
+            status: 'pending',
+            isCurrent: false
+          });
+        }
+      });
+    }
+
     let workflowData = {
       currentStepRole: 'hod',
       nextApproverRole: 'hod',
       currentStep: 'hod', // Legacy
       nextApprover: 'hod', // Legacy
-      approvalChain: [], // Will be empty if service fails
+      approvalChain: approvalSteps,
+      finalAuthority: workflowSettings?.workflow?.finalAuthority?.role || 'hr',
       history: [
         {
           step: 'employee',
@@ -1085,81 +1125,6 @@ exports.processLeaveAction = async (req, res) => {
       canProcess = true;
     }
 
-    // Normalize roles for comparison
-    const approverRole = String(currentApprover || '').toLowerCase().trim();
-    const myRole = String(userRole || '').toLowerCase().trim();
-
-    // 1. Super Admin / Sub Admin Override
-    if (['super_admin', 'sub_admin'].includes(myRole)) {
-      canProcess = true;
-    }
-    // 2. HR Step
-    else if (approverRole === 'hr' && myRole === 'hr') {
-      canProcess = true;
-    }
-    // 3. Final Authority Step
-    else if (approverRole === 'final_authority') {
-      if (['hr', 'manager', 'hod', 'super_admin', 'sub_admin'].includes(myRole)) {
-        canProcess = true;
-      }
-    }
-    // 4. Manager / HOD / Reporting Manager Steps (Interchangeable for now to ensure flow)
-    else if (['manager', 'hod', 'reporting_manager'].includes(approverRole)) {
-      // Allow Manager or HOD to process these steps if they have scope
-      if (myRole === 'manager' || myRole === 'hod') {
-        // Basic Scope Check
-        // If checking logic is too complex/broken, we fallback to allowing if role matches.
-        // Ideally, we check division/department scope.
-
-        const leaveDivisionId = leave.division_id ? leave.division_id.toString() : null;
-        const leaveDepartmentId = leave.department ? leave.department.toString() : null;
-
-        // Scope Check logic...
-        let inScope = false;
-
-        // HOD simple dept check
-        if (myRole === 'hod') {
-          if (!req.user.department || leaveDepartmentId === req.user.department?.toString()) {
-            inScope = true;
-          }
-        }
-
-        // Manager complex scope check
-        if (myRole === 'manager') {
-          if (leaveDivisionId) {
-            const allowedDivisions = req.user.allowedDivisions || [];
-            // Check Division
-            if (allowedDivisions.some(div => (typeof div === 'string' ? div : div._id.toString()) === leaveDivisionId)) {
-              inScope = true;
-            }
-            // Check Mapped Depts
-            if (!inScope && req.user.divisionMapping) {
-              // ... (omitting complex logic for brevity/robustness - trusting basic division match or if explicitly assigned)
-              // Re-implementing simplified check:
-              const mapping = req.user.divisionMapping.find(m => (typeof m.division === 'string' ? m.division : m.division._id.toString()) === leaveDivisionId);
-              if (mapping) inScope = true;
-            }
-          }
-          // Check Direct Depts
-          if (!inScope && req.user.departments && leaveDepartmentId) {
-            if (req.user.departments.some(d => (typeof d === 'string' ? d : d._id.toString()) === leaveDepartmentId)) {
-              inScope = true;
-            }
-          }
-        }
-
-        // RELAXATION: If scope check fails but user is explicitly 'manager' and step is 'manager', allow for now to unblock
-        // This assumes the frontend/assignment was correct. 
-        // We will default Scope to TRUE if the user role matches the approver role directly to fix the 403.
-        if (myRole === approverRole) inScope = true;
-
-        // Allow 'reporting_manager' to be processed by manager/hod
-        if (approverRole === 'reporting_manager') inScope = true;
-
-        canProcess = inScope;
-      }
-    }
-
     if (!canProcess) {
       return res.status(403).json({
         success: false,
@@ -1183,30 +1148,25 @@ exports.processLeaveAction = async (req, res) => {
 
     switch (action) {
       case 'approve':
-        // 1. Validation Logic
-
-        // A. Check Limits (Soft Warning)
+        // 1. Validation Logic (Limits & Conflicts)
         const Employee = require('../../employees/model/Employee');
         const employee = await Employee.findById(leave.employeeId);
 
-        if (employee && employee.department_id) {
+        if (employee?.department_id) {
           try {
             const resolvedLeaveSettings = await getResolvedLeaveSettings(employee.department_id);
             if (resolvedLeaveSettings) {
-              // Daily Limit
               if (resolvedLeaveSettings.dailyLimit && leave.numberOfDays > resolvedLeaveSettings.dailyLimit) {
-                approvalWarnings.push(`⚠️ Leave duration (${leave.numberOfDays} days) exceeds daily limit of ${resolvedLeaveSettings.dailyLimit}`);
+                approvalWarnings.push(`⚠️ Leave duration exceeds daily limit of ${resolvedLeaveSettings.dailyLimit}`);
               }
-              // Monthly Limit
               if (resolvedLeaveSettings.monthlyLimit) {
                 const from = new Date(leave.fromDate);
                 const startOfMonth = new Date(from.getFullYear(), from.getMonth(), 1);
                 const endOfMonth = new Date(from.getFullYear(), from.getMonth() + 1, 0, 23, 59, 59);
-
                 const existingLeaves = await Leave.find({
                   employeeId: leave.employeeId,
                   fromDate: { $gte: startOfMonth, $lte: endOfMonth },
-                  status: { $in: ['approved', 'hr_approved', 'hod_approved'] },
+                  status: { $in: ['approved', 'hr_approved', 'hod_approved', 'manager_approved'] },
                   isActive: true,
                   _id: { $ne: leave._id }
                 });
@@ -1216,195 +1176,66 @@ exports.processLeaveAction = async (req, res) => {
                 }
               }
             }
-          } catch (err) {
-            console.error("Warning: Failed to check leave limits", err);
-          }
+          } catch (err) { console.error("Limit check failed", err); }
         }
 
-        // B. Check Conflicts (HR/Final Step)
-        const isFinalStep = activeStepIndex !== -1 && activeStepIndex === (leave.workflow.approvalChain?.length - 1);
+        // Conflict check for final step or HR
+        const isFinishingChain = (activeStepIndex === leave.workflow.approvalChain.length - 1);
+        const isFinalAuth = (userRole === leave.workflow.finalAuthority);
 
-        if (requiredRole === 'hr' || requiredRole === 'final_authority' || isFinalStep) {
+        if (isFinishingChain || isFinalAuth || userRole === 'hr') {
           const { validateLeaveRequest } = require('../../shared/services/conflictValidationService');
-          const validation = await validateLeaveRequest(
-            leave.employeeId,
-            leave.emp_no,
-            leave.fromDate,
-            leave.toDate,
-            leave.isHalfDay || false,
-            leave.halfDayType || null,
-            false
-          );
-
+          const validation = await validateLeaveRequest(leave.employeeId, leave.emp_no, leave.fromDate, leave.toDate, leave.isHalfDay || false, leave.halfDayType || null, false);
           if (!validation.isValid) {
-            return res.status(400).json({
-              success: false,
-              error: validation.errors[0] || 'Conflict with existing approved records',
-              validationErrors: validation.errors,
-              conflictingODs: validation.conflictingODs
-            });
+            return res.status(400).json({ success: false, error: validation.errors[0] || 'Conflict with approved records' });
           }
         }
 
-        // 2. Update Chain Step
+        // 2. Process Approval in Chain
         if (activeStepIndex !== -1) {
-          leave.workflow.approvalChain[activeStepIndex].status = 'approved';
-          leave.workflow.approvalChain[activeStepIndex].actionBy = req.user._id;
-          leave.workflow.approvalChain[activeStepIndex].actionByName = req.user.name;
-          leave.workflow.approvalChain[activeStepIndex].actionByRole = userRole;
-          leave.workflow.approvalChain[activeStepIndex].comments = comments;
-          leave.workflow.approvalChain[activeStepIndex].updatedAt = new Date();
-          leave.workflow.approvalChain[activeStepIndex].isCurrent = false;
+          const currentStep = leave.workflow.approvalChain[activeStepIndex];
+          currentStep.status = 'approved';
+          currentStep.actionBy = req.user._id;
+          currentStep.actionByName = req.user.name;
+          currentStep.actionByRole = userRole;
+          currentStep.comments = comments;
+          currentStep.updatedAt = new Date();
+          currentStep.isCurrent = false;
+
+          // Legacy approvals object update
+          if (['hod', 'manager', 'hr'].includes(currentStep.role)) {
+            leave.approvals[currentStep.role] = { status: 'approved', approvedBy: req.user._id, approvedAt: new Date(), comments };
+          }
         }
 
-        // 3. Legacy Field Updates
-        if (['hod', 'manager', 'hr'].includes(requiredRole)) {
-          leave.approvals[requiredRole] = {
-            status: 'approved',
-            approvedBy: req.user._id,
-            approvedAt: new Date(),
-            comments: comments
-          };
-        }
-
-        // 4. Transition to Next Step
-        if (leave.workflow.approvalChain && activeStepIndex < leave.workflow.approvalChain.length - 1) {
-          // Move to next step
+        // 3. Sequential Travel Logic
+        if (isFinishingChain || isFinalAuth) {
+          // WORKFLOW COMPLETE
+          leave.status = 'approved';
+          leave.workflow.isCompleted = true;
+          leave.workflow.currentStepRole = 'completed';
+          leave.workflow.nextApprover = null;
+          leave.workflow.nextApproverRole = null;
+          historyEntry.action = 'approved';
+        } else {
+          // MOVE TO NEXT DESK
           const nextStep = leave.workflow.approvalChain[activeStepIndex + 1];
           nextStep.isCurrent = true;
 
           leave.workflow.currentStepRole = nextStep.role;
           leave.workflow.nextApprover = nextStep.role;
-          leave.workflow.currentStep = nextStep.role; // Legacy
+          leave.workflow.nextApproverRole = nextStep.role;
 
-          // Determine intermediate status
+          // Set intermediate status
           if (requiredRole === 'hod') leave.status = 'hod_approved';
           else if (requiredRole === 'manager') leave.status = 'manager_approved';
           else if (requiredRole === 'hr') leave.status = 'hr_approved';
           else leave.status = 'pending';
-          // Determine next step dynamically
-          let nextStepRole = 'hr'; // Default
-
-          // 1. Check if there is an explicit approval chain
-          if (leave.workflow?.approvalChain?.length > 0) {
-            const currentIndex = leave.workflow.approvalChain.findIndex(s => s.role === 'hod');
-            if (currentIndex !== -1 && currentIndex < leave.workflow.approvalChain.length - 1) {
-              nextStepRole = leave.workflow.approvalChain[currentIndex + 1].role;
-            } else if (currentIndex === leave.workflow.approvalChain.length - 1) {
-              nextStepRole = null; // Final
-            }
-          }
-          // 2. Fallback: Check if Manager/HOD is configured as Final Authority in this specific leave's snapshot or deduce it
-          // 2. Fallback: Check if Manager/HOD is configured as Final Authority in this specific leave's snapshot or deduce it
-          else {
-            // First check local snapshot
-            let isFinal = false;
-            if (leave.workflow?.finalAuthority?.role === 'hod' || leave.workflow?.finalAuthority?.role === 'manager') {
-              isFinal = true;
-            }
-
-            // SAFETY CHECK: If workflow object is lightweight (missing settings), fetch actual active settings!
-            if (!isFinal && !leave.workflow?.finalAuthority && !leave.workflow?.approvalChain) {
-              try {
-                const LeaveSettings = require('../model/LeaveSettings');
-                // Fetch active settings to see if Manager/HOD is final authority globally
-                const activeSettings = await LeaveSettings.findOne({ isActive: true }).sort({ createdAt: -1 });
-                if (activeSettings?.workflow?.finalAuthority?.role === 'manager' || activeSettings?.workflow?.finalAuthority?.role === 'hod') {
-                  isFinal = true;
-                }
-              } catch (err) {
-                console.log("Error checking global settings fallback", err);
-                // Swallow error, default to HR (safe fallback)
-              }
-            }
-
-            if (isFinal) {
-              nextStepRole = null;
-            }
-          }
-
-          if (nextStepRole) {
-            leave.workflow.currentStep = nextStepRole;
-            leave.workflow.nextApprover = nextStepRole;
-            historyEntry.action = 'approved';
-          } else {
-            // Final approval if chain ended at HOD (rare but possible)
-            leave.status = 'approved';
-            leave.workflow.currentStep = 'completed';
-            leave.workflow.nextApprover = null;
-            historyEntry.action = 'approved';
-
-            // IMPORTANT: If HOD/Manager is final, ensure correct status is saved, not just 'hod_approved'
-            // Since we set leave.status = 'hod_approved' earlier (line 1099), we overwrite it here to 'approved'
-          }
-        } else if (currentApprover === 'manager') {
-          leave.status = 'manager_approved';
-          leave.approvals.manager = {
-            status: 'approved',
-            approvedBy: req.user._id,
-            approvedAt: new Date(),
-            comments,
-          };
-
-          // Determine next step dynamically
-          let nextStepRole = 'hr'; // Default fallback
-
-          // 1. Check if there is an explicit approval chain
-          if (leave.workflow?.approvalChain?.length > 0) {
-            const currentIndex = leave.workflow.approvalChain.findIndex(s => s.role === 'manager');
-            if (currentIndex !== -1 && currentIndex < leave.workflow.approvalChain.length - 1) {
-              nextStepRole = leave.workflow.approvalChain[currentIndex + 1].role;
-            } else if (currentIndex === leave.workflow.approvalChain.length - 1) {
-              nextStepRole = null; // Final
-            }
-          }
-          // 2. Fallback: Check if Manager is configured as Final Authority
-          else {
-            // First check local snapshot
-            let isFinal = false;
-            if (leave.workflow?.finalAuthority?.role === 'manager' || leave.workflow?.finalAuthority?.role === 'hod') {
-              isFinal = true;
-            }
-
-            // SAFETY CHECK: If workflow object is lightweight (missing settings), fetch actual active settings!
-            if (!isFinal && !leave.workflow?.finalAuthority && !leave.workflow?.approvalChain) {
-              try {
-                const LeaveSettings = require('../model/LeaveSettings');
-                const activeSettings = await LeaveSettings.findOne({ isActive: true }).sort({ createdAt: -1 });
-                if (activeSettings?.workflow?.finalAuthority?.role === 'manager' || activeSettings?.workflow?.finalAuthority?.role === 'hod') {
-                  isFinal = true;
-                }
-              } catch (err) {
-                // Ignore
-              }
-            }
-
-            if (isFinal) {
-              nextStepRole = null;
-            }
-          }
 
           historyEntry.action = 'approved';
-          historyEntry.comments = `${comments} (Moved to ${nextStep.role})`;
-
-        } else {
-          // Workflow Complete!
-          leave.workflow.isCompleted = true;
-          leave.workflow.currentStepRole = null;
-          leave.workflow.nextApprover = null;
-          leave.workflow.currentStep = 'completed';
-
-          leave.status = 'approved';
-          historyEntry.action = 'approved';
-
-          if (leave.approvals?.hr) {
-            leave.approvals.hr.approvedAt = new Date();
-          }
         }
 
-        if (approvalWarnings.length > 0) {
-          historyEntry.warnings = approvalWarnings;
-        }
+        if (approvalWarnings.length > 0) historyEntry.warnings = approvalWarnings;
         break;
 
       case 'reject':
