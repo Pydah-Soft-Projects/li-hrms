@@ -103,19 +103,17 @@ function validateField(field, value, formData) {
     case 'text':
     case 'textarea':
       if (dataType === 'string') {
-        if (typeof value !== 'string') {
-          return `${field.label} must be text`;
-        }
+        const valStr = String(value);
         if (validation) {
-          if (validation.minLength && value.length < validation.minLength) {
+          if (validation.minLength && valStr.length < validation.minLength) {
             return `${field.label} must be at least ${validation.minLength} characters`;
           }
-          if (validation.maxLength && value.length > validation.maxLength) {
+          if (validation.maxLength && valStr.length > validation.maxLength) {
             return `${field.label} must be at most ${validation.maxLength} characters`;
           }
           if (validation.pattern) {
             const regex = new RegExp(validation.pattern);
-            if (!regex.test(String(value))) {
+            if (!regex.test(valStr)) {
               return validation.custom || `${field.label} format is invalid`;
             }
           }
