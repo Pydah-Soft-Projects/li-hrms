@@ -51,7 +51,7 @@ const createApplicationInternal = async (rawData, settings, creatorId) => {
     }
   }
 
-  const empNo = applicationData.emp_no.toUpperCase();
+  const empNo = String(applicationData.emp_no || '').toUpperCase();
 
   // Check if employee already exists
   const existingEmployee = await Employee.findOne({ emp_no: empNo });

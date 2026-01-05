@@ -801,7 +801,7 @@ exports.updateOD = async (req, res) => {
         // Get the attendance record for the OD date
         const attendanceDate = formatDate(od.fromDate);
         const attendance = await AttendanceDaily.findOne({
-          employeeNumber: od.emp_no.toUpperCase(),
+          employeeNumber: String(od.emp_no || '').toUpperCase(),
           date: attendanceDate,
         });
 
@@ -1257,7 +1257,7 @@ exports.processODAction = async (req, res) => {
         // Get the attendance record for the OD date
         const attendanceDate = formatDate(od.fromDate);
         const attendance = await AttendanceDaily.findOne({
-          employeeNumber: od.emp_no.toUpperCase(),
+          employeeNumber: String(od.emp_no || '').toUpperCase(),
           date: attendanceDate,
         });
 
