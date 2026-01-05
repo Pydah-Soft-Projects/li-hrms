@@ -142,9 +142,9 @@ export const parseFile = (file: File): Promise<BulkUploadResult> => {
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
 
-        // Convert to JSON with header row
+        // Convert to JSON with raw values to get Date objects directly when possible
         const jsonData = XLSX.utils.sheet_to_json<ParsedRow>(worksheet, {
-          raw: false,
+          raw: true,
           defval: '',
         });
 
@@ -166,42 +166,73 @@ export const parseFile = (file: File): Promise<BulkUploadResult> => {
           const cleanedRow: ParsedRow = { _rowIndex: index + 2 }; // +2 for header row and 0-index
           for (const key of headers) {
             let value: string | number | boolean | null = row[key] as string | number | boolean | null;
-            // Trim strings
+
+            // Trim strings if it is one
             if (typeof value === 'string') {
               value = value.trim();
             }
 
             // More robust date helper
-            const isDateField = key.toLowerCase().includes('dob') || key.toLowerCase().includes('doj');
+            const isDateField = key.toLowerCase().includes('dob') || key.toLowerCase().includes('doj') ||
+              key.toLowerCase().includes('date');
 
-            // Handle dates (xlsx may return Date objects)
-            if (value && typeof value === 'object' && Object.prototype.toString.call(value) === '[object Date]') {
-              value = (value as unknown as Date).toISOString().split('T')[0];
-            } else if (isDateField && typeof value === 'string' && value) {
-              // Try to parse string dates if Excel didn't treat them as dates
+            if (isDateField && value !== undefined && value !== null && value !== '') {
               try {
-                // Handle DD/MM/YYYY or DD-MM-YYYY
-                if (value.includes('/') || (value.includes('-') && value.split('-')[0].length < 4)) {
-                  const parts = value.split(/[/-]/);
+                let parsedDate: Date | null = null;
+
+                // 1. Handle native JS Date objects (returned by xlsx with cellDates:true)
+                if (Object.prototype.toString.call(value) === '[object Date]') {
+                  parsedDate = value as unknown as Date;
+                }
+                // 2. Handle Excel serial numbers (numbers)
+                else if (typeof value === 'number') {
+                  // Excel serial base is Dec 30 1899. 
+                  // XLSX already handles most, but if it remains a number:
+                  parsedDate = new Date(Math.round((value - 25569) * 86400 * 1000));
+                }
+                // 3. Handle string dates
+                else if (typeof value === 'string') {
+                  const cleanValue = value.trim().replace(/[./]/g, '-');
+                  const parts = cleanValue.split('-');
+
                   if (parts.length === 3) {
-                    // Assume DD/MM/YYYY
-                    const d = parseInt(parts[0]);
-                    const m = parseInt(parts[1]) - 1;
-                    const y = parseInt(parts[2]);
-                    const date = new Date(y, m, d);
-                    if (!isNaN(date.getTime())) {
-                      value = date.toISOString().split('T')[0];
+                    let y, m, d;
+                    // Detect YYYY-MM-DD
+                    if (parts[0].length === 4) {
+                      y = parseInt(parts[0]);
+                      m = parseInt(parts[1]) - 1;
+                      d = parseInt(parts[2]);
                     }
-                  }
-                } else {
-                  // Fallback to standard Date parsing
-                  const date = new Date(value);
-                  if (!isNaN(date.getTime())) {
-                    value = date.toISOString().split('T')[0];
+                    // Detect DD-MM-YYYY or MM-DD-YYYY
+                    else if (parts[2].length === 4) {
+                      y = parseInt(parts[2]);
+                      const p1 = parseInt(parts[0]);
+                      const p2 = parseInt(parts[1]);
+                      // Guess DD-MM vs MM-DD
+                      if (p1 > 12) { d = p1; m = p2 - 1; }
+                      else if (p2 > 12) { d = p2; m = p1 - 1; }
+                      else { d = p1; m = p2 - 1; } // Default to DD-MM (common)
+                    }
+
+                    if (y && m !== undefined && d) {
+                      parsedDate = new Date(y, m, d);
+                    }
+                  } else {
+                    // Fallback to native parsing
+                    const d = new Date(cleanValue);
+                    if (!isNaN(d.getTime())) parsedDate = d;
                   }
                 }
-              } catch (e) {
-                console.warn(`Failed to parse date for ${key}: ${value}`);
+
+                if (parsedDate && !isNaN(parsedDate.getTime())) {
+                  // Always output YYYY-MM-DD
+                  const year = parsedDate.getFullYear();
+                  const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
+                  const day = String(parsedDate.getDate()).padStart(2, '0');
+                  value = `${year}-${month}-${day}`;
+                }
+              } catch (err) {
+                console.warn(`Failed to parse date for ${key}: ${value}`, err);
               }
             }
 
