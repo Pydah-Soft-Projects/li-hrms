@@ -16,7 +16,7 @@ router.get('/stats', authorize('super_admin', 'sub_admin'), userController.getUs
 // Get employees without user accounts
 router.get(
   '/employees-without-account',
-  authorize('super_admin', 'sub_admin', 'hr'),
+  authorize('manager', 'super_admin', 'sub_admin', 'hr'),
   userController.getEmployeesWithoutAccount
 );
 
@@ -28,12 +28,12 @@ router.put('/profile', userController.updateProfile);
 // ==========================================
 
 // Create new user (manual)
-router.post('/register', authorize('super_admin', 'sub_admin', 'hr'), userController.registerUser);
+router.post('/register', authorize('manager', 'super_admin', 'sub_admin', 'hr'), userController.registerUser);
 
 // Create user from existing employee
 router.post(
   '/from-employee',
-  authorize('super_admin', 'sub_admin', 'hr'),
+  authorize('manager', 'super_admin', 'sub_admin', 'hr'),
   userController.createUserFromEmployee
 );
 
@@ -42,7 +42,7 @@ router.post(
 // ==========================================
 
 // Get all users
-router.get('/', authorize('super_admin', 'sub_admin', 'hr'), userController.getAllUsers);
+router.get('/', authorize('manager', 'super_admin', 'sub_admin', 'hr'), userController.getAllUsers);
 
 // Get single user
 router.get('/:id', userController.getUser);
@@ -52,7 +52,7 @@ router.get('/:id', userController.getUser);
 // ==========================================
 
 // Update user
-router.put('/:id', authorize('super_admin', 'sub_admin', 'hr'), userController.updateUser);
+router.put('/:id', authorize('manager', 'super_admin', 'sub_admin', 'hr'), userController.updateUser);
 
 // Reset user password
 router.put('/:id/reset-password', authorize('super_admin', 'sub_admin'), userController.resetPassword);

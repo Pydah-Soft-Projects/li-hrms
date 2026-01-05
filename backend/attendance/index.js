@@ -47,10 +47,10 @@ router.get('/activity/recent', applyScopeFilter, attendanceController.getRecentA
 router.get('/:employeeNumber/:date/available-shifts', attendanceController.getAvailableShifts);
 
 // Update outTime for PARTIAL attendance (Super Admin, Sub Admin, HR, HOD)
-router.put('/:employeeNumber/:date/outtime', authorize('super_admin', 'sub_admin', 'hr', 'hod'), attendanceController.updateOutTime);
+router.put('/:employeeNumber/:date/outtime', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), attendanceController.updateOutTime);
 
 // Assign shift to attendance record (Super Admin, Sub Admin, HR, HOD)
-router.put('/:employeeNumber/:date/shift', authorize('super_admin', 'sub_admin', 'hr', 'hod'), attendanceController.assignShift);
+router.put('/:employeeNumber/:date/shift', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), attendanceController.assignShift);
 
 // Settings Routes (Super Admin, Sub Admin only)
 router.get('/settings', attendanceSettingsController.getSettings);
@@ -82,14 +82,14 @@ router.post('/sync', authorize('super_admin', 'sub_admin'), attendanceSyncContro
 router.get('/sync/status', attendanceSyncController.getSyncStatus);
 
 // Upload Routes (Super Admin, Sub Admin, HR)
-router.post('/upload', authorize('super_admin', 'sub_admin', 'hr'), upload.single('file'), attendanceUploadController.uploadExcel);
+router.post('/upload', authorize('manager', 'super_admin', 'sub_admin', 'hr'), upload.single('file'), attendanceUploadController.uploadExcel);
 router.get('/upload/template', attendanceUploadController.downloadTemplate);
 
 // Monthly Summary Routes
 router.get('/monthly-summary', applyScopeFilter, monthlySummaryController.getAllMonthlySummaries);
 router.get('/monthly-summary/:employeeId', applyScopeFilter, monthlySummaryController.getEmployeeMonthlySummary);
-router.post('/monthly-summary/calculate/:employeeId', authorize('super_admin', 'sub_admin', 'hr'), monthlySummaryController.calculateEmployeeSummary);
-router.post('/monthly-summary/calculate-all', applyScopeFilter, authorize('super_admin', 'sub_admin', 'hr'), monthlySummaryController.calculateAllSummaries);
+router.post('/monthly-summary/calculate/:employeeId', authorize('manager', 'super_admin', 'sub_admin', 'hr'), monthlySummaryController.calculateEmployeeSummary);
+router.post('/monthly-summary/calculate-all', applyScopeFilter, authorize('manager', 'super_admin', 'sub_admin', 'hr'), monthlySummaryController.calculateAllSummaries);
 
 module.exports = router;
 

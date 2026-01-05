@@ -24,7 +24,7 @@ router.get('/settings', getSettings);
 router.post('/settings', authorize('super_admin'), saveSettings);
 
 // Create OT request (HOD, HR, Super Admin)
-router.post('/', authorize('super_admin', 'sub_admin', 'hr', 'hod'), createOT);
+router.post('/', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), createOT);
 
 // Get OT requests
 router.get('/', getOTRequests);
@@ -36,13 +36,13 @@ router.get('/:id', getOTRequest);
 router.get('/check-confused/:employeeNumber/:date', checkConfusedShift);
 
 // Convert extra hours from attendance to OT (HR, Super Admin, Sub Admin)
-router.post('/convert-from-attendance', authorize('super_admin', 'sub_admin', 'hr'), convertExtraHoursToOT);
+router.post('/convert-from-attendance', authorize('manager', 'super_admin', 'sub_admin', 'hr'), convertExtraHoursToOT);
 
 // Approve OT request (HOD, HR, Super Admin)
-router.put('/:id/approve', authorize('super_admin', 'sub_admin', 'hr', 'hod'), approveOT);
+router.put('/:id/approve', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), approveOT);
 
 // Reject OT request (HOD, HR, Super Admin)
-router.put('/:id/reject', authorize('super_admin', 'sub_admin', 'hr', 'hod'), rejectOT);
+router.put('/:id/reject', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), rejectOT);
 
 module.exports = router;
 

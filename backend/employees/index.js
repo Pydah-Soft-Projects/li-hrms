@@ -25,7 +25,7 @@ router.get('/', applyScopeFilter, employeeController.getAllEmployees);
 router.get('/:empNo', employeeController.getEmployee);
 
 // Create employee (Super Admin, Sub Admin, HR)
-router.post('/', authorize('super_admin', 'sub_admin', 'hr'), upload.any(), employeeController.createEmployee);
+router.post('/', authorize('manager', 'super_admin', 'sub_admin', 'hr'), upload.any(), employeeController.createEmployee);
 
 // Resend credentials (Super Admin)
 router.post('/:empNo/resend-credentials', authorize('super_admin'), employeeController.resendEmployeePassword);
@@ -34,13 +34,13 @@ router.post('/:empNo/resend-credentials', authorize('super_admin'), employeeCont
 router.post('/bulk-export-passwords', authorize('super_admin'), employeeController.bulkExportEmployeePasswords);
 
 // Update employee (Super Admin, Sub Admin, HR)
-router.put('/:empNo', authorize('super_admin', 'sub_admin', 'hr'), upload.any(), employeeController.updateEmployee);
+router.put('/:empNo', authorize('manager', 'super_admin', 'sub_admin', 'hr'), upload.any(), employeeController.updateEmployee);
 
 // Set employee left date (Super Admin, Sub Admin, HR)
-router.put('/:empNo/left-date', authorize('super_admin', 'sub_admin', 'hr'), employeeController.setLeftDate);
+router.put('/:empNo/left-date', authorize('manager', 'super_admin', 'sub_admin', 'hr'), employeeController.setLeftDate);
 
 // Remove employee left date / Reactivate (Super Admin, Sub Admin, HR)
-router.delete('/:empNo/left-date', authorize('super_admin', 'sub_admin', 'hr'), employeeController.removeLeftDate);
+router.delete('/:empNo/left-date', authorize('manager', 'super_admin', 'sub_admin', 'hr'), employeeController.removeLeftDate);
 
 // Delete employee (Super Admin, Sub Admin)
 router.delete('/:empNo', authorize('super_admin', 'sub_admin'), employeeController.deleteEmployee);
