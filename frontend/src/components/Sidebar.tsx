@@ -198,6 +198,16 @@ const LoansIcon = ({ className, ...props }: IconProps) => (
   </svg>
 );
 
+const BonusIcon = ({ className, ...props }: IconProps) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+    <path d="M20 12v10H4V12" />
+    <path d="M2 7h20v5H2z" />
+    <path d="M12 22V7" />
+    <path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z" />
+    <path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z" />
+  </svg>
+);
+
 export type NavItem = {
   href: string;
   label: string;
@@ -235,6 +245,9 @@ const navItems: NavItem[] = [
   { href: '/superadmin/arrears', label: 'Arrears', icon: ArrearsIcon, category: 'Finance & Payroll', moduleCode: 'ARREARS' },
   { href: '/superadmin/allowances-deductions', label: 'Allowances & Deductions', icon: AllowancesDeductionsIcon, category: 'Finance & Payroll', moduleCode: 'ALLOWANCES_DEDUCTIONS' },
   { href: '/superadmin/loans', label: 'Loans & Salary Advance', icon: LoansIcon, category: 'Finance & Payroll', moduleCode: 'LOANS_SALARY_ADVANCE' },
+  { href: '/superadmin/bonus/policies', label: 'Bonus Policies', icon: BonusIcon, category: 'Bonus Management', moduleCode: 'BONUS_POLICIES' },
+  { href: '/superadmin/bonus/calculator', label: 'Bonus Calculator', icon: BonusIcon, category: 'Bonus Management', moduleCode: 'BONUS_CALCULATOR' },
+  { href: '/superadmin/bonus/batches', label: 'Bonus Batches', icon: BonusIcon, category: 'Bonus Management', moduleCode: 'BONUS_BATCHES' },
   { href: '/superadmin/settings', label: 'General Settings', icon: SettingsIcon, category: 'Settings', moduleCode: 'GENERAL_SETTINGS' },
 ];
 
