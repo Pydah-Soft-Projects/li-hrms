@@ -1,16 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { api, Division, Department, Designation } from '@/lib/api';
+import { api, Division, Department, Designation, Shift } from '@/lib/api';
 import Spinner from '@/components/Spinner';
 
-interface Shift {
+interface Manager {
     _id: string;
     name: string;
-    startTime: string;
-    endTime: string;
-    duration: number;
-    isActive: boolean;
+    email: string;
 }
 
 interface Manager {
@@ -77,7 +74,8 @@ export default function DivisionsPage() {
         if (targetDeptId) {
             const dept = departments.find(d => d._id === targetDeptId);
             if (dept && dept.designations) {
-                setDesignations(dept.designations);
+                // Filter out string references, keep only populated Designation objects
+                setDesignations(dept.designations.filter((d): d is Designation => typeof d !== 'string'));
             } else {
                 setDesignations([]);
             }
@@ -103,8 +101,8 @@ export default function DivisionsPage() {
                 const dept = departments.find(d => d._id === targetDeptId);
                 if (dept && dept.divisionDefaults) {
                     const defaultForDiv = dept.divisionDefaults.find(dd => dd.division === divisionId || (dd.division as any)?._id === divisionId);
-                    if (defaultForDiv) {
-                        existingShifts = defaultForDiv.shifts; // These are usually strings (IDs)
+                    if (defaultForDiv && defaultForDiv.shifts) {
+                        existingShifts = defaultForDiv.shifts.map(s => typeof s === 'string' ? s : s._id);
                     }
                 }
             }

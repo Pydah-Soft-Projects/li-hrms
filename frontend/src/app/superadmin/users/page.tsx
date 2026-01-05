@@ -281,6 +281,16 @@ export default function UsersPage() {
           division: typeof m.division === 'string' ? m.division : m.division._id,
           departments: (m.departments || []).map(d => typeof d === 'string' ? d : d._id)
         }));
+
+        // Manager specific: Map selected departments to divisionMapping
+        if (formData.role === 'manager' && payload.allowedDivisions && payload.allowedDivisions.length === 1) {
+          const divId = payload.allowedDivisions[0];
+          const depts = (formData.departments || []).map((d: any) => typeof d === 'string' ? d : d._id);
+          payload.divisionMapping = [{
+            division: divId,
+            departments: depts
+          }];
+        }
       }
 
       // Add feature control (always send to ensure overrides work)
@@ -332,6 +342,16 @@ export default function UsersPage() {
           division: typeof m.division === 'string' ? m.division : m.division._id,
           departments: (m.departments || []).map(d => typeof d === 'string' ? d : d._id)
         }));
+
+        // Manager specific: Map selected departments to divisionMapping
+        if (employeeFormData.role === 'manager' && payload.allowedDivisions && payload.allowedDivisions.length === 1) {
+          const divId = payload.allowedDivisions[0];
+          const depts = (employeeFormData.departments || []).map((d: any) => typeof d === 'string' ? d : d._id);
+          payload.divisionMapping = [{
+            division: divId,
+            departments: depts
+          }];
+        }
       }
 
       // Add feature control (always send to ensure overrides work)
@@ -376,6 +396,16 @@ export default function UsersPage() {
       } else if (formData.dataScope === 'division') {
         payload.allowedDivisions = formData.allowedDivisions;
         payload.divisionMapping = formData.divisionMapping;
+
+        // Manager specific: Map selected departments to divisionMapping
+        if (formData.role === 'manager' && payload.allowedDivisions && payload.allowedDivisions.length === 1) {
+          const divId = typeof payload.allowedDivisions[0] === 'string' ? payload.allowedDivisions[0] : payload.allowedDivisions[0]._id;
+          const depts = (formData.departments || []).map((d: any) => typeof d === 'string' ? d : d._id);
+          payload.divisionMapping = [{
+            division: divId,
+            departments: depts
+          }];
+        }
       }
 
       // Add feature control (always send to ensure overrides work)
@@ -466,27 +496,23 @@ export default function UsersPage() {
       departments: (m.departments || []).map((d: any) => typeof d === 'string' ? d : d?._id)
     }));
 
-    // For HOD, prioritize the managed department from division mapping
-    const hodDepartmentId = user.role === 'hod' && normalizedMapping.length > 0 && normalizedMapping[0].departments?.length > 0
-      ? normalizedMapping[0].departments[0]
-      : '';
+    // For HOD/Manager, prioritize the managed division and departments from division mapping
+    const mapping = normalizedMapping.length > 0 ? normalizedMapping[0] : null;
 
     setFormData({
       email: user.email,
       name: user.name,
       role: user.role,
       departmentType: user.departmentType || (user.departments && user.departments.length > 1 ? 'multiple' : 'single'),
-      department: hodDepartmentId || user.department?._id || '',
-      departments: user.departments?.map((d) => d._id) || [],
+      department: user.role === 'hod' && mapping && mapping.departments?.length > 0 ? mapping.departments[0] : (user.department?._id || ''),
+      departments: user.role === 'manager' && mapping ? mapping.departments : (user.departments?.map((d) => d._id) || []),
       password: '',
       autoGeneratePassword: false,
       featureControl: user.featureControl || [],
       dataScope: user.dataScope || 'all',
       allowedDivisions: user.allowedDivisions?.map(d => typeof d === 'string' ? d : d?._id) || [],
       divisionMapping: normalizedMapping,
-      division: user.role === 'hod' && normalizedMapping.length > 0
-        ? normalizedMapping[0].division
-        : '',
+      division: (user.role === 'hod' || user.role === 'manager') && mapping ? mapping.division : '',
     });
     // Prevent useEffect from reloading defaults and overwriting user data
     previousRoleRef.current = user.role;
@@ -643,9 +669,69 @@ export default function UsersPage() {
                 ))}
               </select>
               <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                This user will be assigned as the Manager for the selected Division. They will have access to all data within this division.
+                This user will be assigned as the Manager for the selected Division.
               </p>
             </div>
+
+            {/* Manager Department Selection */}
+            {selectedDivisionId && (
+              <div className="mt-4 pt-4 border-t border-blue-200 dark:border-blue-800">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300">
+                    Allowed Departments
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setData({ ...data, departments: [] })}
+                    className="text-xs font-bold text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                    title="Clear selection to allow access to ALL departments in this division"
+                  >
+                    Select All (Clear Restrictions)
+                  </button>
+                </div>
+
+                <div className="max-h-40 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 p-2 space-y-2 bg-white/50 dark:bg-slate-800/50">
+                  {departments
+                    .filter(dept =>
+                      dept.divisions?.some((div: any) => {
+                        const dId = typeof div === 'string' ? div : div._id;
+                        return dId === selectedDivisionId;
+                      })
+                    )
+                    .map((dept) => (
+                      <label key={dept._id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-blue-100/50 dark:hover:bg-blue-900/30 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={data.departments?.includes(dept._id)}
+                          onChange={() => {
+                            const currentDepts = data.departments || [];
+                            if (currentDepts.includes(dept._id)) {
+                              setData({ ...data, departments: currentDepts.filter(d => d !== dept._id) });
+                            } else {
+                              setData({ ...data, departments: [...currentDepts, dept._id] });
+                            }
+                          }}
+                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-slate-700 dark:text-slate-300">{dept.name}</span>
+                      </label>
+                    ))}
+                  {departments.filter(dept =>
+                    dept.divisions?.some((div: any) => {
+                      const dId = typeof div === 'string' ? div : div._id;
+                      return dId === selectedDivisionId;
+                    })
+                  ).length === 0 && (
+                      <p className="text-xs text-slate-500 dark:text-slate-400 p-2">No departments found in this division</p>
+                    )}
+                </div>
+                {(!data.departments || data.departments.length === 0) && (
+                  <p className="mt-2 text-xs text-green-600 dark:text-green-400 font-medium">
+                    ✓ Access granted to ALL departments in this division
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </div>
       );

@@ -209,6 +209,11 @@ export default function SettingsPage() {
   const [otSettings, setOTSettings] = useState({
     otPayPerHour: 0,
     minOTHours: 0,
+    workflow: {
+      isEnabled: false,
+      steps: [] as WorkflowStep[],
+      finalAuthority: { role: 'manager', anyHRCanApprove: false }
+    }
   });
   const [otSettingsLoading, setOTSettingsLoading] = useState(false);
 
@@ -219,6 +224,11 @@ export default function SettingsPage() {
     deductionAmount: null as number | null,
     minimumDuration: null as number | null,
     calculationMode: null as 'proportional' | 'floor' | null,
+  });
+  const [permissionWorkflow, setPermissionWorkflow] = useState({
+    isEnabled: false,
+    steps: [] as WorkflowStep[],
+    finalAuthority: { role: 'manager', anyHRCanApprove: false }
   });
   const [permissionRulesLoading, setPermissionRulesLoading] = useState(false);
 
@@ -532,14 +542,15 @@ export default function SettingsPage() {
     try {
       setOTSettingsLoading(true);
 
-      // Get OT Pay Per Hour setting
-      const payPerHourRes = await api.getSetting('ot_pay_per_hour');
-      const minHoursRes = await api.getSetting('ot_min_hours');
+      const response = await api.getOvertimeSettings();
 
-      setOTSettings({
-        otPayPerHour: payPerHourRes.success && payPerHourRes.data ? (payPerHourRes.data.value || 0) : 0,
-        minOTHours: minHoursRes.success && minHoursRes.data ? (minHoursRes.data.value || 0) : 0,
-      });
+      if (response.success && response.data) {
+        setOTSettings({
+          otPayPerHour: response.data.payPerHour || 0,
+          minOTHours: response.data.minOTHours || 0,
+          workflow: response.data.workflow || { isEnabled: false, steps: [] },
+        });
+      }
     } catch (err) {
       console.error('Error loading OT settings:', err);
       setMessage({ type: 'error', text: 'Failed to load OT settings' });
@@ -552,30 +563,39 @@ export default function SettingsPage() {
     try {
       setSaving(true);
 
-      // Save OT Pay Per Hour
-      const payPerHourRes = await api.upsertSetting({
-        key: 'ot_pay_per_hour',
-        value: otSettings.otPayPerHour,
-        description: 'Amount per hour of overtime worked (in ₹)',
-        category: 'overtime',
+      const response = await api.saveOvertimeSettings({
+        otPayPerHour: otSettings.otPayPerHour,
+        minOTHours: otSettings.minOTHours,
       });
 
-      // Save Minimum OT Hours
-      const minHoursRes = await api.upsertSetting({
-        key: 'ot_min_hours',
-        value: otSettings.minOTHours,
-        description: 'Minimum overtime hours required to be eligible for overtime pay',
-        category: 'overtime',
-      });
-
-      if (payPerHourRes.success && minHoursRes.success) {
+      if (response.success) {
         setMessage({ type: 'success', text: 'OT settings saved successfully' });
       } else {
-        setMessage({ type: 'error', text: 'Failed to save OT settings' });
+        setMessage({ type: 'error', text: response.message || 'Failed to save OT settings' });
       }
     } catch (err) {
       console.error('Error saving OT settings:', err);
       setMessage({ type: 'error', text: 'An error occurred while saving OT settings' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveOTWorkflow = async () => {
+    try {
+      setSaving(true);
+      const response = await api.saveOvertimeSettings({
+        workflow: otSettings.workflow,
+      });
+
+      if (response.success) {
+        setMessage({ type: 'success', text: 'OT workflow saved successfully' });
+      } else {
+        setMessage({ type: 'error', text: response.message || 'Failed to save OT workflow' });
+      }
+    } catch (err) {
+      console.error('Error saving OT workflow:', err);
+      setMessage({ type: 'error', text: 'An error occurred while saving OT workflow' });
     } finally {
       setSaving(false);
     }
@@ -589,6 +609,8 @@ export default function SettingsPage() {
 
       if (response.success && response.data) {
         const rules = response.data.deductionRules || {};
+        const workflow = response.data.workflow || { isEnabled: false, steps: [], finalAuthority: { role: 'manager', anyHRCanApprove: false } };
+
         setPermissionDeductionRules({
           countThreshold: rules.countThreshold ?? null,
           deductionType: rules.deductionType ?? null,
@@ -596,6 +618,7 @@ export default function SettingsPage() {
           minimumDuration: rules.minimumDuration ?? null,
           calculationMode: rules.calculationMode ?? null,
         });
+        setPermissionWorkflow(workflow);
       }
     } catch (err) {
       console.error('Error loading permission deduction rules:', err);
@@ -605,22 +628,56 @@ export default function SettingsPage() {
     }
   };
 
+  // Load Permission Rules
+  const loadPermissionRules = async () => {
+    try {
+      setPermissionRulesLoading(true);
+      const res = await api.getPermissionDeductionSettings();
+      if (res.success && res.data) {
+        setPermissionDeductionRules(res.data);
+      }
+    } catch (error) {
+      console.error('Error loading permission rules:', error);
+    } finally {
+      setPermissionRulesLoading(false);
+    }
+  };
+
+  // Save Permission Rules
   const savePermissionDeductionRules = async () => {
+    try {
+      setSaving(true);
+      const res = await api.savePermissionDeductionSettings(permissionDeductionRules);
+      if (res.success) {
+        setMessage({ type: 'success', text: 'Permission deduction rules saved successfully' });
+        setTimeout(() => setMessage(null), 3000);
+      } else {
+        setMessage({ type: 'error', text: res.message || 'Failed to save rules' });
+      }
+    } catch (error) {
+      console.error('Error saving permission rules:', error);
+      setMessage({ type: 'error', text: 'An error occurred while saving rules' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const savePermissionWorkflow = async () => {
     try {
       setSaving(true);
 
       const response = await api.savePermissionDeductionSettings({
-        deductionRules: permissionDeductionRules,
+        workflow: permissionWorkflow,
       });
 
       if (response.success) {
-        setMessage({ type: 'success', text: 'Permission deduction rules saved successfully' });
+        setMessage({ type: 'success', text: 'Permission workflow saved successfully' });
       } else {
-        setMessage({ type: 'error', text: 'Failed to save permission deduction rules' });
+        setMessage({ type: 'error', text: 'Failed to save permission workflow' });
       }
     } catch (err) {
-      console.error('Error saving permission deduction rules:', err);
-      setMessage({ type: 'error', text: 'Failed to save permission deduction rules' });
+      console.error('Error saving permission workflow:', err);
+      setMessage({ type: 'error', text: 'Failed to save permission workflow' });
     } finally {
       setSaving(false);
     }
@@ -2623,22 +2680,158 @@ export default function SettingsPage() {
                           <div className="peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-purple-600 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-purple-800"></div>
                         </label>
                       </div>
+
+                      {/* Manager Approval Configuration */}
+                      {odSettings?.workflow.isEnabled && (
+                        <div className="mt-6 border-t border-slate-200/50 pt-6 dark:border-slate-700/50">
+                          <div className="flex items-center justify-between mb-4">
+                            <div>
+                              <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Include Manager Approval</h3>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">Require division manager approval</p>
+                            </div>
+                            <label className="relative inline-flex cursor-pointer items-center">
+                              <input
+                                type="checkbox"
+                                checked={odSettings?.workflow?.steps?.some(s => s.approverRole === 'manager') || false}
+                                onChange={(e) => {
+                                  const enabled = e.target.checked;
+                                  setODSettings(prev => {
+                                    if (!prev) return null;
+                                    let steps = [...(prev.workflow?.steps || [])];
+                                    if (enabled) {
+                                      // Add manager if not present - insert after HOD by default
+                                      if (!steps.some(s => s.approverRole === 'manager')) {
+                                        const hodIndex = steps.findIndex(s => s.approverRole === 'hod');
+                                        const insertIndex = hodIndex !== -1 ? hodIndex + 1 : 1;
+                                        steps.splice(insertIndex, 0, {
+                                          stepOrder: 0,
+                                          stepName: 'Manager Approval',
+                                          approverRole: 'manager',
+                                          availableActions: ['approve', 'reject'],
+                                          approvedStatus: 'pending',
+                                          rejectedStatus: 'rejected',
+                                          nextStepOnApprove: null,
+                                          isActive: true
+                                        });
+                                      }
+                                    } else {
+                                      steps = steps.filter(s => s.approverRole !== 'manager');
+                                    }
+                                    // Re-index
+                                    steps = steps.map((s, i) => ({ ...s, stepOrder: i + 1 }));
+                                    return { ...prev, workflow: { ...prev.workflow, steps } };
+                                  });
+                                }}
+                                className="peer sr-only"
+                              />
+                              <div className="peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-purple-600 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-purple-800"></div>
+                            </label>
+                          </div>
+
+                          {/* Manager Position Sector */}
+                          {odSettings?.workflow?.steps?.some(s => s.approverRole === 'manager') && odSettings?.workflow?.finalAuthority?.role !== 'manager' && (
+                            <div className="mt-4 space-y-3 rounded-xl bg-white/50 p-4 dark:bg-slate-800/50">
+                              <p className="text-xs font-medium text-slate-700 dark:text-slate-300 mb-2">Manager Approval Position</p>
+                              <div className="flex flex-col gap-2">
+                                <label className="flex cursor-pointer items-center gap-3">
+                                  <input
+                                    type="radio"
+                                    name="odManagerPosition"
+                                    checked={(() => {
+                                      const steps = odSettings?.workflow?.steps || [];
+                                      const mgrIdx = steps.findIndex(s => s.approverRole === 'manager');
+                                      const hrIdx = steps.findIndex(s => s.approverRole === 'hr');
+                                      return mgrIdx !== -1 && hrIdx !== -1 && mgrIdx < hrIdx;
+                                    })()}
+                                    onChange={() => {
+                                      setODSettings(prev => {
+                                        if (!prev) return null;
+                                        let steps = prev.workflow.steps.filter(s => s.approverRole !== 'manager');
+                                        const managerStep: WorkflowStep = {
+                                          stepName: 'Manager Approval',
+                                          approverRole: 'manager',
+                                          stepOrder: 0,
+                                          availableActions: ['approve', 'reject'],
+                                          approvedStatus: 'pending',
+                                          rejectedStatus: 'rejected',
+                                          nextStepOnApprove: null,
+                                          isActive: true
+                                        };
+
+                                        const hrIndex = steps.findIndex(s => s.approverRole === 'hr');
+                                        // Insert before HR
+                                        if (hrIndex !== -1) steps.splice(hrIndex, 0, managerStep);
+                                        else steps.push(managerStep);
+
+                                        steps = steps.map((s, i) => ({ ...s, stepOrder: i + 1 }));
+                                        return { ...prev, workflow: { ...prev.workflow, steps } };
+                                      });
+                                    }}
+                                    className="h-4 w-4 text-purple-600 focus:ring-purple-500"
+                                  />
+                                  <span className="text-sm text-slate-600 dark:text-slate-400">After HOD, Before HR</span>
+                                </label>
+                                <label className="flex cursor-pointer items-center gap-3">
+                                  <input
+                                    type="radio"
+                                    name="odManagerPosition"
+                                    checked={(() => {
+                                      const steps = odSettings?.workflow?.steps || [];
+                                      const mgrIdx = steps.findIndex(s => s.approverRole === 'manager');
+                                      const hrIdx = steps.findIndex(s => s.approverRole === 'hr');
+                                      return mgrIdx !== -1 && hrIdx !== -1 && mgrIdx > hrIdx;
+                                    })()}
+                                    onChange={() => {
+                                      setODSettings(prev => {
+                                        if (!prev) return null;
+                                        let steps = prev.workflow.steps.filter(s => s.approverRole !== 'manager');
+                                        const managerStep: WorkflowStep = {
+                                          stepName: 'Manager Approval',
+                                          approverRole: 'manager',
+                                          stepOrder: 0,
+                                          availableActions: ['approve', 'reject'],
+                                          approvedStatus: 'pending',
+                                          rejectedStatus: 'rejected',
+                                          nextStepOnApprove: null,
+                                          isActive: true
+                                        };
+
+                                        const hrIndex = steps.findIndex(s => s.approverRole === 'hr');
+                                        // Insert after HR
+                                        if (hrIndex !== -1) steps.splice(hrIndex + 1, 0, managerStep);
+                                        else steps.push(managerStep);
+
+                                        steps = steps.map((s, i) => ({ ...s, stepOrder: i + 1 }));
+                                        return { ...prev, workflow: { ...prev.workflow, steps } };
+                                      });
+                                    }}
+                                    className="h-4 w-4 text-purple-600 focus:ring-purple-500"
+                                  />
+                                  <span className="text-sm text-slate-600 dark:text-slate-400">After HR (Final Review)</span>
+                                </label>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
 
-                    {/* OD Workflow Steps */}
+                    {/* OD Approval Visualization */}
                     <div className="rounded-2xl border border-slate-200 dark:border-slate-700">
                       <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-800">
                         <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">OD Approval Flow</h3>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">Same flow as leave by default</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Visual representation of the approval hierarchy</p>
                       </div>
-                      <div className="p-4">
-                        <div className="flex items-center gap-4">
+                      <div className="p-4 overflow-x-auto">
+                        <div className="flex items-center gap-4 min-w-max">
                           {odSettings?.workflow?.steps && odSettings.workflow.steps.map((step, index) => (
                             <div key={step.stepOrder} className="flex items-center gap-4">
                               <div className="flex flex-col items-center">
                                 <div className={`flex h-12 w-12 items-center justify-center rounded-full ${step.approverRole === 'hod'
                                   ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300'
-                                  : 'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300'
+                                  : step.approverRole === 'manager'
+                                    ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300'
+                                    : 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300'
                                   }`}>
                                   <span className="text-lg font-bold">{step.stepOrder}</span>
                                 </div>
@@ -2655,13 +2848,140 @@ export default function SettingsPage() {
                             </div>
                           ))}
                           <div className="flex flex-col items-center">
-                            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300">
+                            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
                               ✓
                             </div>
                             <span className="mt-1 text-xs font-medium text-slate-600 dark:text-slate-400">Approved</span>
                           </div>
                         </div>
                       </div>
+                    </div>
+
+                    {/* Final Authority */}
+                    <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-purple-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-purple-900/10">
+                      <h3 className="mb-4 text-sm font-semibold text-slate-900 dark:text-slate-100">Final Approval Authority</h3>
+                      <div className="flex flex-col gap-3">
+                        {/* Manager Option */}
+                        {odSettings?.workflow?.steps?.some(s => s.approverRole === 'manager') && (
+                          <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 transition-all hover:border-purple-300 dark:border-slate-700 dark:bg-slate-800">
+                            <input
+                              type="radio"
+                              name="odFinalAuthority"
+                              checked={odSettings?.workflow?.finalAuthority?.role === 'manager'}
+                              onChange={() => setODSettings(prev => {
+                                if (!prev) return null;
+                                let steps = [...prev.workflow.steps];
+                                steps = steps.filter(s => s.approverRole !== 'hr');
+                                return {
+                                  ...prev,
+                                  workflow: {
+                                    ...prev.workflow,
+                                    steps,
+                                    finalAuthority: {
+                                      anyHRCanApprove: prev.workflow.finalAuthority?.anyHRCanApprove ?? false,
+                                      role: 'manager'
+                                    }
+                                  }
+                                };
+                              })}
+                              className="h-4 w-4 text-purple-600 focus:ring-purple-500"
+                            />
+                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Manager (Division Head)</span>
+                          </label>
+                        )}
+
+                        {/* HR Option */}
+                        <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 transition-all hover:border-purple-300 dark:border-slate-700 dark:bg-slate-800">
+                          <input
+                            type="radio"
+                            name="odFinalAuthority"
+                            checked={odSettings?.workflow?.finalAuthority?.role === 'hr'}
+                            onChange={() => setODSettings(prev => {
+                              if (!prev) return null;
+                              let steps = [...prev.workflow.steps];
+                              if (!steps.some(s => s.approverRole === 'hr')) {
+                                steps.push({
+                                  stepOrder: steps.length + 1,
+                                  stepName: 'HR Approval',
+                                  approverRole: 'hr',
+                                  availableActions: ['approve', 'reject'],
+                                  approvedStatus: 'approved',
+                                  rejectedStatus: 'rejected',
+                                  nextStepOnApprove: null,
+                                  isActive: true
+                                });
+                              }
+                              return {
+                                ...prev,
+                                workflow: {
+                                  ...prev.workflow,
+                                  steps,
+                                  finalAuthority: {
+                                    anyHRCanApprove: prev.workflow.finalAuthority?.anyHRCanApprove ?? false,
+                                    role: 'hr'
+                                  }
+                                }
+                              };
+                            })}
+                            className="h-4 w-4 text-purple-600 focus:ring-purple-500"
+                          />
+                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">HR</span>
+                        </label>
+
+                        {/* Super Admin Option */}
+                        <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 transition-all hover:border-purple-300 dark:border-slate-700 dark:bg-slate-800">
+                          <input
+                            type="radio"
+                            name="odFinalAuthority"
+                            checked={odSettings?.workflow?.finalAuthority?.role === 'super_admin'}
+                            onChange={() => setODSettings(prev => {
+                              if (!prev) return null;
+                              let steps = [...prev.workflow.steps];
+                              if (!steps.some(s => s.approverRole === 'hr')) {
+                                steps.push({
+                                  stepOrder: steps.length + 1,
+                                  stepName: 'HR Approval',
+                                  approverRole: 'hr',
+                                  availableActions: ['approve', 'reject'],
+                                  approvedStatus: 'approved',
+                                  rejectedStatus: 'rejected',
+                                  nextStepOnApprove: null,
+                                  isActive: true
+                                });
+                              }
+                              return {
+                                ...prev,
+                                workflow: {
+                                  ...prev.workflow,
+                                  steps,
+                                  finalAuthority: {
+                                    anyHRCanApprove: prev.workflow.finalAuthority?.anyHRCanApprove ?? false,
+                                    role: 'super_admin'
+                                  }
+                                }
+                              };
+                            })}
+                            className="h-4 w-4 text-purple-600 focus:ring-purple-500"
+                          />
+                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Super Admin</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Any HR Can Approve Toggle */}
+                    <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-purple-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-purple-900/10">
+                      <label className="flex cursor-pointer items-center justify-between">
+                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Any HR Can Give Final Approval</span>
+                        <input
+                          type="checkbox"
+                          checked={odSettings?.workflow?.finalAuthority?.anyHRCanApprove || false}
+                          onChange={(e) => setODSettings(prev => ({
+                            ...prev!,
+                            workflow: { ...prev!.workflow, finalAuthority: { ...(prev!.workflow?.finalAuthority || {}), role: prev!.workflow?.finalAuthority?.role || 'hr', anyHRCanApprove: e.target.checked } }
+                          }))}
+                          className="h-5 w-5 rounded text-purple-600 focus:ring-purple-500"
+                        />
+                      </label>
                     </div>
 
                     <button
@@ -3988,6 +4308,169 @@ export default function SettingsPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* OT Workflow Configuration */}
+                <div className="space-y-6">
+                  {/* Workflow Enable Toggle */}
+                  <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-blue-900/10">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Enable OT Workflow</h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Multi-step approval process for Overtime requests</p>
+                      </div>
+                      <label className="relative inline-flex cursor-pointer items-center">
+                        <input
+                          type="checkbox"
+                          checked={otSettings.workflow?.isEnabled || false}
+                          onChange={(e) => setOTSettings(prev => ({
+                            ...prev,
+                            workflow: { ...prev.workflow, isEnabled: e.target.checked }
+                          }))}
+                          className="peer sr-only"
+                        />
+                        <div className="peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-blue-600 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-blue-800"></div>
+                      </label>
+                    </div>
+
+                    {/* Manager Approval Toggle */}
+                    {otSettings.workflow?.isEnabled && (
+                      <div className="mt-4 border-t border-slate-200/50 pt-4 dark:border-slate-700/50">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Include Manager Approval</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">Require approval from employee&apos;s reporting manager</p>
+                          </div>
+                          <label className="relative inline-flex cursor-pointer items-center">
+                            <input
+                              type="checkbox"
+                              checked={otSettings.workflow?.steps?.some(s => s.approverRole === 'manager') || false}
+                              onChange={(e) => {
+                                const includeManager = e.target.checked;
+                                setOTSettings(prev => {
+                                  const finalRole = prev.workflow?.finalAuthority?.role || 'hr';
+                                  let newSteps: WorkflowStep[] = [];
+
+                                  if (finalRole === 'hr') {
+                                    if (includeManager) {
+                                      newSteps = [
+                                        { stepOrder: 1, stepName: 'Manager Approval', approverRole: 'manager', availableActions: ['approve', 'reject'], approvedStatus: 'pending', rejectedStatus: 'rejected', isActive: true, nextStepOnApprove: null },
+                                        { stepOrder: 2, stepName: 'HR Approval', approverRole: 'hr', availableActions: ['approve', 'reject'], approvedStatus: 'approved', rejectedStatus: 'rejected', isActive: true, nextStepOnApprove: null }
+                                      ];
+                                    } else {
+                                      newSteps = [
+                                        { stepOrder: 1, stepName: 'HR Approval', approverRole: 'hr', availableActions: ['approve', 'reject'], approvedStatus: 'approved', rejectedStatus: 'rejected', isActive: true, nextStepOnApprove: null }
+                                      ];
+                                    }
+                                  } else {
+                                    // If Manager is final authority, they are the only step essentially
+                                    newSteps = [
+                                      { stepOrder: 1, stepName: 'Manager Approval', approverRole: 'manager', availableActions: ['approve', 'reject'], approvedStatus: 'approved', rejectedStatus: 'rejected', isActive: true, nextStepOnApprove: null }
+                                    ];
+                                  }
+                                  return { ...prev, workflow: { ...prev.workflow, steps: newSteps } };
+                                });
+                              }}
+                              className="peer sr-only"
+                            />
+                            <div className="peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-blue-600 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-blue-800"></div>
+                          </label>
+                        </div>
+
+
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Final Authority */}
+                  <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-blue-900/10">
+                    <h3 className="mb-4 text-sm font-semibold text-slate-900 dark:text-slate-100">Final Approval Authority</h3>
+                    <div className="flex flex-col gap-3">
+                      {/* Manager Option */}
+                      {otSettings.workflow?.steps?.some(s => s.approverRole === 'manager') && (
+                        <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 transition-all hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800">
+                          <input
+                            type="radio"
+                            name="otFinalAuthority"
+                            checked={otSettings.workflow?.finalAuthority?.role === 'manager'}
+                            onChange={() => setOTSettings(prev => ({
+                              ...prev,
+                              workflow: {
+                                ...prev.workflow,
+                                steps: [
+                                  { stepOrder: 1, stepName: 'Manager Approval', approverRole: 'manager', availableActions: ['approve', 'reject'], approvedStatus: 'approved', rejectedStatus: 'rejected', isActive: true, nextStepOnApprove: null }
+                                ],
+                                finalAuthority: { role: 'manager', anyHRCanApprove: false }
+                              }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Manager (Division Head)</span>
+                        </label>
+                      )}
+
+                      {/* HR Option */}
+                      <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 transition-all hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800">
+                        <input
+                          type="radio"
+                          name="otFinalAuthority"
+                          checked={otSettings.workflow?.finalAuthority?.role === 'hr'}
+                          onChange={() => setOTSettings(prev => {
+                            const hasManager = prev.workflow.steps?.some(s => s.approverRole === 'manager') || false;
+                            let newSteps: WorkflowStep[] = [];
+                            if (hasManager) {
+                              newSteps = [
+                                { stepOrder: 1, stepName: 'Manager Approval', approverRole: 'manager', availableActions: ['approve', 'reject'], approvedStatus: 'pending', rejectedStatus: 'rejected', isActive: true, nextStepOnApprove: null },
+                                { stepOrder: 2, stepName: 'HR Approval', approverRole: 'hr', availableActions: ['approve', 'reject'], approvedStatus: 'approved', rejectedStatus: 'rejected', isActive: true, nextStepOnApprove: null }
+                              ];
+                            } else {
+                              newSteps = [
+                                { stepOrder: 1, stepName: 'HR Approval', approverRole: 'hr', availableActions: ['approve', 'reject'], approvedStatus: 'approved', rejectedStatus: 'rejected', isActive: true, nextStepOnApprove: null }
+                              ];
+                            }
+                            return {
+                              ...prev,
+                              workflow: {
+                                ...prev.workflow,
+                                steps: newSteps,
+                                finalAuthority: {
+                                  role: 'hr',
+                                  anyHRCanApprove: prev.workflow.finalAuthority?.anyHRCanApprove ?? false
+                                }
+                              }
+                            };
+                          })}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">HR</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Any HR Can Approve Toggle */}
+                  <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-blue-900/10">
+                    <label className="flex cursor-pointer items-center justify-between">
+                      <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Any HR Can Give Final Approval</span>
+                      <input
+                        type="checkbox"
+                        checked={otSettings.workflow?.finalAuthority?.anyHRCanApprove || false}
+                        onChange={(e) => setOTSettings(prev => ({
+                          ...prev,
+                          workflow: { ...prev.workflow, finalAuthority: { ...prev.workflow.finalAuthority, anyHRCanApprove: e.target.checked } }
+                        }))}
+                        className="h-5 w-5 rounded text-blue-600 focus:ring-blue-500"
+                      />
+                    </label>
+                  </div>
+
+
+                  <button
+                    onClick={saveOTWorkflow}
+                    disabled={saving}
+                    className="w-full rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {saving ? 'Saving...' : 'Save OT Workflow'}
+                  </button>
+                </div>
               </>
             )}
           </div>
@@ -4114,6 +4597,158 @@ export default function SettingsPage() {
                       </button>
                     </div>
                   </div>
+                </div>
+
+                {/* Permission Workflow Configuration */}
+                <div className="space-y-6">
+                  {/* Workflow Enable Toggle */}
+                  <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-blue-900/10">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Enable Permission Workflow</h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Multi-step approval process for Permission requests</p>
+                      </div>
+                      <label className="relative inline-flex cursor-pointer items-center">
+                        <input
+                          type="checkbox"
+                          checked={permissionWorkflow.isEnabled}
+                          onChange={(e) => setPermissionWorkflow(prev => ({ ...prev, isEnabled: e.target.checked }))}
+                          className="peer sr-only"
+                        />
+                        <div className="peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-blue-600 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-blue-800"></div>
+                      </label>
+                    </div>
+
+                    {/* Manager Approval Toggle */}
+                    {permissionWorkflow.isEnabled && (
+                      <div className="mt-4 border-t border-slate-200/50 pt-4 dark:border-slate-700/50">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Include Manager Approval</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">Require approval from employee's reporting manager</p>
+                          </div>
+                          <label className="relative inline-flex cursor-pointer items-center">
+                            <input
+                              type="checkbox"
+                              checked={permissionWorkflow.steps.some(s => s.approverRole === 'manager')}
+                              onChange={(e) => {
+                                const includeManager = e.target.checked;
+                                setPermissionWorkflow(prev => {
+                                  const finalRole = prev.finalAuthority?.role || 'hr';
+                                  let newSteps: WorkflowStep[] = [];
+
+                                  if (finalRole === 'hr') {
+                                    if (includeManager) {
+                                      newSteps = [
+                                        { stepOrder: 1, stepName: 'Manager Approval', approverRole: 'manager', availableActions: ['approve', 'reject'], approvedStatus: 'pending', rejectedStatus: 'rejected', isActive: true, nextStepOnApprove: null },
+                                        { stepOrder: 2, stepName: 'HR Approval', approverRole: 'hr', availableActions: ['approve', 'reject'], approvedStatus: 'approved', rejectedStatus: 'rejected', isActive: true, nextStepOnApprove: null }
+                                      ];
+                                    } else {
+                                      newSteps = [
+                                        { stepOrder: 1, stepName: 'HR Approval', approverRole: 'hr', availableActions: ['approve', 'reject'], approvedStatus: 'approved', rejectedStatus: 'rejected', isActive: true, nextStepOnApprove: null }
+                                      ];
+                                    }
+                                  } else {
+                                    newSteps = [
+                                      { stepOrder: 1, stepName: 'Manager Approval', approverRole: 'manager', availableActions: ['approve', 'reject'], approvedStatus: 'approved', rejectedStatus: 'rejected', isActive: true, nextStepOnApprove: null }
+                                    ];
+                                  }
+                                  return { ...prev, steps: newSteps };
+                                });
+                              }}
+                              className="peer sr-only"
+                            />
+                            <div className="peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-slate-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-blue-600 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:border-slate-600 dark:bg-slate-700 dark:peer-focus:ring-blue-800"></div>
+                          </label>
+                        </div>
+
+
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Final Authority */}
+                  <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-blue-900/10">
+                    <h3 className="mb-4 text-sm font-semibold text-slate-900 dark:text-slate-100">Final Approval Authority</h3>
+                    <div className="flex flex-col gap-3">
+                      {/* Manager Option */}
+                      {permissionWorkflow.steps.some(s => s.approverRole === 'manager') && (
+                        <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 transition-all hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800">
+                          <input
+                            type="radio"
+                            name="permissionFinalAuthority"
+                            checked={permissionWorkflow.finalAuthority?.role === 'manager'}
+                            onChange={() => setPermissionWorkflow(prev => ({
+                              ...prev,
+                              steps: [
+                                { stepOrder: 1, stepName: 'Manager Approval', approverRole: 'manager', availableActions: ['approve', 'reject'], approvedStatus: 'approved', rejectedStatus: 'rejected', isActive: true, nextStepOnApprove: null }
+                              ],
+                              finalAuthority: { role: 'manager', anyHRCanApprove: false }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Manager (Division Head)</span>
+                        </label>
+                      )}
+
+                      {/* HR Option */}
+                      <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 transition-all hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800">
+                        <input
+                          type="radio"
+                          name="permissionFinalAuthority"
+                          checked={permissionWorkflow.finalAuthority?.role === 'hr'}
+                          onChange={() => setPermissionWorkflow(prev => {
+                            const hasManager = prev.steps.some(s => s.approverRole === 'manager');
+                            let newSteps: WorkflowStep[] = [];
+                            if (hasManager) {
+                              newSteps = [
+                                { stepOrder: 1, stepName: 'Manager Approval', approverRole: 'manager', availableActions: ['approve', 'reject'], approvedStatus: 'pending', rejectedStatus: 'rejected', isActive: true, nextStepOnApprove: null },
+                                { stepOrder: 2, stepName: 'HR Approval', approverRole: 'hr', availableActions: ['approve', 'reject'], approvedStatus: 'approved', rejectedStatus: 'rejected', isActive: true, nextStepOnApprove: null }
+                              ];
+                            } else {
+                              newSteps = [
+                                { stepOrder: 1, stepName: 'HR Approval', approverRole: 'hr', availableActions: ['approve', 'reject'], approvedStatus: 'approved', rejectedStatus: 'rejected', isActive: true, nextStepOnApprove: null }
+                              ];
+                            }
+                            return {
+                              ...prev,
+                              steps: newSteps,
+                              finalAuthority: {
+                                role: 'hr',
+                                anyHRCanApprove: prev.finalAuthority?.anyHRCanApprove ?? false
+                              }
+                            };
+                          })}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">HR</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Any HR Can Approve Toggle */}
+                  <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-blue-900/10">
+                    <label className="flex cursor-pointer items-center justify-between">
+                      <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Any HR Can Give Final Approval</span>
+                      <input
+                        type="checkbox"
+                        checked={permissionWorkflow.finalAuthority?.anyHRCanApprove || false}
+                        onChange={(e) => setPermissionWorkflow(prev => ({
+                          ...prev,
+                          finalAuthority: { ...prev.finalAuthority, anyHRCanApprove: e.target.checked }
+                        }))}
+                        className="h-5 w-5 rounded text-blue-600 focus:ring-blue-500"
+                      />
+                    </label>
+                  </div>
+
+                  <button
+                    onClick={savePermissionWorkflow}
+                    disabled={saving}
+                    className="w-full rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {saving ? 'Saving...' : 'Save Permission Workflow'}
+                  </button>
                 </div>
               </>
             )}

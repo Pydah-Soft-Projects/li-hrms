@@ -35,6 +35,75 @@ exports.createOT = async (req, res) => {
       });
     }
 
+    // --- SCOPING & AUTHORIZATION (New Logic) ---
+
+    // Determine if applying for self
+    const isSelf = (!employeeNumber && !employeeId) ||
+      (employeeNumber && employeeNumber.toUpperCase() === req.user.employeeId?.toUpperCase()) ||
+      (employeeId && employeeId.toString() === req.user.employeeRef?.toString());
+
+    const isGlobalAdmin = ['hod', 'hr', 'sub_admin', 'super_admin'].includes(req.user.role);
+    const isManager = req.user.role === 'manager';
+
+    // 1. SELF APPLICATION (Always Allowed)
+    if (isSelf) {
+      // Proceed
+    }
+    // 2. ADMIN APPLICATION (Global Scope)
+    else if (isGlobalAdmin) {
+      // Proceed
+    }
+    // 3. MANAGER APPLICATION (Scoped)
+    else if (isManager) {
+      // Resolve target employee for scope check
+      // Employee model is already imported at the top of the file.
+
+      let targetEmployee = null;
+      if (employeeNumber) {
+        targetEmployee = await Employee.findOne({ emp_no: employeeNumber });
+      } else if (employeeId) {
+        targetEmployee = await Employee.findById(employeeId);
+      }
+
+      if (!targetEmployee) {
+        return res.status(400).json({
+          success: false,
+          message: 'Employee record not found for scope verification'
+        });
+      }
+
+      // Verify Scope
+      const { allowedDivisions, divisionMapping } = req.user;
+
+      const employeeDivisionId = targetEmployee.division_id?.toString();
+      const isDivisionScoped = allowedDivisions?.some(divId => divId.toString() === employeeDivisionId);
+
+      let isDepartmentScoped = true;
+      if (isDivisionScoped && divisionMapping && divisionMapping.length > 0) {
+        const mapping = divisionMapping.find(m => m.division?.toString() === employeeDivisionId);
+        if (mapping && mapping.departments && mapping.departments.length > 0) {
+          const employeeDeptId = (targetEmployee.department_id || targetEmployee.department)?.toString();
+          isDepartmentScoped = mapping.departments.some(d => d.toString() === employeeDeptId);
+        }
+      }
+
+      if (!isDivisionScoped || !isDepartmentScoped) {
+        return res.status(403).json({
+          success: false,
+          message: 'You are not authorized to apply for overtime for employees outside your assigned data scope.'
+        });
+      }
+    }
+    // 4. UNAUTHORIZED ROLE
+    else {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not authorized to apply for overtime for others.'
+      });
+    }
+
+    // --- END SCOPING ---
+
     const result = await createOTRequest(
       {
         employeeId,
@@ -164,7 +233,8 @@ exports.approveOT = async (req, res) => {
   try {
     const result = await approveOTRequest(
       req.params.id,
-      req.user?.userId || req.user?._id
+      req.user?.userId || req.user?._id,
+      req.user?.role
     );
 
     if (!result.success) {
@@ -204,7 +274,8 @@ exports.rejectOT = async (req, res) => {
     const result = await rejectOTRequest(
       req.params.id,
       req.user?.userId || req.user?._id,
-      reason
+      reason,
+      req.user?.role
     );
 
     if (!result.success) {

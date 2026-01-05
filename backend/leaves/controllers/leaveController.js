@@ -348,23 +348,65 @@ exports.applyLeave = async (req, res) => {
 
       // Enforce Manager Scope
       if (req.user.role === 'manager' && employee) {
-        // We need to fetch division details if not populated
-        const employeeDivisionId = employee.division_id
-          ? employee.division_id.toString()
-          : (employee.division ? employee.division._id.toString() : null);
+        // 1. Allow Self Application
+        // Check if the target employee is the manager themselves
+        const isSelf = (req.user.employeeId && req.user.employeeId.toString() === employee._id.toString()) ||
+          (req.user.employeeRef && req.user.employeeRef.toString() === employee._id.toString());
 
-        // Check if req.user.allowedDivisions contains employeeDivisionId
-        const allowedDivisions = req.user.allowedDivisions || [];
-        const isScoped = allowedDivisions.some(div =>
-          (typeof div === 'string' ? div : div._id.toString()) === employeeDivisionId
-        );
+        if (!isSelf) {
+          // We need to fetch division/department details if not populated
+          const employeeDivisionId = employee.division_id
+            ? employee.division_id.toString()
+            : (employee.division ? employee.division._id.toString() : null);
 
-        if (!isScoped && employeeDivisionId) {
-          console.log(`[Apply Leave] ❌ Manager ${req.user._id} blocked from applying for employee ${empNo} in division ${employeeDivisionId}`);
-          return res.status(403).json({
-            success: false,
-            error: 'You are not authorized to apply for employees outside your assigned division.',
-          });
+          const employeeDepartmentId = employee.department_id
+            ? employee.department_id.toString()
+            : (employee.department ? employee.department._id.toString() : null);
+
+          // Check Allowed Divisions
+          const allowedDivisions = req.user.allowedDivisions || [];
+          const isDivisionScoped = allowedDivisions.some(div =>
+            (typeof div === 'string' ? div : div._id.toString()) === employeeDivisionId
+          );
+
+          // Check Allowed Departments (via Division Mapping or Direct Assignment)
+          let isDepartmentScoped = false;
+
+          // Check Division Mapping
+          if (req.user.divisionMapping && req.user.divisionMapping.length > 0) {
+            // Check if user maps to the employee's division
+            const mapping = req.user.divisionMapping.find(m =>
+              (typeof m.division === 'string' ? m.division : m.division._id.toString()) === employeeDivisionId
+            );
+
+            if (mapping) {
+              // If mapping exists, check if it restricts departments
+              if (!mapping.departments || mapping.departments.length === 0) {
+                isDepartmentScoped = true; // All departments in this division
+              } else {
+                // Check if employee's department is in the allowed list
+                isDepartmentScoped = mapping.departments.some(d =>
+                  (typeof d === 'string' ? d : d._id.toString()) === employeeDepartmentId
+                );
+              }
+            }
+          }
+
+          // Check Direct Department Assignment
+          if (!isDepartmentScoped && req.user.departments && req.user.departments.length > 0) {
+            isDepartmentScoped = req.user.departments.some(d =>
+              (typeof d === 'string' ? d : d._id.toString()) === employeeDepartmentId
+            );
+          }
+
+          if (!isDivisionScoped && !isDepartmentScoped) {
+            console.log(`[Apply Leave] ❌ Manager ${req.user._id} blocked from applying for employee ${empNo}.`);
+            console.log(`Debug: EmpDiv: ${employeeDivisionId}, EmpDept: ${employeeDepartmentId}, UserDivs: ${JSON.stringify(allowedDivisions)}`);
+            return res.status(403).json({
+              success: false,
+              error: 'You are not authorized to apply for employees outside your assigned data scope (Division/Department).',
+            });
+          }
         }
       }
     } else if (employeeId) {
@@ -894,6 +936,44 @@ exports.processLeaveAction = async (req, res) => {
       // HOD can process if leave is in their department
       canProcess = !req.user.department ||
         leave.department?.toString() === req.user.department?.toString();
+    } else if (currentApprover === 'manager' && userRole === 'manager') {
+      // Manager can process if leave is in their data scope
+      const leaveDivisionId = leave.division_id ? leave.division_id.toString() : null;
+      const leaveDepartmentId = leave.department ? leave.department.toString() : null;
+
+      if (leaveDivisionId) {
+        // Check Allowed Divisions
+        const allowedDivisions = req.user.allowedDivisions || [];
+        const isDivisionScoped = allowedDivisions.some(div =>
+          (typeof div === 'string' ? div : div._id.toString()) === leaveDivisionId
+        );
+
+        if (isDivisionScoped) canProcess = true;
+
+        if (!canProcess) {
+          // Check Allowed Departments (Mapping/Direct)
+          if (req.user.divisionMapping && req.user.divisionMapping.length > 0) {
+            const mapping = req.user.divisionMapping.find(m =>
+              (typeof m.division === 'string' ? m.division : m.division._id.toString()) === leaveDivisionId
+            );
+            if (mapping) {
+              if (!mapping.departments || mapping.departments.length === 0) {
+                canProcess = true;
+              } else if (leaveDepartmentId) {
+                canProcess = mapping.departments.some(d =>
+                  (typeof d === 'string' ? d : d._id.toString()) === leaveDepartmentId
+                );
+              }
+            }
+          }
+        }
+        // Check Direct Department Assignment (if not division mapped)
+        if (!canProcess && req.user.departments && req.user.departments.length > 0 && leaveDepartmentId) {
+          canProcess = req.user.departments.some(d =>
+            (typeof d === 'string' ? d : d._id.toString()) === leaveDepartmentId
+          );
+        }
+      }
     } else if (currentApprover === 'hr' && userRole === 'hr') {
       canProcess = true;
     } else if (currentApprover === 'final_authority' && userRole === 'hr') {

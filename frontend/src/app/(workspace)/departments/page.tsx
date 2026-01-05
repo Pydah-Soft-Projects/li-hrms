@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { api, Department } from '@/lib/api';
+import { api, Department, Shift, Designation } from '@/lib/api';
 import BulkUpload from '@/components/BulkUpload';
 import {
   DEPARTMENT_TEMPLATE_HEADERS,
@@ -13,32 +13,6 @@ import {
   ParsedRow,
 } from '@/lib/bulkUpload';
 import Spinner from '@/components/Spinner';
-
-interface Designation {
-  _id: string;
-  name: string;
-  code?: string;
-  description?: string;
-  department: string;
-  paidLeaves: number;
-  deductionRules: any[];
-  shifts?: any[];
-  departmentShifts?: Array<{
-    department: { _id: string; name: string; code?: string };
-    shifts: any[];
-    _id?: string;
-  }>;
-  isActive: boolean;
-}
-
-interface Shift {
-  _id: string;
-  name: string;
-  startTime: string;
-  endTime: string;
-  duration: number;
-  isActive: boolean;
-}
 
 export default function DepartmentsPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -1083,18 +1057,20 @@ export default function DepartmentsPage() {
                                 {designation.departmentShifts && designation.departmentShifts.length > 0 && (
                                   <div className="flex flex-wrap gap-1 mt-1">
                                     <span className="text-xs font-semibold text-slate-600 dark:text-slate-400 w-full">Dept-Specific:</span>
-                                    {designation.departmentShifts.flatMap((ds) =>
-                                      ds.shifts?.map((shift: any) => (
+                                    {designation.departmentShifts.flatMap((ds) => {
+                                      const deptName = typeof ds.department === 'string' ? 'Unknown' : ds.department.name;
+                                      const deptId = typeof ds.department === 'string' ? ds.department : ds.department._id;
+                                      return ds.shifts?.map((shift: any) => (
                                         <button
-                                          key={`${ds.department._id}-${shift._id}`}
+                                          key={`${deptId}-${shift._id}`}
                                           onClick={() => setShowShiftBreakdownDialog(designation)}
                                           className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-700/10 hover:bg-emerald-100 transition-colors dark:bg-emerald-400/10 dark:text-emerald-400 dark:ring-emerald-400/20 dark:hover:bg-emerald-400/20 cursor-pointer"
-                                          title={`${ds.department.name}`}
+                                          title={deptName}
                                         >
-                                          {shift.name} ({ds.department.name})
+                                          {shift.name} ({deptName})
                                         </button>
-                                      )) || []
-                                    )}
+                                      )) || [];
+                                    })}
                                   </div>
                                 )}
                               </div>
@@ -1315,9 +1291,9 @@ export default function DepartmentsPage() {
                       </span>
                     </h3>
                     {showShiftBreakdownDialog.departmentShifts.map((ds) => (
-                      <div key={ds.department._id} className="rounded-xl border border-emerald-200 bg-emerald-50/30 p-4 dark:border-emerald-800 dark:bg-emerald-900/20">
+                      <div key={typeof ds.department === 'string' ? ds.department : ds.department._id} className="rounded-xl border border-emerald-200 bg-emerald-50/30 p-4 dark:border-emerald-800 dark:bg-emerald-900/20">
                         <h4 className="mb-3 font-medium text-emerald-900 dark:text-emerald-300">
-                          {ds.department.name} {ds.department.code && `(${ds.department.code})`}
+                          {typeof ds.department === 'string' ? 'Unknown Department' : ds.department.name} {typeof ds.department === 'string' || !ds.department.code ? '' : `(${ds.department.code})`}
                         </h4>
                         <div className="space-y-2">
                           {ds.shifts && ds.shifts.length > 0 ? (

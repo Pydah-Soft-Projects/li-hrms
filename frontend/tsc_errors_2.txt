@@ -1,0 +1,34 @@
+﻿src/app/(workspace)/departments/page.tsx(712,24): error TS2304: Cannot find name 'Spinner'.
+src/app/(workspace)/departments/page.tsx(1053,65): error TS2339: Property '_id' does not exist on type 'string | Department | { _id: string; name: string; code?: string | undefined; }'.
+  Property '_id' does not exist on type 'string'.
+src/app/(workspace)/departments/page.tsx(1056,67): error TS2339: Property 'name' does not exist on type 'string | Department | { _id: string; name: string; code?: string | undefined; }'.
+  Property 'name' does not exist on type 'string'.
+src/app/(workspace)/departments/page.tsx(1058,72): error TS2339: Property 'name' does not exist on type 'string | Department | { _id: string; name: string; code?: string | undefined; }'.
+  Property 'name' does not exist on type 'string'.
+src/app/(workspace)/departments/page.tsx(1126,24): error TS2304: Cannot find name 'Spinner'.
+src/app/(workspace)/departments/page.tsx(1282,47): error TS2339: Property '_id' does not exist on type 'string | Department | { _id: string; name: string; code?: string | undefined; }'.
+  Property '_id' does not exist on type 'string'.
+src/app/(workspace)/departments/page.tsx(1284,42): error TS2339: Property 'name' does not exist on type 'string | Department | { _id: string; name: string; code?: string | undefined; }'.
+  Property 'name' does not exist on type 'string'.
+src/app/(workspace)/departments/page.tsx(1284,63): error TS2339: Property 'code' does not exist on type 'string | Department | { _id: string; name: string; code?: string | undefined; }'.
+  Property 'code' does not exist on type 'string'.
+src/app/(workspace)/departments/page.tsx(1284,89): error TS2339: Property 'code' does not exist on type 'string | Department | { _id: string; name: string; code?: string | undefined; }'.
+  Property 'code' does not exist on type 'string'.
+src/app/(workspace)/departments/page.tsx(1324,16): error TS2304: Cannot find name 'Spinner'.
+src/app/(workspace)/departments/page.tsx(1437,32): error TS2304: Cannot find name 'DEPARTMENT_TEMPLATE_HEADERS'.
+src/app/(workspace)/departments/page.tsx(1438,31): error TS2304: Cannot find name 'DEPARTMENT_TEMPLATE_SAMPLE'.
+src/app/(workspace)/departments/page.tsx(1446,32): error TS2304: Cannot find name 'validateDepartmentRow'.
+src/app/(workspace)/departments/page.tsx(1493,32): error TS2304: Cannot find name 'DESIGNATION_TEMPLATE_HEADERS'.
+src/app/(workspace)/departments/page.tsx(1494,31): error TS2304: Cannot find name 'DESIGNATION_TEMPLATE_SAMPLE'.
+src/app/(workspace)/departments/page.tsx(1503,32): error TS2304: Cannot find name 'validateDesignationRow'.
+src/app/(workspace)/employees/page.tsx(1820,59): error TS7006: Parameter 'd' implicitly has an 'any' type.
+src/app/(workspace)/employees/page.tsx(1884,58): error TS7006: Parameter 'd' implicitly has an 'any' type.
+src/app/(workspace)/layout.tsx(185,3): error TS1117: An object literal cannot have multiple properties with the same name.
+src/app/(workspace)/layout.tsx(186,3): error TS1117: An object literal cannot have multiple properties with the same name.
+src/app/(workspace)/layout.tsx(214,3): error TS1117: An object literal cannot have multiple properties with the same name.
+src/app/(workspace)/users/page.tsx(181,38): error TS2345: Argument of type 'Division[] | undefined' is not assignable to parameter of type 'SetStateAction<UserStats | null>'.
+  Type 'undefined' is not assignable to type 'SetStateAction<UserStats | null>'.
+src/app/(workspace)/users/page.tsx(475,17): error TS2345: Argument of type '{ email: string; name: string; role: string; departmentType: "single"; department: string; departments: never[]; password: string; autoGeneratePassword: true; featureControl: never[]; }' is not assignable to parameter of type 'SetStateAction<{ email: string; name: string; role: string; departmentType: "single" | "multiple"; department: string; departments: string[]; allowedDivisions: string[]; password: string; autoGeneratePassword: boolean; featureControl: string[]; }>'.
+  Property 'allowedDivisions' is missing in type '{ email: string; name: string; role: string; departmentType: "single"; department: string; departments: never[]; password: string; autoGeneratePassword: true; featureControl: never[]; }' but required in type '{ email: string; name: string; role: string; departmentType: "single" | "multiple"; department: string; departments: string[]; allowedDivisions: string[]; password: string; autoGeneratePassword: boolean; featureControl: string[]; }'.
+src/app/superadmin/departments/page.tsx(160,71): error TS2339: Property '_id' does not exist on type 'string | Designation'.
+  Property '_id' does not exist on type 'string'.

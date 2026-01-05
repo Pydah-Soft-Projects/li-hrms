@@ -183,6 +183,7 @@ const moduleIcons: Record<string, React.ComponentType<IconProps>> = {
   PAY_REGISTER: ReportsIcon,
   PAYSLIPS: PayslipsIcon,
   PAYROLL: PayslipsIcon,
+  LOANS_SALARY_ADVANCE: LoansIcon,
 };
 
 // Module code to route mapping
@@ -209,6 +210,7 @@ const moduleRoutes: Record<string, string> = {
   PAYROLL_TRANSACTIONS: '/payroll-transactions',
   PAY_REGISTER: '/pay-register',
   PAYSLIPS: '/payslips',
+  LOANS_SALARY_ADVANCE: '/loans-salary-advance',
 };
 
 function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {

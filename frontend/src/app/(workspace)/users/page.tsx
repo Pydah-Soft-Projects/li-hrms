@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { api, Department } from '@/lib/api';
+import { api, Department, Division } from '@/lib/api';
 import { MODULE_CATEGORIES } from '@/config/moduleCategories';
 import Spinner from '@/components/Spinner';
 
@@ -62,6 +62,8 @@ interface User {
   roles: string[];
   department?: { _id: string; name: string; code?: string };
   departments?: { _id: string; name: string; code?: string }[];
+  allowedDivisions?: { _id: string; name: string }[] | string[];
+  divisionMapping?: { division: string | { _id: string; name: string }; departments: string[] | { _id: string; name: string }[] }[];
   employeeId?: string;
   employeeRef?: { emp_no: string; employee_name: string };
   isActive: boolean;
@@ -106,6 +108,7 @@ const getRoleLabel = (role: string) => {
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [divisions, setDivisions] = useState<Division[]>([]);
   const [employeesWithoutAccount, setEmployeesWithoutAccount] = useState<Employee[]>([]);
   const [stats, setStats] = useState<UserStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -133,6 +136,7 @@ export default function UsersPage() {
     departmentType: 'single' as 'single' | 'multiple',
     department: '',
     departments: [] as string[],
+    allowedDivisions: [] as string[],
     password: '',
     autoGeneratePassword: true,
     featureControl: [] as string[],
@@ -160,18 +164,20 @@ export default function UsersPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [usersRes, deptRes, statsRes] = await Promise.all([
+      const [usersRes, deptRes, divRes, statsRes] = await Promise.all([
         api.getUsers({
           role: roleFilter || undefined,
           isActive: statusFilter ? statusFilter === 'active' : undefined,
           search: search || undefined,
         }),
         api.getDepartments(true),
+        api.getDivisions(),
         api.getUserStats(),
       ]);
 
       if (usersRes.success) setUsers(usersRes.data || []);
       if (deptRes.success) setDepartments(deptRes.data || []);
+      if (divRes.success) setDivisions(divRes.data || []);
       if (statsRes.success) setStats(statsRes.data);
     } catch (err: any) {
       setError(err.message || 'Failed to load data');
@@ -261,6 +267,11 @@ export default function UsersPage() {
 
       // Add feature control (always send to ensure overrides work)
       payload.featureControl = formData.featureControl;
+
+      // Add allowedDivisions (for Manager)
+      if (formData.role === 'manager') {
+        payload.allowedDivisions = formData.allowedDivisions;
+      }
 
       const res = await api.createUser(payload);
 
@@ -352,6 +363,11 @@ export default function UsersPage() {
       // Add feature control (always send to ensure overrides work)
       payload.featureControl = formData.featureControl;
 
+      // Add allowedDivisions (for Manager)
+      if (formData.role === 'manager') {
+        payload.allowedDivisions = formData.allowedDivisions;
+      }
+
       const res = await api.updateUser(selectedUser._id, payload);
 
       if (res.success) {
@@ -432,6 +448,7 @@ export default function UsersPage() {
       departmentType: user.departmentType || (user.departments && user.departments.length > 1 ? 'multiple' : 'single'),
       department: user.department?._id || '',
       departments: user.departments?.map((d) => d._id) || [],
+      allowedDivisions: user.allowedDivisions?.map((d: any) => typeof d === 'string' ? d : d._id) || [],
       password: '',
       autoGeneratePassword: false,
       featureControl: user.featureControl || [],
@@ -462,6 +479,7 @@ export default function UsersPage() {
       departmentType: 'single',
       department: '',
       departments: [],
+      allowedDivisions: [], // Initialize allowedDivisions
       password: '',
       autoGeneratePassword: true,
       featureControl: [],
@@ -900,6 +918,91 @@ export default function UsersPage() {
                   </div>
                 )}
 
+                {/* Manager Division Selection */}
+                {formData.role === 'manager' && (
+                  <div className="space-y-4 border-t border-slate-100 dark:border-slate-800 pt-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                        Assigned Division *
+                      </label>
+                      <select
+                        value={formData.allowedDivisions && formData.allowedDivisions[0] ? formData.allowedDivisions[0] : ''}
+                        onChange={(e) => {
+                          const divId = e.target.value;
+                          setFormData({
+                            ...formData,
+                            allowedDivisions: divId ? [divId] : [],
+                            // Clear departments when division changes to prevent invalid selections
+                            departments: []
+                          });
+                        }}
+                        required
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      >
+                        <option value="">Select Division</option>
+                        {divisions.filter(d => d.isActive).map((div) => (
+                          <option key={div._id} value={div._id}>
+                            {div.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Departments in Selected Division */}
+                    {formData.allowedDivisions && formData.allowedDivisions.length > 0 && (
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                            Allowed Departments
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setFormData({ ...formData, departments: [] })}
+                            className="text-xs font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                            title="Clear selection to allow access to ALL departments in this division"
+                          >
+                            Select All (Clear Restrictions)
+                          </button>
+                        </div>
+
+                        <div className="max-h-40 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 p-2 space-y-2 bg-slate-50 dark:bg-slate-800/50">
+                          {departments
+                            .filter(dept =>
+                              dept.divisions?.some((div: any) => {
+                                const divId = typeof div === 'string' ? div : div._id;
+                                return divId === formData.allowedDivisions![0];
+                              })
+                            )
+                            .map((dept) => (
+                              <label key={dept._id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-white dark:hover:bg-slate-700 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={formData.departments.includes(dept._id)}
+                                  onChange={() => toggleDepartment(dept._id)}
+                                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                />
+                                <span className="text-sm text-slate-700 dark:text-slate-300">{dept.name}</span>
+                              </label>
+                            ))}
+                          {departments.filter(dept =>
+                            dept.divisions?.some((div: any) => {
+                              const divId = typeof div === 'string' ? div : div._id;
+                              return divId === formData.allowedDivisions![0];
+                            })
+                          ).length === 0 && (
+                              <p className="text-xs text-slate-500 dark:text-slate-400 p-2">No departments found in this division</p>
+                            )}
+                        </div>
+                        {formData.departments.length === 0 && (
+                          <p className="mt-1 text-xs text-green-600 dark:text-green-400">
+                            ✓ All departments in this division will be accessible
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Feature Control */}
                 <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">
@@ -1266,6 +1369,91 @@ export default function UsersPage() {
                         </option>
                       ))}
                     </select>
+                  </div>
+                )}
+
+                {/* Manager Division Selection */}
+                {formData.role === 'manager' && (
+                  <div className="space-y-4 border-t border-slate-100 dark:border-slate-800 pt-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                        Assigned Division *
+                      </label>
+                      <select
+                        value={formData.allowedDivisions && formData.allowedDivisions[0] ? formData.allowedDivisions[0] : ''}
+                        onChange={(e) => {
+                          const divId = e.target.value;
+                          setFormData({
+                            ...formData,
+                            allowedDivisions: divId ? [divId] : [],
+                            // Clear departments when division changes to prevent invalid selections
+                            departments: []
+                          });
+                        }}
+                        required
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      >
+                        <option value="">Select Division</option>
+                        {divisions.filter(d => d.isActive).map((div) => (
+                          <option key={div._id} value={div._id}>
+                            {div.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Departments in Selected Division */}
+                    {formData.allowedDivisions && formData.allowedDivisions.length > 0 && (
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                            Allowed Departments
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setFormData({ ...formData, departments: [] })}
+                            className="text-xs font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                            title="Clear selection to allow access to ALL departments in this division"
+                          >
+                            Select All (Clear Restrictions)
+                          </button>
+                        </div>
+
+                        <div className="max-h-40 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 p-2 space-y-2 bg-slate-50 dark:bg-slate-800/50">
+                          {departments
+                            .filter(dept =>
+                              dept.divisions?.some((div: any) => {
+                                const divId = typeof div === 'string' ? div : div._id;
+                                return divId === formData.allowedDivisions![0];
+                              })
+                            )
+                            .map((dept) => (
+                              <label key={dept._id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-white dark:hover:bg-slate-700 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={formData.departments.includes(dept._id)}
+                                  onChange={() => toggleDepartment(dept._id)}
+                                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                />
+                                <span className="text-sm text-slate-700 dark:text-slate-300">{dept.name}</span>
+                              </label>
+                            ))}
+                          {departments.filter(dept =>
+                            dept.divisions?.some((div: any) => {
+                              const divId = typeof div === 'string' ? div : div._id;
+                              return divId === formData.allowedDivisions![0];
+                            })
+                          ).length === 0 && (
+                              <p className="text-xs text-slate-500 dark:text-slate-400 p-2">No departments found in this division</p>
+                            )}
+                        </div>
+                        {formData.departments.length === 0 && (
+                          <p className="mt-1 text-xs text-green-600 dark:text-green-400">
+                            ✓ All departments in this division will be accessible
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 

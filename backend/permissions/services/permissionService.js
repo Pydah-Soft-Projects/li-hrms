@@ -175,7 +175,7 @@ const createPermissionRequest = async (data, userId) => {
  * @param {String} baseUrl - Base URL for outpass (e.g., 'https://example.com')
  * @returns {Object} - Result
  */
-const approvePermissionRequest = async (permissionId, userId, baseUrl = '') => {
+const approvePermissionRequest = async (permissionId, userId, baseUrl = '', userRole) => {
   try {
     const permissionRequest = await Permission.findById(permissionId);
 
@@ -186,14 +186,14 @@ const approvePermissionRequest = async (permissionId, userId, baseUrl = '') => {
       };
     }
 
-    if (permissionRequest.status !== 'pending') {
+    if (permissionRequest.status !== 'pending' && permissionRequest.status !== 'manager_approved') {
       return {
         success: false,
         message: `Permission request is already ${permissionRequest.status}`,
       };
     }
 
-    // Generate QR code
+    // Generate QR code (keep existing logic)
     permissionRequest.generateQRCode();
 
     // Set outpass URL (frontend route)
@@ -254,8 +254,13 @@ const approvePermissionRequest = async (permissionId, userId, baseUrl = '') => {
       permissionRequest.deductionAmount = deductionAmount;
     }
 
-    // Update status
-    permissionRequest.status = 'approved';
+    // Update status based on role
+    if (userRole === 'manager') {
+      permissionRequest.status = 'manager_approved';
+    } else {
+      permissionRequest.status = 'approved';
+    }
+
     permissionRequest.approvedBy = userId;
     permissionRequest.approvedAt = new Date();
     await permissionRequest.save();
@@ -304,7 +309,7 @@ const approvePermissionRequest = async (permissionId, userId, baseUrl = '') => {
  * @param {String} reason - Rejection reason
  * @returns {Object} - Result
  */
-const rejectPermissionRequest = async (permissionId, userId, reason) => {
+const rejectPermissionRequest = async (permissionId, userId, reason, userRole) => {
   try {
     const permissionRequest = await Permission.findById(permissionId);
 
@@ -315,14 +320,19 @@ const rejectPermissionRequest = async (permissionId, userId, reason) => {
       };
     }
 
-    if (permissionRequest.status !== 'pending') {
+    if (permissionRequest.status !== 'pending' && permissionRequest.status !== 'manager_approved') {
       return {
         success: false,
         message: `Permission request is already ${permissionRequest.status}`,
       };
     }
 
-    permissionRequest.status = 'rejected';
+    if (userRole === 'manager') {
+      permissionRequest.status = 'manager_rejected';
+    } else {
+      permissionRequest.status = 'rejected';
+    }
+
     permissionRequest.rejectedBy = userId;
     permissionRequest.rejectedAt = new Date();
     permissionRequest.rejectionReason = reason || null;

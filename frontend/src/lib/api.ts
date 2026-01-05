@@ -27,6 +27,8 @@ export interface WorkspaceModule {
   sortOrder: number;
 }
 
+
+
 export interface Workspace {
   _id: string;
   name: string;
@@ -238,9 +240,9 @@ export interface Shift {
   endTime: string;
   duration: number;
   payableShifts?: number;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
+  isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Setting {
@@ -257,12 +259,12 @@ export interface Designation {
   code: string;
   description?: string;
   department?: string | Department;
-  shifts?: string[] | any[];
-  divisionDefaults?: { division: string | Division; shifts: string[] | any[] }[];
+  shifts?: (string | Shift)[];
+  divisionDefaults?: { division: string | Division; shifts: (string | Shift)[] }[];
   departmentShifts?: Array<{
     division?: string | Division;
     department: string | Department | { _id: string; name: string; code?: string };
-    shifts: string[] | any[];
+    shifts: (string | Shift)[];
     _id?: string;
   }>;
   paidLeaves?: number;
@@ -299,19 +301,19 @@ export interface Department {
     action: 'half_day' | 'full_day' | 'deduct_amount';
     amount?: number;
   }>;
-  shifts?: any[];
+  shifts?: (string | Shift)[];
   paidLeaves?: number;
   leaveLimits?: {
     casual: number;
     sick: number;
     earned: number;
   };
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-  divisions?: string[];
-  designations?: Designation[];
-  divisionDefaults?: { division: string | Division; shifts: string[] }[];
+  isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  divisions?: (string | Division)[];
+  designations?: (string | Designation)[];
+  divisionDefaults?: { division: string | Division; shifts: (string | Shift)[] }[];
 }
 
 export interface Division {
@@ -795,8 +797,9 @@ export const api = {
 
   // Designations
   // Global designation endpoints (independent of department)
-  getAllDesignations: async () => {
-    return apiRequest<any[]>('/departments/designations', { method: 'GET' });
+  getAllDesignations: async (isActive?: boolean) => {
+    const query = isActive !== undefined ? `?isActive=${isActive}` : '';
+    return apiRequest<any[]>(`/departments/designations${query}`, { method: 'GET' });
   },
 
   createGlobalDesignation: async (data: any) => {
@@ -869,7 +872,7 @@ export const api = {
     return apiRequest<any>('/permissions/settings/deduction', { method: 'GET' });
   },
 
-  savePermissionDeductionSettings: async (data: { deductionRules: any }) => {
+  savePermissionDeductionSettings: async (data: any) => {
     return apiRequest<any>('/permissions/settings/deduction', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -1880,6 +1883,14 @@ export const api = {
     document.body.removeChild(a);
   },
 
+  getScopedShiftData: async () => {
+    return apiRequest<{
+      divisions: Division[];
+      departments: Department[];
+      designations: Designation[];
+    }>('/shifts/scoped', { method: 'GET' });
+  },
+
   // Confused Shifts
   getConfusedShifts: async (filters?: { status?: string; startDate?: string; endDate?: string; department?: string; page?: number; limit?: number }) => {
     const params = new URLSearchParams();
@@ -2074,10 +2085,11 @@ export const api = {
     });
   },
 
-  // Get QR code for permission
   getPermissionQR: async (id: string) => {
     return apiRequest<any>(`/permissions/${id}/qr`);
   },
+
+
 
   // Get outpass by QR code (public - no auth required)
   getOutpassByQR: async (qrCode: string) => {
@@ -2231,44 +2243,16 @@ export const api = {
   },
 
   // Overtime Settings
-  getOTSettings: async () => {
-    const payPerHour = await apiRequest<any>('/settings/ot_pay_per_hour', { method: 'GET' });
-    const minHours = await apiRequest<any>('/settings/ot_min_hours', { method: 'GET' });
-
-    return {
-      success: true,
-      data: {
-        otPayPerHour: payPerHour.success && payPerHour.data ? payPerHour.data.value : 0,
-        minOTHours: minHours.success && minHours.data ? minHours.data.value : 0,
-      },
-    };
+  // Overtime Settings
+  getOvertimeSettings: async () => {
+    return apiRequest<any>('/ot/settings', { method: 'GET' });
   },
 
-  updateOTSettings: async (data: { otPayPerHour: number; minOTHours: number }) => {
-    const payPerHour = await apiRequest<any>('/settings', {
+  saveOvertimeSettings: async (data: { otPayPerHour?: number; minOTHours?: number; workflow?: any }) => {
+    return apiRequest<any>('/ot/settings', {
       method: 'POST',
-      body: JSON.stringify({
-        key: 'ot_pay_per_hour',
-        value: data.otPayPerHour,
-        description: 'Amount per hour of overtime worked (in ₹)',
-        category: 'overtime',
-      }),
+      body: JSON.stringify(data),
     });
-
-    const minHours = await apiRequest<any>('/settings', {
-      method: 'POST',
-      body: JSON.stringify({
-        key: 'ot_min_hours',
-        value: data.minOTHours,
-        description: 'Minimum overtime hours required to be eligible for overtime pay',
-        category: 'overtime',
-      }),
-    });
-
-    return {
-      success: payPerHour.success && minHours.success,
-      message: payPerHour.success && minHours.success ? 'OT settings saved successfully' : 'Failed to save OT settings',
-    };
   },
 
   // Payroll

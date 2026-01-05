@@ -276,53 +276,106 @@ exports.applyOD = async (req, res) => {
     // Use empNo as primary identifier (from frontend)
     if (empNo) {
       // Check if user has permission to apply for others
-      // Allow hod, hr, sub_admin, super_admin (backward compatibility)
-      const hasRolePermission = ['hod', 'hr', 'sub_admin', 'super_admin'].includes(req.user.role);
+      // Allow hod, hr, sub_admin, super_admin to apply for anyone (Global Logic)
+      // Manager is handled separately with detailed scoping
+      const isGlobalAdmin = ['hod', 'hr', 'sub_admin', 'super_admin'].includes(req.user.role);
+      const isManager = req.user.role === 'manager';
 
       console.log(`[Apply OD] User ${req.user._id} (${req.user.role}) applying for employee ${empNo}`);
-      console.log(`[Apply OD] Has role permission: ${hasRolePermission} `);
 
-      // Check workspace permissions if user has active workspace
-      let hasWorkspacePermission = false;
-      if (req.user.activeWorkspaceId) {
-        try {
-          const odSettings = await LeaveSettings.findOne({ type: 'od', isActive: true });
-          if (odSettings?.settings?.workspacePermissions) {
-            const workspaceIdStr = String(req.user.activeWorkspaceId);
-            const permissions = odSettings.settings.workspacePermissions[workspaceIdStr];
+      // 1. GLOBAL ADMIN CHECK
+      if (isGlobalAdmin) {
+        console.log(`[Apply OD] ✅ Global Admin Authorization granted`);
+      }
+      // 2. MANAGER SCOPING CHECK
+      else if (isManager) {
+        // Find employee to check their division/department
+        // We need to fetch the employee *before* authorization in this specific case to check scope
+        const targetEmployee = await findEmployeeByEmpNo(empNo);
 
-            console.log(`[Apply OD] Checking workspace ${workspaceIdStr} permissions: `, permissions);
+        if (!targetEmployee) {
+          return res.status(400).json({
+            success: false,
+            error: 'Employee record not found for scope check'
+          });
+        }
 
-            if (permissions) {
-              // Handle both old format (boolean) and new format (object)
-              if (typeof permissions === 'boolean') {
-                hasWorkspacePermission = permissions; // Old format: boolean means canApplyForOthers
-              } else {
-                hasWorkspacePermission = permissions.canApplyForOthers || false; // New format
+        // --- ENFORCE MANAGER SCOPE ---
+        const { allowedDivisions, divisionMapping } = req.user;
+
+        // A. Division Check
+        // Check if employee's division is in manager's allowedDivisions
+        const employeeDivisionId = targetEmployee.division_id?.toString();
+        const isDivisionScoped = allowedDivisions?.some(divId => divId.toString() === employeeDivisionId);
+
+        // B. Department Check (if division is allowed)
+        let isDepartmentScoped = true; // Default true if only division match needed
+
+        if (isDivisionScoped && divisionMapping && divisionMapping.length > 0) {
+          // Find mapping for this division
+          const mapping = divisionMapping.find(m => m.division?.toString() === employeeDivisionId);
+
+          // If mapping exists and has restricted departments, check them
+          if (mapping && mapping.departments && mapping.departments.length > 0) {
+            const employeeDeptId = (targetEmployee.department_id || targetEmployee.department)?.toString();
+            isDepartmentScoped = mapping.departments.some(d => d.toString() === employeeDeptId);
+          }
+          // If mapping exists but departments array is empty -> Access to ALL departments in this division (implied true)
+        }
+
+        console.log(`[Apply OD] Manager Scope Check: Div(${employeeDivisionId}) Allowed? ${isDivisionScoped}. Dept Allowed? ${isDepartmentScoped}`);
+
+        if (!isDivisionScoped || !isDepartmentScoped) {
+          console.log(`[Apply OD] ❌ Manager blocked from applying for employee ${empNo} outside scope.`);
+          return res.status(403).json({
+            success: false,
+            error: 'You are not authorized to apply for employees outside your assigned data scope (Division/Department).'
+          });
+        }
+
+        console.log(`[Apply OD] ✅ Manager Authorization granted (Scoped)`);
+        // Store found employee to avoid re-fetching
+        employee = targetEmployee;
+
+      }
+      // 3. WORKSPACE PERMISSION CHECK (Fallback)
+      else {
+        // Check workspace permissions if user has active workspace
+        let hasWorkspacePermission = false;
+        // ... (keep existing workspace permission logic if needed as strict fallback, 
+        // or rely on the above checks. For safety, we keep the original block structure but wrapped)
+
+        if (req.user.activeWorkspaceId) {
+          try {
+            const odSettings = await LeaveSettings.findOne({ type: 'od', isActive: true });
+            if (odSettings?.settings?.workspacePermissions) {
+              const workspaceIdStr = String(req.user.activeWorkspaceId);
+              const permissions = odSettings.settings.workspacePermissions[workspaceIdStr];
+
+              if (permissions) {
+                if (typeof permissions === 'boolean') {
+                  hasWorkspacePermission = permissions;
+                } else {
+                  hasWorkspacePermission = permissions.canApplyForOthers || false;
+                }
               }
             }
-          } else {
-            console.log(`[Apply OD] No workspace permissions found in settings`);
+          } catch (error) {
+            console.error('[Apply OD] Error checking workspace permissions:', error);
           }
-        } catch (error) {
-          console.error('[Apply OD] Error checking workspace permissions:', error);
         }
-      } else {
-        console.log(`[Apply OD] User has no active workspace`);
+
+        if (!hasWorkspacePermission) {
+          console.log(`[Apply OD] ❌ Authorization denied - no role or workspace permission`);
+          return res.status(403).json({
+            success: false,
+            error: 'Not authorized to apply OD for others',
+          });
+        }
+        console.log(`[Apply OD] ✅ Workspace Authorization granted`);
       }
 
-      console.log(`[Apply OD] Has workspace permission: ${hasWorkspacePermission} `);
 
-      // User must have either role permission OR workspace permission
-      if (!hasRolePermission && !hasWorkspacePermission) {
-        console.log(`[Apply OD] ❌ Authorization denied - no role or workspace permission`);
-        return res.status(403).json({
-          success: false,
-          error: 'Not authorized to apply OD for others',
-        });
-      }
-
-      console.log(`[Apply OD] ✅ Authorization granted`);
 
       // Find employee by emp_no (checks MongoDB first, then MSSQL based on settings)
       employee = await findEmployeeByEmpNo(empNo);
@@ -998,6 +1051,40 @@ exports.processODAction = async (req, res) => {
           od.workflow.currentStep = 'hr';
           od.workflow.nextApprover = 'hr';
           historyEntry.action = 'approved';
+        } else if (currentApprover === 'manager') {
+          od.status = 'manager_approved';
+
+          if (!od.approvals.manager) od.approvals.manager = {};
+          od.approvals.manager = {
+            status: 'approved',
+            approvedBy: req.user._id,
+            approvedAt: new Date(),
+            comments,
+          };
+
+          // Determine next step dynamically
+          let nextStepRole = 'hr'; // Default fallback
+          if (od.workflow?.approvalChain?.length > 0) {
+            const currentIndex = od.workflow.approvalChain.findIndex(s => s.role === 'manager');
+            if (currentIndex !== -1 && currentIndex < od.workflow.approvalChain.length - 1) {
+              nextStepRole = od.workflow.approvalChain[currentIndex + 1].role;
+            } else if (currentIndex === od.workflow.approvalChain.length - 1) {
+              nextStepRole = null; // Final
+            }
+          }
+
+          if (nextStepRole) {
+            od.workflow.currentStep = nextStepRole;
+            od.workflow.nextApprover = nextStepRole;
+            historyEntry.action = 'approved';
+          } else {
+            // Final approval
+            od.status = 'approved';
+            od.workflow.currentStep = 'completed';
+            od.workflow.nextApprover = null;
+            historyEntry.action = 'approved';
+          }
+
         } else if (currentApprover === 'hr' || currentApprover === 'final_authority') {
           od.status = 'approved';
           od.approvals.hr = {

@@ -244,7 +244,7 @@ const createOTRequest = async (data, userId) => {
  * @param {String} userId - User ID approving
  * @returns {Object} - Result
  */
-const approveOTRequest = async (otId, userId) => {
+const approveOTRequest = async (otId, userId, userRole) => {
   try {
     const otRequest = await OT.findById(otId).populate('shiftId');
 
@@ -255,15 +255,22 @@ const approveOTRequest = async (otId, userId) => {
       };
     }
 
-    if (otRequest.status !== 'pending') {
+    if (otRequest.status !== 'pending' && otRequest.status !== 'manager_approved') {
+      // Allow HR to approve 'manager_approved' requests
       return {
         success: false,
         message: `OT request is already ${otRequest.status}`,
       };
     }
 
-    // Update OT status
-    otRequest.status = 'approved';
+    // Determine status based on role
+    // If manager, set intermediate status. If HR/Admin, set final approved.
+    if (userRole === 'manager') {
+      otRequest.status = 'manager_approved';
+    } else {
+      otRequest.status = 'approved';
+    }
+
     otRequest.approvedBy = userId;
     otRequest.approvedAt = new Date();
     await otRequest.save();
@@ -303,7 +310,7 @@ const approveOTRequest = async (otId, userId) => {
  * @param {String} reason - Rejection reason
  * @returns {Object} - Result
  */
-const rejectOTRequest = async (otId, userId, reason) => {
+const rejectOTRequest = async (otId, userId, reason, userRole) => {
   try {
     const otRequest = await OT.findById(otId);
 
@@ -314,14 +321,19 @@ const rejectOTRequest = async (otId, userId, reason) => {
       };
     }
 
-    if (otRequest.status !== 'pending') {
+    if (otRequest.status !== 'pending' && otRequest.status !== 'manager_approved') {
       return {
         success: false,
         message: `OT request is already ${otRequest.status}`,
       };
     }
 
-    otRequest.status = 'rejected';
+    if (userRole === 'manager') {
+      otRequest.status = 'manager_rejected';
+    } else {
+      otRequest.status = 'rejected';
+    }
+
     otRequest.rejectedBy = userId;
     otRequest.rejectedAt = new Date();
     otRequest.rejectionReason = reason || null;

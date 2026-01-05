@@ -1,17 +1,27 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { api, Shift } from '@/lib/api';
+import { api, Shift, Division, Department, Designation } from '@/lib/api';
 import Spinner from '@/components/Spinner';
 
 export default function ShiftsPage() {
+  // User Scope & RBAC
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [scopedDivisions, setScopedDivisions] = useState<Division[]>([]);
+  const [scopedDepartments, setScopedDepartments] = useState<Department[]>([]);
+  const [scopedDesignations, setScopedDesignations] = useState<Designation[]>([]);
+  const [showAllShifts, setShowAllShifts] = useState(false);
+
+  // Core Data
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [editingShift, setEditingShift] = useState<Shift | null>(null);
   const [allowedDurations, setAllowedDurations] = useState<number[]>([]);
 
-  // Form state
+  // UI State
+  const [showForm, setShowForm] = useState(false);
+  const [editingShift, setEditingShift] = useState<Shift | null>(null);
+
+  // Form State
   const [name, setName] = useState('');
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
@@ -22,38 +32,42 @@ export default function ShiftsPage() {
   const [illegalTimingWarning, setIllegalTimingWarning] = useState('');
   const [lastChanged, setLastChanged] = useState<'start' | 'end' | 'duration' | null>(null);
 
-  useEffect(() => {
-    loadShifts();
-    loadAllowedDurations();
-  }, []);
+  // Permissions
+  const [resolvedEmployeeShifts, setResolvedEmployeeShifts] = useState<Shift[]>([]);
 
-  const loadShifts = async () => {
-    try {
-      setLoading(true);
-      const response = await api.getShifts();
-      if (response.success && response.data) {
-        setShifts(response.data);
-      }
-    } catch (err) {
-      console.error('Error loading shifts:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Roles that can VIEW the comprehensive structured list (Division/Department buckets)
+  const canViewStructuredShifts = ['super_admin', 'sub_admin', 'hr', 'hod', 'manager'].includes(currentUser?.role);
+
+  // Roles that can MANAGE (Create/Edit/Delete) shifts
+  const canManageShifts = ['super_admin', 'sub_admin', 'hr'].includes(currentUser?.role);
+
+  // Skeleton Component
+  const ShiftCardSkeleton = () => (
+    <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+      <div className="absolute top-0 left-0 h-0.5 w-full bg-slate-200 dark:bg-slate-700 animate-pulse"></div>
+      <div className="animate-pulse space-y-3">
+        <div className="h-5 w-1/2 rounded bg-slate-200 dark:bg-slate-700"></div>
+        <div className="space-y-2">
+          <div className="h-3 w-3/4 rounded bg-slate-200 dark:bg-slate-700"></div>
+          <div className="h-3 w-1/2 rounded bg-slate-200 dark:bg-slate-700"></div>
+          <div className="h-3 w-1/4 rounded bg-slate-200 dark:bg-slate-700"></div>
+        </div>
+      </div>
+    </div>
+  );
+
+  useEffect(() => {
+    loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const loadAllowedDurations = async () => {
     try {
       const response = await api.getAllowedDurations();
-      console.log('Durations API response:', response);
-
       if (response.success) {
-        // The API returns { success: true, data: [array of numbers], durations: [full objects] }
-        // We need the array of numbers for the dropdown
         const durations = response.data || [];
         setAllowedDurations(Array.isArray(durations) ? durations : []);
-        console.log('Loaded durations:', durations);
       } else {
-        console.warn('Failed to load durations:', response.message);
         setAllowedDurations([]);
       }
     } catch (err) {
@@ -61,6 +75,149 @@ export default function ShiftsPage() {
       setAllowedDurations([]);
     }
   };
+
+  const loadShifts = async () => {
+    const response = await api.getShifts();
+    if (response.success && response.data) {
+      setShifts(response.data);
+    }
+    loadAllowedDurations();
+  };
+
+  const loadDivisionsAndDepartments = async () => {
+    try {
+      // Use efficient backend endpoint for scoped data
+      const response = await api.getScopedShiftData();
+      if (response.success && response.data) {
+        setScopedDivisions(response.data.divisions);
+        setScopedDepartments(response.data.departments);
+        setScopedDesignations(response.data.designations);
+      }
+    } catch (err) {
+      console.error("Error loading scoped structure", err);
+    }
+  };
+
+  const resolveEmployeeShifts = async (user: any) => {
+    try {
+      const [divRes, deptRes, shiftsRes] = await Promise.all([
+        api.getDivisions(true),
+        api.getDepartments(true),
+        api.getShifts(true) // Fetch all active shifts for resolution
+      ]);
+
+      let finalShifts: Shift[] = [];
+
+      if (divRes.success && deptRes.success && shiftsRes.success) {
+        const allDivisions = divRes.data || [];
+        const allDepartments = deptRes.data || [];
+        const allShifts = shiftsRes.data || [];
+
+        // Helper: Resolve mixed array of IDs/Objects to Shift[]
+        const resolveShiftsList = (list: (string | any)[] | undefined): Shift[] => {
+          if (!list || list.length === 0) return [];
+          return list.map(item => {
+            if (typeof item === 'string') {
+              return allShifts.find((s: any) => s._id === item) || null;
+            }
+            return item; // Assume it's an object
+          }).filter(Boolean) as Shift[];
+        };
+
+        const userDivId = user.division?._id || user.division || user.employeeRef?.division?._id || user.employeeRef?.division;
+        const userDeptId = user.department?._id || user.department || user.employeeRef?.department?._id || user.employeeRef?.department;
+        const userDesigId = user.designation?._id || user.designation || user.employeeRef?.designation?._id || user.employeeRef?.designation;
+
+        let designationShiftsFound = false;
+        if (userDeptId && userDesigId) {
+          const deptObj = allDepartments.find((d: any) => d._id === userDeptId);
+          if (deptObj && deptObj.designations) {
+            const desigObj = deptObj.designations.find((desig: any) => desig._id === userDesigId);
+
+            if (desigObj && typeof desigObj !== 'string') {
+              // A. Department Specific Override in Designation
+              if (desigObj.departmentShifts && desigObj.departmentShifts.length > 0) {
+                const deptOverride = desigObj.departmentShifts.find((ds: any) =>
+                  (ds.department?._id === userDeptId || ds.department === userDeptId)
+                );
+                if (deptOverride && deptOverride.shifts && deptOverride.shifts.length > 0) {
+                  finalShifts = resolveShiftsList(deptOverride.shifts);
+                  designationShiftsFound = true;
+                }
+              }
+
+              // B. Division Defaults Override in Designation
+              if (!designationShiftsFound && desigObj.divisionDefaults && desigObj.divisionDefaults.length > 0 && userDivId) {
+                const divOverride = desigObj.divisionDefaults.find((dd: any) =>
+                  (dd.division?._id === userDivId || dd.division === userDivId)
+                );
+                if (divOverride && divOverride.shifts && divOverride.shifts.length > 0) {
+                  finalShifts = resolveShiftsList(divOverride.shifts);
+                  designationShiftsFound = true;
+                }
+              }
+
+              // C. Global Designation Shifts
+              if (!designationShiftsFound && desigObj.shifts && desigObj.shifts.length > 0) {
+                finalShifts = resolveShiftsList(desigObj.shifts);
+                designationShiftsFound = true;
+              }
+            }
+          }
+        }
+
+        if (!designationShiftsFound && userDeptId) {
+          const deptObj = allDepartments.find((d: any) => d._id === userDeptId);
+          if (deptObj && deptObj.shifts && deptObj.shifts.length > 0) {
+            finalShifts = resolveShiftsList(deptObj.shifts);
+            designationShiftsFound = true;
+          }
+        }
+
+        if (!designationShiftsFound && userDivId) {
+          const divObj = allDivisions.find((d: any) => d._id === userDivId);
+          if (divObj && divObj.shifts && divObj.shifts.length > 0) {
+            finalShifts = resolveShiftsList(divObj.shifts);
+          }
+        }
+      }
+
+      setResolvedEmployeeShifts(finalShifts);
+    } catch (error) {
+      console.error("Error resolving employee shifts", error);
+    }
+  };
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const userRes = await api.getCurrentUser();
+      if (userRes.success && userRes.data) {
+        const user = userRes.data.user;
+        setCurrentUser(user);
+
+        const isStructuredViewRole = ['super_admin', 'sub_admin', 'hr', 'hod', 'manager'].includes(user.role);
+
+        if (isStructuredViewRole) {
+          await Promise.all([
+            loadDivisionsAndDepartments(),
+            loadShifts()
+          ]);
+        } else {
+          await resolveEmployeeShifts(user);
+        }
+      }
+    } catch (err) {
+      console.error('Error loading data:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Calculate duration from start and end time
   const calculateDuration = (start: string, end: string): number | null => {
@@ -274,6 +431,69 @@ export default function ShiftsPage() {
     resetForm();
   };
 
+  // Permissions
+  // This line was duplicated, keeping the first one.
+  // const canManageShifts = ['super_admin', 'sub_admin', 'hr'].includes(currentUser?.role);
+
+  // Helper to render Shift Card (extracted for reuse across sections)
+  const renderShiftCard = (shift: Shift) => (
+    <div
+      key={shift._id}
+      className="group relative overflow-hidden rounded-xl border border-slate-200 bg-white/80 backdrop-blur-sm p-4 shadow-lg transition-all hover:border-blue-300 hover:shadow-xl dark:border-slate-700 dark:bg-slate-900/80"
+    >
+      <div className="absolute top-0 left-0 h-0.5 w-full bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500"></div>
+
+      <div className="mb-3 flex items-start justify-between">
+        <div className="flex-1 min-w-0">
+          <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100 truncate">{shift.name}</h3>
+          <div className="mt-1.5 space-y-1 text-xs">
+            <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
+              <svg className="h-3.5 w-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="truncate">{shift.startTime} - {shift.endTime}</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
+              <svg className="h-3.5 w-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>{shift.duration} hours</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
+              <svg className="h-3.5 w-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="font-medium">{shift.payableShifts || 1} payable shift{(shift.payableShifts || 1) !== 1 ? 's' : ''}</span>
+            </div>
+          </div>
+        </div>
+        <span className={`ml-2 flex-shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${shift.isActive
+          ? 'bg-green-100 text-green-700 shadow-sm dark:bg-green-900/30 dark:text-green-400'
+          : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+          }`}>
+          {shift.isActive ? 'Active' : 'Inactive'}
+        </span>
+      </div>
+
+      {canManageShifts && (
+        <div className="flex gap-2 border-t border-slate-200 pt-3 dark:border-slate-800">
+          <button
+            onClick={() => handleEdit(shift)}
+            className="flex-1 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-500 px-3 py-1.5 text-xs font-semibold text-white shadow-md shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600"
+          >
+            Edit
+          </button>
+          <button
+            onClick={() => handleDelete(shift._id)}
+            className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 transition-all hover:bg-red-50 dark:border-red-800 dark:bg-slate-900 dark:text-red-300 dark:hover:bg-red-900/20"
+          >
+            Delete
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="relative min-h-screen">
       {/* Background */}
@@ -285,20 +505,24 @@ export default function ShiftsPage() {
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Shift Management</h1>
-            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">Create and manage work shifts</p>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+              {canManageShifts ? 'Create and manage work shifts' : 'View available shifts and schedules'}
+            </p>
           </div>
-          <button
-            onClick={() => {
-              resetForm();
-              setShowForm(true);
-            }}
-            className="rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600"
-          >
-            <svg className="mr-2 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Create Shift
-          </button>
+          {canManageShifts && (
+            <button
+              onClick={() => {
+                resetForm();
+                setShowForm(true);
+              }}
+              className="rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600"
+            >
+              <svg className="mr-2 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Create Shift
+            </button>
+          )}
         </div>
 
         {/* Create/Edit Shift Dialog */}
@@ -449,82 +673,181 @@ export default function ShiftsPage() {
           </div>
         )}
 
-        {/* Shifts Grid */}
+        {/* STRUCTURED VIEWS */}
         {loading ? (
           <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm py-12 shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
             <Spinner />
             <p className="mt-4 text-sm font-medium text-slate-600 dark:text-slate-400">Loading shifts...</p>
           </div>
-        ) : shifts.length === 0 ? (
-          <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm p-8 text-center shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
-            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-900/30 dark:to-indigo-900/30">
-              <svg className="h-6 w-6 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+        ) : canViewStructuredShifts ? (
+          <div className="space-y-8">
+            {/* 1. Division Defaults */}
+            {scopedDivisions.length > 0 && scopedDivisions.map(division => {
+              const divisionShifts = (division.shifts || []).map(s => {
+                if (typeof s === 'string') return shifts.find(allS => allS._id === s);
+                return s;
+              }).filter(Boolean) as Shift[];
+
+              if (divisionShifts.length === 0) return null;
+
+              return (
+                <div key={division._id} className="space-y-4">
+                  <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                    <div className="h-6 w-1 rounded-full bg-orange-500" />
+                    {division.name} <span className="text-sm font-normal text-slate-500">Division Defaults</span>
+                  </h2>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                    {/* Unique Shifts only */}
+                    {Array.from(new Map(divisionShifts.map(s => [s._id, s])).values()).map(renderShiftCard)}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* 2. Department Specific */}
+            {scopedDepartments.length > 0 && scopedDepartments.map(dept => {
+              // Collect all effective shifts for this department
+              // 1. Direct Department Shifts
+              const directShifts = (dept.shifts || []).map(s => {
+                const shiftId = typeof s === 'string' ? s : s._id;
+                return typeof s === 'string' ? shifts.find(allS => allS._id === s) : s;
+              }).filter(Boolean) as Shift[];
+
+              // 2. Division-Specific Department Shifts (from divisionDefaults)
+              // Only include if the division is in our scopedDivisions list
+              const divDefaultShifts = (dept.divisionDefaults || []).flatMap(dd => {
+                // Check if this division is relevant to the user
+                const divId = typeof dd.division === 'string' ? dd.division : dd.division?._id;
+                if (scopedDivisions.some(sd => sd._id === divId)) {
+                  return dd.shifts || [];
+                }
+                return [];
+              }).map(s => {
+                const shiftId = typeof s === 'string' ? s : s._id;
+                return typeof s === 'string' ? shifts.find(allS => allS._id === s) : s;
+              }).filter(Boolean) as Shift[];
+
+              const allDeptShifts = [...directShifts, ...divDefaultShifts];
+
+              if (allDeptShifts.length === 0 && scopedDesignations.every(d => d.department !== dept._id)) return null;
+
+              return (
+                <div key={dept._id} className="space-y-4">
+                  {allDeptShifts.length > 0 && (
+                    <>
+                      <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                        <div className="h-6 w-1 rounded-full bg-purple-500" />
+                        {dept.name} <span className="text-sm font-normal text-slate-500">Department Specific</span>
+                      </h2>
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                        {/* Unique Shifts only */}
+                        {Array.from(new Map(allDeptShifts.map(s => [s._id, s])).values()).map(renderShiftCard)}
+                      </div>
+                    </>
+                  )}
+
+                  {/* 3. Designation Specific (Nested under Department) */}
+                  {(() => {
+                    const deptDesignations = scopedDesignations.filter(d =>
+                      (d.department && (typeof d.department === 'string' ? d.department : d.department._id) === dept._id) ||
+                      (dept.designations && dept.designations.some(dd => (typeof dd === 'string' ? dd : dd._id) === d._id))
+                    );
+
+                    if (deptDesignations.length === 0) return null;
+
+                    return (
+                      <div className="mt-6 pl-4 border-l-2 border-slate-200 dark:border-slate-700 space-y-6">
+                        {deptDesignations.map(des => {
+                          let effectiveShifts: any[] = des.shifts || [];
+
+                          // Check Department Overrides (departmentShifts)
+                          if (des.departmentShifts && des.departmentShifts.length > 0) {
+                            const deptOverride = des.departmentShifts.find(ds =>
+                              (typeof ds.department === 'string' ? ds.department : ds.department._id) === dept._id
+                            );
+                            if (deptOverride && deptOverride.shifts && deptOverride.shifts.length > 0) {
+                              effectiveShifts = deptOverride.shifts;
+                            }
+                          }
+
+                          // Resolve Objects
+                          const resolvedDesShifts = effectiveShifts.map(s => {
+                            const shiftId = typeof s === 'string' ? s : s._id;
+                            return typeof s === 'string' ? shifts.find(allS => allS._id === s) : s;
+                          }).filter(Boolean) as Shift[];
+
+                          if (resolvedDesShifts.length === 0) return null;
+
+                          return (
+                            <div key={des._id} className="space-y-3">
+                              <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                                <div className="h-2 w-2 rounded-full bg-indigo-400" />
+                                {des.name} <span className="text-xs font-normal text-slate-400">Designation Shifts</span>
+                              </h3>
+                              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                                {Array.from(new Map(resolvedDesShifts.map(s => [s._id, s])).values()).map(renderShiftCard)}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
+              );
+            })}
+
+            {/* 3. All Shifts (Lazy Load / Button) */}
+            <div className="pt-8 border-t border-slate-200 dark:border-slate-800">
+              {!showAllShifts ? (
+                <button
+                  onClick={() => setShowAllShifts(true)}
+                  className="w-full py-4 rounded-xl border-2 border-dashed border-slate-300 text-slate-500 hover:border-slate-400 hover:text-slate-600 dark:border-slate-700 dark:text-slate-400 transition-colors"
+                >
+                  Load All Available Shifts
+                </button>
+              ) : (
+                <div className="space-y-4 animate-in fade-in duration-500">
+                  <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                    <div className="h-6 w-1 rounded-full bg-slate-500" />
+                    All Available Shifts
+                  </h2>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                    {shifts.map(renderShiftCard)}
+                  </div>
+                </div>
+              )}
             </div>
-            <p className="text-base font-semibold text-slate-900 dark:text-slate-100">No shifts found</p>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Create your first shift to get started</p>
+
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {shifts.map((shift) => (
-              <div
-                key={shift._id}
-                className="group relative overflow-hidden rounded-xl border border-slate-200 bg-white/80 backdrop-blur-sm p-4 shadow-lg transition-all hover:border-blue-300 hover:shadow-xl dark:border-slate-700 dark:bg-slate-900/80"
-              >
-                {/* Gradient accent */}
-                <div className="absolute top-0 left-0 h-0.5 w-full bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500"></div>
-
-                <div className="mb-3 flex items-start justify-between">
-                  <div className="flex-1 min-w-0">
-                    <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100 truncate">{shift.name}</h3>
-                    <div className="mt-1.5 space-y-1 text-xs">
-                      <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
-                        <svg className="h-3.5 w-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <span className="truncate">{shift.startTime} - {shift.endTime}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
-                        <svg className="h-3.5 w-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <span>{shift.duration} hours</span>
-                      </div>
-                      <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
-                        <svg className="h-3.5 w-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <span className="font-medium">{shift.payableShifts || 1} payable shift{(shift.payableShifts || 1) !== 1 ? 's' : ''}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <span
-                    className={`ml-2 flex-shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${shift.isActive
-                        ? 'bg-green-100 text-green-700 shadow-sm dark:bg-green-900/30 dark:text-green-400'
-                        : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                      }`}
-                  >
-                    {shift.isActive ? 'Active' : 'Inactive'}
-                  </span>
+          <div className="space-y-8">
+            {resolvedEmployeeShifts.length > 0 ? (
+              <div className="space-y-4">
+                <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                  <div className="h-6 w-1 rounded-full bg-blue-500" />
+                  Your Assigned Shifts
+                </h2>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  {resolvedEmployeeShifts.map(renderShiftCard)}
                 </div>
-
-                <div className="flex gap-2 border-t border-slate-200 pt-3 dark:border-slate-800">
-                  <button
-                    onClick={() => handleEdit(shift)}
-                    className="flex-1 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-500 px-3 py-1.5 text-xs font-semibold text-white shadow-md shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => handleDelete(shift._id)}
-                    className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 transition-all hover:bg-red-50 dark:border-red-800 dark:bg-slate-900 dark:text-red-300 dark:hover:bg-red-900/20"
-                  >
-                    Delete
-                  </button>
-                </div>
+                <p className="text-sm text-slate-500 mt-2">
+                  These are the specific shifts assigned to you based on your designation, department, or division (in that order of priority).
+                </p>
               </div>
-            ))}
+            ) : (
+              <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm py-16 px-4 text-center shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
+                <div className="mb-4 h-16 w-16 rounded-full bg-slate-100 flex items-center justify-center dark:bg-slate-800">
+                  <svg className="h-8 w-8 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">No Shifts Assigned</h3>
+                <p className="mt-2 text-sm text-slate-500 max-w-sm dark:text-slate-400">
+                  No specific shifts have been assigned to your designation, department, or division. Please contact your HR administrator.
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>

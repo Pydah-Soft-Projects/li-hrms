@@ -1,0 +1,49 @@
+﻿src/app/(workspace)/departments/page.tsx(120,19): error TS2345: Argument of type 'Shift[]' is not assignable to parameter of type 'SetStateAction<Shift[]>'.
+  Type 'import("D:/li-hrms/frontend/src/lib/api").Shift[]' is not assignable to type 'Shift[]'.
+    Type 'import("D:/li-hrms/frontend/src/lib/api").Shift' is not assignable to type 'Shift'.
+      Types of property 'isActive' are incompatible.
+        Type 'boolean | undefined' is not assignable to type 'boolean'.
+          Type 'undefined' is not assignable to type 'boolean'.
+src/app/(workspace)/employees/page.tsx(1820,59): error TS7006: Parameter 'd' implicitly has an 'any' type.
+src/app/(workspace)/employees/page.tsx(1884,58): error TS7006: Parameter 'd' implicitly has an 'any' type.
+src/app/(workspace)/layout.tsx(185,3): error TS1117: An object literal cannot have multiple properties with the same name.
+src/app/(workspace)/layout.tsx(186,3): error TS1117: An object literal cannot have multiple properties with the same name.
+src/app/(workspace)/layout.tsx(214,3): error TS1117: An object literal cannot have multiple properties with the same name.
+src/app/(workspace)/shifts/page.tsx(139,28): error TS2339: Property 'departmentShifts' does not exist on type 'string | Designation'.
+  Property 'departmentShifts' does not exist on type 'string'.
+src/app/(workspace)/shifts/page.tsx(139,57): error TS2339: Property 'departmentShifts' does not exist on type 'string | Designation'.
+  Property 'departmentShifts' does not exist on type 'string'.
+src/app/(workspace)/shifts/page.tsx(140,47): error TS2339: Property 'departmentShifts' does not exist on type 'string | Designation'.
+  Property 'departmentShifts' does not exist on type 'string'.
+src/app/(workspace)/shifts/page.tsx(150,55): error TS2339: Property 'divisionDefaults' does not exist on type 'string | Designation'.
+  Property 'divisionDefaults' does not exist on type 'string'.
+src/app/(workspace)/shifts/page.tsx(150,84): error TS2339: Property 'divisionDefaults' does not exist on type 'string | Designation'.
+  Property 'divisionDefaults' does not exist on type 'string'.
+src/app/(workspace)/shifts/page.tsx(151,46): error TS2339: Property 'divisionDefaults' does not exist on type 'string | Designation'.
+  Property 'divisionDefaults' does not exist on type 'string'.
+src/app/(workspace)/shifts/page.tsx(161,55): error TS2339: Property 'shifts' does not exist on type 'string | Designation'.
+  Property 'shifts' does not exist on type 'string'.
+src/app/(workspace)/shifts/page.tsx(161,74): error TS2339: Property 'shifts' does not exist on type 'string | Designation'.
+  Property 'shifts' does not exist on type 'string'.
+src/app/(workspace)/shifts/page.tsx(162,58): error TS2339: Property 'shifts' does not exist on type 'string | Designation'.
+  Property 'shifts' does not exist on type 'string'.
+src/app/(workspace)/users/page.tsx(181,38): error TS2345: Argument of type 'Division[] | undefined' is not assignable to parameter of type 'SetStateAction<UserStats | null>'.
+  Type 'undefined' is not assignable to type 'SetStateAction<UserStats | null>'.
+src/app/(workspace)/users/page.tsx(475,17): error TS2345: Argument of type '{ email: string; name: string; role: string; departmentType: "single"; department: string; departments: never[]; password: string; autoGeneratePassword: true; featureControl: never[]; }' is not assignable to parameter of type 'SetStateAction<{ email: string; name: string; role: string; departmentType: "single" | "multiple"; department: string; departments: string[]; allowedDivisions: string[]; password: string; autoGeneratePassword: boolean; featureControl: string[]; }>'.
+  Property 'allowedDivisions' is missing in type '{ email: string; name: string; role: string; departmentType: "single"; department: string; departments: never[]; password: string; autoGeneratePassword: true; featureControl: never[]; }' but required in type '{ email: string; name: string; role: string; departmentType: "single" | "multiple"; department: string; departments: string[]; allowedDivisions: string[]; password: string; autoGeneratePassword: boolean; featureControl: string[]; }'.
+src/app/superadmin/departments/page.tsx(160,71): error TS2339: Property '_id' does not exist on type 'string | Designation'.
+  Property '_id' does not exist on type 'string'.
+src/app/superadmin/divisions/page.tsx(65,45): error TS2345: Argument of type 'Shift[]' is not assignable to parameter of type 'SetStateAction<Shift[]>'.
+  Type 'import("D:/li-hrms/frontend/src/lib/api").Shift[]' is not assignable to type 'Shift[]'.
+    Type 'import("D:/li-hrms/frontend/src/lib/api").Shift' is not assignable to type 'Shift'.
+      Types of property 'isActive' are incompatible.
+        Type 'boolean | undefined' is not assignable to type 'boolean'.
+          Type 'undefined' is not assignable to type 'boolean'.
+src/app/superadmin/divisions/page.tsx(80,33): error TS2345: Argument of type '(string | Designation)[]' is not assignable to parameter of type 'SetStateAction<Designation[]>'.
+  Type '(string | Designation)[]' is not assignable to type 'Designation[]'.
+    Type 'string | Designation' is not assignable to type 'Designation'.
+      Type 'string' is not assignable to type 'Designation'.
+src/app/superadmin/divisions/page.tsx(107,25): error TS2322: Type '(string | Shift)[]' is not assignable to type 'string[]'.
+  Type 'string | Shift' is not assignable to type 'string'.
+    Type 'Shift' is not assignable to type 'string'.
+src/app/superadmin/settings/page.tsx(670,9): error TS2353: Object literal may only specify known properties, and 'workflow' does not exist in type '{ deductionRules: any; }'.
