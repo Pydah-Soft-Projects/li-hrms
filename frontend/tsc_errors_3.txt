@@ -1,0 +1,16 @@
+﻿src/app/(workspace)/departments/page.tsx(1063,65): error TS2339: Property '_id' does not exist on type 'string | Department | { _id: string; name: string; code?: string | undefined; }'.
+  Property '_id' does not exist on type 'string'.
+src/app/(workspace)/departments/page.tsx(1066,67): error TS2339: Property 'name' does not exist on type 'string | Department | { _id: string; name: string; code?: string | undefined; }'.
+  Property 'name' does not exist on type 'string'.
+src/app/(workspace)/departments/page.tsx(1068,72): error TS2339: Property 'name' does not exist on type 'string | Department | { _id: string; name: string; code?: string | undefined; }'.
+  Property 'name' does not exist on type 'string'.
+src/app/(workspace)/departments/page.tsx(1292,47): error TS2339: Property '_id' does not exist on type 'string | Department | { _id: string; name: string; code?: string | undefined; }'.
+  Property '_id' does not exist on type 'string'.
+src/app/(workspace)/departments/page.tsx(1294,42): error TS2339: Property 'name' does not exist on type 'string | Department | { _id: string; name: string; code?: string | undefined; }'.
+  Property 'name' does not exist on type 'string'.
+src/app/(workspace)/departments/page.tsx(1294,63): error TS2339: Property 'code' does not exist on type 'string | Department | { _id: string; name: string; code?: string | undefined; }'.
+  Property 'code' does not exist on type 'string'.
+src/app/(workspace)/departments/page.tsx(1294,89): error TS2339: Property 'code' does not exist on type 'string | Department | { _id: string; name: string; code?: string | undefined; }'.
+  Property 'code' does not exist on type 'string'.
+src/app/(workspace)/users/page.tsx(181,38): error TS2345: Argument of type 'Division[] | undefined' is not assignable to parameter of type 'SetStateAction<UserStats | null>'.
+  Type 'undefined' is not assignable to type 'SetStateAction<UserStats | null>'.

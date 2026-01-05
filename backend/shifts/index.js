@@ -21,6 +21,7 @@ router.put('/durations/:id', authorize('super_admin', 'sub_admin'), shiftDuratio
 router.delete('/durations/:id', authorize('super_admin', 'sub_admin'), shiftDurationController.deleteShiftDuration);
 
 // Shift routes - specific routes first, then parameterized routes
+router.get('/scoped', shiftController.getScopedShiftData);
 router.get('/', shiftController.getAllShifts);
 router.post('/', authorize('super_admin', 'sub_admin', 'hr'), shiftController.createShift);
 

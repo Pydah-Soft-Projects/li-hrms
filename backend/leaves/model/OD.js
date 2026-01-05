@@ -148,7 +148,7 @@ const ODSchema = new mongoose.Schema(
     // Current status
     status: {
       type: String,
-      enum: ['draft', 'pending', 'hod_approved', 'hod_rejected', 'hr_approved', 'hr_rejected', 'approved', 'rejected', 'cancelled'],
+      enum: ['draft', 'pending', 'hod_approved', 'hod_rejected', 'manager_approved', 'manager_rejected', 'hr_approved', 'hr_rejected', 'approved', 'rejected', 'cancelled'],
       default: 'draft',
     },
 

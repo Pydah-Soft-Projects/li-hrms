@@ -45,7 +45,7 @@ exports.getSettings = async (req, res) => {
 // @access  Private (Super Admin, Sub Admin)
 exports.saveSettings = async (req, res) => {
   try {
-    const { deductionRules } = req.body;
+    const { deductionRules, workflow } = req.body;
 
     // Find existing settings or create new
     let settings = await PermissionDeductionSettings.getActiveSettings();
@@ -54,6 +54,11 @@ exports.saveSettings = async (req, res) => {
       settings = new PermissionDeductionSettings({
         createdBy: req.user._id,
       });
+    }
+
+    // Update workflow configuration
+    if (workflow) {
+      settings.workflow = workflow;
     }
 
     // Update deduction rules

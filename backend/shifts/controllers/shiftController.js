@@ -1,5 +1,9 @@
 const Shift = require('../model/Shift');
 const ShiftDuration = require('../model/ShiftDuration');
+const Division = require('../../departments/model/Division');
+const Department = require('../../departments/model/Department');
+const Designation = require('../../departments/model/Designation');
+const User = require('../../users/model/User');
 const mongoose = require('mongoose');
 
 // @desc    Get all shifts
@@ -28,6 +32,152 @@ exports.getAllShifts = async (req, res) => {
       success: false,
       message: 'Error fetching shifts',
       error: error.message,
+    });
+  }
+};
+
+// @desc    Get scoped structured shift data (Divisions -> Departments -> Designations)
+// @route   GET /api/shifts/scoped
+// @access  Private
+exports.getScopedShiftData = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    // We assume req.user has role, but we need full data scope details
+    const user = await User.findById(userId)
+      .select('role dataScope allowedDivisions divisionMapping departments department departmentType')
+      .populate('allowedDivisions')
+      .populate('departments')
+      .populate('department');
+
+    if (!user) {
+      // Fallback for Employee login if needed, though they usually use simple views
+      return res.status(200).json({
+        success: true,
+        data: { divisions: [], departments: [], designations: [] }
+      });
+    }
+
+    const { role, dataScope } = user;
+    const isGlobal = ['super_admin', 'sub_admin'].includes(role);
+
+    let divisions = [];
+    let departments = [];
+    let designations = [];
+
+    // 1. DIVISIONS
+    let divQuery = { isActive: true };
+    if (!isGlobal) {
+      const allowedDivIds = new Set();
+
+      if (user.allowedDivisions && user.allowedDivisions.length > 0) {
+        user.allowedDivisions.forEach(d => {
+          if (d && d._id) allowedDivIds.add(d._id.toString());
+        });
+      }
+
+      if (user.divisionMapping && user.divisionMapping.length > 0) {
+        user.divisionMapping.forEach(dm => {
+          if (dm.division) allowedDivIds.add(dm.division.toString());
+        });
+      }
+
+      if (allowedDivIds.size > 0) {
+        divQuery._id = { $in: Array.from(allowedDivIds) };
+      } else if (dataScope === 'division') {
+        // If scope is division but no allowed divisions, restricted.
+        divQuery._id = { $in: [] };
+      } else {
+        // Fallback if strictly department scope but no division mapping?
+        // We might not fetch divisions in that case, which is fine.
+      }
+    }
+
+    // Only fetch divisions if we are global or have a filter (don't fetch all if restricted and no filter matches)
+    if (isGlobal || divQuery._id) {
+      divisions = await Division.find(divQuery)
+        .populate('shifts')
+        .lean();
+    }
+
+    // 2. DEPARTMENTS
+    let deptQuery = { isActive: true };
+    if (!isGlobal) {
+      // Collect allowed Department IDs
+      let allowedDeptIds = [];
+
+      if (user.departments && user.departments.length > 0) {
+        allowedDeptIds = user.departments.map(d => d._id || d);
+      } else if (user.department) {
+        allowedDeptIds = [user.department._id || user.department];
+      }
+
+      if (user.divisionMapping && user.divisionMapping.length > 0) {
+        const mappedIds = user.divisionMapping.flatMap(dm => dm.departments || []);
+        allowedDeptIds = [...allowedDeptIds, ...mappedIds];
+      }
+
+      // Important: Prioritize specific department access if defined
+      if (allowedDeptIds.length > 0) {
+        deptQuery._id = { $in: allowedDeptIds };
+      }
+
+      // Fallback: If NO specific departments are defined, but Divisions are accessible,
+      // allow access to all departments within those divisions.
+      // This supports the "Manager of Division" use case where user.departments is empty.
+      if (divisions.length > 0 && allowedDeptIds.length === 0) {
+        deptQuery.division = { $in: divisions.map(d => d._id) };
+      } else if (allowedDeptIds.length === 0) {
+        // No divisions found AND no departments allowed -> Access Denied
+        deptQuery._id = { $in: [] };
+      }
+    }
+
+    departments = await Department.find(deptQuery)
+      .populate('shifts')
+      .populate({
+        path: 'designations', // Populate designations to get their shifts too? No, usually separate collection reference.
+        // But Department model often has `designations` array of refs.
+      })
+      .lean();
+
+    // 3. DESIGNATIONS
+    // Fetch designations linked to these departments
+    const deptIds = departments.map(d => d._id);
+    let desQuery = { isActive: true };
+
+    if (!isGlobal) {
+      // If restricted, only show designations within allowed departments
+      if (deptIds.length > 0) {
+        desQuery.department = { $in: deptIds };
+      } else {
+        desQuery._id = { $in: [] };
+      }
+    }
+
+    // Also consider global designations? 
+    // HODs usually only care about their department's designations.
+
+    designations = await Designation.find(desQuery)
+      .populate('shifts')
+      .populate('departmentShifts.shifts')
+      .populate('divisionDefaults.shifts')
+      .lean();
+
+    res.status(200).json({
+      success: true,
+      data: {
+        divisions,
+        departments,
+        designations
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching scoped shift data:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching scoped shift data',
+      error: error.message
     });
   }
 };

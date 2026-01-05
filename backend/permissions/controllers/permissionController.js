@@ -32,6 +32,75 @@ exports.createPermission = async (req, res) => {
       });
     }
 
+    // --- SCOPING & AUTHORIZATION (New Logic) ---
+
+    const isSelf = (!employeeNumber && !employeeId) ||
+      (employeeNumber && employeeNumber.toUpperCase() === req.user.employeeId?.toUpperCase()) ||
+      (employeeId && employeeId.toString() === req.user.employeeRef?.toString());
+
+    const isGlobalAdmin = ['hod', 'hr', 'sub_admin', 'super_admin'].includes(req.user.role);
+    const isManager = req.user.role === 'manager';
+
+    // 1. SELF APPLICATION (Always Allowed)
+    if (isSelf) {
+      // Proceed - no special checks needed
+    }
+    // 2. ADMIN APPLICATION (Global Scope)
+    else if (isGlobalAdmin) {
+      // Proceed - global admins can apply for anyone
+    }
+    // 3. MANAGER APPLICATION (Scoped)
+    else if (isManager) {
+      // We need to resolve the target employee to check scope
+      // Imports are needed locally or should be top-level (assuming Employee model is available or we need to import it)
+      const Employee = require('../../employees/model/Employee');
+
+      let targetEmployee = null;
+      if (employeeNumber) {
+        targetEmployee = await Employee.findOne({ emp_no: employeeNumber });
+      } else if (employeeId) {
+        targetEmployee = await Employee.findById(employeeId);
+      }
+
+      if (!targetEmployee) {
+        return res.status(400).json({
+          success: false,
+          message: 'Employee record not found for scope verification'
+        });
+      }
+
+      // Verify Scope
+      const { allowedDivisions, divisionMapping } = req.user;
+
+      const employeeDivisionId = targetEmployee.division_id?.toString();
+      const isDivisionScoped = allowedDivisions?.some(divId => divId.toString() === employeeDivisionId);
+
+      let isDepartmentScoped = true;
+      if (isDivisionScoped && divisionMapping && divisionMapping.length > 0) {
+        const mapping = divisionMapping.find(m => m.division?.toString() === employeeDivisionId);
+        if (mapping && mapping.departments && mapping.departments.length > 0) {
+          const employeeDeptId = (targetEmployee.department_id || targetEmployee.department)?.toString();
+          isDepartmentScoped = mapping.departments.some(d => d.toString() === employeeDeptId);
+        }
+      }
+
+      if (!isDivisionScoped || !isDepartmentScoped) {
+        return res.status(403).json({
+          success: false,
+          message: 'You are not authorized to apply for permissions for employees outside your assigned data scope.'
+        });
+      }
+    }
+    // 4. UNAUTHORIZED ROLE
+    else {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not authorized to apply for permissions for others.'
+      });
+    }
+
+    // --- END SCOPING ---
+
     const result = await createPermissionRequest(
       {
         employeeId,
@@ -163,7 +232,8 @@ exports.approvePermission = async (req, res) => {
     const result = await approvePermissionRequest(
       req.params.id,
       req.user?.userId || req.user?._id,
-      baseUrl
+      baseUrl,
+      req.user?.role
     );
 
     if (!result.success) {
@@ -209,7 +279,8 @@ exports.rejectPermission = async (req, res) => {
     const result = await rejectPermissionRequest(
       req.params.id,
       req.user?.userId || req.user?._id,
-      reason
+      reason,
+      req.user?.role
     );
 
     if (!result.success) {

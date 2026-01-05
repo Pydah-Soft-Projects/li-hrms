@@ -66,7 +66,7 @@ const permissionSchema = new mongoose.Schema(
     // Status: pending, approved, rejected
     status: {
       type: String,
-      enum: ['pending', 'approved', 'rejected'],
+      enum: ['pending', 'manager_approved', 'manager_rejected', 'approved', 'rejected'],
       default: 'pending',
       index: true,
     },

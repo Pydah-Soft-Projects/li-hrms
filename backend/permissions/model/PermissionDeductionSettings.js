@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 /**
  * Permission Deduction Settings Model
- * Configures global permission deduction rules
+ * Configures global permission deduction rules and workflow
  */
 const PermissionDeductionSettingsSchema = new mongoose.Schema(
   {
@@ -40,6 +40,37 @@ const PermissionDeductionSettingsSchema = new mongoose.Schema(
       },
     },
 
+    // Workflow configuration
+    workflow: {
+      isEnabled: {
+        type: Boolean,
+        default: false
+      },
+      steps: [{
+        stepOrder: Number,
+        stepName: String,
+        approverRole: {
+          type: String,
+          enum: ['hod', 'hr', 'manager', 'super_admin']
+        },
+        availableActions: [String],
+        approvedStatus: String,
+        rejectedStatus: String,
+        nextStepOnApprove: mongoose.Schema.Types.Mixed,
+        isActive: Boolean
+      }],
+      finalAuthority: {
+        role: {
+          type: String,
+          enum: ['hod', 'hr', 'manager', 'super_admin']
+        },
+        anyHRCanApprove: {
+          type: Boolean,
+          default: false
+        }
+      }
+    },
+
     // Is this settings configuration active
     isActive: {
       type: Boolean,
@@ -68,8 +99,7 @@ PermissionDeductionSettingsSchema.index({ isActive: 1 });
 
 // Static method to get active settings
 PermissionDeductionSettingsSchema.statics.getActiveSettings = async function () {
-  return this.findOne({ isActive: true });
+  return this.findOne({ isActive: true }).sort({ createdAt: -1 });
 };
 
 module.exports = mongoose.models.PermissionDeductionSettings || mongoose.model('PermissionDeductionSettings', PermissionDeductionSettingsSchema);
-

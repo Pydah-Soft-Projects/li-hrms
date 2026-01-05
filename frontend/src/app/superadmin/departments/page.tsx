@@ -157,7 +157,7 @@ export default function DepartmentsPage() {
       if (response.success && response.data) {
         const allDesigs = response.data;
         const currentDept = departments.find(d => d._id === departmentId);
-        const currentDesigIds = currentDept?.designations?.map(d => d._id) || [];
+        const currentDesigIds = currentDept?.designations?.map((d: any) => typeof d === 'string' ? d : d._id) || [];
 
         // Filter out designations already linked to this department
         const unlinked = allDesigs.filter((d: Designation) => !currentDesigIds.includes(d._id));

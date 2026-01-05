@@ -14,9 +14,14 @@ const {
   checkConfusedShift,
   convertExtraHoursToOT,
 } = require('./controllers/otController');
+const { getSettings, saveSettings } = require('./controllers/overtimeSettingsController');
 
 // All routes require authentication
 router.use(protect);
+
+// Overtime Settings Routes
+router.get('/settings', getSettings);
+router.post('/settings', authorize('super_admin'), saveSettings);
 
 // Create OT request (HOD, HR, Super Admin)
 router.post('/', authorize('super_admin', 'sub_admin', 'hr', 'hod'), createOT);
