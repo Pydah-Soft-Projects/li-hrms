@@ -206,8 +206,16 @@ export type NavItem = {
   moduleCode: string;
 };
 
+const SecurityIcon = ({ className, ...props }: IconProps) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6-8 10-8 10z" />
+    <path d="M9 12l2 2 4-4" />
+  </svg>
+);
+
 const navItems: NavItem[] = [
   { href: '/superadmin/dashboard', label: 'Dashboard', icon: DashboardIcon, category: 'Main', moduleCode: 'DASHBOARD' },
+  { href: '/superadmin/security/gate', label: 'Security Gate', icon: SecurityIcon, category: 'Main', moduleCode: 'SECURITY' },
   { href: '/superadmin/employees', label: 'Employees', icon: EmployeesIcon, category: 'Employee Management', moduleCode: 'EMPLOYEES' },
   { href: '/superadmin/employees/form-settings', label: 'Form Settings', icon: FormSettingsIcon, category: 'Employee Management', moduleCode: 'EMPLOYEES' },
   { href: '/superadmin/attendance', label: 'Attendance', icon: AttendanceIcon, category: 'Time & Attendance', moduleCode: 'ATTENDANCE' },

@@ -145,6 +145,8 @@ export interface ApiResponse<T> {
   workspaces?: Workspace[];
   activeWorkspace?: Workspace;
   workspace?: Workspace;
+  qrSecret?: string;
+  waitTime?: number;
 }
 
 export interface LoginResponse {
@@ -2587,6 +2589,26 @@ export const api = {
   // Activity Feed
   getRecentActivity: async () => {
     return apiRequest<any>('/attendance/activity/recent', { method: 'GET' });
+  },
+
+  // Security Gate Pass
+  getTodayPermissions: async () => {
+    return apiRequest<any>('/security/permissions/today', { method: 'GET' });
+  },
+
+  verifyGatePass: async (qrSecret: string) => {
+    return apiRequest<any>('/security/verify', {
+      method: 'POST',
+      body: JSON.stringify({ qrSecret }),
+    });
+  },
+
+  generateGateOutQR: async (permissionId: string) => {
+    return apiRequest<any>(`/security/gate-pass/out/${permissionId}`, { method: 'POST' });
+  },
+
+  generateGateInQR: async (permissionId: string) => {
+    return apiRequest<any>(`/security/gate-pass/in/${permissionId}`, { method: 'POST' });
   },
 };
 

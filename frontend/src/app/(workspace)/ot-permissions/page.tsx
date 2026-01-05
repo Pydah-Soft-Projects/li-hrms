@@ -156,6 +156,8 @@ interface PermissionRequest {
   qrCode?: string;
   outpassUrl?: string;
   comments?: string;
+  gateOutTime?: string;
+  gateInTime?: string;
 }
 
 export default function OTAndPermissionsPage() {
@@ -616,6 +618,37 @@ export default function OTAndPermissionsPage() {
     } catch (error) {
       console.error(`Error rejecting ${type}:`, error);
       showToast(`Error rejecting ${type} request`, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGenerateGatePass = async (type: 'OUT' | 'IN') => {
+    if (!selectedQR) return;
+
+    try {
+      setLoading(true);
+      const res = type === 'OUT'
+        ? await api.generateGateOutQR(selectedQR._id)
+        : await api.generateGateInQR(selectedQR._id);
+
+      if (res.success) {
+        showToast(`Gate ${type} Pass generated successfully`, 'success');
+        // Update local state to show QR
+        const secret = res.qrSecret;
+        // Re-fetch data to get updated permission object (timings etc)
+        // Or manually update selectedQR for immediate feedback
+        setSelectedQR(prev => prev ? { ...prev, qrCode: secret } : null);
+        loadData(); // To refresh grid status
+      } else {
+        showToast(res.message || `Failed to generate Gate ${type} Pass`, 'error');
+        if (res.waitTime) {
+          // Could show specific timer
+        }
+      }
+    } catch (error: any) {
+      console.error('Error generating gate pass:', error);
+      showToast(error.message || 'Failed to generate gate pass', 'error');
     } finally {
       setLoading(false);
     }
@@ -1191,7 +1224,7 @@ export default function OTAndPermissionsPage() {
                                 }}
                                 className="rounded-lg bg-blue-500 px-3 py-1 text-xs font-medium text-white hover:bg-blue-600"
                               >
-                                View QR
+                                Gate Pass
                               </button>
                             )}
                           </div>
@@ -1747,39 +1780,104 @@ export default function OTAndPermissionsPage() {
                 </div>
 
                 <div className="space-y-4 text-center">
-                  {selectedQR.qrCode ? (
-                    <>
-                      <div className="mx-auto flex h-64 w-64 items-center justify-center rounded-lg border-2 border-slate-300 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-                        <QRCodeSVG
-                          value={selectedQR.outpassUrl || (typeof window !== 'undefined' ? `${window.location.origin}/outpass/${selectedQR.qrCode}` : `/outpass/${selectedQR.qrCode}`)}
-                          size={240}
-                          level="H"
-                          includeMargin={true}
-                        />
+                  <div className="space-y-4 text-center">
+                    <div className="space-y-2 mb-6">
+                      <p className="font-semibold text-lg text-slate-900 dark:text-white">
+                        {selectedQR.employeeId?.employee_name || selectedQR.employeeNumber}
+                      </p>
+                      <p className="text-sm text-slate-500">{formatDate(selectedQR.date)} • {formatTime(selectedQR.permissionStartTime)} - {formatTime(selectedQR.permissionEndTime)}</p>
+                    </div>
+
+                    {!selectedQR.gateOutTime ? (
+                      <div className="space-y-4">
+                        {selectedQR.qrCode && selectedQR.qrCode.startsWith('OUT:') ? (
+                          <div className="space-y-4">
+                            <p className="font-medium text-blue-600 dark:text-blue-400">Gate Out Pass Active</p>
+                            <div className="mx-auto flex h-64 w-64 items-center justify-center rounded-lg border-2 border-slate-300 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+                              <QRCodeSVG
+                                value={selectedQR.qrCode}
+                                size={240}
+                                level="H"
+                                includeMargin={true}
+                              />
+                            </div>
+                            <p className="text-xs text-slate-500">Show this QR to Security at Gate</p>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => handleGenerateGatePass('OUT')}
+                            disabled={loading}
+                            className="w-full rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 hover:bg-blue-700 disabled:opacity-50"
+                          >
+                            {loading ? 'Generating...' : 'Generate Gate Out Pass'}
+                          </button>
+                        )}
                       </div>
-                      <div className="space-y-2 text-sm text-slate-600 dark:text-slate-400">
-                        <p className="font-medium text-slate-900 dark:text-white">Employee: {selectedQR.employeeId?.employee_name || selectedQR.employeeNumber}</p>
-                        <p>Date: {formatDate(selectedQR.date)}</p>
-                        <p>Time: {formatTime(selectedQR.permissionStartTime)} - {formatTime(selectedQR.permissionEndTime)}</p>
-                        <p className="text-xs text-slate-500 dark:text-slate-500">QR Code: {selectedQR.qrCode}</p>
+                    ) : !selectedQR.gateInTime ? (
+                      <div className="space-y-4">
+                        <div className="rounded-lg bg-yellow-50 p-3 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300">
+                          <p className="text-sm font-medium">Out Time: {formatTime(selectedQR.gateOutTime)}</p>
+                        </div>
+
+                        {/* Check 5 min buffer logic roughly for UI */}
+                        {(() => {
+                          const outTime = new Date(selectedQR.gateOutTime).getTime();
+                          const now = new Date().getTime();
+                          const diffMins = (now - outTime) / (1000 * 60);
+
+                          if (diffMins < 5) {
+                            return (
+                              <div className="p-4 text-center">
+                                <p className="text-sm text-slate-500 mb-2">Please wait before generating Gate In Pass</p>
+                                <p className="text-2xl font-bold text-slate-700 dark:text-slate-300">
+                                  {Math.ceil(5 - diffMins)}m remaining
+                                </p>
+                              </div>
+                            );
+                          }
+
+                          if (selectedQR.qrCode && selectedQR.qrCode.startsWith('IN:')) {
+                            return (
+                              <div className="space-y-4">
+                                <p className="font-medium text-green-600 dark:text-green-400">Gate In Pass Active</p>
+                                <div className="mx-auto flex h-64 w-64 items-center justify-center rounded-lg border-2 border-slate-300 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+                                  <QRCodeSVG
+                                    value={selectedQR.qrCode}
+                                    size={240}
+                                    level="H"
+                                    includeMargin={true}
+                                  />
+                                </div>
+                                <p className="text-xs text-slate-500">Show this QR to Security at Gate</p>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <button
+                              onClick={() => handleGenerateGatePass('IN')}
+                              disabled={loading}
+                              className="w-full rounded-xl bg-green-600 py-3 text-sm font-semibold text-white shadow-lg shadow-green-500/30 hover:bg-green-700 disabled:opacity-50"
+                            >
+                              {loading ? 'Generating...' : 'Generate Gate In Pass'}
+                            </button>
+                          );
+                        })()}
                       </div>
-                      <div className="pt-2">
-                        <a
-                          href={selectedQR.outpassUrl || `/outpass/${selectedQR.qrCode}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600 transition-colors"
-                        >
-                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                          </svg>
-                          View Outpass
-                        </a>
+                    ) : (
+                      <div className="space-y-4 p-6 bg-green-50 rounded-xl dark:bg-green-900/20">
+                        <div className="h-16 w-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto dark:bg-green-800 dark:text-green-300">
+                          <CheckIcon className="h-8 w-8" />
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-bold text-green-800 dark:text-green-300">Trip Completed</h3>
+                          <p className="text-sm text-green-700 dark:text-green-400 mt-1">
+                            Out: {formatTime(selectedQR.gateOutTime)} • In: {formatTime(selectedQR.gateInTime)}
+                          </p>
+                        </div>
                       </div>
-                    </>
-                  ) : (
-                    <div className="text-sm text-slate-500 dark:text-slate-400">Loading QR Code...</div>
-                  )}
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

@@ -1870,7 +1870,7 @@ export default function DepartmentsPage() {
               ]}
               validateRow={(row) => {
                 const result = validateDepartmentRow(row);
-                return { isValid: result.isValid, errors: result.errors };
+                return { isValid: result.isValid, errors: result.errors, fieldErrors: result.fieldErrors };
               }}
               onSubmit={async (data) => {
                 let successCount = 0;
@@ -1927,7 +1927,7 @@ export default function DepartmentsPage() {
               ]}
               validateRow={(row) => {
                 const result = validateDesignationRow(row);
-                return { isValid: result.isValid, errors: result.errors };
+                return { isValid: result.isValid, errors: result.errors, fieldErrors: result.fieldErrors, mappedRow: result.mappedRow };
               }}
               onSubmit={async (data) => {
                 let successCount = 0;
