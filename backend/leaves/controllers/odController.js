@@ -997,7 +997,7 @@ exports.processODAction = async (req, res) => {
       canProcess = true;
     } else if (currentApprover === 'final_authority' && userRole === 'hr') {
       canProcess = true;
-    } else if (['sub_admin', 'super_admin'].includes(userRole)) {
+    } else if (['sub_admin', 'super_admin', 'manager'].includes(userRole)) {
       canProcess = true;
     }
 
