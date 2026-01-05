@@ -36,6 +36,10 @@ router.post('/types/:type', authorize('super_admin'), settingsController.addType
 router.get('/od/my', odController.getMyODs);
 
 // Get pending OD approvals
+router.get('/od/pending-approvals', authorize('hod', 'hr', 'manager', 'sub_admin', 'super_admin'), odController.getPendingApprovals);
+
+// Get all ODs
+router.get('/od', authorize('hod', 'hr', 'manager', 'sub_admin', 'super_admin'), odController.getODs);
 router.get('/od/pending-approvals', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), odController.getPendingApprovals);
 
 // Get all ODs

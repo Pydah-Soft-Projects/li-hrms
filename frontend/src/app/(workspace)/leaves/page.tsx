@@ -1842,6 +1842,29 @@ export default function LeavesPage() {
                       </div>
 
                       {/* Actions */}
+                      {currentUser?.role !== 'employee' &&
+                        !['approved', 'rejected', 'cancelled'].includes(leave.status) &&
+                        !leave.status.includes('rejected') &&
+                        !(currentUser?.role === 'hod' && leave.status === 'hod_approved') &&
+                        !(currentUser?.role === 'hr' && leave.status === 'hr_approved') &&
+                        ['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser?.role || '') && (
+                          <div className="flex items-center gap-2 mt-auto">
+                            <button
+                              onClick={() => handleAction(leave._id, 'leave', 'approve')}
+                              className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-green-500/10 py-2 text-sm font-semibold text-green-600 transition-colors hover:bg-green-500 hover:text-white dark:bg-green-500/20 dark:text-green-400 dark:hover:bg-green-500 dark:hover:text-white"
+                              title="Approve Leave"
+                            >
+                              <CheckIcon /> Approve
+                            </button>
+                            <button
+                              onClick={() => handleAction(leave._id, 'leave', 'reject')}
+                              className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-500/10 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500 hover:text-white dark:bg-red-500/20 dark:text-red-400 dark:hover:bg-red-500 dark:hover:text-white"
+                              title="Reject Leave"
+                            >
+                              <XIcon /> Reject
+                            </button>
+                          </div>
+                        )}
                       {canPerformAction(leave) && (
                         <div className="flex items-center gap-2 mt-auto">
                           <button
@@ -3102,6 +3125,8 @@ export default function LeavesPage() {
 
                       {/* Action Buttons */}
                       <div className="flex flex-wrap gap-2">
+                        {/* Approve: Available to all approvers */}
+                        {['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser?.role || '') && (
                         {/* Approve: Dynamic */}
                         {true && (
                           <button
@@ -3112,6 +3137,8 @@ export default function LeavesPage() {
                           </button>
                         )}
 
+                        {/* Reject: Available to all approvers */}
+                        {['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser?.role || '') && (
                         {/* Reject: Dynamic */}
                         {true && (
                           <button
