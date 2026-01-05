@@ -1051,6 +1051,13 @@ export const api = {
     });
   },
 
+  bulkRejectEmployeeApplications: async (applicationIds: string[], comments?: string) => {
+    return apiRequest<any>('/employee-applications/bulk-reject', {
+      method: 'PUT',
+      body: JSON.stringify({ applicationIds, comments }),
+    });
+  },
+
   // Employee Application Form Settings
   getFormSettings: async () => {
     return apiRequest<any>('/employee-applications/form-settings', { method: 'GET' });

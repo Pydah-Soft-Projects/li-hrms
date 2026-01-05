@@ -844,5 +844,76 @@ exports.rejectApplication = async (req, res) => {
   }
 };
 
+/**
+ * @desc    Bulk reject employee applications (Superadmin)
+ * @route   PUT /api/employee-applications/bulk-reject
+ * @access  Private (Super Admin, Sub Admin)
+ */
+exports.bulkRejectApplications = async (req, res) => {
+  try {
+    const { applicationIds, comments } = req.body;
+
+    if (!Array.isArray(applicationIds) || applicationIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No application IDs provided',
+      });
+    }
+
+    // Only Superadmin and Sub Admin can reject
+    if (!['super_admin', 'sub_admin'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to reject applications',
+      });
+    }
+
+    const results = {
+      successCount: 0,
+      failCount: 0,
+      errors: [],
+    };
+
+    // Process applications one by one
+    for (const id of applicationIds) {
+      try {
+        const application = await EmployeeApplication.findById(id);
+
+        if (!application) {
+          throw new Error(`Application ${id} not found`);
+        }
+
+        if (application.status !== 'pending') {
+          throw new Error(`Application for ${application.emp_no} is already ${application.status}`);
+        }
+
+        application.status = 'rejected';
+        application.rejectedBy = req.user._id;
+        application.rejectionComments = comments || 'Bulk rejected';
+        application.rejectedAt = new Date();
+
+        await application.save();
+        results.successCount++;
+      } catch (error) {
+        results.failCount++;
+        results.errors.push({ id, message: error.message });
+        console.error(`Bulk rejection failed for application ${id}:`, error.message);
+      }
+    }
+
+    res.status(200).json({
+      success: results.failCount === 0,
+      message: `Bulk rejection completed: ${results.successCount} succeeded, ${results.failCount} failed.`,
+      data: results,
+    });
+  } catch (error) {
+    console.error('Error in bulk rejecting applications:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error occurred during bulk rejection',
+    });
+  }
+};
+
 
 
