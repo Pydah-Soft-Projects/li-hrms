@@ -16,7 +16,7 @@ interface BulkUploadProps {
     options?: { value: string; label: string }[] | ((row: ParsedRow) => { value: string; label: string }[]);
     width?: string;
   }[];
-  validateRow?: (row: ParsedRow, index: number) => { isValid: boolean; errors: string[]; fieldErrors?: { [key: string]: string }; mappedRow?: ParsedRow };
+  validateRow?: (row: ParsedRow, index: number, allData: ParsedRow[]) => { isValid: boolean; errors: string[]; fieldErrors?: { [key: string]: string }; mappedRow?: ParsedRow };
   onSubmit: (data: ParsedRow[]) => Promise<{ success: boolean; message?: string; failedRows?: Array<{ emp_no: string; message: string }> }>;
   onClose: () => void;
 }
@@ -37,6 +37,7 @@ export default function BulkUpload({
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [currentErrorIndex, setCurrentErrorIndex] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -59,7 +60,7 @@ export default function BulkUpload({
     const processedData = result.data.map((row, index) => {
       let finalRow = row;
       if (validateRow) {
-        const validation = validateRow(row, index);
+        const validation = validateRow(row, index, result.data);
         if (!validation.isValid) {
           rowErrors[index] = {
             rowErrors: validation.errors,
@@ -97,7 +98,7 @@ export default function BulkUpload({
 
     // Re-validate the row
     if (validateRow) {
-      const validation = validateRow({ ...data[rowIndex], [key]: value }, rowIndex);
+      const validation = validateRow({ ...data[rowIndex], [key]: value }, rowIndex, data);
 
       // Update the row with mappedRow if provided (useful for normalization)
       if (validation.mappedRow) {
@@ -169,11 +170,19 @@ export default function BulkUpload({
 
           result.failedRows.forEach(fail => {
             // Find index of the row with this emp_no
-            const rowIndex = data.findIndex(row => String(row.emp_no) === String(fail.emp_no));
+            // Use findIndex but be careful with exact matching
+            const rowIndex = data.findIndex(row => String(row.emp_no || '').trim().toUpperCase() === String(fail.emp_no || '').trim().toUpperCase());
+
             if (rowIndex !== -1) {
+              const rowMsg = fail.message || 'Server-side validation failed';
+              const isDuplicate = rowMsg.toLowerCase().includes('already exists');
+
               newErrors[rowIndex] = {
-                rowErrors: [fail.message],
-                fieldErrors: { emp_no: 'Server Error' }
+                rowErrors: [rowMsg],
+                fieldErrors: {
+                  ...(isDuplicate ? { emp_no: 'Duplicate ID' } : {}),
+                  emp_no: rowMsg.length > 30 ? 'Server Error' : rowMsg
+                }
               };
             }
           });
@@ -187,10 +196,29 @@ export default function BulkUpload({
           }
         }
       }
-    } catch (_err) {
+    } catch {
       setMessage({ type: 'error', text: 'An error occurred while uploading' });
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const navigateError = (direction: 'next' | 'prev') => {
+    const errorIndices = Object.keys(errors).map(Number).sort((a, b) => a - b);
+    if (errorIndices.length === 0) return;
+
+    let nextIdx = 0;
+    if (direction === 'next') {
+      nextIdx = (currentErrorIndex + 1) % errorIndices.length;
+    } else {
+      nextIdx = (currentErrorIndex - 1 + errorIndices.length) % errorIndices.length;
+    }
+
+    setCurrentErrorIndex(nextIdx);
+    const rowIdx = errorIndices[nextIdx];
+    const element = document.getElementById(`row-${rowIdx}`);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   };
 
@@ -358,10 +386,8 @@ export default function BulkUpload({
                       return (
                         <tr
                           key={rowIndex}
-                          className={`${hasRowError
-                            ? 'bg-red-50/50 dark:bg-red-900/10'
-                            : 'bg-white dark:bg-slate-950'
-                            }`}
+                          id={`row-${rowIndex}`}
+                          className={`group border-b border-slate-100 transition-colors hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-900/40 ${hasRowError ? 'bg-red-50/30' : 'bg-white dark:bg-slate-950'}`}
                         >
                           <td className="whitespace-nowrap px-3 py-2 text-slate-500 dark:text-slate-400">
                             {rowIndex + 1}
@@ -473,6 +499,38 @@ export default function BulkUpload({
               Back to Upload
             </button>
           )}
+
+          {step === 'preview' && hasErrors && (
+            <div className="flex items-center gap-4">
+              <span className="text-sm font-medium text-red-600 dark:text-red-400">
+                {Object.keys(errors).length} errors found
+              </span>
+              <div className="flex items-center border-l border-slate-200 pl-4 dark:border-slate-700">
+                <button
+                  onClick={() => navigateError('prev')}
+                  className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+                  title="Previous Error"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                  </svg>
+                </button>
+                <span className="text-xs font-semibold tabular-nums text-slate-500">
+                  {currentErrorIndex + 1} / {Object.keys(errors).length}
+                </span>
+                <button
+                  onClick={() => navigateError('next')}
+                  className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+                  title="Next Error"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="ml-auto flex gap-3">
             <button
               onClick={onClose}

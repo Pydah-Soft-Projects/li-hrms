@@ -3338,12 +3338,23 @@ export default function EmployeesPage() {
               }
               return col;
             })}
-            validateRow={(row) => {
+            validateRow={(row, index, allData) => {
               const mappedUsers = employees.map(e => ({ _id: e._id, name: e.employee_name }));
               const result = validateEmployeeRow(row, divisions, departments, designations as any, mappedUsers);
-
               const errors = [...result.errors];
               const fieldErrors = { ...result.fieldErrors };
+
+              // Check for duplicates within the file
+              const empNo = String(row.emp_no || '').trim().toUpperCase();
+              if (empNo) {
+                const isDuplicateInFile = allData.some((r, i) =>
+                  i !== index && String(r.emp_no || '').trim().toUpperCase() === empNo
+                );
+                if (isDuplicateInFile) {
+                  errors.push('Duplicate Employee No within this file');
+                  fieldErrors.emp_no = 'File Duplicate';
+                }
+              }
 
               // Validate dynamic fields from formSettings
               if (formSettings?.groups) {
