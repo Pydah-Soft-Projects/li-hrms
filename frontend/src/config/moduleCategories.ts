@@ -60,6 +60,16 @@ export const MODULE_CATEGORIES = [
         ]
     },
     {
+        code: 'BONUS_MANAGEMENT',
+        name: 'Bonus Management',
+        icon: '🎁',
+        modules: [
+            { code: 'BONUS_POLICIES', label: 'Bonus Policies', href: '/superadmin/bonus/policies' },
+            { code: 'BONUS_CALCULATOR', label: 'Bonus Calculator', href: '/superadmin/bonus/calculator' },
+            { code: 'BONUS_BATCHES', label: 'Bonus Batches', href: '/superadmin/bonus/batches' }
+        ]
+    },
+    {
         code: 'SETTINGS',
         name: 'Settings',
         icon: '⚙️',
