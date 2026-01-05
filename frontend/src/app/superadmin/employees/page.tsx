@@ -3542,7 +3542,7 @@ export default function EmployeesPage() {
 
                     // Only validate fields that are NOT already handled by validateEmployeeRow
                     // validateEmployeeRow handles: emp_no, employee_name, division_name, department_name, designation_name, gender, dob, doj, marital_status, blood_group
-                    const handledFields = ['emp_no', 'employee_name', 'division_name', 'department_name', 'designation_name', 'gender', 'dob', 'doj', 'marital_status', 'blood_group'];
+                    const handledFields = ['emp_no', 'employee_name', 'division_name', 'department_name', 'designation_name', 'division_id', 'department_id', 'designation_id', 'gender', 'dob', 'doj', 'marital_status', 'blood_group'];
 
                     if (!handledFields.includes(field.id) && field.isRequired) {
                       if (value === undefined || value === null || value === '') {

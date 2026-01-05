@@ -349,43 +349,68 @@ export const validateEmployeeRow = (
   }
 
   // Map division
+  let div = null;
   if (row.division_name) {
-    const div = divisions.find(d => d.name.toLowerCase().trim() === (row.division_name as string).toLowerCase().trim());
-    if (div) {
-      mappedRow.division_id = div._id;
-      mappedRow.division_name = div.name; // Normalize name for dropdown match
-    } else {
+    div = divisions.find(d => d.name.toLowerCase().trim() === String(row.division_name).toLowerCase().trim());
+  } else if (row.division_id) {
+    div = divisions.find(d => d._id === String(row.division_id));
+  }
+
+  if (div) {
+    mappedRow.division_id = div._id;
+    mappedRow.division_name = div.name;
+    // Clear error if previously set by name mismatch
+  } else {
+    if (row.division_name) {
       errors.push(`Division "${row.division_name}" not found`);
       fieldErrors.division_name = 'Not found';
+    } else if (!row.division_id) {
+      errors.push('Division is required');
+      fieldErrors.division_name = 'Required';
     }
-  } else {
-    errors.push('Division is required');
-    fieldErrors.division_name = 'Required';
   }
 
   // Map department
+  let dept = null;
   if (row.department_name) {
-    const dept = departments.find(d => d.name.toLowerCase().trim() === (row.department_name as string).toLowerCase().trim());
-    if (dept) {
-      mappedRow.department_id = dept._id;
-      mappedRow.department_name = dept.name; // Normalize name for dropdown match
-    } else {
+    dept = departments.find(d => d.name.toLowerCase().trim() === String(row.department_name).toLowerCase().trim());
+  } else if (row.department_id) {
+    dept = departments.find(d => d._id === String(row.department_id));
+  }
+
+  if (dept) {
+    mappedRow.department_id = dept._id;
+    mappedRow.department_name = dept.name;
+  } else {
+    // Department is not strictly required by some logic configs, but let's assume it is if provided
+    if (row.department_name) {
       errors.push(`Department "${row.department_name}" not found`);
       fieldErrors.department_name = 'Not found';
     }
+    // If not provided, we don't enforce required here unless it was required in template. 
+    // Wait, original code strictly checked name presence if provided. 
+    // If user provided nothing, original code did nothing. 
+    // So we invoke name check only if provided.
   }
 
   // Map designation
-  if (row.designation_name !== null && row.designation_name !== undefined && row.designation_name !== '') {
-    const input = String(row.designation_name).toLowerCase().trim();
-    const desig = designations.find(d =>
-      d.name?.toLowerCase().trim() === input ||
-      (d.code && String(d.code).toLowerCase().trim() === input)
+  let desig = null;
+  const desigInput = row.designation_name ? String(row.designation_name).toLowerCase().trim() : null;
+
+  if (desigInput) {
+    desig = designations.find(d =>
+      d.name?.toLowerCase().trim() === desigInput ||
+      (d.code && String(d.code).toLowerCase().trim() === desigInput)
     );
-    if (desig) {
-      mappedRow.designation_id = desig._id;
-      mappedRow.designation_name = desig.name; // Normalize name for dropdown match
-    } else {
+  } else if (row.designation_id) {
+    desig = designations.find(d => d._id === String(row.designation_id));
+  }
+
+  if (desig) {
+    mappedRow.designation_id = desig._id;
+    mappedRow.designation_name = desig.name;
+  } else {
+    if (row.designation_name) {
       errors.push(`Designation "${row.designation_name}" not found`);
       fieldErrors.designation_name = 'Not found';
     }
