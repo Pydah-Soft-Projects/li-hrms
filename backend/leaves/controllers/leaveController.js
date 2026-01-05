@@ -294,9 +294,14 @@ exports.applyLeave = async (req, res) => {
 
     // Use empNo as primary identifier (from frontend)
     if (empNo) {
+      // Check if this is actually a self-application (Manager applying for self via dropdown)
+      const isSelf = req.user.emp_no && (req.user.emp_no === empNo || req.user.emp_no.toLowerCase() === empNo.toLowerCase());
+
       // Check if user has permission to apply for others
       // Allow super_admin, hr, sub_admin, manager (backward compatibility)
-      const hasRolePermission = ['hr', 'sub_admin', 'super_admin', 'manager'].includes(req.user.role);
+      const allowedRoles = ['hr', 'sub_admin', 'super_admin', 'manager'];
+      const userRole = req.user.role ? req.user.role.toLowerCase() : '';
+      const hasRolePermission = allowedRoles.includes(userRole) || isSelf;
 
       console.log(`[Apply Leave] User ${req.user._id} (${req.user.role}) applying for employee ${empNo}`);
       console.log(`[Apply Leave] Has role permission: ${hasRolePermission} `);
@@ -411,8 +416,8 @@ exports.applyLeave = async (req, res) => {
       }
     } else if (employeeId) {
       // Legacy: Check if user has permission to apply for others
-      // Allow super_admin, hr, sub_admin (backward compatibility)
-      const hasRolePermission = ['hr', 'sub_admin', 'super_admin'].includes(req.user.role);
+      // Allow super_admin, hr, sub_admin, manager (backward compatibility)
+      const hasRolePermission = ['hr', 'sub_admin', 'super_admin', 'manager'].includes(req.user.role);
 
       console.log(`[Apply Leave] User ${req.user._id} (${req.user.role}) applying for employee ${employeeId}(legacy)`);
       console.log(`[Apply Leave] Has role permission: ${hasRolePermission} `);
@@ -865,9 +870,12 @@ exports.getPendingApprovals = async (req, res) => {
     const userRole = req.user.role;
     let filter = { isActive: true };
 
-    // Determine what the user can approve based on their role
-    if (userRole === 'hod') {
-      // HOD can only see their department's leaves
+    // 1. Super Admin / Sub Admin: View all non-final leaves
+    if (['sub_admin', 'super_admin'].includes(userRole)) {
+      filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
+    }
+    // 2. HOD: View leaves assigned to HOD role within their department
+    else if (userRole === 'hod') {
       filter['$or'] = [
         { 'workflow.nextApprover': 'hod' },
         { 'workflow.nextApproverRole': 'hod' }
@@ -875,20 +883,66 @@ exports.getPendingApprovals = async (req, res) => {
       if (req.user.department) {
         filter.department = req.user.department;
       }
-    } else if (userRole === 'hr') {
-      // HR can see leaves waiting for HR approval
+    }
+    // 3. HR: View leaves assigned to HR or Final Authority
+    else if (userRole === 'hr') {
       filter['$or'] = [
         { 'workflow.nextApprover': { $in: ['hr', 'final_authority'] } },
         { 'workflow.nextApproverRole': { $in: ['hr', 'final_authority'] } }
       ];
-    } else if (['sub_admin', 'super_admin'].includes(userRole)) {
-      // Admin can see all pending
-      filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
-    } else {
-      return res.status(403).json({
-        success: false,
-        error: 'Not authorized to view pending approvals',
-      });
+    }
+    // 4. Manager: View leaves assigned to Manager within their scope
+    else if (userRole === 'manager') {
+      filter['$or'] = [
+        { 'workflow.nextApprover': 'manager' },
+        { 'workflow.nextApproverRole': 'manager' }
+      ];
+
+      // Construct Manager Scope Query
+      const scopeConditions = [];
+
+      // A. Allowed Divisions
+      if (req.user.allowedDivisions && req.user.allowedDivisions.length > 0) {
+        const divisionIds = req.user.allowedDivisions.map(d => (typeof d === 'string' ? d : d._id));
+        scopeConditions.push({ division_id: { $in: divisionIds } });
+      }
+
+      // B. Direct Departments
+      if (req.user.departments && req.user.departments.length > 0) {
+        const deptIds = req.user.departments.map(d => (typeof d === 'string' ? d : d._id));
+        scopeConditions.push({ department: { $in: deptIds } });
+      }
+
+      // C. Division Mapping (Approximation for Query)
+      if (req.user.divisionMapping && req.user.divisionMapping.length > 0) {
+        // This is complex to query perfectly in one go if logic is "Division X but NOT Department Y"
+        // For now, we include any Division mentioned in mapping
+        const mappedDivIds = req.user.divisionMapping.map(m => (typeof m.division === 'string' ? m.division : m.division._id));
+        scopeConditions.push({ division_id: { $in: mappedDivIds } });
+      }
+
+      if (scopeConditions.length > 0) {
+        filter['$and'] = [
+          filter['$or'], // The role check
+          { $or: scopeConditions } // The scope check
+        ];
+        delete filter['$or']; // Moved inside $and
+      } else {
+        // No scope defined? Maybe show nothing or everything? 
+        // Safest is to show nothing if manager has no scope, ensuring security.
+        // But maybe they are a "General Manager"?
+        // Let's assume strict scope.
+        console.warn(`Manager ${req.user._id} has no scope defined calling getPendingApprovals`);
+        // filter matches role, but we might want to restrict. 
+        // For now, let generic 'nextApprover' rule stand, but warned.
+      }
+    }
+    // 5. Generic / Custom Role: View leaves explicitly assigned to this role
+    else {
+      filter['$or'] = [
+        { 'workflow.nextApprover': userRole },
+        { 'workflow.nextApproverRole': userRole }
+      ];
     }
 
     const leaves = await Leave.find(filter)
@@ -928,11 +982,107 @@ exports.processLeaveAction = async (req, res) => {
 
     const userRole = req.user.role;
 
-    const currentApprover = leave.workflow.nextApprover;
+    // Identify the current active step from the approval chain
+    // We look for the first 'pending' step.
+    let activeStepIndex = -1;
+    let activeStep = null;
 
-    // Validate user can perform this action
+    if (leave.workflow && leave.workflow.approvalChain && leave.workflow.approvalChain.length > 0) {
+      activeStepIndex = leave.workflow.approvalChain.findIndex(step => step.status === 'pending');
+      if (activeStepIndex !== -1) {
+        activeStep = leave.workflow.approvalChain[activeStepIndex];
+      }
+    }
+
+    // If no approval chain or no pending step, fallback to legacy checks or return error
+    if (!activeStep) {
+      // Check if already approved/rejected
+      if (['approved', 'rejected', 'cancelled'].includes(leave.status)) {
+        return res.status(400).json({
+          success: false,
+          error: `Leave is already ${leave.status}`,
+        });
+      }
+
+      // Try to construct a temporary active step based on nextApprover legacy field
+      if (leave.workflow.nextApprover) {
+        activeStep = { role: leave.workflow.nextApprover };
+      } else {
+        return res.status(400).json({
+          success: false,
+          error: 'No active approval step found for this leave.',
+        });
+      }
+    }
+
+    const requiredRole = activeStep.role;
+
+    // --- Authorization Check ---
     let canProcess = false;
 
+    // 1. Check exact role match
+    if (userRole === requiredRole) {
+      canProcess = true;
+    }
+
+    // 2. Specific Logic for Roles
+    if (requiredRole === 'hod') {
+      if (userRole === 'hod') {
+        // HOD can process if leave is in their department
+        const isDeptMatch = !req.user.department ||
+          leave.department?.toString() === req.user.department?.toString();
+        canProcess = isDeptMatch;
+      }
+    } else if (requiredRole === 'manager') {
+      if (userRole === 'manager') {
+        // Manager Scope Logic
+        const leaveDivisionId = leave.division_id ? leave.division_id.toString() : null;
+        const leaveDepartmentId = leave.department ? leave.department.toString() : null;
+
+        let isScopeMatch = false;
+
+        if (leaveDivisionId) {
+          // Check Allowed Divisions
+          const allowedDivisions = req.user.allowedDivisions || [];
+          const isDivisionScoped = allowedDivisions.some(div =>
+            (typeof div === 'string' ? div : div._id.toString()) === leaveDivisionId
+          );
+          if (isDivisionScoped) isScopeMatch = true;
+
+          // Check Division Mapping
+          if (!isScopeMatch && req.user.divisionMapping && req.user.divisionMapping.length > 0) {
+            const mapping = req.user.divisionMapping.find(m =>
+              (typeof m.division === 'string' ? m.division : m.division._id.toString()) === leaveDivisionId
+            );
+            if (mapping) {
+              if (!mapping.departments || mapping.departments.length === 0) {
+                isScopeMatch = true;
+              } else if (leaveDepartmentId) {
+                isScopeMatch = mapping.departments.some(d =>
+                  (typeof d === 'string' ? d : d._id.toString()) === leaveDepartmentId
+                );
+              }
+            }
+          }
+        }
+
+        // Direct Department Assignment
+        if (!isScopeMatch && req.user.departments && req.user.departments.length > 0 && leaveDepartmentId) {
+          isScopeMatch = req.user.departments.some(d =>
+            (typeof d === 'string' ? d : d._id.toString()) === leaveDepartmentId
+          );
+        }
+
+        canProcess = isScopeMatch;
+      }
+    } else if (requiredRole === 'final_authority') {
+      // Usually HR acts as final authority unless specified
+      if (userRole === 'hr' || userRole === 'super_admin') canProcess = true;
+    }
+
+    // 3. Admin Override (Super Admins/Sub Admins/Managers can generally approve any step)
+    if (['sub_admin', 'super_admin', 'manager'].includes(userRole)) {
+      canProcess = true;
     // Normalize roles for comparison
     const approverRole = String(currentApprover || '').toLowerCase().trim();
     const myRole = String(userRole || '').toLowerCase().trim();
@@ -1011,13 +1161,15 @@ exports.processLeaveAction = async (req, res) => {
     if (!canProcess) {
       return res.status(403).json({
         success: false,
-        error: 'Not authorized to process this leave application',
+        error: `Not authorized. Waiting for ${requiredRole} approval. You are ${userRole}.`,
       });
     }
 
-    // Process based on action
+    // --- Action Processing ---
+
+    // Prepare history entry
     const historyEntry = {
-      step: currentApprover,
+      step: requiredRole,
       actionBy: req.user._id,
       actionByName: req.user.name,
       actionByRole: userRole,
@@ -1025,55 +1177,52 @@ exports.processLeaveAction = async (req, res) => {
       timestamp: new Date(),
     };
 
-    // Declare approvalWarnings at function level so it's available for all actions
     let approvalWarnings = [];
 
     switch (action) {
       case 'approve':
-        // Check leave limits and generate warnings (don't block, just warn)
-        approvalWarnings = [];
+        // 1. Validation Logic
+
+        // A. Check Limits (Soft Warning)
         const Employee = require('../../employees/model/Employee');
         const employee = await Employee.findById(leave.employeeId);
 
         if (employee && employee.department_id) {
-          const resolvedLeaveSettings = await getResolvedLeaveSettings(employee.department_id);
+          try {
+            const resolvedLeaveSettings = await getResolvedLeaveSettings(employee.department_id);
+            if (resolvedLeaveSettings) {
+              // Daily Limit
+              if (resolvedLeaveSettings.dailyLimit && leave.numberOfDays > resolvedLeaveSettings.dailyLimit) {
+                approvalWarnings.push(`⚠️ Leave duration (${leave.numberOfDays} days) exceeds daily limit of ${resolvedLeaveSettings.dailyLimit}`);
+              }
+              // Monthly Limit
+              if (resolvedLeaveSettings.monthlyLimit) {
+                const from = new Date(leave.fromDate);
+                const startOfMonth = new Date(from.getFullYear(), from.getMonth(), 1);
+                const endOfMonth = new Date(from.getFullYear(), from.getMonth() + 1, 0, 23, 59, 59);
 
-          if (resolvedLeaveSettings) {
-            // Check daily limit
-            if (resolvedLeaveSettings.dailyLimit !== null && resolvedLeaveSettings.dailyLimit > 0) {
-              if (leave.numberOfDays > resolvedLeaveSettings.dailyLimit) {
-                approvalWarnings.push(`⚠️ Leave duration(${leave.numberOfDays} days) exceeds the recommended daily limit of ${resolvedLeaveSettings.dailyLimit} day(s) per application`);
+                const existingLeaves = await Leave.find({
+                  employeeId: leave.employeeId,
+                  fromDate: { $gte: startOfMonth, $lte: endOfMonth },
+                  status: { $in: ['approved', 'hr_approved', 'hod_approved'] },
+                  isActive: true,
+                  _id: { $ne: leave._id }
+                });
+                const totalDays = existingLeaves.reduce((sum, l) => sum + (l.numberOfDays || 0), 0);
+                if (totalDays + leave.numberOfDays > resolvedLeaveSettings.monthlyLimit) {
+                  approvalWarnings.push(`⚠️ Monthly limit exceeded. New total: ${totalDays + leave.numberOfDays} (Limit: ${resolvedLeaveSettings.monthlyLimit})`);
+                }
               }
             }
-
-            // Check monthly limit
-            if (resolvedLeaveSettings.monthlyLimit !== null && resolvedLeaveSettings.monthlyLimit > 0) {
-              const from = new Date(leave.fromDate);
-              const month = from.getMonth() + 1;
-              const year = from.getFullYear();
-              const monthStart = new Date(year, month - 1, 1);
-              const monthEnd = new Date(year, month, 0, 23, 59, 59);
-
-              const existingLeaves = await Leave.find({
-                employeeId: leave.employeeId,
-                fromDate: { $gte: monthStart, $lte: monthEnd },
-                status: { $in: ['hod_approved', 'hr_approved', 'approved'] },
-                isActive: true,
-                _id: { $ne: leave._id }, // Exclude current leave
-              });
-
-              const totalDaysThisMonth = existingLeaves.reduce((sum, l) => sum + (l.numberOfDays || 0), 0);
-              const newTotal = totalDaysThisMonth + leave.numberOfDays;
-
-              if (newTotal > resolvedLeaveSettings.monthlyLimit) {
-                approvalWarnings.push(`⚠️ Total leave days for this month(${newTotal} days) would exceed the recommended monthly limit of ${resolvedLeaveSettings.monthlyLimit} days.Current month total: ${totalDaysThisMonth} days`);
-              }
-            }
+          } catch (err) {
+            console.error("Warning: Failed to check leave limits", err);
           }
         }
 
-        // Before final approval, validate against all approved records
-        if (currentApprover === 'hr' || currentApprover === 'final_authority') {
+        // B. Check Conflicts (HR/Final Step)
+        const isFinalStep = activeStepIndex !== -1 && activeStepIndex === (leave.workflow.approvalChain?.length - 1);
+
+        if (requiredRole === 'hr' || requiredRole === 'final_authority' || isFinalStep) {
           const { validateLeaveRequest } = require('../../shared/services/conflictValidationService');
           const validation = await validateLeaveRequest(
             leave.employeeId,
@@ -1082,28 +1231,55 @@ exports.processLeaveAction = async (req, res) => {
             leave.toDate,
             leave.isHalfDay || false,
             leave.halfDayType || null,
-            false // approvedOnly = false for approval (check all approved records)
+            false
           );
 
           if (!validation.isValid) {
             return res.status(400).json({
               success: false,
-              error: validation.errors[0] || 'Cannot approve: Conflict with existing approved records',
+              error: validation.errors[0] || 'Conflict with existing approved records',
               validationErrors: validation.errors,
-              conflictingODs: validation.conflictingODs,
+              conflictingODs: validation.conflictingODs
             });
           }
         }
 
-        if (currentApprover === 'hod') {
-          leave.status = 'hod_approved';
-          leave.approvals.hod = {
+        // 2. Update Chain Step
+        if (activeStepIndex !== -1) {
+          leave.workflow.approvalChain[activeStepIndex].status = 'approved';
+          leave.workflow.approvalChain[activeStepIndex].actionBy = req.user._id;
+          leave.workflow.approvalChain[activeStepIndex].actionByName = req.user.name;
+          leave.workflow.approvalChain[activeStepIndex].actionByRole = userRole;
+          leave.workflow.approvalChain[activeStepIndex].comments = comments;
+          leave.workflow.approvalChain[activeStepIndex].updatedAt = new Date();
+          leave.workflow.approvalChain[activeStepIndex].isCurrent = false;
+        }
+
+        // 3. Legacy Field Updates
+        if (['hod', 'manager', 'hr'].includes(requiredRole)) {
+          leave.approvals[requiredRole] = {
             status: 'approved',
             approvedBy: req.user._id,
             approvedAt: new Date(),
-            comments,
+            comments: comments
           };
+        }
 
+        // 4. Transition to Next Step
+        if (leave.workflow.approvalChain && activeStepIndex < leave.workflow.approvalChain.length - 1) {
+          // Move to next step
+          const nextStep = leave.workflow.approvalChain[activeStepIndex + 1];
+          nextStep.isCurrent = true;
+
+          leave.workflow.currentStepRole = nextStep.role;
+          leave.workflow.nextApprover = nextStep.role;
+          leave.workflow.currentStep = nextStep.role; // Legacy
+
+          // Determine intermediate status
+          if (requiredRole === 'hod') leave.status = 'hod_approved';
+          else if (requiredRole === 'manager') leave.status = 'manager_approved';
+          else if (requiredRole === 'hr') leave.status = 'hr_approved';
+          else leave.status = 'pending';
           // Determine next step dynamically
           let nextStepRole = 'hr'; // Default
 
@@ -1206,129 +1382,102 @@ exports.processLeaveAction = async (req, res) => {
             }
           }
 
-          if (nextStepRole) {
-            leave.workflow.currentStep = nextStepRole;
-            leave.workflow.nextApprover = nextStepRole;
-            historyEntry.action = 'approved';
-          } else {
-            leave.status = 'approved';
-            leave.workflow.currentStep = 'completed';
-            leave.workflow.nextApprover = null;
-            historyEntry.action = 'approved';
-          }
-        } else if (currentApprover === 'hr' || currentApprover === 'final_authority') {
-          // ... (existing HR logic)
-          const { validateLeaveRequest } = require('../../shared/services/conflictValidationService');
-          const validation = await validateLeaveRequest(
-            leave.employeeId,
-            leave.emp_no,
-            leave.fromDate,
-            leave.toDate,
-            leave.isHalfDay || false,
-            leave.halfDayType || null,
-            false // approvedOnly = false for approval (check all approved records)
-          );
+          historyEntry.action = 'approved';
+          historyEntry.comments = `${comments} (Moved to ${nextStep.role})`;
 
-          if (!validation.isValid) {
-            return res.status(400).json({
-              success: false,
-              error: validation.errors[0] || 'Cannot approve: Conflict with existing approved records',
-              validationErrors: validation.errors,
-              conflictingODs: validation.conflictingODs,
-            });
-          }
-
-          // Final approval
-          leave.status = 'approved';
-          leave.approvals.hr = {
-            status: 'approved',
-            approvedBy: req.user._id,
-            approvedAt: new Date(),
-            comments,
-          };
-          leave.workflow.currentStep = 'completed';
+        } else {
+          // Workflow Complete!
+          leave.workflow.isCompleted = true;
+          leave.workflow.currentStepRole = null;
           leave.workflow.nextApprover = null;
+          leave.workflow.currentStep = 'completed';
+
+          leave.status = 'approved';
           historyEntry.action = 'approved';
 
-          // Store approval timestamp for revocation window (2-3 hours)
-          leave.approvals.hr.approvedAt = new Date();
+          if (leave.approvals?.hr) {
+            leave.approvals.hr.approvedAt = new Date();
+          }
         }
 
-        // Add warnings to history entry if any
         if (approvalWarnings.length > 0) {
           historyEntry.warnings = approvalWarnings;
         }
-
         break;
 
       case 'reject':
-        if (currentApprover === 'hod') {
-          leave.status = 'hod_rejected';
-          leave.approvals.hod = {
+        // Update Chain Step
+        if (activeStepIndex !== -1) {
+          leave.workflow.approvalChain[activeStepIndex].status = 'rejected';
+          leave.workflow.approvalChain[activeStepIndex].actionBy = req.user._id;
+          leave.workflow.approvalChain[activeStepIndex].updatedAt = new Date();
+          leave.workflow.approvalChain[activeStepIndex].comments = comments;
+        }
+
+        // Legacy Update
+        if (['hod', 'manager', 'hr'].includes(requiredRole)) {
+          leave.approvals[requiredRole] = {
             status: 'rejected',
             approvedBy: req.user._id,
             approvedAt: new Date(),
-            comments,
-          };
-        } else if (currentApprover === 'manager') {
-          leave.status = 'manager_rejected';
-          leave.approvals.manager = {
-            status: 'rejected',
-            approvedBy: req.user._id,
-            approvedAt: new Date(),
-            comments,
-          };
-        } else {
-          leave.status = 'hr_rejected';
-          leave.approvals.hr = {
-            status: 'rejected',
-            approvedBy: req.user._id,
-            approvedAt: new Date(),
-            comments,
+            comments: comments
           };
         }
-        leave.workflow.currentStep = 'completed';
+
+        // Finalize Status
+        if (requiredRole === 'hod') leave.status = 'hod_rejected';
+        else if (requiredRole === 'manager') leave.status = 'manager_rejected';
+        else if (requiredRole === 'hr') leave.status = 'hr_rejected';
+        else leave.status = 'rejected';
+
+        leave.workflow.isCompleted = true;
+        leave.workflow.currentStepRole = null;
         leave.workflow.nextApprover = null;
         historyEntry.action = 'rejected';
         break;
 
       case 'forward':
-        // HOD forwards to HR
-        if (currentApprover !== 'hod') {
-          return res.status(400).json({
-            success: false,
-            error: 'Only HOD can forward leave applications',
-          });
+        if (activeStepIndex !== -1) {
+          leave.workflow.approvalChain[activeStepIndex].status = 'skipped';
         }
-        leave.status = 'hod_approved';
-        leave.approvals.hod = {
-          status: 'forwarded',
-          approvedBy: req.user._id,
-          approvedAt: new Date(),
-          comments,
-        };
-        leave.workflow.currentStep = 'hr';
-        leave.workflow.nextApprover = 'hr';
+
+        // Specific: HOD forwards to HR
+        if (requiredRole === 'hod') {
+          leave.status = 'hod_approved';
+          leave.approvals.hod = {
+            status: 'forwarded',
+            approvedBy: req.user._id,
+            approvedAt: new Date(),
+            comments
+          };
+          leave.workflow.currentStepRole = 'hr';
+          leave.workflow.nextApprover = 'hr';
+        } else {
+          if (activeStepIndex < leave.workflow.approvalChain.length - 1) {
+            const nextStep = leave.workflow.approvalChain[activeStepIndex + 1];
+            leave.workflow.currentStepRole = nextStep.role;
+            leave.workflow.nextApprover = nextStep.role;
+          }
+        }
         historyEntry.action = 'forwarded';
         break;
 
       default:
-        return res.status(400).json({
-          success: false,
-          error: 'Invalid action',
-        });
+        return res.status(400).json({ success: false, error: 'Invalid action' });
     }
 
     leave.workflow.history.push(historyEntry);
+
+    leave.markModified('workflow');
+    leave.markModified('approvals');
+
     await leave.save();
 
-    // Populate for response
     await leave.populate([
       { path: 'employeeId', select: 'first_name last_name emp_no' },
       { path: 'department', select: 'name' },
     ]);
 
-    // Include warnings in response if any
     const response = {
       success: true,
       message: `Leave ${action}ed successfully`,
@@ -1340,6 +1489,7 @@ exports.processLeaveAction = async (req, res) => {
     }
 
     res.status(200).json(response);
+
   } catch (error) {
     console.error('Error processing leave action:', error);
     res.status(500).json({
