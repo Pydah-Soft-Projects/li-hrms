@@ -822,6 +822,39 @@ export default function EmployeesPage() {
     }
   };
 
+  const handleBulkReject = async () => {
+    if (selectedApplicationIds.length === 0) return;
+
+    if (!confirm(`Are you sure you want to REJECT ${selectedApplicationIds.length} selected applications? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      setLoadingApplications(true);
+      setError('');
+      setSuccess('');
+
+      const response = await api.bulkRejectEmployeeApplications(selectedApplicationIds, 'Bulk rejected via dashboard');
+
+      if (response.success) {
+        setSuccess(`Bulk rejection completed! Succeeded: ${response.data.successCount}, Failed: ${response.data.failCount}`);
+      } else {
+        setError(response.message || 'Bulk rejection failed or partially failed');
+        if (response.data?.successCount > 0) {
+          setSuccess(`Partially completed. Succeeded: ${response.data.successCount}`);
+        }
+      }
+
+      setSelectedApplicationIds([]);
+      loadApplications();
+    } catch (err: any) {
+      setError(err.message || 'An error occurred during bulk rejection');
+      console.error(err);
+    } finally {
+      setLoadingApplications(false);
+    }
+  };
+
   const parseDynamicField = (value: any, fieldDef: any) => {
     if (value === undefined || value === null || value === '') return undefined;
 
@@ -1927,12 +1960,20 @@ export default function EmployeesPage() {
             {/* Applications Header */}
             <div className="mb-6 flex items-center justify-between">
               {selectedApplicationIds.length > 0 && (userRole === 'super_admin' || userRole === 'sub_admin') && (
-                <button
-                  onClick={handleBulkApprove}
-                  className="group relative inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-700 hover:to-indigo-700 hover:shadow-xl hover:shadow-blue-500/40"
-                >
-                  <span>Approve Selected ({selectedApplicationIds.length})</span>
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={handleBulkReject}
+                    className="group relative inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-red-600 to-rose-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-red-500/30 transition-all hover:from-red-700 hover:to-rose-700 hover:shadow-xl hover:shadow-red-500/40"
+                  >
+                    <span>Reject Selected</span>
+                  </button>
+                  <button
+                    onClick={handleBulkApprove}
+                    className="group relative inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-700 hover:to-indigo-700 hover:shadow-xl hover:shadow-blue-500/40"
+                  >
+                    <span>Approve Selected ({selectedApplicationIds.length})</span>
+                  </button>
+                </div>
               )}
 
             </div>

@@ -13,6 +13,7 @@ const {
   rejectApplication,
   bulkApproveApplications,
   bulkCreateApplications,
+  bulkRejectApplications,
 } = require('./controllers/employeeApplicationController');
 
 const {
@@ -75,6 +76,9 @@ router.post('/', upload.any(), createApplication);
 
 // Bulk approve applications (Superadmin)
 router.put('/bulk-approve', authorize('super_admin', 'sub_admin'), bulkApproveApplications);
+
+// Bulk reject applications (Superadmin)
+router.put('/bulk-reject', authorize('super_admin', 'sub_admin'), bulkRejectApplications);
 
 // Bulk create applications (HR/Admin)
 router.post('/bulk', authorize('super_admin', 'sub_admin', 'hr'), bulkCreateApplications);
