@@ -57,6 +57,67 @@ export interface Workspace {
 
 export type PayrollBatchStatus = 'pending' | 'approved' | 'freeze' | 'complete';
 
+export interface BonusPolicy {
+  _id: string;
+  name: string;
+  description?: string;
+  policyType: 'attendance_regular' | 'payroll_based';
+  salaryComponent: 'gross_salary' | 'basic' | 'ctc' | 'fixed_pay';
+  tiers: {
+    minPercentage: number;
+    maxPercentage: number;
+    bonusMultiplier: number;
+    flatAmount?: number;
+  }[];
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface BonusBatch {
+  _id: string;
+  batchName: string;
+  month: string;
+  year: number;
+  division?: { _id: string; name: string };
+  department?: { _id: string; name: string };
+  policy: { _id: string; name: string } | string;
+  status: 'pending' | 'approved' | 'frozen';
+  totalEmployees: number;
+  totalBonusAmount: number;
+  recalculationRequest?: {
+    isRequested: boolean;
+    reason: string;
+    status: string;
+    requestedBy: any;
+    requestedAt: string;
+  };
+  createdBy?: any;
+  approvedBy?: any;
+  frozenBy?: any;
+  createdAt: string;
+}
+
+export interface BonusRecord {
+  _id: string;
+  batchId: string;
+  employeeId: { _id: string; employee_name: string; emp_no: string };
+  emp_no: string;
+  month: string;
+  salaryComponentValue: number;
+  attendancePercentage: number;
+  attendanceDays: number;
+  totalMonthDays: number;
+  appliedTier?: {
+    minPercentage: number;
+    maxPercentage: number;
+    bonusMultiplier: number;
+  };
+  calculatedBonus: number;
+  finalBonus: number;
+  isManualOverride: boolean;
+  remarks?: string;
+}
+
 export interface RecalculationHistory {
   _id: string;
   recalculatedAt: string;
@@ -2616,6 +2677,77 @@ export const api = {
 
   generateGateInQR: async (permissionId: string) => {
     return apiRequest<any>(`/security/gate-pass/in/${permissionId}`, { method: 'POST' });
+  },
+
+  // ==========================================
+  // BONUS MANAGEMENT APIs
+  // ==========================================
+
+  getBonusPolicies: async () => {
+    return apiRequest<BonusPolicy[]>('/bonus/policies', { method: 'GET' });
+  },
+
+  getBonusPolicy: async (id: string) => {
+    return apiRequest<BonusPolicy>(`/bonus/policies/${id}`, { method: 'GET' });
+  },
+
+  createBonusPolicy: async (data: Partial<BonusPolicy>) => {
+    return apiRequest<BonusPolicy>('/bonus/policies', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  updateBonusPolicy: async (id: string, data: Partial<BonusPolicy>) => {
+    return apiRequest<BonusPolicy>(`/bonus/policies/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  deleteBonusPolicy: async (id: string) => {
+    return apiRequest<void>(`/bonus/policies/${id}`, { method: 'DELETE' });
+  },
+
+  getBonusBatches: async (filters?: { month?: string; department?: string; division?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.month) params.append('month', filters.month);
+    if (filters?.department) params.append('department', filters.department);
+    if (filters?.division) params.append('division', filters.division);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return apiRequest<BonusBatch[]>(`/bonus/batches${query}`, { method: 'GET' });
+  },
+
+  createBonusBatch: async (data: { month: string; policyId: string; departmentId?: string; divisionId?: string }) => {
+    return apiRequest<BonusBatch>('/bonus/batches', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  getBonusBatch: async (id: string) => {
+    return apiRequest<{ batch: BonusBatch; records: BonusRecord[] }>(`/bonus/batches/${id}`, { method: 'GET' });
+  },
+
+  updateBonusBatchStatus: async (id: string, status: 'approved' | 'frozen') => {
+    return apiRequest<BonusBatch>(`/bonus/batches/${id}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    });
+  },
+
+  requestBonusRecalculation: async (id: string, reason: string) => {
+    return apiRequest<BonusBatch>(`/bonus/batches/${id}/recalculate-request`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  },
+
+  updateBonusRecord: async (id: string, data: { finalBonus: number; remarks?: string }) => {
+    return apiRequest<BonusRecord>(`/bonus/records/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
   },
 };
 
