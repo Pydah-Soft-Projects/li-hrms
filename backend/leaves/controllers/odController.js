@@ -993,10 +993,9 @@ exports.processODAction = async (req, res) => {
     const approverRole = String(currentApprover || '').toLowerCase().trim();
     const myRole = String(userRole || '').toLowerCase().trim();
 
-    // 1. Super Admin / Sub Admin Override
-    if (['super_admin', 'sub_admin'].includes(myRole)) {
+    // 1. Super Admin / Sub Admin / Manager Override
+    if (['super_admin', 'sub_admin', 'manager'].includes(myRole)) {
       canProcess = true;
-    } else if (['sub_admin', 'super_admin', 'manager'].includes(userRole)) {
     }
     // 2. HR Step
     else if (approverRole === 'hr' && myRole === 'hr') {

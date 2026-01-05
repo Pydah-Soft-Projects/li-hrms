@@ -1083,6 +1083,8 @@ exports.processLeaveAction = async (req, res) => {
     // 3. Admin Override (Super Admins/Sub Admins/Managers can generally approve any step)
     if (['sub_admin', 'super_admin', 'manager'].includes(userRole)) {
       canProcess = true;
+    }
+
     // Normalize roles for comparison
     const approverRole = String(currentApprover || '').toLowerCase().trim();
     const myRole = String(userRole || '').toLowerCase().trim();
