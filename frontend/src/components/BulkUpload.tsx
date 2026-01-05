@@ -166,18 +166,21 @@ export default function BulkUpload({
 
         // Handle server-side row errors
         if (result.failedRows && result.failedRows.length > 0) {
+          const failedData: ParsedRow[] = [];
           const newErrors: { [key: number]: { rowErrors: string[]; fieldErrors: { [key: string]: string } } } = {};
 
-          result.failedRows.forEach(fail => {
-            // Find index of the row with this emp_no
-            // Use findIndex but be careful with exact matching
-            const rowIndex = data.findIndex(row => String(row.emp_no || '').trim().toUpperCase() === String(fail.emp_no || '').trim().toUpperCase());
+          result.failedRows.forEach((fail, newIdx) => {
+            // Find existing row to preserve its other fields
+            const existingRow = data.find(row =>
+              String(row.emp_no || '').trim().toUpperCase() === String(fail.emp_no || '').trim().toUpperCase()
+            );
 
-            if (rowIndex !== -1) {
+            if (existingRow) {
+              failedData.push(existingRow);
               const rowMsg = fail.message || 'Server-side validation failed';
               const isDuplicate = rowMsg.toLowerCase().includes('already exists');
 
-              newErrors[rowIndex] = {
+              newErrors[newIdx] = {
                 rowErrors: [rowMsg],
                 fieldErrors: {
                   ...(isDuplicate ? { emp_no: 'Duplicate ID' } : {}),
@@ -187,11 +190,13 @@ export default function BulkUpload({
             }
           });
 
-          if (Object.keys(newErrors).length > 0) {
+          if (failedData.length > 0) {
+            setData(failedData);
             setErrors(newErrors);
+            setCurrentErrorIndex(0);
             setMessage({
               type: 'error',
-              text: `${result.message || 'Upload failed'}. Please fix the ${Object.keys(newErrors).length} failed rows and try again.`
+              text: `${result.message || 'Upload failed'}. ${failedData.length} rows failed and are shown below. Successful rows have been processed.`
             });
           }
         }
