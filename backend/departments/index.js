@@ -19,16 +19,16 @@ router.get('/', applyScopeFilter, departmentController.getAllDepartments);
 router.get('/designations', designationController.getAllDesignations);
 
 // Create global designation (Super Admin, Sub Admin, HR)
-router.post('/designations', authorize('super_admin', 'sub_admin', 'hr'), designationController.createGlobalDesignation);
+router.post('/designations', authorize('manager', 'super_admin', 'sub_admin', 'hr'), designationController.createGlobalDesignation);
 
 // Get single designation
 router.get('/designations/:id', designationController.getDesignation);
 
 // Update designation (Super Admin, Sub Admin, HR)
-router.put('/designations/:id', authorize('super_admin', 'sub_admin', 'hr'), designationController.updateDesignation);
+router.put('/designations/:id', authorize('manager', 'super_admin', 'sub_admin', 'hr'), designationController.updateDesignation);
 
 // Assign shifts to designation (Super Admin, Sub Admin, HR)
-router.put('/designations/:id/shifts', authorize('super_admin', 'sub_admin', 'hr'), designationController.assignShifts);
+router.put('/designations/:id/shifts', authorize('manager', 'super_admin', 'sub_admin', 'hr'), designationController.assignShifts);
 
 // Delete designation (Super Admin, Sub Admin)
 router.delete('/designations/:id', authorize('super_admin', 'sub_admin'), designationController.deleteDesignation);
@@ -43,28 +43,28 @@ router.get('/:id/employees', departmentController.getDepartmentEmployees);
 router.get('/:id/configuration', departmentController.getDepartmentConfiguration);
 
 // Create department (Super Admin, Sub Admin, HR)
-router.post('/', authorize('super_admin', 'sub_admin', 'hr'), departmentController.createDepartment);
+router.post('/', authorize('manager', 'super_admin', 'sub_admin', 'hr'), departmentController.createDepartment);
 
 // Update department (Super Admin, Sub Admin, HR)
-router.put('/:id', authorize('super_admin', 'sub_admin', 'hr'), departmentController.updateDepartment);
+router.put('/:id', authorize('manager', 'super_admin', 'sub_admin', 'hr'), departmentController.updateDepartment);
 
 // Update department configuration (Super Admin, Sub Admin, HR)
-router.put('/:id/configuration', authorize('super_admin', 'sub_admin', 'hr'), departmentController.updateDepartmentConfiguration);
+router.put('/:id/configuration', authorize('manager', 'super_admin', 'sub_admin', 'hr'), departmentController.updateDepartmentConfiguration);
 
 // Assign HOD (Super Admin, Sub Admin, HR)
-router.put('/:id/assign-hod', authorize('super_admin', 'sub_admin', 'hr'), departmentController.assignHOD);
+router.put('/:id/assign-hod', authorize('manager', 'super_admin', 'sub_admin', 'hr'), departmentController.assignHOD);
 
 // Assign HR (Super Admin, Sub Admin)
 router.put('/:id/assign-hr', authorize('super_admin', 'sub_admin'), departmentController.assignHR);
 
 // Assign shifts to department (Super Admin, Sub Admin, HR)
-router.put('/:id/shifts', authorize('super_admin', 'sub_admin', 'hr'), departmentController.assignShifts);
+router.put('/:id/shifts', authorize('manager', 'super_admin', 'sub_admin', 'hr'), departmentController.assignShifts);
 
 // Update paid leaves (Super Admin, Sub Admin, HR)
-router.put('/:id/paid-leaves', authorize('super_admin', 'sub_admin', 'hr'), departmentController.updatePaidLeaves);
+router.put('/:id/paid-leaves', authorize('manager', 'super_admin', 'sub_admin', 'hr'), departmentController.updatePaidLeaves);
 
 // Update leave limits (Super Admin, Sub Admin, HR)
-router.put('/:id/leave-limits', authorize('super_admin', 'sub_admin', 'hr'), departmentController.updateLeaveLimits);
+router.put('/:id/leave-limits', authorize('manager', 'super_admin', 'sub_admin', 'hr'), departmentController.updateLeaveLimits);
 
 // Delete department (Super Admin, Sub Admin)
 router.delete('/:id', authorize('super_admin', 'sub_admin'), departmentController.deleteDepartment);
@@ -77,10 +77,10 @@ router.delete('/:id', authorize('super_admin', 'sub_admin'), departmentControlle
 router.get('/:departmentId/designations', designationController.getDesignationsByDepartment);
 
 // Link existing designation to department
-router.post('/:departmentId/designations/link', authorize('super_admin', 'sub_admin', 'hr'), designationController.linkDesignation);
+router.post('/:departmentId/designations/link', authorize('manager', 'super_admin', 'sub_admin', 'hr'), designationController.linkDesignation);
 
 // Create designation (Super Admin, Sub Admin, HR) - backward compatible
-router.post('/:departmentId/designations', authorize('super_admin', 'sub_admin', 'hr'), designationController.createDesignation);
+router.post('/:departmentId/designations', authorize('manager', 'super_admin', 'sub_admin', 'hr'), designationController.createDesignation);
 
 // Department Settings routes
 // Get department settings
