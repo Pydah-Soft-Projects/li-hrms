@@ -5,6 +5,7 @@
 
 const Permission = require('../model/Permission');
 const { createPermissionRequest, approvePermissionRequest, rejectPermissionRequest, getOutpassByQR } = require('../services/permissionService');
+const { buildWorkflowVisibilityFilter } = require('../../shared/middleware/dataScopeMiddleware');
 
 /**
  * @desc    Create permission request
@@ -159,7 +160,11 @@ exports.getPermissions = async (req, res) => {
       query.date = { $gte: startDate, $lte: endDate };
     }
 
-    const permissions = await Permission.find(query)
+    // Apply Sequential Workflow Visibility ("Travel Flow")
+    const workflowFilter = buildWorkflowVisibilityFilter(req.user);
+    const combinedQuery = { $and: [query, req.scopeFilter || {}, workflowFilter] };
+
+    const permissions = await Permission.find(combinedQuery)
       .populate('employeeId', 'emp_no employee_name department designation')
       .populate('requestedBy', 'name email')
       .populate('approvedBy', 'name email')

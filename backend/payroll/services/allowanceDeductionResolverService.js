@@ -201,7 +201,22 @@ async function buildBaseComponents(departmentId, grossSalary, attendanceData = n
   // Allowances: two passes (basic-based and gross-based), mirroring payroll
   const allowancesBasic = await allowanceService.calculateAllowances(departmentId, basicPay, null, false, attendanceData);
   const allowancesGross = await allowanceService.calculateAllowances(departmentId, basicPay, grossSalary, true, attendanceData);
-  const allowances = [...allowancesBasic, ...allowancesGross];
+
+  // Combine and Deduplicate (Fixed allowances might be returned in both passes)
+  const allAllowances = [...allowancesBasic, ...allowancesGross];
+  const uniqueAllowancesMap = new Map();
+
+  allAllowances.forEach(allowance => {
+    // Use masterId as unique key
+    if (allowance.masterId) {
+      uniqueAllowancesMap.set(allowance.masterId.toString(), allowance);
+    } else if (allowance.name) {
+      // Fallback to name if masterId is missing (unlikely for master-derived allowances)
+      uniqueAllowancesMap.set(allowance.name.trim().toLowerCase(), allowance);
+    }
+  });
+
+  const allowances = Array.from(uniqueAllowancesMap.values());
 
   // Deductions
   const deductions = await deductionService.calculateOtherDeductions(

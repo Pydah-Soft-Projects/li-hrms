@@ -140,6 +140,10 @@ app.use('/api/arrears', arrearsRoutes);
 const payrollBatchRoutes = require('./payroll/routes/payrollBatchRoutes.js');
 app.use('/api/payroll-batch', payrollBatchRoutes);
 
+// Bonus routes
+const bonusRoutes = require('./bonus/routes/bonusRoutes.js');
+app.use('/api/bonus', bonusRoutes);
+
 // Dashboard routes
 const dashboardRoutes = require('./dashboard/index.js');
 app.use('/api/dashboard', dashboardRoutes);
@@ -197,6 +201,7 @@ const startServer = async () => {
       console.log(`   - Allowances & Deductions: /api/allowances-deductions`);
       console.log(`   - Payroll: /api/payroll`);
       console.log(`   - Pay Register: /api/pay-register`);
+      console.log(`   - Bonus: /api/bonus`);
       console.log(`   - Arrears: /api/arrears`);
     });
   } catch (error) {

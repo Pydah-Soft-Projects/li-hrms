@@ -55,6 +55,25 @@ const CopyIcon = () => (
   </svg>
 );
 
+const EyeIcon = () => (
+  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+  </svg>
+);
+
+const EyeOffIcon = () => (
+  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.542-7 1.274-4.057 5.064-7 9.542-7 1.225 0 2.38.22 3.447.615m3.435 3.435A9.963 9.963 0 0121.542 12c-1.274 4.057-5.064 7-9.542 7-1.01 0-1.97-.184-2.857-.52m10.857-10.857L3 3m18 18L3 3" />
+  </svg>
+);
+
+const CheckCircleIcon = () => (
+  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
+);
+
 
 
 interface UserFormData {
@@ -120,6 +139,13 @@ export default function UsersPage() {
   const [showEditDialog, setShowEditDialog] = useState(false);
 
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
+  const [resetPasswordState, setResetPasswordState] = useState({
+    newPassword: '',
+    confirmPassword: '',
+    showNew: false,
+    showConfirm: false,
+    autoGenerate: true
+  });
   const [showViewDialog, setShowViewDialog] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [selectedViewUser, setSelectedViewUser] = useState<User | null>(null);
@@ -259,12 +285,14 @@ export default function UsersPage() {
         allowedDivisions?: string[];
         divisionMapping?: any[];
         featureControl?: string[];
+        division?: string;
       } = {
         email: formData.email,
         name: formData.name,
         role: formData.role,
         autoGeneratePassword: formData.autoGeneratePassword,
         assignWorkspace: true,
+        division: formData.division,
       };
 
       if (!formData.autoGeneratePassword && formData.password) {
@@ -291,6 +319,12 @@ export default function UsersPage() {
             departments: depts
           }];
         }
+      }
+
+      // Force HOD to use 'department' scope and include department field
+      if (formData.role === 'hod') {
+        payload.dataScope = 'department';
+        (payload as any).department = formData.department || null;
       }
 
       // Add feature control (always send to ensure overrides work)
@@ -427,31 +461,71 @@ export default function UsersPage() {
   };
 
   // Handle reset password
-  const handleResetPassword = async (autoGenerate: boolean) => {
+  const handleResetPassword = async () => {
     if (!selectedUser) return;
     setError('');
 
+    if (!resetPasswordState.autoGenerate) {
+      if (resetPasswordState.newPassword.length < 6) {
+        setError('Password must be at least 6 characters');
+        return;
+      }
+      if (resetPasswordState.newPassword !== resetPasswordState.confirmPassword) {
+        setError('Passwords do not match');
+        return;
+      }
+    }
+
     try {
-      const res = await api.resetUserPassword(selectedUser._id, { autoGenerate });
+      const res = await api.resetUserPassword(selectedUser._id, {
+        autoGenerate: resetPasswordState.autoGenerate,
+        newPassword: resetPasswordState.autoGenerate ? undefined : resetPasswordState.newPassword
+      });
 
       if (res.success) {
-        setSuccess('Password reset successfully');
-        if (res.data?.newPassword) {
+        setSuccess(res.message || 'Password reset successfully');
+        if (res.newPassword) {
           setSuccessModalData({
             username: selectedUser.email,
-            password: res.data.newPassword,
+            password: res.newPassword,
             message: 'Password has been reset successfully.'
           });
           setShowSuccessModal(true);
         }
         setShowPasswordDialog(false);
         setSelectedUser(null);
+        setResetPasswordState({
+          newPassword: '',
+          confirmPassword: '',
+          showNew: false,
+          showConfirm: false,
+          autoGenerate: true
+        });
       } else {
         setError(res.message || 'Failed to reset password');
       }
     } catch (err: any) {
       setError(err.message || 'Failed to reset password');
     }
+  };
+
+  const getPasswordStrength = (password: string) => {
+    let score = 0;
+    if (!password) return { label: 'None', score: 0, color: 'bg-slate-200' };
+
+    if (password.length >= 8) score++;
+    if (/[A-Z]/.test(password)) score++;
+    if (/[0-9]/.test(password)) score++;
+    if (/[^A-Za-z0-9]/.test(password)) score++;
+
+    const ratings = [
+      { label: 'Poor', score: 1, color: 'bg-red-500' },
+      { label: 'Weak', score: 2, color: 'bg-orange-500' },
+      { label: 'Good', score: 3, color: 'bg-yellow-500' },
+      { label: 'Strong', score: 4, color: 'bg-green-500' }
+    ];
+
+    return ratings.find(r => r.score >= score) || ratings[0];
   };
 
   // Handle toggle status
@@ -759,7 +833,7 @@ export default function UsersPage() {
           department: '', // Reset department when division changes
           divisionMapping: newMapping,
           allowedDivisions: divId ? [divId] : [],
-          dataScope: 'division' // Implicitly set datascope
+          dataScope: 'department' // Implicitly set datascope
         });
       };
 
@@ -1091,12 +1165,11 @@ export default function UsersPage() {
           </div>
         </div>
       )}
-      <div className="text-sm text-slate-500 dark:text-slate-400">HR Users</div>
 
       {/* Filters */}
       <div className="mb-6 flex flex-wrap items-center gap-4">
+
         <div className="relative flex-1 min-w-[200px] max-w-md">
-          <SearchIcon />
           <input
             type="text"
             placeholder="Search by name, email, or employee ID..."
@@ -1682,29 +1755,155 @@ export default function UsersPage() {
         showPasswordDialog && selectedUser && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowPasswordDialog(false)} />
-            <div className="relative z-50 w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
-              <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">Reset Password</h2>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
-                Reset password for {selectedUser.name} ({selectedUser.email})
-              </p>
+            <div className="relative z-50 w-full max-w-md rounded-2xl bg-white shadow-2xl dark:bg-slate-900 overflow-hidden">
+              <div className="bg-gradient-to-r from-amber-500 to-orange-600 p-6 text-white">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-white/20 rounded-lg">
+                    <KeyIcon />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold">Reset Password</h2>
+                    <p className="text-amber-100 text-xs mt-1">
+                      Target: <span className="font-semibold">{selectedUser.name}</span>
+                    </p>
+                  </div>
+                </div>
+              </div>
 
-              <div className="space-y-4">
-                <button
-                  onClick={() => handleResetPassword(true)}
-                  className="w-full px-4 py-3 text-sm font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-xl hover:bg-amber-100 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800"
-                >
-                  Generate New Random Password
-                </button>
+              <div className="p-6 space-y-6">
+                <div className="flex items-center gap-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
+                  <button
+                    onClick={() => setResetPasswordState(prev => ({ ...prev, autoGenerate: true }))}
+                    className={`flex-1 px-4 py-2 text-sm font-medium rounded-lg transition-all ${resetPasswordState.autoGenerate ? 'bg-white shadow-sm text-amber-600 dark:bg-slate-700' : 'text-slate-500'}`}
+                  >
+                    Auto-Generate
+                  </button>
+                  <button
+                    onClick={() => setResetPasswordState(prev => ({ ...prev, autoGenerate: false }))}
+                    className={`flex-1 px-4 py-2 text-sm font-medium rounded-lg transition-all ${!resetPasswordState.autoGenerate ? 'bg-white shadow-sm text-amber-600 dark:bg-slate-700' : 'text-slate-500'}`}
+                  >
+                    Manual Entry
+                  </button>
+                </div>
 
-                <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
+                {!resetPasswordState.autoGenerate ? (
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">New Password</label>
+                      <div className="relative">
+                        <input
+                          type={resetPasswordState.showNew ? "text" : "password"}
+                          value={resetPasswordState.newPassword}
+                          onChange={(e) => setResetPasswordState(prev => ({ ...prev, newPassword: e.target.value }))}
+                          className="w-full pl-4 pr-12 py-3 rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-amber-500/20"
+                          placeholder="••••••••"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setResetPasswordState(prev => ({ ...prev, showNew: !prev.showNew }))}
+                          className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                        >
+                          {resetPasswordState.showNew ? <EyeOffIcon /> : <EyeIcon />}
+                        </button>
+                      </div>
+
+                      {/* Strength Meter */}
+                      <div className="space-y-1.5 pt-1">
+                        <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider">
+                          <span className="text-slate-500">Strength</span>
+                          <span className={
+                            getPasswordStrength(resetPasswordState.newPassword).score >= 3 ? "text-green-500" :
+                              getPasswordStrength(resetPasswordState.newPassword).score === 2 ? "text-amber-500" : "text-red-500"
+                          }>
+                            {getPasswordStrength(resetPasswordState.newPassword).label}
+                          </span>
+                        </div>
+                        <div className="flex gap-1 h-1.5">
+                          {[1, 2, 3, 4].map((step) => (
+                            <div
+                              key={step}
+                              className={`flex-1 rounded-full transition-colors duration-500 ${getPasswordStrength(resetPasswordState.newPassword).score >= step
+                                ? getPasswordStrength(resetPasswordState.newPassword).color
+                                : 'bg-slate-200 dark:bg-slate-700'
+                                }`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Confirm Password</label>
+                      <div className="relative">
+                        <input
+                          type={resetPasswordState.showConfirm ? "text" : "password"}
+                          value={resetPasswordState.confirmPassword}
+                          onChange={(e) => setResetPasswordState(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                          className={`w-full pl-4 pr-12 py-3 rounded-xl border bg-white dark:bg-slate-800 dark:text-white focus:ring-2 ${resetPasswordState.confirmPassword
+                            ? (resetPasswordState.confirmPassword === resetPasswordState.newPassword
+                              ? 'border-green-500 focus:ring-green-500/20'
+                              : 'border-red-500 focus:ring-red-500/20')
+                            : 'border-slate-200 dark:border-slate-700 focus:ring-amber-500/20'
+                            }`}
+                          placeholder="••••••••"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setResetPasswordState(prev => ({ ...prev, showConfirm: !prev.showConfirm }))}
+                          className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                        >
+                          {resetPasswordState.showConfirm ? <EyeOffIcon /> : <EyeIcon />}
+                        </button>
+                      </div>
+                      {resetPasswordState.confirmPassword && resetPasswordState.confirmPassword !== resetPasswordState.newPassword && (
+                        <p className="text-xs text-red-500 font-medium">Passwords do not match</p>
+                      )}
+                    </div>
+
+                    {/* Criteria Checklist */}
+                    <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4 space-y-2">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">Requirements</p>
+                      {[
+                        { label: '8+ Characters', met: resetPasswordState.newPassword.length >= 8 },
+                        { label: 'Upper Case', met: /[A-Z]/.test(resetPasswordState.newPassword) },
+                        { label: 'Number', met: /[0-9]/.test(resetPasswordState.newPassword) },
+                        { label: 'Symbol', met: /[^A-Za-z0-9]/.test(resetPasswordState.newPassword) }
+                      ].map((c, i) => (
+                        <div key={i} className={`flex items-center gap-2 text-xs ${c.met ? 'text-green-600 font-medium' : 'text-slate-400'}`}>
+                          <CheckCircleIcon />
+                          <span>{c.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-2xl p-5 text-center">
+                    <div className="w-12 h-12 bg-amber-100 dark:bg-amber-800/30 rounded-full flex items-center justify-center mx-auto mb-3">
+                      <RefreshIcon />
+                    </div>
+                    <h3 className="text-sm font-bold text-amber-800 dark:text-amber-400">Safe Auto-Generation</h3>
+                    <p className="text-xs text-amber-700/70 dark:text-amber-500/70 mt-1">
+                      System will create a 10-character strong random password and notify the user via email/SMS.
+                    </p>
+                  </div>
+                )}
+
+                <div className="flex gap-3 pt-2">
                   <button
                     onClick={() => {
                       setShowPasswordDialog(false);
                       setSelectedUser(null);
                     }}
-                    className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                    className="flex-1 px-4 py-3 text-sm font-bold text-slate-600 bg-slate-100 dark:bg-slate-800 dark:text-slate-300 rounded-xl hover:bg-slate-200 transition-colors"
                   >
                     Cancel
+                  </button>
+                  <button
+                    onClick={handleResetPassword}
+                    disabled={!resetPasswordState.autoGenerate && (resetPasswordState.newPassword.length < 6 || resetPasswordState.newPassword !== resetPasswordState.confirmPassword)}
+                    className="flex-1 px-4 py-3 text-sm font-bold text-white bg-gradient-to-r from-amber-500 to-orange-600 rounded-xl shadow-lg shadow-amber-500/20 hover:shadow-amber-500/40 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  >
+                    Reset Now
                   </button>
                 </div>
               </div>

@@ -1401,53 +1401,46 @@ export default function LeavesPage() {
 
   const canPerformAction = (item: LeaveApplication | ODApplication) => {
     if (!currentUser) return false;
-
-    // Super Admin can always act (safety override) - Commented out to restrict to workflow
-    // if (currentUser.role === 'super_admin') return true;
-
     if (currentUser.role === 'employee') return false;
 
-    // If workflow exists and specifies nextApprover
+    // Super Admin & Sub Admin: Always allow intervention unless record is already in a final state
+    if (['super_admin', 'sub_admin'].includes(currentUser.role)) {
+      return !['approved', 'rejected', 'cancelled'].includes(item.status);
+    }
+
+    // 1. If workflow specifies a next approver, strictly follow it
     if (item.workflow?.nextApprover) {
-      const approver = String(item.workflow.nextApprover).toLowerCase().trim();
+      const nextApprover = String(item.workflow.nextApprover).toLowerCase().trim();
       const userRole = String(currentUser.role).toLowerCase().trim();
 
-      // 1. Direct Role Match
-      if (userRole === approver) return true;
+      // Check for direct role match
+      if (userRole === nextApprover) return true;
 
-      // 2. ID Match (if approver is a specific User ID)
-      if ((currentUser as any)._id === item.workflow.nextApprover || (currentUser as any).id === item.workflow.nextApprover) return true;
+      // Check for ID match (if nextApprover is a User ID)
+      if ((currentUser as any)._id === item.workflow.nextApprover) return true;
 
-      // 3. Special Aliases
-      // 'reporting_manager' can be approved by 'manager' or 'hod'
-      if (approver === 'reporting_manager' && (userRole === 'manager' || userRole === 'hod')) return true;
-
-      // 'manager' step: allow HOD (Division Head) to approve as they are senior/equivalent in some contexts
-      // Also allow 'manager' to approve of course (covered by direct match), but explicit check doesn't hurt
-      if (approver === 'manager' && (userRole === 'hod' || userRole === 'division_head')) return true;
-
-      // 'hod' step: allow Manager to approve if they are essentially functioning as HOD
-      if (approver === 'hod' && userRole === 'manager') return true;
-
-      // 4. Handle 'final_authority' placeholder
-      // If the workflow step is generic "final authority", allow any major role to see the button.
-      // The backend validation will still enforce strict permissions if needed.
-      if (approver === 'final_authority') {
-        return ['manager', 'hr', 'super_admin', 'hod', 'sub_admin'].includes(userRole);
+      // Specific logic for reporting_manager alias
+      if (nextApprover === 'reporting_manager' && (userRole === 'manager' || userRole === 'hod')) {
+        return true;
       }
 
+      // If none of the above matches, this user is NOT the current approver
       return false;
     }
 
-    // Safety check: specific status checks preventing duplicates
-    // If I am HOD, and status is hod_approved, I shouldn't see buttons
-    if ((currentUser.role === 'hod' || currentUser.role === 'manager') &&
-      (item.status === 'hod_approved' || item.status === 'manager_approved')) {
-      return false;
+    // 2. Fallback for legacy records (where workflow object might be missing)
+    const status = item.status;
+    const role = currentUser.role;
+
+    if (status === 'pending') {
+      return role === 'hod' || role === 'manager';
     }
 
-    // Fallback: only true if status allows (pending or forwarded states)
-    return ['pending', 'hod_approved', 'manager_approved'].includes(item.status);
+    if (status === 'hod_approved' || status === 'manager_approved') {
+      return role === 'hr';
+    }
+
+    return false;
   };
 
   // Dynamic Column Logic

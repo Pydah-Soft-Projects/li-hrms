@@ -8,6 +8,7 @@ const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 const ConfusedShift = require('../../shifts/model/ConfusedShift');
 const Employee = require('../../employees/model/Employee');
 const { createOTRequest, approveOTRequest, rejectOTRequest, convertExtraHoursToOT } = require('../services/otService');
+const { buildWorkflowVisibilityFilter } = require('../../shared/middleware/dataScopeMiddleware');
 
 /**
  * @desc    Create OT request
@@ -163,7 +164,11 @@ exports.getOTRequests = async (req, res) => {
       query.date = { $gte: startDate, $lte: endDate };
     }
 
-    const otRequests = await OT.find(query)
+    // Apply Sequential Workflow Visibility ("Travel Flow")
+    const workflowFilter = buildWorkflowVisibilityFilter(req.user);
+    const combinedQuery = { $and: [query, req.scopeFilter || {}, workflowFilter] };
+
+    const otRequests = await OT.find(combinedQuery)
       .populate('employeeId', 'emp_no employee_name department designation')
       .populate('shiftId', 'name startTime endTime duration')
       .populate('requestedBy', 'name email')

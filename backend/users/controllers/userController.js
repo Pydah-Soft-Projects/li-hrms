@@ -5,6 +5,9 @@ const RoleAssignment = require('../../workspaces/model/RoleAssignment');
 const Department = require('../../departments/model/Department');
 const Division = require('../../departments/model/Division');
 const jwt = require('jsonwebtoken');
+const Setting = require('../../settings/model/Settings');
+const { generatePassword, sendCredentials } = require('../../shared/services/passwordNotificationService');
+
 
 // Generate JWT Token
 const generateToken = (userId) => {
@@ -12,8 +15,6 @@ const generateToken = (userId) => {
     expiresIn: process.env.JWT_EXPIRE || '7d',
   });
 };
-
-const { generatePassword } = require('../../shared/services/passwordNotificationService');
 
 
 // Get workspace code by role type
@@ -325,7 +326,7 @@ exports.createUserFromEmployee = async (req, res) => {
       userPassword = await generatePassword(employee);
     } else if (!userPassword && employee.password) {
       // INHERIT PASSWORD FROM EMPLOYEE If none provided
-      console.log(`[UserController] Inheriting password from employee ${employeeId}`);
+      console.log(`[UserController] Inheriting password from employee ${employeeId} `);
       userPassword = employee.password;
     }
 
@@ -832,9 +833,29 @@ exports.resetPassword = async (req, res) => {
     user.password = password;
     await user.save();
 
+    // Send notification
+    let notificationSent = false;
+    try {
+      // Find employee to get contact info if not in user
+      const employee = await Employee.findById(user.employeeRef);
+      const deliveryInfo = {
+        employee_name: user.name,
+        emp_no: user.employeeId || (employee ? employee.emp_no : 'User'),
+        email: user.email,
+        phone_number: employee ? employee.phone_number : null
+      };
+
+      const notificationResult = await sendCredentials(deliveryInfo, password, null, true);
+      notificationSent = notificationResult.email || notificationResult.sms;
+    } catch (notificationError) {
+      console.error('[UserController] Failed to send reset notification:', notificationError.message);
+    }
+
     const response = {
       success: true,
-      message: 'Password reset successfully',
+      message: notificationSent
+        ? 'Password reset successfully and notification sent.'
+        : 'Password reset successfully, but failed to send notification.',
     };
 
     if (autoGenerate) {
