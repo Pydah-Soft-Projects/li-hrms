@@ -83,7 +83,7 @@ export default function DashboardPage() {
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
       {/* Welcome Header */}
-      <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-emerald-900 to-teal-900 rounded-3xl p-8 md:p-12 text-white shadow-2xl shadow-emerald-900/20">
+      <div className="relative overflow-hidden bg-gradient-to-br from-green-950 via-green-800 to-green-950 rounded-3xl p-8 md:p-12 text-white shadow-2xl shadow-indigo-900/20">
         <div className="absolute top-0 right-0 -mt-20 -mr-20 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl" />
         <div className="absolute bottom-0 left-0 -mb-20 -ml-20 w-72 h-72 bg-teal-500/10 rounded-full blur-3xl" />
 
