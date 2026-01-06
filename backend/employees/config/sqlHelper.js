@@ -10,8 +10,10 @@ const dbType = getDBType();
 
 // Helper to map JS types to MSSQL types
 const getMSSQLType = (value) => {
+    if (value === null || value === undefined) return sql.NVarChar; // Default for nulls
     if (typeof value === 'number') return Number.isInteger(value) ? sql.Int : sql.Decimal(12, 2);
-    if (value instanceof Date) return sql.Date; // or DateTime
+    if (value instanceof Date) return sql.Date;
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) return sql.Date; // Handle ISO date strings
     if (typeof value === 'boolean') return sql.Bit;
     return sql.NVarChar;
 };
@@ -257,7 +259,14 @@ const updateEmployeeSQL = async (empNo, employeeData) => {
         ...permanentFields
     } = employeeData;
 
-    const fields = { ...permanentFields, qualifications: null, is_active: permanentFields.is_active !== false };
+    const fields = { ...permanentFields };
+    if (qualifications !== undefined) fields.qualifications = qualifications; // Use original value or handle if needed
+
+    // Only update is_active if provided, otherwise leave it alone (partial update)
+    // Note: permanentFields already includes is_active if it was in the input
+    if (permanentFields.is_active !== undefined) {
+        fields.is_active = permanentFields.is_active;
+    }
 
     if (dbType === 'mysql') {
         const sets = [];
@@ -280,7 +289,14 @@ const updateEmployeeSQL = async (empNo, employeeData) => {
 
         const sets = [];
         Object.entries(fields).forEach(([key, value]) => {
-            request.input(key, value);
+            if (key === 'emp_no') return;
+
+            // Special handling for boolean/bit fields to prevent driver confusion
+            if (key === 'is_active') {
+                request.input(key, sql.Bit, value);
+            } else {
+                request.input(key, getMSSQLType(value), value);
+            }
             sets.push(`${key} = @${key}`);
         });
 
