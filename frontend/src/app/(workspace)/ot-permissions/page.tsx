@@ -135,6 +135,19 @@ interface OTRequest {
   approvedAt?: string;
   rejectedAt?: string;
   comments?: string;
+  workflow?: {
+    currentStepRole: string;
+    nextApproverRole: string;
+    nextApprover: string;
+    isCompleted: boolean;
+    approvalChain: Array<{
+      stepOrder: number;
+      role: string;
+      label: string;
+      status: string;
+      isCurrent: boolean;
+    }>;
+  };
 }
 
 interface PermissionRequest {
@@ -157,7 +170,21 @@ interface PermissionRequest {
   outpassUrl?: string;
   comments?: string;
   gateOutTime?: string;
+  gateOutTime?: string;
   gateInTime?: string;
+  workflow?: {
+    currentStepRole: string;
+    nextApproverRole: string;
+    nextApprover: string;
+    isCompleted: boolean;
+    approvalChain: Array<{
+      stepOrder: number;
+      role: string;
+      label: string;
+      status: string;
+      isCurrent: boolean;
+    }>;
+  };
 }
 
 export default function OTAndPermissionsPage() {
@@ -254,6 +281,32 @@ export default function OTAndPermissionsPage() {
   useEffect(() => {
     loadData();
   }, [activeTab, otFilters, permissionFilters]);
+
+  const canPerformAction = (item: any) => {
+    if (!item || !currentUser) return false;
+    if (item.status === 'approved' || item.status === 'rejected' || (item.workflow && item.workflow.isCompleted)) return false;
+
+    // Super Admin can always act (emergency override)
+    if (currentUser.role === 'super_admin') return true;
+
+    // Check dynamic workflow
+    if (item.workflow && item.workflow.approvalChain) {
+      const currentStep = item.workflow.approvalChain.find((step: any) => step.isCurrent);
+      if (currentStep) {
+        return currentStep.role === currentUser.role;
+      }
+    }
+
+    // Fallback for legacy records (if any)
+    if (item.status === 'pending') {
+      return currentUser.role === 'hod';
+    }
+    if (item.status === 'manager_approved') {
+      return currentUser.role === 'hr' || currentUser.role === 'admin';
+    }
+
+    return false;
+  };
 
   // Auto-fetch attendance when OT dialog opens with employee and date
   useEffect(() => {
@@ -1046,20 +1099,35 @@ export default function OTAndPermissionsPage() {
 
                       {/* Actions */}
                       <div className="flex items-center gap-2 mt-auto">
-                        <button
-                          onClick={() => handleApprove('permission', perm._id)}
-                          className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-green-500/10 py-2 text-sm font-semibold text-green-600 transition-colors hover:bg-green-500 hover:text-white dark:bg-green-500/20 dark:text-green-400 dark:hover:bg-green-500 dark:hover:text-white"
-                          title="Approve Permission"
-                        >
-                          <CheckIcon className="h-4 w-4" /> Approve
-                        </button>
-                        <button
-                          onClick={() => handleReject('permission', perm._id)}
-                          className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-500/10 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500 hover:text-white dark:bg-red-500/20 dark:text-red-400 dark:hover:bg-red-500 dark:hover:text-white"
-                          title="Reject Permission"
-                        >
-                          <XIcon className="h-4 w-4" /> Reject
-                        </button>
+                        {canPerformAction(perm) && (
+                          <>
+                            <button
+                              onClick={() => handleApprove('permission', perm._id)}
+                              className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-green-500/10 py-2 text-sm font-semibold text-green-600 transition-colors hover:bg-green-500 hover:text-white dark:bg-green-500/20 dark:text-green-400 dark:hover:bg-green-500 dark:hover:text-white"
+                              title="Approve Permission"
+                            >
+                              <CheckIcon className="h-4 w-4" /> Approve
+                            </button>
+                            <button
+                              onClick={() => handleReject('permission', perm._id)}
+                              className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-500/10 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500 hover:text-white dark:bg-red-500/20 dark:text-red-400 dark:hover:bg-red-500 dark:hover:text-white"
+                              title="Reject Permission"
+                            >
+                              <XIcon className="h-4 w-4" /> Reject
+                            </button>
+                          </>
+                        )}
+                        {perm.status === 'approved' && perm.qrCode && (
+                          <button
+                            onClick={() => {
+                              setSelectedQR(perm);
+                              setShowQRDialog(true);
+                            }}
+                            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-blue-500/10 py-2 text-sm font-semibold text-blue-600 transition-colors hover:bg-blue-500 hover:text-white dark:bg-blue-500/20 dark:text-blue-400 dark:hover:bg-blue-500 dark:hover:text-white"
+                          >
+                            <ClockIcon className="h-4 w-4" /> Gate Pass
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -1118,7 +1186,7 @@ export default function OTAndPermissionsPage() {
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex gap-2">
-                            {ot.status === 'pending' && (
+                            {canPerformAction(ot) && (
                               <>
                                 <button
                                   onClick={() => handleApprove('ot', ot._id)}
@@ -1192,7 +1260,7 @@ export default function OTAndPermissionsPage() {
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex gap-2">
-                            {perm.status === 'pending' && (
+                            {canPerformAction(perm) && (
                               <>
                                 <button
                                   onClick={() => handleApprove('permission', perm._id)}

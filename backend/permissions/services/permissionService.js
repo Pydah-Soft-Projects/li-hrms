@@ -9,6 +9,7 @@ const Employee = require('../../employees/model/Employee');
 const { calculateMonthlySummary } = require('../../attendance/services/summaryCalculationService');
 const { validatePermissionRequest } = require('../../shared/services/conflictValidationService');
 const { getResolvedPermissionSettings } = require('../../departments/controllers/departmentSettingsController');
+const PermissionDeductionSettings = require('../model/PermissionDeductionSettings');
 
 /**
  * Create permission request
@@ -135,6 +136,54 @@ const createPermissionRequest = async (data, userId) => {
     const diffMs = endTime.getTime() - startTime.getTime();
     const permissionHours = Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100;
 
+    // Get Workflow Settings
+    const workflowSettings = await PermissionDeductionSettings.getActiveSettings();
+
+    // Initialize Workflow (Dynamic Chain)
+    const approvalSteps = [];
+
+    // 1. Always start with HOD
+    approvalSteps.push({
+      stepOrder: 1,
+      role: 'hod',
+      label: 'HOD Approval',
+      status: 'pending',
+      isCurrent: true
+    });
+
+    // 2. Add other steps from settings
+    if (workflowSettings?.workflow?.steps && workflowSettings.workflow.steps.length > 0) {
+      workflowSettings.workflow.steps.forEach(step => {
+        // Skip if it's HOD (already first)
+        if (step.approverRole !== 'hod') {
+          approvalSteps.push({
+            stepOrder: approvalSteps.length + 1,
+            role: step.approverRole,
+            label: step.stepName || `${step.approverRole.toUpperCase()} Approval`,
+            status: 'pending',
+            isCurrent: false
+          });
+        }
+      });
+    }
+
+    const workflowData = {
+      currentStepRole: 'hod',
+      nextApproverRole: 'hod',
+      nextApprover: 'hod',
+      approvalChain: approvalSteps,
+      finalAuthority: workflowSettings?.workflow?.finalAuthority?.role || 'hr',
+      history: [
+        {
+          step: 'employee',
+          action: 'submitted',
+          actionBy: userId,
+          timestamp: new Date(),
+          comments: 'Permission request created'
+        }
+      ]
+    };
+
     // Create permission request
     const permissionRequest = await Permission.create({
       employeeId: employeeId,
@@ -150,6 +199,7 @@ const createPermissionRequest = async (data, userId) => {
       comments: comments || null,
       photoEvidence: photoEvidence || null,
       geoLocation: geoLocation || null,
+      workflow: workflowData
     });
 
     return {
@@ -193,7 +243,95 @@ const approvePermissionRequest = async (permissionId, userId, baseUrl = '', user
       };
     }
 
-    // Generate QR code (keep existing logic)
+    // --- START DYNAMIC WORKFLOW LOGIC ---
+    if (permissionRequest.workflow && permissionRequest.workflow.approvalChain.length > 0) {
+      const { workflow } = permissionRequest;
+      const currentStepIndex = workflow.approvalChain.findIndex(step => step.isCurrent);
+      const currentStep = workflow.approvalChain[currentStepIndex];
+
+      // 1. Authorization Check
+      if (currentStep.role !== userRole && userRole !== 'super_admin') {
+        return { success: false, message: `Unauthorized. Required: ${currentStep.role.toUpperCase()}` };
+      }
+
+      // 2. Update Current Step
+      currentStep.status = 'approved';
+      currentStep.isCurrent = false;
+      currentStep.actionBy = userId;
+      currentStep.actionAt = new Date();
+      currentStep.comments = 'Approved through workflow';
+
+      // 3. Add to History
+      workflow.history.push({
+        step: currentStep.role,
+        action: 'approved',
+        actionBy: userId,
+        timestamp: new Date(),
+        comments: 'Workflow approval'
+      });
+
+      // 4. Determination of Next Step or Finality
+      const isLastStep = currentStepIndex === workflow.approvalChain.length - 1;
+      const isFinalAuthority = userRole === workflow.finalAuthority || currentStep.role === workflow.finalAuthority;
+
+      if (isLastStep || isFinalAuthority) {
+        // --- FINAL APPROVAL REACHED ---
+        permissionRequest.status = 'approved';
+        workflow.isCompleted = true;
+        workflow.nextApproverRole = null;
+        workflow.nextApprover = null;
+
+        // Trigger Side Effects (QR, Attendance, etc.)
+        permissionRequest.generateQRCode();
+        permissionRequest.outpassUrl = `${baseUrl}/outpass/${permissionRequest.qrCode}`;
+
+        // Attendance Side Effects
+        const employee = await Employee.findById(permissionRequest.employeeId);
+        let resolvedPermissionSettings = null;
+        if (employee && employee.department_id) {
+          resolvedPermissionSettings = await getResolvedPermissionSettings(employee.department_id);
+        }
+
+        let deductionAmount = 0;
+        if (resolvedPermissionSettings && resolvedPermissionSettings.deductFromSalary) {
+          deductionAmount = resolvedPermissionSettings.deductionAmount || 0;
+          permissionRequest.deductionAmount = deductionAmount;
+        }
+
+        const attendanceRecord = await AttendanceDaily.findById(permissionRequest.attendanceRecordId);
+        if (attendanceRecord) {
+          attendanceRecord.permissionHours = (attendanceRecord.permissionHours || 0) + permissionRequest.permissionHours;
+          attendanceRecord.permissionCount = (attendanceRecord.permissionCount || 0) + 1;
+          if (deductionAmount > 0) {
+            attendanceRecord.permissionDeduction = (attendanceRecord.permissionDeduction || 0) + deductionAmount;
+          }
+          await attendanceRecord.save();
+          const dateObj = new Date(permissionRequest.date);
+          await calculateMonthlySummary(permissionRequest.employeeId, permissionRequest.employeeNumber, dateObj.getFullYear(), dateObj.getMonth() + 1);
+        }
+      } else {
+        // --- MOVE TO NEXT STEP ---
+        const nextStep = workflow.approvalChain[currentStepIndex + 1];
+        nextStep.isCurrent = true;
+        workflow.currentStepRole = nextStep.role;
+        workflow.nextApproverRole = nextStep.role;
+        workflow.nextApprover = nextStep.role;
+        permissionRequest.status = `${currentStep.role}_approved`; // Intermediate status
+      }
+
+      permissionRequest.approvedBy = userId;
+      permissionRequest.approvedAt = new Date();
+      await permissionRequest.save();
+
+      return {
+        success: true,
+        message: workflow.isCompleted ? 'Permission fully approved' : `Permission approved by ${userRole.toUpperCase()}, moved to ${workflow.nextApproverRole.toUpperCase()}`,
+        data: permissionRequest
+      };
+    }
+    // --- END DYNAMIC WORKFLOW LOGIC ---
+
+    // Generate QR code (keep existing logic for legacy)
     permissionRequest.generateQRCode();
 
     // Set outpass URL (frontend route)
@@ -326,6 +464,44 @@ const rejectPermissionRequest = async (permissionId, userId, reason, userRole) =
         message: `Permission request is already ${permissionRequest.status}`,
       };
     }
+
+    // --- START DYNAMIC WORKFLOW LOGIC ---
+    if (permissionRequest.workflow && permissionRequest.workflow.approvalChain.length > 0) {
+      const { workflow } = permissionRequest;
+      const currentStep = workflow.approvalChain.find(step => step.isCurrent);
+
+      if (currentStep) {
+        currentStep.status = 'rejected';
+        currentStep.isCurrent = false;
+        currentStep.actionBy = userId;
+        currentStep.actionAt = new Date();
+        currentStep.comments = reason || 'Workflow rejection';
+      }
+
+      workflow.history.push({
+        step: currentStep ? currentStep.role : userRole,
+        action: 'rejected',
+        actionBy: userId,
+        timestamp: new Date(),
+        comments: reason || 'Workflow rejection'
+      });
+
+      workflow.isCompleted = true;
+      workflow.nextApproverRole = null;
+      workflow.nextApprover = null;
+      permissionRequest.status = 'rejected';
+      permissionRequest.rejectedBy = userId;
+      permissionRequest.rejectedAt = new Date();
+      permissionRequest.rejectionReason = reason || null;
+      await permissionRequest.save();
+
+      return {
+        success: true,
+        message: 'Permission request rejected successfully',
+        data: permissionRequest,
+      };
+    }
+    // --- END DYNAMIC WORKFLOW LOGIC ---
 
     if (userRole === 'manager') {
       permissionRequest.status = 'manager_rejected';

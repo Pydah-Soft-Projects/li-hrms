@@ -104,13 +104,80 @@ const getEmailTemplate = (name, username, password) => {
 };
 
 /**
+ * Reset Password HTML Email Template
+ */
+const getResetEmailTemplate = (name, username, password) => {
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
+        .container { max-width: 600px; margin: 20px auto; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.1); border: 1px solid #eee; }
+        .header { background: linear-gradient(135deg, #f59e0b 0%, #ea580c 100%); color: white; padding: 40px 20px; text-align: center; }
+        .content { padding: 40px; background: white; }
+        .footer { padding: 20px; text-align: center; font-size: 12px; color: #666; background: #f9fafb; }
+        .credential-box { background: #fffbeb; border-radius: 8px; padding: 20px; margin: 20px 0; border: 1px dashed #f59e0b; }
+        .button { display: inline-block; padding: 12px 30px; background: #f59e0b; color: white; text-decoration: none; border-radius: 6px; font-weight: bold; margin-top: 20px; transition: all 0.3s ease; }
+        h1 { margin: 0; font-size: 24px; letter-spacing: -0.5px; }
+        .label { color: #92400e; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+        .value { font-family: monospace; font-size: 18px; color: #78350f; font-weight: bold; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .animated { animation: fadeIn 0.8s ease-out forwards; }
+      </style>
+    </head>
+    <body>
+      <div class="container animated">
+        <div class="header">
+          <h1>Password Reset</h1>
+          <p>Your password has been updated, ${name}</p>
+        </div>
+        <div class="content">
+          <p>Hello <strong>${name}</strong>,</p>
+          <p>This is to confirm that your password for LI-HRMS has been successfully reset by an administrator. You can now log in using the following new credentials:</p>
+          
+          <div class="credential-box">
+            <div style="margin-bottom: 15px;">
+              <div class="label">Username / Employee ID</div>
+              <div class="value">${username}</div>
+            </div>
+            <div>
+              <div class="label">New Password</div>
+              <div class="value">${password}</div>
+            </div>
+          </div>
+
+          <center>
+            <a href="https://li-hrms.vercel.app/login" class="button">Log In to Portal</a>
+          </center>
+          
+          <p style="margin-top: 30px; font-size: 14px; color: #64748b;">
+            * If you did not request this change or believe this was an error, please contact HR immediately.<br>
+            * For security, please do not share your password with anyone.
+          </p>
+        </div>
+        <div class="footer">
+          &copy; 2025 Pydah College. All rights reserved.<br>
+          li-hrms.vercel.app
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+};
+
+/**
  * Internal helper to send SMS
  */
-async function _sendSms(employee, password, results) {
+async function _sendSms(employee, password, results, isReset = false) {
   if (!employee.phone_number) return;
   try {
     console.log(`[NotificationService] Sending SMS to ${employee.phone_number} for employee ${employee.emp_no}...`);
-    const smsMessage = `Hello ${employee.employee_name} your account has been created. Username: ${employee.emp_no} Password: ${password}. Login: li-hrms.vercel.app/login- Pydah College`;
+    const smsMessage = isReset
+      ? `Hello ${employee.employee_name} your password has been reset. Username: ${employee.emp_no} New Password: ${password}. Login: li-hrms.vercel.app/login - Pydah College`
+      : `Hello ${employee.employee_name} your account has been created. Username: ${employee.emp_no} Password: ${password}. Login: li-hrms.vercel.app/login - Pydah College`;
+
     await sendSmsThroughBulkSmsApps({
       numbers: [employee.phone_number],
       message: smsMessage
@@ -125,10 +192,13 @@ async function _sendSms(employee, password, results) {
 /**
  * Internal helper to send Email
  */
-async function _sendEmail(employee, password, results) {
+async function _sendEmail(employee, password, results, isReset = false) {
   if (!employee.email) return;
-  const htmlContent = getEmailTemplate(employee.employee_name, employee.emp_no, password);
-  const subject = 'Your LI-HRMS Account Credentials';
+  const htmlContent = isReset
+    ? getResetEmailTemplate(employee.employee_name, employee.emp_no, password)
+    : getEmailTemplate(employee.employee_name, employee.emp_no, password);
+
+  const subject = isReset ? 'Your LI-HRMS Password has been Reset' : 'Your LI-HRMS Account Credentials';
 
   try {
     console.log(`[NotificationService] Sending Email to ${employee.email} for employee ${employee.emp_no} via Brevo...`);
@@ -162,8 +232,9 @@ async function _sendEmail(employee, password, results) {
  * @param {Object} employee - Employee object
  * @param {string} password - Raw password
  * @param {Object} manualChannels - { email: boolean, sms: boolean } (Optional override)
+ * @param {boolean} isReset - Whether this is a password reset
  */
-const sendCredentials = async (employee, password, manualChannels = null) => {
+const sendCredentials = async (employee, password, manualChannels = null, isReset = false) => {
   const results = { email: false, sms: false, error: null };
 
   // 1. Determine delivery strategy
@@ -188,29 +259,29 @@ const sendCredentials = async (employee, password, manualChannels = null) => {
   // 2. Execute strategy
   switch (strategy) {
     case 'email_only':
-      await _sendEmail(employee, password, results);
+      await _sendEmail(employee, password, results, isReset);
       break;
 
     case 'sms_only':
-      await _sendSms(employee, password, results);
+      await _sendSms(employee, password, results, isReset);
       break;
 
     case 'both':
       await Promise.all([
-        _sendSms(employee, password, results),
-        _sendEmail(employee, password, results)
+        _sendSms(employee, password, results, isReset),
+        _sendEmail(employee, password, results, isReset)
       ]);
       break;
 
     case 'intelligent':
       // Intelligent mode: SMS if phone number available, else Email
       if (employee.phone_number) {
-        await _sendSms(employee, password, results);
+        await _sendSms(employee, password, results, isReset);
         // Also send email as a reference if available? 
         // User said: "if he has no number then it hsould opt for the mail"
         // This implies XOR or Priority. To be safe we'll stick to just SMS if available.
       } else if (employee.email) {
-        await _sendEmail(employee, password, results);
+        await _sendEmail(employee, password, results, isReset);
       } else {
         results.error = 'No contact information (email or phone) available for delivery';
       }
@@ -219,8 +290,8 @@ const sendCredentials = async (employee, password, manualChannels = null) => {
     default:
       // Fallback to both
       await Promise.all([
-        _sendSms(employee, password, results),
-        _sendEmail(employee, password, results)
+        _sendSms(employee, password, results, isReset),
+        _sendEmail(employee, password, results, isReset)
       ]);
   }
 

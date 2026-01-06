@@ -11,6 +11,7 @@ const Employee = require('../../employees/model/Employee');
 const { detectAndAssignShift } = require('../../shifts/services/shiftDetectionService');
 const { calculateMonthlySummary } = require('../../attendance/services/summaryCalculationService');
 const { validateOTRequest } = require('../../shared/services/conflictValidationService');
+const OvertimeSettings = require('../model/OvertimeSettings');
 
 /**
  * Create OT request
@@ -171,6 +172,51 @@ const createOTRequest = async (data, userId) => {
       };
     }
 
+    // --- Workflow Initialization ---
+    const otSettings = await OvertimeSettings.getActiveSettings();
+    const approvalSteps = [];
+
+    // 1. Always start with HOD
+    approvalSteps.push({
+      stepOrder: 1,
+      role: 'hod',
+      label: 'HOD Approval',
+      status: 'pending',
+      isCurrent: true
+    });
+
+    // 2. Add other steps from settings
+    if (otSettings?.workflow?.steps && otSettings.workflow.steps.length > 0) {
+      otSettings.workflow.steps.forEach(step => {
+        if (step.approverRole !== 'hod') {
+          approvalSteps.push({
+            stepOrder: approvalSteps.length + 1,
+            role: step.approverRole,
+            label: step.stepName || `${step.approverRole.toUpperCase()} Approval`,
+            status: 'pending',
+            isCurrent: false
+          });
+        }
+      });
+    }
+
+    const workflowData = {
+      currentStepRole: 'hod',
+      nextApproverRole: 'hod',
+      nextApprover: 'hod',
+      approvalChain: approvalSteps,
+      finalAuthority: otSettings?.workflow?.finalAuthority?.role || 'hr',
+      history: [
+        {
+          step: 'employee',
+          action: 'submitted',
+          actionBy: userId,
+          timestamp: new Date(),
+          comments: 'OT request submitted'
+        }
+      ]
+    };
+
     // Create OT request
     const otRequest = await OT.create({
       employeeId: employeeId,
@@ -190,6 +236,7 @@ const createOTRequest = async (data, userId) => {
       comments: comments || null,
       photoEvidence: photoEvidence || null,
       geoLocation: geoLocation || null,
+      workflow: workflowData
     });
 
     // If ConfusedShift exists and shift was selected, resolve it
@@ -263,13 +310,77 @@ const approveOTRequest = async (otId, userId, userRole) => {
       };
     }
 
-    // Determine status based on role
-    // If manager, set intermediate status. If HR/Admin, set final approved.
-    if (userRole === 'manager') {
-      otRequest.status = 'manager_approved';
-    } else {
-      otRequest.status = 'approved';
+    // --- START DYNAMIC WORKFLOW LOGIC ---
+    if (otRequest.workflow && otRequest.workflow.approvalChain.length > 0) {
+      const { workflow } = otRequest;
+      const currentStepIndex = workflow.approvalChain.findIndex(step => step.isCurrent);
+      const currentStep = workflow.approvalChain[currentStepIndex];
+
+      // 1. Authorization Check
+      if (currentStep.role !== userRole && userRole !== 'super_admin') {
+        return { success: false, message: `Unauthorized. Required: ${currentStep.role.toUpperCase()}` };
+      }
+
+      // 2. Update Current Step
+      currentStep.status = 'approved';
+      currentStep.isCurrent = false;
+      currentStep.actionBy = userId;
+      currentStep.actionAt = new Date();
+      currentStep.comments = 'Approved through workflow';
+
+      // 3. Add to History
+      workflow.history.push({
+        step: currentStep.role,
+        action: 'approved',
+        actionBy: userId,
+        timestamp: new Date(),
+        comments: 'Workflow approval'
+      });
+
+      // 4. Determination of Next Step or Finality
+      const isLastStep = currentStepIndex === workflow.approvalChain.length - 1;
+      const isFinalAuthority = userRole === workflow.finalAuthority || currentStep.role === workflow.finalAuthority;
+
+      if (isLastStep || isFinalAuthority) {
+        // --- FINAL APPROVAL REACHED ---
+        otRequest.status = 'approved';
+        workflow.isCompleted = true;
+        workflow.nextApproverRole = null;
+        workflow.nextApprover = null;
+
+        // Trigger Side Effects (Attendance Update)
+        const attendanceRecord = await AttendanceDaily.findById(otRequest.attendanceRecordId);
+        if (attendanceRecord) {
+          attendanceRecord.otHours = otRequest.otHours;
+          await attendanceRecord.save();
+
+          // Recalculate summary
+          const dateObj = new Date(otRequest.date);
+          await calculateMonthlySummary(otRequest.employeeId, otRequest.employeeNumber, dateObj.getFullYear(), dateObj.getMonth() + 1);
+        }
+      } else {
+        // --- MOVE TO NEXT STEP ---
+        const nextStep = workflow.approvalChain[currentStepIndex + 1];
+        nextStep.isCurrent = true;
+        workflow.currentStepRole = nextStep.role;
+        workflow.nextApproverRole = nextStep.role;
+        workflow.nextApprover = nextStep.role;
+        otRequest.status = `${currentStep.role}_approved`; // Intermediate status
+      }
+
+      otRequest.approvedBy = userId;
+      otRequest.approvedAt = new Date();
+      await otRequest.save();
+
+      return {
+        success: true,
+        message: workflow.isCompleted ? 'OT fully approved' : `OT approved by ${userRole.toUpperCase()}, moved to ${workflow.nextApproverRole.toUpperCase()}`,
+        data: otRequest
+      };
     }
+    // --- END DYNAMIC WORKFLOW LOGIC ---
+
+    // Determine status based on role (Legacy)
 
     otRequest.approvedBy = userId;
     otRequest.approvedAt = new Date();
@@ -327,6 +438,44 @@ const rejectOTRequest = async (otId, userId, reason, userRole) => {
         message: `OT request is already ${otRequest.status}`,
       };
     }
+
+    // --- START DYNAMIC WORKFLOW LOGIC ---
+    if (otRequest.workflow && otRequest.workflow.approvalChain.length > 0) {
+      const { workflow } = otRequest;
+      const currentStep = workflow.approvalChain.find(step => step.isCurrent);
+
+      if (currentStep) {
+        currentStep.status = 'rejected';
+        currentStep.isCurrent = false;
+        currentStep.actionBy = userId;
+        currentStep.actionAt = new Date();
+        currentStep.comments = reason || 'Workflow rejection';
+      }
+
+      workflow.history.push({
+        step: currentStep ? currentStep.role : userRole,
+        action: 'rejected',
+        actionBy: userId,
+        timestamp: new Date(),
+        comments: reason || 'Workflow rejection'
+      });
+
+      workflow.isCompleted = true;
+      workflow.nextApproverRole = null;
+      workflow.nextApprover = null;
+      otRequest.status = 'rejected';
+      otRequest.rejectedBy = userId;
+      otRequest.rejectedAt = new Date();
+      otRequest.rejectionReason = reason || null;
+      await otRequest.save();
+
+      return {
+        success: true,
+        message: 'OT request rejected successfully',
+        data: otRequest,
+      };
+    }
+    // --- END DYNAMIC WORKFLOW LOGIC ---
 
     if (userRole === 'manager') {
       otRequest.status = 'manager_rejected';

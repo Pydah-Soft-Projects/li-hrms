@@ -5,6 +5,7 @@ const Employee = require('../../employees/model/Employee');
 const User = require('../../users/model/User');
 const Settings = require('../../settings/model/Settings');
 const { isHRMSConnected, getEmployeeByIdMSSQL } = require('../../employees/config/sqlHelper');
+const { buildWorkflowVisibilityFilter } = require('../../shared/middleware/dataScopeMiddleware');
 
 /**
  * Get employee settings from database
@@ -132,7 +133,18 @@ const getWorkflowSettings = async () => {
 exports.getODs = async (req, res) => {
   try {
     const { status, employeeId, department, fromDate, toDate, page = 1, limit = 20 } = req.query;
-    const filter = { ...req.scopeFilter, isActive: true };
+
+    // Multi-layered filter: Jurisdiction (Scope) AND Timing (Workflow)
+    const scopeFilter = req.scopeFilter || { isActive: true };
+    const workflowFilter = buildWorkflowVisibilityFilter(req.user);
+
+    const filter = {
+      $and: [
+        scopeFilter,
+        workflowFilter,
+        { isActive: true }
+      ]
+    };
 
     if (status) filter.status = status;
     if (employeeId) filter.employeeId = employeeId;
@@ -518,13 +530,44 @@ exports.applyOD = async (req, res) => {
     // Store warnings to include in success response
     const warnings = validation.warnings || [];
 
+    // Get workflow settings
+    const workflowSettings = await getWorkflowSettings();
+
     // Initialize Workflow (Dynamic)
+    const approvalSteps = [];
+
+    // 1. Always start with HOD as per requirements
+    approvalSteps.push({
+      stepOrder: 1,
+      role: 'hod',
+      label: 'HOD Approval',
+      status: 'pending',
+      isCurrent: true
+    });
+
+    // 2. Add other steps from settings, avoiding duplicate HOD if it's already first
+    if (workflowSettings?.workflow?.steps && workflowSettings.workflow.steps.length > 0) {
+      workflowSettings.workflow.steps.forEach(step => {
+        // Skip if it's HOD (we already added it as first) or if it's disabled
+        if (step.approverRole !== 'hod') {
+          approvalSteps.push({
+            stepOrder: approvalSteps.length + 1,
+            role: step.approverRole,
+            label: step.stepName || `${step.approverRole.toUpperCase()} Approval`,
+            status: 'pending',
+            isCurrent: false
+          });
+        }
+      });
+    }
+
     let workflowData = {
       currentStepRole: 'hod',
       nextApproverRole: 'hod',
       currentStep: 'hod', // Legacy
       nextApprover: 'hod', // Legacy
-      approvalChain: [],
+      approvalChain: approvalSteps,
+      finalAuthority: workflowSettings?.workflow?.finalAuthority?.role || 'hr',
       history: [
         {
           step: 'employee',
@@ -984,7 +1027,31 @@ exports.processODAction = async (req, res) => {
 
     const userRole = req.user.role;
 
-    const currentApprover = od.workflow.nextApprover;
+    // Identify the current active step from the approval chain
+    let activeStepIndex = -1;
+    let activeStep = null;
+
+    if (od.workflow && od.workflow.approvalChain && od.workflow.approvalChain.length > 0) {
+      activeStepIndex = od.workflow.approvalChain.findIndex(step => step.status === 'pending');
+      if (activeStepIndex !== -1) {
+        activeStep = od.workflow.approvalChain[activeStepIndex];
+      }
+    }
+
+    // Fallback or validation
+    if (!activeStep) {
+      if (['approved', 'rejected', 'cancelled'].includes(od.status)) {
+        return res.status(400).json({ success: false, error: `OD is already ${od.status}` });
+      }
+      if (od.workflow.nextApprover) {
+        activeStep = { role: od.workflow.nextApprover };
+      } else {
+        return res.status(400).json({ success: false, error: 'No active approval step found.' });
+      }
+    }
+
+    const currentApprover = activeStep.role;
+    const requiredRole = currentApprover;
 
     // Validate user can perform this action
     let canProcess = false;
@@ -1036,202 +1103,106 @@ exports.processODAction = async (req, res) => {
 
     switch (action) {
       case 'approve':
-        // Before final approval, validate against all approved records
-        if (currentApprover === 'hr' || currentApprover === 'final_authority') {
-          const { validateODRequest } = require('../../shared/services/conflictValidationService');
-          const validation = await validateODRequest(
-            od.employeeId,
-            od.emp_no,
-            od.fromDate,
-            od.toDate,
-            od.isHalfDay || false,
-            od.halfDayType || null,
-            false // approvedOnly = false for approval (check all approved records)
-          );
+        // Conflict check for final step or HR
+        const isFinishingChain = (activeStepIndex === od.workflow.approvalChain.length - 1);
+        const isFinalAuth = (userRole === od.workflow.finalAuthority);
 
+        if (isFinishingChain || isFinalAuth || userRole === 'hr') {
+          const { validateODRequest } = require('../../shared/services/conflictValidationService');
+          const validation = await validateODRequest(od.employeeId, od.emp_no, od.fromDate, od.toDate, od.isHalfDay || false, od.halfDayType || null, false);
           if (!validation.isValid) {
-            return res.status(400).json({
-              success: false,
-              error: validation.errors[0] || 'Cannot approve: Conflict with existing approved records',
-              validationErrors: validation.errors,
-              conflictingLeaves: validation.conflictingLeaves,
-            });
+            return res.status(400).json({ success: false, error: validation.errors[0] || 'Conflict with approved records' });
           }
         }
 
-        if (currentApprover === 'hod') {
-          od.status = 'hod_approved';
-          od.approvals.hod = {
-            status: 'approved',
-            approvedBy: req.user._id,
-            approvedAt: new Date(),
-            comments,
-          };
+        // 2. Process Approval in Chain
+        if (activeStepIndex !== -1) {
+          const currentStep = od.workflow.approvalChain[activeStepIndex];
+          currentStep.status = 'approved';
+          currentStep.actionBy = req.user._id;
+          currentStep.actionByName = req.user.name;
+          currentStep.actionByRole = userRole;
+          currentStep.comments = comments;
+          currentStep.updatedAt = new Date();
+          currentStep.isCurrent = false;
 
-          // Determine next step dynamically
-          let nextStepRole = 'hr'; // Default
-
-          // 1. Check if there is an explicit approval chain
-          if (od.workflow?.approvalChain?.length > 0) {
-            const currentIndex = od.workflow.approvalChain.findIndex(s => s.role === 'hod');
-            if (currentIndex !== -1 && currentIndex < od.workflow.approvalChain.length - 1) {
-              nextStepRole = od.workflow.approvalChain[currentIndex + 1].role;
-            } else if (currentIndex === od.workflow.approvalChain.length - 1) {
-              nextStepRole = null; // Final
-            }
+          // Legacy approvals object update
+          if (['hod', 'manager', 'hr'].includes(currentStep.role)) {
+            if (!od.approvals) od.approvals = {};
+            od.approvals[currentStep.role] = { status: 'approved', approvedBy: req.user._id, approvedAt: new Date(), comments };
           }
-          // 2. Fallback: Check final authority
-          else {
-            // First check local snapshot
-            let isFinal = false;
-            if (od.workflow?.finalAuthority?.role === 'hod' || od.workflow?.finalAuthority?.role === 'manager') {
-              isFinal = true;
-            }
+        }
 
-            // SAFETY CHECK: If workflow object is lightweight (missing settings), fetch actual active settings!
-            if (!isFinal && !od.workflow?.finalAuthority && !od.workflow?.approvalChain) {
-              try {
-                const LeaveSettings = require('../model/LeaveSettings');
-                const activeSettings = await LeaveSettings.findOne({ isActive: true }).sort({ createdAt: -1 });
-                if (activeSettings?.workflow?.finalAuthority?.role === 'manager' || activeSettings?.workflow?.finalAuthority?.role === 'hod') {
-                  isFinal = true;
-                }
-              } catch (err) {
-                // Ignore
-              }
-            }
-
-            if (isFinal) {
-              nextStepRole = null;
-            }
-          }
-
-          if (nextStepRole) {
-            od.workflow.currentStep = nextStepRole;
-            od.workflow.nextApprover = nextStepRole;
-            historyEntry.action = 'approved';
-          } else {
-            // Final approval
-            od.status = 'approved';
-            od.workflow.currentStep = 'completed';
-            od.workflow.nextApprover = null;
-            historyEntry.action = 'approved';
-          }
-
-        } else if (currentApprover === 'manager') {
-          od.status = 'manager_approved';
-
-          if (!od.approvals.manager) od.approvals.manager = {};
-          od.approvals.manager = {
-            status: 'approved',
-            approvedBy: req.user._id,
-            approvedAt: new Date(),
-            comments,
-          };
-
-          // Determine next step dynamically
-          let nextStepRole = 'hr'; // Default fallback
-
-          // 1. Check if there is an explicit approval chain
-          if (od.workflow?.approvalChain?.length > 0) {
-            const currentIndex = od.workflow.approvalChain.findIndex(s => s.role === 'manager');
-            if (currentIndex !== -1 && currentIndex < od.workflow.approvalChain.length - 1) {
-              nextStepRole = od.workflow.approvalChain[currentIndex + 1].role;
-            } else if (currentIndex === od.workflow.approvalChain.length - 1) {
-              nextStepRole = null; // Final
-            }
-          }
-          // 2. Fallback: Check final authority
-          else {
-            // First check local snapshot
-            let isFinal = false;
-            if (od.workflow?.finalAuthority?.role === 'manager' || od.workflow?.finalAuthority?.role === 'hod') {
-              isFinal = true;
-            }
-
-            // SAFETY CHECK: If workflow object is lightweight (missing settings), fetch actual active settings!
-            if (!isFinal && !od.workflow?.finalAuthority && !od.workflow?.approvalChain) {
-              try {
-                const LeaveSettings = require('../model/LeaveSettings');
-                const activeSettings = await LeaveSettings.findOne({ isActive: true }).sort({ createdAt: -1 });
-                if (activeSettings?.workflow?.finalAuthority?.role === 'manager' || activeSettings?.workflow?.finalAuthority?.role === 'hod') {
-                  isFinal = true;
-                }
-              } catch (err) {
-                // Ignore
-              }
-            }
-
-            if (isFinal) {
-              nextStepRole = null;
-            }
-          }
-
-          if (nextStepRole) {
-            od.workflow.currentStep = nextStepRole;
-            od.workflow.nextApprover = nextStepRole;
-            historyEntry.action = 'approved';
-          } else {
-            // Final approval
-            od.status = 'approved';
-            od.workflow.currentStep = 'completed';
-            od.workflow.nextApprover = null;
-            historyEntry.action = 'approved';
-          }
-
-        } else if (currentApprover === 'hr' || currentApprover === 'final_authority') {
+        // 3. Sequential Travel Logic
+        if (isFinishingChain || isFinalAuth) {
+          // WORKFLOW COMPLETE
           od.status = 'approved';
-          od.approvals.hr = {
-            status: 'approved',
-            approvedBy: req.user._id,
-            approvedAt: new Date(),
-            comments,
-          };
-          od.workflow.currentStep = 'completed';
+          od.workflow.isCompleted = true;
+          od.workflow.currentStepRole = 'completed';
           od.workflow.nextApprover = null;
+          od.workflow.nextApproverRole = null;
+          od.workflow.currentStep = 'completed'; // Legacy
+          historyEntry.action = 'approved';
+        } else {
+          // MOVE TO NEXT DESK
+          const nextStep = od.workflow.approvalChain[activeStepIndex + 1];
+          nextStep.isCurrent = true;
+
+          od.workflow.currentStepRole = nextStep.role;
+          od.workflow.nextApprover = nextStep.role;
+          od.workflow.nextApproverRole = nextStep.role;
+          od.workflow.currentStep = nextStep.role; // Legacy
+
+          // Set intermediate status
+          if (requiredRole === 'hod') od.status = 'hod_approved';
+          else if (requiredRole === 'manager') od.status = 'manager_approved';
+          else if (requiredRole === 'hr') od.status = 'hr_approved';
+          else od.status = 'pending';
+
           historyEntry.action = 'approved';
         }
         break;
 
       case 'reject':
-        if (currentApprover === 'hod') {
-          od.status = 'hod_rejected';
-          od.approvals.hod = {
-            status: 'rejected',
-            approvedBy: req.user._id,
-            approvedAt: new Date(),
-            comments,
-          };
-        } else {
-          od.status = 'hr_rejected';
-          od.approvals.hr = {
-            status: 'rejected',
-            approvedBy: req.user._id,
-            approvedAt: new Date(),
-            comments,
-          };
+        if (activeStepIndex !== -1) {
+          const currentStep = od.workflow.approvalChain[activeStepIndex];
+          currentStep.status = 'rejected';
+          currentStep.actionBy = req.user._id;
+          currentStep.actionByName = req.user.name;
+          currentStep.actionByRole = userRole;
+          currentStep.comments = comments;
+          currentStep.updatedAt = new Date();
+          currentStep.isCurrent = false;
         }
-        od.workflow.currentStep = 'completed';
+
+        // Legacy Updates
+        if (['hod', 'manager', 'hr'].includes(requiredRole)) {
+          if (!od.approvals) od.approvals = {};
+          od.approvals[requiredRole] = { status: 'rejected', approvedBy: req.user._id, approvedAt: new Date(), comments };
+        }
+
+        if (requiredRole === 'hod') od.status = 'hod_rejected';
+        else if (requiredRole === 'manager') od.status = 'manager_rejected';
+        else if (requiredRole === 'hr') od.status = 'hr_rejected';
+        else od.status = 'rejected';
+
+        od.workflow.isCompleted = true;
+        od.workflow.currentStepRole = 'completed';
         od.workflow.nextApprover = null;
         historyEntry.action = 'rejected';
         break;
 
       case 'forward':
-        if (currentApprover !== 'hod') {
-          return res.status(400).json({
-            success: false,
-            error: 'Only HOD can forward OD applications',
-          });
+        if (requiredRole !== 'hod') {
+          return res.status(400).json({ success: false, error: 'Only HOD can forward applications' });
         }
+        // Forwarding typically skips to HR
         od.status = 'hod_approved';
-        od.approvals.hod = {
-          status: 'forwarded',
-          approvedBy: req.user._id,
-          approvedAt: new Date(),
-          comments,
-        };
-        od.workflow.currentStep = 'hr';
+        if (!od.approvals) od.approvals = {};
+        od.approvals.hod = { status: 'forwarded', approvedBy: req.user._id, approvedAt: new Date(), comments };
+
         od.workflow.nextApprover = 'hr';
+        od.workflow.currentStep = 'hr';
         historyEntry.action = 'forwarded';
         break;
 
