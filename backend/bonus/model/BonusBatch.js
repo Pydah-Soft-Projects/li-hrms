@@ -7,10 +7,15 @@ const bonusBatchSchema = new mongoose.Schema(
       required: true,
       unique: true,
     },
-    month: {
+    startMonth: {
       type: String, // YYYY-MM
       required: true,
     },
+    endMonth: {
+      type: String, // YYYY-MM
+      required: true,
+    },
+    // Year will typically refer to the start year, or we can keep it for sorting
     year: {
       type: Number,
       required: true,

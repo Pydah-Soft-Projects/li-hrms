@@ -8,9 +8,9 @@ const { calculateBonusForEmployee } = require('../services/bonusCalculationServi
 // @route   GET /api/bonus/batches
 exports.getBatches = async (req, res) => {
   try {
-    const { month, department, division } = req.query;
+    const { startMonth, endMonth, department, division } = req.query;
     const query = {};
-    if (month) query.month = month;
+    if (startMonth) query.startMonth = { $gte: startMonth }; // Simplified filter logic
     if (department) query.department = department;
     if (division) query.division = division;
 
@@ -30,16 +30,21 @@ exports.getBatches = async (req, res) => {
 // @route   POST /api/bonus/batches
 exports.createBatch = async (req, res) => {
   try {
-    const { month, departmentId, divisionId, policyId } = req.body;
+    const { startMonth, endMonth, departmentId, divisionId, policyId } = req.body;
 
     // 1. Validation
-    if (!month || !policyId) {
-      return res.status(400).json({ success: false, error: 'Month and Policy are required' });
+    if (!startMonth || !endMonth || !policyId) {
+      return res.status(400).json({ success: false, error: 'Start Month, End Month and Policy are required' });
+    }
+
+    if (startMonth > endMonth) {
+      return res.status(400).json({ success: false, error: 'Start Month cannot be after End Month' });
     }
 
     // Check existing
     const existingBatch = await BonusBatch.findOne({
-      month,
+      startMonth,
+      endMonth,
       department: departmentId,
       division: divisionId,
       policy: policyId
@@ -70,7 +75,7 @@ exports.createBatch = async (req, res) => {
 
     for (const emp of employees) {
       try {
-        const result = await calculateBonusForEmployee(emp, policy, month);
+        const result = await calculateBonusForEmployee(emp, policy, startMonth, endMonth);
         if (result) {
           records.push(result);
           totalAmount += result.finalBonus;
@@ -86,12 +91,13 @@ exports.createBatch = async (req, res) => {
     }
 
     // 4. Create Batch
-    const batchName = `BONUS-${month}-${policy.name.substring(0, 5).toUpperCase()}-${Date.now().toString().slice(-4)}`;
-    const [yearStr, monthStr] = month.split('-');
+    const batchName = `BONUS-${startMonth}_${endMonth}-${policy.name.substring(0, 5).toUpperCase()}-${Date.now().toString().slice(-4)}`;
+    const [yearStr, monthStr] = startMonth.split('-');
 
     const batch = await BonusBatch.create({
       batchName,
-      month,
+      startMonth,
+      endMonth,
       year: parseInt(yearStr),
       division: divisionId,
       department: departmentId,

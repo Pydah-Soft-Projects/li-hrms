@@ -17,7 +17,8 @@ export default function BonusPoliciesPage() {
     description: '',
     policyType: 'attendance_regular',
     salaryComponent: 'gross_salary',
-    tiers: [{ minPercentage: 0, maxPercentage: 100, bonusMultiplier: 0, flatAmount: 0 }],
+    fixedBonusAmount: 0,
+    tiers: [{ minPercentage: 0, maxPercentage: 100, bonusPercentage: 0 }],
     isActive: true,
   });
 
@@ -45,7 +46,8 @@ export default function BonusPoliciesPage() {
       description: '',
       policyType: 'attendance_regular',
       salaryComponent: 'gross_salary',
-      tiers: [{ minPercentage: 0, maxPercentage: 100, bonusMultiplier: 0, flatAmount: 0 }],
+      fixedBonusAmount: 0,
+      tiers: [{ minPercentage: 0, maxPercentage: 100, bonusPercentage: 0 }],
       isActive: true,
     });
     setEditingPolicy(null);
@@ -110,7 +112,7 @@ export default function BonusPoliciesPage() {
   const addTier = () => {
     setFormData({
       ...formData,
-      tiers: [...(formData.tiers || []), { minPercentage: 0, maxPercentage: 0, bonusMultiplier: 0, flatAmount: 0 }],
+      tiers: [...(formData.tiers || []), { minPercentage: 0, maxPercentage: 0, bonusPercentage: 0 }],
     });
   };
 
@@ -167,7 +169,7 @@ export default function BonusPoliciesPage() {
                   />
                 </div>
                 <div>
-                  <label className='block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1'>Policy Type</label>
+                  <label className='block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1'>Attendance Source</label>
                   <select
                     className='w-full px-3 py-2 border rounded-lg dark:bg-slate-900 border-slate-300 dark:border-slate-600'
                     value={formData.policyType}
@@ -178,18 +180,46 @@ export default function BonusPoliciesPage() {
                   </select>
                 </div>
                 <div>
-                  <label className='block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1'>Salary Component</label>
+                  <label className='block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1'>Bonus Base</label>
                   <select
                     className='w-full px-3 py-2 border rounded-lg dark:bg-slate-900 border-slate-300 dark:border-slate-600'
                     value={formData.salaryComponent}
                     onChange={(e) => setFormData({ ...formData, salaryComponent: e.target.value as any })}
                   >
                     <option value='gross_salary'>Gross Salary</option>
-                    <option value='basic'>Basic Pay</option>
-                    <option value='fixed_pay'>Fixed Pay</option>
-                    <option value='ctc'>CTC</option>
+                    <option value='fixed_amount'>Fixed Amount</option>
                   </select>
                 </div>
+
+                {formData.salaryComponent === 'fixed_amount' && (
+                  <div className='col-span-2'>
+                    <label className='block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1'>Bonus Amount (Base)</label>
+                    <input
+                      type='number'
+                      required
+                      className='w-full px-3 py-2 border rounded-lg dark:bg-slate-900 border-slate-300 dark:border-slate-600'
+                      value={formData.fixedBonusAmount || ''}
+                      onChange={(e) => setFormData({ ...formData, fixedBonusAmount: parseFloat(e.target.value) })}
+                      placeholder="Enter the fixed base amount for bonus calculation"
+                    />
+                  </div>
+                )}
+
+                {formData.salaryComponent === 'gross_salary' && (
+                  <div className='col-span-2'>
+                    <label className='block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1'>Multiplier (x)</label>
+                    <input
+                      type='number'
+                      step="0.1"
+                      required
+                      className='w-full px-3 py-2 border rounded-lg dark:bg-slate-900 border-slate-300 dark:border-slate-600'
+                      value={formData.grossSalaryMultiplier || 1}
+                      onChange={(e) => setFormData({ ...formData, grossSalaryMultiplier: parseFloat(e.target.value) })}
+                      placeholder="e.g. 2 for 2x Gross Salary"
+                    />
+                    <p className='text-xs text-slate-500 mt-1'>Base will be: Gross Salary × {formData.grossSalaryMultiplier || 1}</p>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -221,22 +251,14 @@ export default function BonusPoliciesPage() {
                         />
                       </div>
                       <div className='flex-1'>
-                        <label className='text-xs text-slate-500'>Multiplier (x)</label>
+                        <label className='text-xs text-slate-500'>Percentage (%)</label>
                         <input
                           type='number'
                           step='0.01'
                           className='w-full px-2 py-1 text-sm border rounded dark:bg-slate-800'
-                          value={tier.bonusMultiplier}
-                          onChange={(e) => updateTier(index, 'bonusMultiplier', e.target.value)}
-                        />
-                      </div>
-                      <div className='flex-1'>
-                        <label className='text-xs text-slate-500'>Flat Amount</label>
-                        <input
-                          type='number'
-                          className='w-full px-2 py-1 text-sm border rounded dark:bg-slate-800'
-                          value={tier.flatAmount}
-                          onChange={(e) => updateTier(index, 'flatAmount', e.target.value)}
+                          value={tier.bonusPercentage}
+                          onChange={(e) => updateTier(index, 'bonusPercentage', e.target.value)}
+                          placeholder="% of Base"
                         />
                       </div>
                       <button
@@ -284,6 +306,11 @@ export default function BonusPoliciesPage() {
                   <span className='text-xs px-2 py-1 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'>
                     {policy.policyType === 'attendance_regular' ? 'Attendance Based' : 'Payroll Based'}
                   </span>
+                  <div className='text-xs text-slate-500 mt-1'>
+                    Base: {policy.salaryComponent === 'gross_salary' ?
+                      `Gross Salary${policy.grossSalaryMultiplier && policy.grossSalaryMultiplier !== 1 ? ` × ${policy.grossSalaryMultiplier}` : ''}` :
+                      `Fixed (₹${policy.fixedBonusAmount?.toLocaleString()})`}
+                  </div>
                 </div>
                 <div className='flex gap-2'>
                   <button onClick={() => handleEdit(policy)} className='p-2 text-slate-400 hover:text-blue-600'>
@@ -303,9 +330,7 @@ export default function BonusPoliciesPage() {
                   <div key={i} className='flex justify-between text-sm'>
                     <span>{tier.minPercentage}% - {tier.maxPercentage}%</span>
                     <span className='font-medium text-slate-700 dark:text-slate-300'>
-                      {tier.bonusMultiplier > 0 ? `${tier.bonusMultiplier}x` : ''}
-                      {tier.bonusMultiplier > 0 && tier.flatAmount ? ' + ' : ''}
-                      {tier.flatAmount ? `₹${tier.flatAmount}` : ''}
+                      {tier.bonusPercentage}%
                     </span>
                   </div>
                 ))}
