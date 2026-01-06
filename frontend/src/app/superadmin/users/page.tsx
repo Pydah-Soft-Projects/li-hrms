@@ -1157,12 +1157,11 @@ export default function UsersPage() {
           </div>
         </div>
       )}
-      <div className="text-sm text-slate-500 dark:text-slate-400">HR Users</div>
 
       {/* Filters */}
       <div className="mb-6 flex flex-wrap items-center gap-4">
+
         <div className="relative flex-1 min-w-[200px] max-w-md">
-          <SearchIcon />
           <input
             type="text"
             placeholder="Search by name, email, or employee ID..."
