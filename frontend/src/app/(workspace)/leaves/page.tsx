@@ -2472,8 +2472,8 @@ export default function LeavesPage() {
               <div className="w-full max-w-4xl md:w-[60vw] rounded-xl bg-white shadow-2xl overflow-hidden dark:bg-slate-800 flex flex-col h-[80vh]">
                 {/* Header */}
                 <div className={`shrink-0 px-6 py-4 border-b border-white/10 ${detailType === 'leave'
-                  ? 'bg-blue-500'
-                  : 'bg-fuchsia-200'
+                  ? 'bg-blue-600'
+                  : 'bg-fuchsia-500'
                   }`}>
                   <div className="flex items-center justify-between text-white">
                     <h2 className="text-base font-bold flex items-center gap-2">

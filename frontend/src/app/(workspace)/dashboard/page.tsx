@@ -28,6 +28,7 @@ export default function DashboardPage() {
   const [user, setUser] = useState<{ name: string; role: string } | null>(null);
   const [stats, setStats] = useState<DashboardStats>({});
   const [loading, setLoading] = useState(true);
+  const [attendanceData, setAttendanceData] = useState<any>(null);
 
   useEffect(() => {
     const userData = auth.getUser();
@@ -49,7 +50,30 @@ export default function DashboardPage() {
       }
     };
 
+    const fetchAttendance = async () => {
+      const u = auth.getUser();
+      // Ensure specific params are available
+      if (!u || !u.employeeId || !u.emp_no) return;
+
+      try {
+        const today = new Date().toISOString().split('T')[0];
+        const response = await api.getOTRequests({
+          employeeId: u.employeeId,
+          employeeNumber: u.emp_no,
+          date: today,
+          status: 'approved'
+        });
+
+        if (response.success && response.data) {
+          setAttendanceData(response.data);
+        }
+      } catch (err) {
+        console.error("Error fetching attendance:", err);
+      }
+    };
+
     fetchStats();
+    fetchAttendance();
   }, []);
 
   const getGreeting = () => {
@@ -81,26 +105,87 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      {/* Welcome Header */}
-      <div className="relative overflow-hidden bg-gradient-to-br from-green-950 via-green-800 to-green-950 rounded-3xl p-8 md:p-12 text-white shadow-2xl shadow-indigo-900/20">
-        <div className="absolute top-0 right-0 -mt-20 -mr-20 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-0 left-0 -mb-20 -ml-20 w-72 h-72 bg-teal-500/10 rounded-full blur-3xl" />
+    <div className="space-y-3 md:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 bg-green-50 p-2 md:p-6 rounded-xl md:rounded-[2rem]">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-2 md:gap-6">
+        {/* Role Card */}
+        <div className="md:col-span-1 bg-white p-3 md:p-6 rounded-xl md:rounded-3xl shadow-sm border border-slate-100 relative overflow-hidden group hover:shadow-md transition-shadow">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-indigo-50 to-white rounded-full -mr-10 -mt-10 blur-2xl transition-all duration-500 group-hover:bg-indigo-100/60" />
 
-        <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-8">
-          <div className="text-center md:text-left">
-            <p className="text-emerald-300/80 text-sm font-semibold tracking-wider uppercase mb-2">{getGreeting()}</p>
-            <h1 className="text-4xl md:text-5xl font-black tracking-tight mb-4">
-              Welcome back, <span className="bg-gradient-to-r from-emerald-400 to-teal-300 bg-clip-text text-transparent">{user?.name?.split(' ')[0] || 'User'}</span>
-            </h1>
-          </div>
-
-          <div className="flex items-center gap-6">
-            <div className="h-24 w-px bg-white/10 hidden md:block" />
-            <div className="text-center md:text-left">
-              <div className="text-3xl font-bold text-white mb-1">{new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}</div>
-              <div className="text-emerald-300/60 font-medium">{new Date().toLocaleDateString('en-US', { weekday: 'long' })}</div>
+          <div className="relative z-10 flex items-center h-full gap-3 md:gap-5">
+            <div className="w-12 h-12 md:w-16 md:h-16 md:ml-10 rounded-xl md:rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20 ring-2 md:ring-4 ring-indigo-50 shrink-0">
+              <UserIcon className="w-6 h-6 md:w-8 md:h-8" />
             </div>
+            <div className="flex flex-col justify-center">
+              <p className="text-slate-500 font-medium text-[10px] md:text-xs uppercase tracking-wider mb-0.5">Welcome back,</p>
+              <h3 className="text-lg md:text-2xl font-black text-slate-900 tracking-tight capitalize truncate max-w-[150px] md:max-w-[180px]" title={user?.role?.replace(/_/g, ' ')}>
+                {user?.role?.replace(/_/g, ' ') || 'Employee'}
+              </h3>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="flex h-2 w-2 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 bg-emerald-400"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <span className="text-xs font-semibold text-slate-400">Online Now</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Attendance/OT Card */}
+        <div className="md:col-span-2 bg-gradient-to-br from-emerald-500 to-teal-600 p-3 md:p-8 rounded-xl md:rounded-3xl shadow-lg shadow-emerald-500/20 border border-emerald-400/20 relative overflow-hidden group">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-10 -mt-10 blur-3xl transition-all duration-500 group-hover:bg-white/20" />
+
+          <div className="relative z-10">
+            <div className="flex flex-col md:flex-row md:items-center justify-between mb-3 md:mb-6 gap-3 md:gap-4">
+              <div className="flex items-center gap-3 md:gap-4">
+                <div className="w-10 h-10 md:w-12 md:h-12 rounded-lg md:rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-white shadow-inner border border-white/20">
+                  <ClockIcon className="w-5 h-5 md:w-6 md:h-6" />
+                </div>
+                <div>
+                  <p className="text-xs md:text-sm font-medium text-emerald-100 uppercase tracking-wider">Today's Status</p>
+                  <h3 className="text-lg md:text-xl font-bold text-white">
+                    {new Date().toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'short' })}
+                  </h3>
+                </div>
+              </div>
+              <span className={`px-3 py-1 md:px-4 md:py-1.5 rounded-full text-[10px] md:text-xs font-bold uppercase tracking-widest shadow-sm border backdrop-blur-md w-full md:w-auto text-center ${loading ? 'bg-white/10 text-white/50 border-white/10' :
+                (attendanceData ? 'bg-white text-emerald-600 border-white' : 'bg-white/10 text-white border-white/20')
+                }`}>
+                {loading ? 'SYNCING...' : (attendanceData ? 'PRESENT' : 'ABSENT')}
+              </span>
+            </div>
+
+            {loading ? (
+              <div className="h-16 flex items-center justify-center">
+                <div className="flex gap-1">
+                  <span className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <span className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <span className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                </div>
+              </div>
+            ) : (
+              <div className="bg-black/10 rounded-2xl p-4 border border-white/10 backdrop-blur-sm">
+                {attendanceData && attendanceData.length > 0 ? (
+                  attendanceData.map((record: any, idx: number) => (
+                    <div key={idx} className="flex items-center justify-between">
+                      <div className="flex flex-col">
+                        <span className="text-[10px] md:text-xs font-semibold text-emerald-100 uppercase tracking-wider">Shift Info</span>
+                        <span className="text-xs md:text-sm font-bold text-white">{record.shiftId?.name || 'Standard Shift'}</span>
+                      </div>
+                      <div className="flex flex-col items-end">
+                        <span className="text-[10px] md:text-xs font-semibold text-emerald-100 uppercase tracking-wider">Punch Out</span>
+                        <span className="text-base md:text-lg font-black text-white font-mono tracking-tight">{record.otOutTime || '--:--'}</span>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-2 flex flex-col items-center">
+                    <p className="text-emerald-50 text-sm font-medium">No active session found</p>
+                    <p className="text-emerald-200/60 text-xs">Waiting for check-in</p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -116,7 +201,7 @@ function HRDashboard({ stats, hasPermission }: { stats: DashboardStats; hasPermi
   return (
     <div className="space-y-8">
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-6">
         <StatCard
           title="Total WorkForce"
           value={stats.totalEmployees || 0}
@@ -164,7 +249,7 @@ function HRDashboard({ stats, hasPermission }: { stats: DashboardStats; hasPermi
         </div>
 
         {/* System Health / Real-time info */}
-        <div className="lg:col-span-2 bg-white rounded-3xl border border-slate-100 p-8 shadow-sm">
+        <div className="lg:col-span-2 bg-white rounded-3xl border border-slate-100 p-6 md:p-8 shadow-sm">
           <div className="flex items-center justify-between mb-8">
             <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
               <span className="w-1.5 h-6 bg-blue-500 rounded-full" />
@@ -218,7 +303,7 @@ function HODDashboard({ stats, hasPermission }: { stats: DashboardStats; hasPerm
   return (
     <div className="space-y-8">
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-6">
         <StatCard
           title="Team Squad"
           value={stats.totalEmployees || 0}
@@ -238,7 +323,7 @@ function HODDashboard({ stats, hasPermission }: { stats: DashboardStats; hasPerm
           value={stats.teamPendingApprovals || 0}
           icon={<ClockIcon className="w-6 h-6" />}
           trend="Pending requests"
-          highlight={true}
+          // highlight={true}
           color="amber"
         />
         <StatCard
@@ -264,14 +349,14 @@ function HODDashboard({ stats, hasPermission }: { stats: DashboardStats; hasPerm
           </div>
         </div>
 
-        <div className="bg-white rounded-3xl border border-slate-100 p-8 shadow-sm">
+        <div className="bg-white rounded-3xl border border-slate-100 p-6 md:p-8 shadow-sm">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-bold text-slate-900">Department Feed</h2>
           </div>
           <div className="space-y-4">
             {stats.departmentFeed && stats.departmentFeed.length > 0 ? (
               stats.departmentFeed.map((req: any) => (
-                <div key={req._id} className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 border border-slate-100">
+                <div key={req._id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-2xl bg-slate-50 border border-slate-100 gap-4">
                   <div className="flex items-center gap-4">
                     <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold">
                       {req.employeeId?.employee_name?.[0] || 'U'}
@@ -281,7 +366,7 @@ function HODDashboard({ stats, hasPermission }: { stats: DashboardStats; hasPerm
                       <p className="text-slate-500 text-xs">{req.leaveType} • {req.numberOfDays} days</p>
                     </div>
                   </div>
-                  <Link href={`/leaves/${req._id}`} className="text-xs font-semibold text-indigo-600 hover:underline">
+                  <Link href={`/leaves/${req._id}`} className="text-xs font-semibold text-indigo-600 hover:underline self-end sm:self-auto">
                     Review
                   </Link>
                 </div>
@@ -307,7 +392,7 @@ function EmployeeDashboard({ stats, hasPermission }: { stats: DashboardStats; ha
   return (
     <div className="space-y-8">
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-6">
         <StatCard
           title="Leave Balance"
           value={stats.leaveBalance || 0}
@@ -370,42 +455,45 @@ function StatCard({ title, value, icon, trend, color, highlight = false }: {
   color: 'emerald' | 'amber' | 'blue' | 'indigo';
   highlight?: boolean;
 }) {
-  const themes = {
-    emerald: 'bg-emerald-500/10 text-emerald-600',
-    amber: 'bg-amber-500/10 text-amber-600',
-    blue: 'bg-blue-500/10 text-blue-600',
-    indigo: 'bg-indigo-500/10 text-indigo-600',
+  const gradients = {
+    emerald: 'from-emerald-500 to-emerald-600 shadow-emerald-500/20',
+    amber: 'from-amber-500 to-amber-600 shadow-amber-500/20',
+    blue: 'from-blue-500 to-blue-600 shadow-blue-500/20',
+    indigo: 'from-indigo-500 to-indigo-600 shadow-indigo-500/20',
   };
 
-  const borderColors = {
-    emerald: 'emerald-500',
-    amber: 'amber-500',
-    blue: 'blue-500',
-    indigo: 'indigo-500',
+  const bgColors = {
+    emerald: 'bg-emerald-50 border-emerald-100',
+    amber: 'bg-amber-50 border-amber-100',
+    blue: 'bg-blue-50 border-blue-100',
+    indigo: 'bg-indigo-50 border-indigo-100',
   };
 
   return (
     <div className={`
-      relative bg-white rounded-3xl p-6 border transition-all duration-300 hover:shadow-xl hover:-translate-y-1 group
-      ${highlight ? `border-${borderColors[color]} border-2 shadow-lg shadow-${borderColors[color]}/5` : 'border-slate-100'}
+      relative p-2.5 md:p-6 rounded-xl md:rounded-3xl transition-all duration-300 hover:shadow-xl hover:-translate-y-1 group bg-white border border-slate-100
+      ${highlight ? `ring-2 ring-${color}-500 ring-offset-2` : ''}
     `}>
-      <div className="flex items-start justify-between mb-4">
-        <div className={`w-12 h-12 rounded-2xl ${themes[color]} flex items-center justify-center group-hover:scale-110 transition-transform`}>
-          {icon}
+      <div className="flex items-start justify-between mb-2 md:mb-6">
+        <div className={`w-8 h-8 md:w-14 md:h-14 rounded-lg md:rounded-2xl bg-gradient-to-br ${gradients[color]} flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform duration-300`}>
+          {React.isValidElement(icon) ? React.cloneElement(icon as React.ReactElement<any>, { className: 'w-4 h-4 md:w-7 md:h-7' }) : icon}
         </div>
         {highlight && (
-          <span className={`animate-pulse inline-flex h-3 w-3 rounded-full bg-${borderColors[color]}`} />
+          <span className="flex h-2 w-2 md:h-3 md:w-3 relative">
+            <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 bg-${color}-400`}></span>
+            <span className={`relative inline-flex rounded-full h-2 w-2 md:h-3 md:w-3 bg-${color}-500`}></span>
+          </span>
         )}
       </div>
       <div>
-        <p className="text-slate-500 font-medium text-sm mb-1">{title}</p>
-        <div className="flex items-baseline gap-2">
-          <h3 className="text-3xl font-black text-slate-900">{value}</h3>
-          <span className="text-slate-400 text-xs font-semibold">{title.toLowerCase().includes('score') ? '%' : ''}</span>
+        <p className="text-slate-500 font-semibold text-[9px] md:text-sm mb-0.5 md:mb-1 uppercase tracking-wider truncate">{title}</p>
+        <div className="flex items-baseline gap-1 md:gap-2">
+          <h3 className="text-lg md:text-4xl font-black text-slate-900 tracking-tight">{value}</h3>
+          <span className="text-slate-300 text-[9px] md:text-sm font-bold">{title.toLowerCase().includes('score') ? '%' : ''}</span>
         </div>
-        <p className="text-slate-400 text-xs mt-2 flex items-center gap-1 font-medium">
+        <div className={`mt-1.5 md:mt-4 inline-flex items-center gap-1 md:gap-2 px-1.5 py-0.5 md:px-3 md:py-1 rounded-full text-[8px] md:text-xs font-bold ${bgColors[color]} text-${color}-700`}>
           {trend}
-        </p>
+        </div>
       </div>
     </div>
   );
@@ -419,29 +507,29 @@ function QuickAction({ href, label, description, icon, color }: {
   icon: React.ReactNode;
   color: 'emerald' | 'blue' | 'amber' | 'indigo' | 'teal';
 }) {
-  const iconColors = {
-    emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100',
-    blue: 'bg-blue-50 text-blue-600 border-blue-100',
-    amber: 'bg-amber-50 text-amber-600 border-amber-100',
-    indigo: 'bg-indigo-50 text-indigo-600 border-indigo-100',
-    teal: 'bg-teal-50 text-teal-600 border-teal-100',
+  const gradients = {
+    emerald: 'from-emerald-500 to-emerald-600 group-hover:from-emerald-400 group-hover:to-emerald-500',
+    blue: 'from-blue-500 to-blue-600 group-hover:from-blue-400 group-hover:to-blue-500',
+    amber: 'from-amber-500 to-amber-600 group-hover:from-amber-400 group-hover:to-amber-500',
+    indigo: 'from-indigo-500 to-indigo-600 group-hover:from-indigo-400 group-hover:to-indigo-500',
+    teal: 'from-teal-500 to-teal-600 group-hover:from-teal-400 group-hover:to-teal-500',
   };
 
   return (
     <Link
       href={href}
-      className="flex items-center gap-4 p-4 rounded-2xl border border-slate-50 hover:border-slate-200 hover:bg-slate-50/50 transition-all group"
+      className="flex items-center gap-3 md:gap-5 p-3 md:p-5 rounded-xl md:rounded-2xl bg-white border border-slate-100 hover:border-slate-200 hover:shadow-lg transition-all duration-300 group hover:-translate-y-0.5"
     >
-      <div className={`w-12 h-12 rounded-xl border ${iconColors[color]} flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform`}>
-        {React.isValidElement(icon) ? React.cloneElement(icon as React.ReactElement<any>, { className: 'w-6 h-6' }) : icon}
+      <div className={`w-10 h-10 md:w-14 md:h-14 rounded-xl md:rounded-2xl bg-gradient-to-br ${gradients[color]} flex items-center justify-center flex-shrink-0 text-white shadow-md transition-all duration-300`}>
+        {React.isValidElement(icon) ? React.cloneElement(icon as React.ReactElement<any>, { className: 'w-5 h-5 md:w-7 md:h-7' }) : icon}
       </div>
       <div className="flex-1 min-w-0">
-        <h4 className="text-slate-900 font-bold truncate group-hover:text-emerald-600 transition-colors">{label}</h4>
-        <p className="text-slate-500 text-xs truncate">{description}</p>
+        <h4 className="text-slate-900 font-bold text-sm md:text-lg group-hover:text-emerald-600 transition-colors">{label}</h4>
+        <p className="text-slate-500 text-xs md:text-sm truncate">{description}</p>
       </div>
-      <div className="text-slate-300 group-hover:translate-x-1 transition-transform">
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+      <div className="w-6 h-6 md:w-8 md:h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-300 group-hover:bg-emerald-50 group-hover:text-emerald-500 transition-all">
+        <svg className="w-3 h-3 md:w-4 md:h-4 transform group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
         </svg>
       </div>
     </Link>
