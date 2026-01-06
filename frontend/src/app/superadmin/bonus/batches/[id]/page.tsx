@@ -118,7 +118,7 @@ export default function BonusBatchDetailsPage() {
             </h1>
             <p className='text-slate-500 mt-1'>
               Month: <span className='font-semibold'>{batch.month}</span> |
-              Policy: <span className='font-semibold'>{(batch.policy as any).name}</span>
+              Policy: <span className='font-semibold'>{(batch.policy as any)?.name || 'Unknown Policy'}</span>
             </p>
           </div>
 

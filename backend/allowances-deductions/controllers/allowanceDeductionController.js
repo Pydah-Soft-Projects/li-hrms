@@ -208,7 +208,7 @@ exports.createAllowanceDeduction = async (req, res) => {
     });
   } catch (error) {
     console.error('Error creating allowance/deduction:', error);
-    
+
     if (error.code === 11000) {
       return res.status(400).json({
         success: false,
@@ -295,7 +295,7 @@ exports.updateAllowanceDeduction = async (req, res) => {
     });
   } catch (error) {
     console.error('Error updating allowance/deduction:', error);
-    
+
     if (error.code === 11000) {
       return res.status(400).json({
         success: false,
