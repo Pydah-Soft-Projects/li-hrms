@@ -62,12 +62,13 @@ export interface BonusPolicy {
   name: string;
   description?: string;
   policyType: 'attendance_regular' | 'payroll_based';
-  salaryComponent: 'gross_salary' | 'basic' | 'ctc' | 'fixed_pay';
+  salaryComponent: 'gross_salary' | 'fixed_amount';
+  fixedBonusAmount?: number;
+  grossSalaryMultiplier?: number;
   tiers: {
     minPercentage: number;
     maxPercentage: number;
-    bonusMultiplier: number;
-    flatAmount?: number;
+    bonusPercentage: number;
   }[];
   isActive: boolean;
   createdAt: string;
@@ -76,7 +77,8 @@ export interface BonusPolicy {
 export interface BonusBatch {
   _id: string;
   batchName: string;
-  month: string;
+  startMonth: string;
+  endMonth: string;
   year: number;
   division?: { _id: string; name: string };
   department?: { _id: string; name: string };
@@ -2710,16 +2712,12 @@ export const api = {
     return apiRequest<void>(`/bonus/policies/${id}`, { method: 'DELETE' });
   },
 
-  getBonusBatches: async (filters?: { month?: string; department?: string; division?: string }) => {
-    const params = new URLSearchParams();
-    if (filters?.month) params.append('month', filters.month);
-    if (filters?.department) params.append('department', filters.department);
-    if (filters?.division) params.append('division', filters.division);
-    const query = params.toString() ? `?${params.toString()}` : '';
+  getBonusBatches: async (filters?: { startMonth?: string; endMonth?: string; department?: string; division?: string }) => {
+    const query = filters ? '?' + new URLSearchParams(filters as any).toString() : '';
     return apiRequest<BonusBatch[]>(`/bonus/batches${query}`, { method: 'GET' });
   },
 
-  createBonusBatch: async (data: { month: string; policyId: string; departmentId?: string; divisionId?: string }) => {
+  createBonusBatch: async (data: { startMonth: string; endMonth: string; policyId: string; departmentId?: string; divisionId?: string }) => {
     return apiRequest<BonusBatch>('/bonus/batches', {
       method: 'POST',
       body: JSON.stringify(data),
