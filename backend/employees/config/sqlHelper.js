@@ -249,6 +249,14 @@ const getEmployeeByIdSQL = async (empNo) => {
     }
 };
 
+const EMPLOYEE_TABLE_COLUMNS = [
+    'emp_no', 'employee_name', 'department_id', 'designation_id', 'doj', 'dob',
+    'gross_salary', 'gender', 'marital_status', 'blood_group', 'qualifications',
+    'experience', 'address', 'location', 'aadhar_number', 'phone_number',
+    'alt_phone_number', 'email', 'pf_number', 'esi_number', 'bank_account_no',
+    'bank_name', 'bank_place', 'ifsc_code', 'is_active'
+];
+
 const updateEmployeeSQL = async (empNo, employeeData) => {
     const pool = getSQLPool();
     // Extract permanent fields
@@ -268,10 +276,24 @@ const updateEmployeeSQL = async (empNo, employeeData) => {
         fields.is_active = permanentFields.is_active;
     }
 
+    // FILTER fields to only include valid MSSQL columns
+    // This prevents "Invalid column name" errors if extra fields (e.g. from MongoDB) are passed
+    const validFields = {};
+    Object.keys(fields).forEach(key => {
+        if (EMPLOYEE_TABLE_COLUMNS.includes(key)) {
+            validFields[key] = fields[key];
+        }
+    });
+
+    if (Object.keys(validFields).length === 0) {
+        console.warn(`⚠️ No valid MSSQL columns to update for employee ${empNo}. Skipping SQL update.`);
+        return;
+    }
+
     if (dbType === 'mysql') {
         const sets = [];
         const values = [];
-        Object.entries(fields).forEach(([key, value]) => {
+        Object.entries(validFields).forEach(([key, value]) => {
             sets.push(`${key} = ?`);
             values.push(value);
         });
@@ -288,8 +310,8 @@ const updateEmployeeSQL = async (empNo, employeeData) => {
         request.input('emp_no', sql.VarChar(50), empNo);
 
         const sets = [];
-        Object.entries(fields).forEach(([key, value]) => {
-            if (key === 'emp_no') return;
+        Object.entries(validFields).forEach(([key, value]) => {
+            if (key === 'emp_no') return; // Primary key is usually not updated this way, but if it is in fields we skip it as we use it in WHERE
 
             // Special handling for boolean/bit fields to prevent driver confusion
             if (key === 'is_active') {
@@ -299,6 +321,8 @@ const updateEmployeeSQL = async (empNo, employeeData) => {
             }
             sets.push(`${key} = @${key}`);
         });
+
+        if (sets.length === 0) return; // Nothing to update
 
         const query = `UPDATE employees SET ${sets.join(', ')}, updated_at = GETDATE() WHERE emp_no = @emp_no`;
         return await request.query(query);
