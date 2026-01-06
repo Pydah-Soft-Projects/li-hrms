@@ -883,16 +883,27 @@ exports.updateEmployee = async (req, res) => {
     }
 
     // Update in MSSQL (OPTIONAL/FAIL-SAFE)
+    let mssqlSyncError = null;
+
+    // Update in MSSQL (OPTIONAL/FAIL-SAFE)
     if (isHRMSConnected()) {
       try {
-        await updateEmployeeMSSQL(empNo, {
-          ...permanentFields,
-          department_id: permanentFields.department_id?.toString() || null,
-          designation_id: permanentFields.designation_id?.toString() || null,
-        });
+        const mssqlUpdateData = { ...permanentFields };
+        if (permanentFields.department_id !== undefined) {
+          mssqlUpdateData.department_id = permanentFields.department_id?.toString() || null;
+        }
+        if (permanentFields.designation_id !== undefined) {
+          mssqlUpdateData.designation_id = permanentFields.designation_id?.toString() || null;
+        }
+        await updateEmployeeMSSQL(empNo, mssqlUpdateData);
         results.mssql = true;
       } catch (mssqlError) {
-        console.error('MSSQL update error (non-blocking):', mssqlError.message);
+        console.error('MSSQL update error (non-blocking):', mssqlError);
+        mssqlSyncError = {
+          message: mssqlError.message,
+          code: mssqlError.code,
+          originalError: mssqlError.originalError ? mssqlError.originalError.message : null
+        };
       }
     } else {
       console.warn('MSSQL not connected, skipping employee update sync (non-blocking)');
@@ -921,6 +932,7 @@ exports.updateEmployee = async (req, res) => {
         ? 'Employee updated successfully in both databases'
         : 'Employee updated successfully in MongoDB. MSSQL sync skipped/failed.',
       savedTo: results,
+      syncError: mssqlSyncError,
       data: updatedEmployee,
     });
   } catch (error) {

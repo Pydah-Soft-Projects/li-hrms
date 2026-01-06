@@ -1,6 +1,6 @@
 'use client'; // Cache bust: Force recompile 1
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { api, Employee, Department, Division, Designation, EmployeeApplication, Allowance, Deduction } from '@/lib/api';
 import { auth } from '@/lib/auth';
@@ -79,6 +79,118 @@ interface TemplateColumn {
   editable?: boolean;
 }
 
+// Helper to render sortable/filterable header
+const RenderFilterHeader = ({
+  label,
+  filterKey,
+  nestedKey,
+  options,
+  currentFilters,
+  setFilters,
+  isActive,
+  onToggle,
+}: {
+  label: string;
+  filterKey: string;
+  nestedKey?: string;
+  options: string[];
+  currentFilters: Record<string, string>;
+  setFilters: (filters: Record<string, string>) => void;
+  isActive: boolean;
+  onToggle: (e: React.MouseEvent) => void;
+}) => {
+  const currentFilterValue = currentFilters[filterKey] || '';
+  const btnEl = useRef<HTMLButtonElement>(null);
+  const [fixedPos, setFixedPos] = useState({ top: 0, left: 0 });
+
+  useEffect(() => {
+    // Recalculate position on scroll or resize to keep it attached
+    const updatePosition = () => {
+      if (isActive && btnEl.current) {
+        const rect = btnEl.current.getBoundingClientRect();
+        // Adjust for right edge overflow
+        const left = rect.left + 200 > window.innerWidth ? rect.right - 200 : rect.left;
+        setFixedPos({
+          top: rect.bottom + 4,
+          left: left,
+        });
+      }
+    };
+
+    if (isActive) {
+      updatePosition();
+      window.addEventListener('scroll', updatePosition, true); // true for capturing scroll in parents
+      window.addEventListener('resize', updatePosition);
+    }
+
+    return () => {
+      window.removeEventListener('scroll', updatePosition, true);
+      window.removeEventListener('resize', updatePosition);
+    };
+  }, [isActive]);
+
+  return (
+    <th className={`relative px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 ${isActive ? 'z-50' : ''}`}>
+      <div className="flex items-center gap-2">
+        <span>{label}</span>
+        <button
+          ref={btnEl}
+          onClick={onToggle}
+          className={`rounded p-1 hover:bg-slate-200 dark:hover:bg-slate-700 ${currentFilterValue ? 'text-green-600 bg-green-50 dark:bg-green-900/30' : 'text-slate-400'}`}
+        >
+          <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 6.707A1 1 0 013 6.586V4z" />
+          </svg>
+        </button>
+      </div>
+
+      {isActive && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={onToggle}
+          />
+          <div
+            className="fixed z-50 mt-1 min-w-[200px] rounded-xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-800"
+            style={{ top: fixedPos.top, left: fixedPos.left }}
+          >
+            <div className="mb-2 px-2 py-1">
+              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Filter by {label}</span>
+            </div>
+            <div className="max-h-48 overflow-y-auto">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const newFilters = { ...currentFilters };
+                  delete newFilters[filterKey];
+                  setFilters(newFilters);
+                  onToggle({ stopPropagation: () => { } } as any);
+                }}
+                className={`flex w-full items-center rounded-lg px-2 py-1.5 text-sm ${!currentFilterValue ? 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800'}`}
+              >
+                All
+              </button>
+              {options.map((option) => (
+                <button
+                  key={option}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setFilters({ ...currentFilters, [filterKey]: option });
+                    onToggle({ stopPropagation: () => { } } as any);
+                  }}
+                  className={`flex w-full items-center rounded-lg px-2 py-1.5 text-sm ${currentFilters[filterKey] === option ? 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800'}`}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </th>
+  );
+};
+
 export default function EmployeesPage() {
   const [activeTab, setActiveTab] = useState<'employees' | 'applications'>('employees');
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -123,6 +235,7 @@ export default function EmployeesPage() {
   const [passwordMode, setPasswordMode] = useState<'random' | 'phone_empno'>('random');
   const [isResending, setIsResending] = useState<string | null>(null);
   const [selectedApplicationIds, setSelectedApplicationIds] = useState<string[]>([]);
+  const [updatingStatusIds, setUpdatingStatusIds] = useState<Set<string>>(new Set());
 
   const [dynamicTemplate, setDynamicTemplate] = useState<{ headers: string[]; sample: any[]; columns: TemplateColumn[] }>({
     headers: EMPLOYEE_TEMPLATE_HEADERS,
@@ -245,84 +358,6 @@ export default function EmployeesPage() {
 
   // Filter Header State
   const [activeFilterColumn, setActiveFilterColumn] = useState<string | null>(null);
-
-  // Helper to render sortable/filterable header
-  const RenderFilterHeader = ({
-    label,
-    filterKey,
-    nestedKey,
-    options,
-    currentFilters,
-    setFilters
-  }: {
-    label: string,
-    filterKey: string,
-    nestedKey?: string,
-    options: string[],
-    currentFilters: Record<string, string>,
-    setFilters: (filters: Record<string, string>) => void
-  }) => {
-    const isActive = activeFilterColumn === filterKey;
-    const currentFilterValue = currentFilters[filterKey] || '';
-
-    return (
-      <th className="relative px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-        <div className="flex items-center gap-2">
-          <span>{label}</span>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setActiveFilterColumn(isActive ? null : filterKey);
-            }}
-            className={`rounded p-1 hover:bg-slate-200 dark:hover:bg-slate-700 ${currentFilterValue ? 'text-green-600 bg-green-50 dark:bg-green-900/30' : 'text-slate-400'}`}
-          >
-            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 6.707A1 1 0 013 6.586V4z" />
-            </svg>
-          </button>
-        </div>
-
-        {isActive && (
-          <>
-            <div
-              className="fixed inset-0 z-10"
-              onClick={() => setActiveFilterColumn(null)}
-            />
-            <div className="absolute left-0 top-full z-20 mt-1 min-w-[200px] rounded-xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-800">
-              <div className="mb-2 px-2 py-1">
-                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Filter by {label}</span>
-              </div>
-              <div className="max-h-48 overflow-y-auto">
-                <button
-                  onClick={() => {
-                    const newFilters = { ...currentFilters };
-                    delete newFilters[filterKey];
-                    setFilters(newFilters);
-                    setActiveFilterColumn(null);
-                  }}
-                  className={`flex w-full items-center rounded-lg px-3 py-2 text-xs hover:bg-slate-50 dark:hover:bg-slate-700 ${!currentFilterValue ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400' : 'text-slate-700 dark:text-slate-300'}`}
-                >
-                  All
-                </button>
-                {options.map(opt => (
-                  <button
-                    key={opt}
-                    onClick={() => {
-                      setFilters({ ...currentFilters, [filterKey]: opt });
-                      setActiveFilterColumn(null);
-                    }}
-                    className={`flex w-full items-center rounded-lg px-3 py-2 text-xs hover:bg-slate-50 dark:hover:bg-slate-700 ${currentFilterValue === opt ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400' : 'text-slate-700 dark:text-slate-300'}`}
-                  >
-                    {opt}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </>
-        )}
-      </th>
-    );
-  };
 
   const [approvalComponentDefaults, setApprovalComponentDefaults] = useState<{ allowances: any[]; deductions: any[] }>({
     allowances: [],
@@ -1414,20 +1449,55 @@ export default function EmployeesPage() {
   };
 
   const handleDeactivate = async (empNo: string, currentStatus: boolean) => {
+    if (updatingStatusIds.has(empNo)) return; // Prevent duplicate clicks
+
     const action = currentStatus ? 'deactivate' : 'activate';
     if (!confirm(`Are you sure you want to ${action} this employee?`)) return;
 
+    // Track this employee as updating
+    setUpdatingStatusIds(prev => new Set(prev).add(empNo));
+
+    // Optimistic update for immediate feedback
+    setEmployees((prev) =>
+      prev.map((e) => (e.emp_no === empNo ? { ...e, is_active: !currentStatus } : e))
+    );
+
     try {
+      console.log(`Attempting to ${action} employee ${empNo}.`);
       const response = await api.updateEmployee(empNo, { is_active: !currentStatus });
+      console.log(`API response for ${action} employee ${empNo}:`, response);
+
       if (response.success) {
         setSuccess(`Employee ${action}d successfully!`);
-        loadEmployees();
+        // Update with actual server data if available to ensure consistency
+        if (response.data) {
+          setEmployees((prev) =>
+            prev.map((e) =>
+              e.emp_no === empNo ? { ...e, ...response.data } : e
+            )
+          );
+        }
       } else {
         setError(response.message || `Failed to ${action} employee`);
+        // Revert on failure
+        setEmployees((prev) =>
+          prev.map((e) => (e.emp_no === empNo ? { ...e, is_active: currentStatus } : e))
+        );
       }
     } catch (err) {
       setError('An error occurred');
       console.error(err);
+      // Revert on error
+      setEmployees((prev) =>
+        prev.map((e) => (e.emp_no === empNo ? { ...e, is_active: currentStatus } : e))
+      );
+    } finally {
+      // Clear updating status
+      setUpdatingStatusIds(prev => {
+        const next = new Set(prev);
+        next.delete(empNo);
+        return next;
+      });
     }
   };
 
@@ -2029,6 +2099,8 @@ export default function EmployeesPage() {
                               options={Array.from(new Set(pendingApplications.map(app => app.department?.name).filter(Boolean))) as string[]}
                               currentFilters={applicationFilters}
                               setFilters={setApplicationFilters}
+                              isActive={activeFilterColumn === 'department.name'}
+                              onToggle={() => setActiveFilterColumn(activeFilterColumn === 'department.name' ? null : 'department.name')}
                             />
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Proposed Salary</th>
                             <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Created By</th>
@@ -2127,6 +2199,8 @@ export default function EmployeesPage() {
                               options={['approved', 'rejected']}
                               currentFilters={applicationFilters}
                               setFilters={setApplicationFilters}
+                              isActive={activeFilterColumn === 'status'}
+                              onToggle={() => setActiveFilterColumn(activeFilterColumn === 'status' ? null : 'status')}
                             />
                             <RenderFilterHeader
                               label="Processed By"
@@ -2134,6 +2208,8 @@ export default function EmployeesPage() {
                               options={Array.from(new Set([...approvedApplications, ...rejectedApplications].map(app => app.approvedBy?.name || app.rejectedBy?.name).filter(Boolean))) as string[]}
                               currentFilters={applicationFilters}
                               setFilters={setApplicationFilters}
+                              isActive={activeFilterColumn === 'processedBy'}
+                              onToggle={() => setActiveFilterColumn(activeFilterColumn === 'processedBy' ? null : 'processedBy')}
                             />
                           </tr>
                         </thead>
@@ -2259,6 +2335,8 @@ export default function EmployeesPage() {
                             options={Array.from(new Set(employees.map(e => e.division?.name).filter(Boolean))) as string[]}
                             currentFilters={employeeFilters}
                             setFilters={setEmployeeFilters}
+                            isActive={activeFilterColumn === 'division.name'}
+                            onToggle={() => setActiveFilterColumn(activeFilterColumn === 'division.name' ? null : 'division.name')}
                           />
                           <RenderFilterHeader
                             label="Department"
@@ -2266,6 +2344,8 @@ export default function EmployeesPage() {
                             options={Array.from(new Set(employees.map(e => e.department?.name).filter(Boolean))) as string[]}
                             currentFilters={employeeFilters}
                             setFilters={setEmployeeFilters}
+                            isActive={activeFilterColumn === 'department.name'}
+                            onToggle={() => setActiveFilterColumn(activeFilterColumn === 'department.name' ? null : 'department.name')}
                           />
                           <RenderFilterHeader
                             label="Designation"
@@ -2273,6 +2353,8 @@ export default function EmployeesPage() {
                             options={Array.from(new Set(employees.map(e => e.designation?.name).filter(Boolean))) as string[]}
                             currentFilters={employeeFilters}
                             setFilters={setEmployeeFilters}
+                            isActive={activeFilterColumn === 'designation.name'}
+                            onToggle={() => setActiveFilterColumn(activeFilterColumn === 'designation.name' ? null : 'designation.name')}
                           />
                           <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
                             Phone
@@ -2283,6 +2365,8 @@ export default function EmployeesPage() {
                             options={['Active', 'Inactive', 'Left']}
                             currentFilters={employeeFilters}
                             setFilters={setEmployeeFilters}
+                            isActive={activeFilterColumn === 'status'}
+                            onToggle={() => setActiveFilterColumn(activeFilterColumn === 'status' ? null : 'status')}
                           />
                           <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
                             Actions
@@ -2326,11 +2410,11 @@ export default function EmployeesPage() {
                               </td>
                               <td className="whitespace-nowrap px-6 py-4">
                                 <div className="flex flex-col gap-1">
-                                  <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${employee.is_active !== false
+                                  <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${(employee.is_active === true || employee.is_active === 1 || (employee.is_active !== false && employee.is_active !== 0 && employee.is_active !== '0'))
                                     ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
                                     : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
                                     }`}>
-                                    {employee.is_active !== false ? 'Active' : 'Inactive'}
+                                    {(employee.is_active === true || employee.is_active === 1 || (employee.is_active !== false && employee.is_active !== 0 && employee.is_active !== '0')) ? 'Active' : 'Inactive'}
                                   </span>
                                   {employee.leftDate && (
                                     <span className="inline-flex rounded-full px-2.5 py-1 text-xs font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
@@ -2412,22 +2496,29 @@ export default function EmployeesPage() {
                                     <button
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        handleDeactivate(employee.emp_no, employee.is_active !== false);
+                                        if (updatingStatusIds.has(employee.emp_no)) return;
+                                        const isActive = (employee.is_active === true || employee.is_active === 1 || (employee.is_active !== false && employee.is_active !== 0 && employee.is_active !== '0'));
+                                        handleDeactivate(employee.emp_no, isActive);
                                       }}
-                                      className={`rounded-lg p-2 transition-all ${employee.is_active !== false
+                                      disabled={updatingStatusIds.has(employee.emp_no)}
+                                      className={`rounded-lg p-2 transition-all ${(employee.is_active === true || employee.is_active === 1 || (employee.is_active !== false && employee.is_active !== 0 && employee.is_active !== '0'))
                                         ? 'text-amber-400 hover:bg-amber-50 hover:text-amber-600 dark:hover:bg-amber-900/30 dark:hover:text-amber-400'
                                         : 'text-green-400 hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/30 dark:hover:text-green-400'
-                                        }`}
-                                      title={employee.is_active !== false ? 'Deactivate' : 'Activate'}
+                                        } ${updatingStatusIds.has(employee.emp_no) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                      title={(employee.is_active === true || employee.is_active === 1 || (employee.is_active !== false && employee.is_active !== 0 && employee.is_active !== '0')) ? 'Deactivate' : 'Activate'}
                                     >
-                                      {employee.is_active !== false ? (
-                                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                                        </svg>
+                                      {updatingStatusIds.has(employee.emp_no) ? (
+                                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
                                       ) : (
-                                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                                        </svg>
+                                        (employee.is_active === true || employee.is_active === 1 || (employee.is_active !== false && employee.is_active !== 0 && employee.is_active !== '0')) ? (
+                                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                                          </svg>
+                                        ) : (
+                                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                                          </svg>
+                                        )
                                       )}
                                     </button>
 
@@ -4350,3 +4441,4 @@ export default function EmployeesPage() {
   );
 }
 
+// 
