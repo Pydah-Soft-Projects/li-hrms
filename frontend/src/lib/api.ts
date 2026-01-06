@@ -208,6 +208,7 @@ export interface ApiResponse<T> {
   workspace?: Workspace;
   qrSecret?: string;
   waitTime?: number;
+  newPassword?: string;
 }
 
 export interface LoginResponse {

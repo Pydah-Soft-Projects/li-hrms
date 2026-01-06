@@ -285,12 +285,14 @@ export default function UsersPage() {
         allowedDivisions?: string[];
         divisionMapping?: any[];
         featureControl?: string[];
+        division?: string;
       } = {
         email: formData.email,
         name: formData.name,
         role: formData.role,
         autoGeneratePassword: formData.autoGeneratePassword,
         assignWorkspace: true,
+        division: formData.division,
       };
 
       if (!formData.autoGeneratePassword && formData.password) {
@@ -317,6 +319,12 @@ export default function UsersPage() {
             departments: depts
           }];
         }
+      }
+
+      // Force HOD to use 'department' scope and include department field
+      if (formData.role === 'hod') {
+        payload.dataScope = 'department';
+        (payload as any).department = formData.department || null;
       }
 
       // Add feature control (always send to ensure overrides work)
@@ -825,7 +833,7 @@ export default function UsersPage() {
           department: '', // Reset department when division changes
           divisionMapping: newMapping,
           allowedDivisions: divId ? [divId] : [],
-          dataScope: 'division' // Implicitly set datascope
+          dataScope: 'department' // Implicitly set datascope
         });
       };
 

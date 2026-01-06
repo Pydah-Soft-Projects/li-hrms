@@ -75,36 +75,82 @@ function buildScopeFilter(user) {
     // 2. Administrative Scope Filter
     let administrativeFilter = { _id: null };
 
+    // Helper to create department filter that works for both schemas
+    const createDepartmentFilter = (deptIds) => {
+        if (!deptIds || deptIds.length === 0) return { _id: null };
+        return {
+            $or: [
+                { department_id: { $in: deptIds } },
+                { department: { $in: deptIds } }
+            ]
+        };
+    };
+
+    // Helper to create division filter that works for both schemas
+    const createDivisionFilter = (divIds) => {
+        if (!divIds || divIds.length === 0) return { _id: null };
+        return {
+            $or: [
+                { division_id: { $in: divIds } },
+                { division: { $in: divIds } } // Just in case some models use 'division'
+            ]
+        };
+    };
+
     switch (scope) {
         case 'division':
         case 'divisions':
             if (user.divisionMapping && Array.isArray(user.divisionMapping) && user.divisionMapping.length > 0) {
                 const orConditions = [];
                 user.divisionMapping.forEach(mapping => {
-                    const condition = { division_id: mapping.division };
+                    // Filter matching Division
+                    const divisionCondition = {
+                        $or: [
+                            { division_id: mapping.division },
+                            // Add 'division' field just in case, though typically it's division_id
+                            { division: mapping.division }
+                        ]
+                    };
+
+                    // Filter matching Departments within Division
+                    let departmentCondition = {};
                     if (mapping.departments && Array.isArray(mapping.departments) && mapping.departments.length > 0) {
-                        condition.department_id = { $in: mapping.departments };
+                        departmentCondition = {
+                            $or: [
+                                { department_id: { $in: mapping.departments } },
+                                { department: { $in: mapping.departments } }
+                            ]
+                        };
                     }
-                    orConditions.push(condition);
+
+                    // Combined condition for this mapping entry
+                    // (Division MATCH) AND (Optional Department MATCH)
+                    if (Object.keys(departmentCondition).length > 0) {
+                        orConditions.push({
+                            $and: [divisionCondition, departmentCondition]
+                        });
+                    } else {
+                        orConditions.push(divisionCondition);
+                    }
                 });
                 administrativeFilter = orConditions.length === 1 ? orConditions[0] : { $or: orConditions };
             } else if (user.allowedDivisions && user.allowedDivisions.length > 0) {
-                administrativeFilter = { division_id: { $in: user.allowedDivisions } };
+                administrativeFilter = createDivisionFilter(user.allowedDivisions);
             } else if (user.departments && user.departments.length > 0) {
                 // Fallback to departments if divisions not setup correctly
-                administrativeFilter = { department_id: { $in: user.departments } };
+                administrativeFilter = createDepartmentFilter(user.departments);
             }
             break;
 
         case 'department':
             if (user.department) {
-                administrativeFilter = { department_id: user.department };
+                administrativeFilter = createDepartmentFilter([user.department]);
             }
             break;
 
         case 'departments':
             if (user.departments && user.departments.length > 0) {
-                administrativeFilter = { department_id: { $in: user.departments } };
+                administrativeFilter = createDepartmentFilter(user.departments);
             }
             break;
 

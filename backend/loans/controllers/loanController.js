@@ -514,7 +514,7 @@ exports.applyLoan = async (req, res) => {
       const emiAmount = calculateEMI(amount, interestRate, duration);
 
       if (settings.isInterestApplicable && interestRate > 0) {
-        totalAmount = amount + (amount * interestRate / 100 * duration / 12);
+        totalAmount = emiAmount * duration;
       }
 
       // Calculate start and end dates (start from next month)
@@ -736,7 +736,7 @@ exports.updateLoan = async (req, res) => {
 
           let totalAmount = amount;
           if (settings.isInterestApplicable && interestRate > 0) {
-            totalAmount = amount + (amount * interestRate / 100 * duration / 12);
+            totalAmount = emiAmount * duration;
           }
 
           const startDate = new Date();
@@ -1106,7 +1106,7 @@ exports.disburseLoan = async (req, res) => {
     // Add transaction log for disbursement
     loan.transactions.push({
       transactionType: 'disbursement',
-      amount: loan.requestType === 'loan' ? (loan.loanConfig?.totalAmount || loan.amount) : loan.amount,
+      amount: loan.amount,
       transactionDate: new Date(),
       processedBy: req.user._id,
       remarks: remarks || `${loan.requestType === 'loan' ? 'Loan' : 'Salary advance'} disbursed`,
