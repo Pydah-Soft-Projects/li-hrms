@@ -2415,8 +2415,8 @@ export default function EmployeesPage() {
                                         handleDeactivate(employee.emp_no, employee.is_active !== false);
                                       }}
                                       className={`rounded-lg p-2 transition-all ${employee.is_active !== false
-                                        ? 'text-slate-400 hover:bg-orange-50 hover:text-orange-600 dark:hover:bg-orange-900/30 dark:hover:text-orange-400'
-                                        : 'text-slate-400 hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/30 dark:hover:text-green-400'
+                                        ? 'text-amber-400 hover:bg-amber-50 hover:text-amber-600 dark:hover:bg-amber-900/30 dark:hover:text-amber-400'
+                                        : 'text-green-400 hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/30 dark:hover:text-green-400'
                                         }`}
                                       title={employee.is_active !== false ? 'Deactivate' : 'Activate'}
                                     >

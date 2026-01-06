@@ -14,7 +14,8 @@ interface UserProfile {
   department?: { _id: string; name: string };
   employeeId?: string;
   phone?: string;
-  isActive: boolean;
+  isActive?: boolean;
+  is_active?: boolean;
   createdAt: string;
   lastLogin?: string;
 }
@@ -210,8 +211,8 @@ export default function ProfilePage() {
       {toast && (
         <div
           className={`fixed top-4 right-4 z-50 px-6 py-4 rounded-lg shadow-xl animate-slide-in ${toast.type === 'success'
-              ? 'bg-green-600 text-white'
-              : 'bg-red-600 text-white'
+            ? 'bg-green-600 text-white'
+            : 'bg-red-600 text-white'
             }`}
         >
           <div className="flex items-center gap-3">
@@ -264,9 +265,9 @@ export default function ProfilePage() {
 
                 {/* Status */}
                 <div className="mt-4 flex items-center justify-center gap-2">
-                  <span className={`w-2.5 h-2.5 rounded-full ${user.isActive ? 'bg-green-500' : 'bg-red-500'}`} />
-                  <span className={`text-sm font-medium ${user.isActive ? 'text-green-700' : 'text-red-700'}`}>
-                    {user.isActive ? 'Active' : 'Inactive'}
+                  <span className={`w-2.5 h-2.5 rounded-full ${user.isActive || user.is_active !== false ? 'bg-green-500' : 'bg-red-500'}`} />
+                  <span className={`text-sm font-medium ${user.isActive || user.is_active !== false ? 'text-green-700' : 'text-red-700'}`}>
+                    {user.isActive || user.is_active !== false ? 'Active' : 'Inactive'}
                   </span>
                 </div>
               </div>
@@ -386,12 +387,12 @@ export default function ProfilePage() {
                 {/* Account Status */}
                 <div>
                   <label className="block text-sm font-medium text-gray-500 mb-1.5">Account Status</label>
-                  <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium ${user.isActive
-                      ? 'bg-green-100 text-green-800'
-                      : 'bg-red-100 text-red-800'
+                  <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium ${user.isActive || user.is_active !== false
+                    ? 'bg-green-100 text-green-800'
+                    : 'bg-red-100 text-red-800'
                     }`}>
-                    <span className={`w-2 h-2 rounded-full ${user.isActive ? 'bg-green-500' : 'bg-red-500'}`} />
-                    {user.isActive ? 'Active' : 'Inactive'}
+                    <span className={`w-2 h-2 rounded-full ${user.isActive || user.is_active !== false ? 'bg-green-500' : 'bg-red-500'}`} />
+                    {user.isActive || user.is_active !== false ? 'Active' : 'Inactive'}
                   </span>
                 </div>
 
