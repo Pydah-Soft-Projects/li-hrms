@@ -181,6 +181,10 @@ export default function UsersPage() {
     division: '',
   });
 
+  const [employeeSearch, setEmployeeSearch] = useState('');
+  const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
+  const employeeDropdownRef = useRef<HTMLDivElement>(null);
+
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successModalData, setSuccessModalData] = useState({
     username: '',
@@ -533,7 +537,9 @@ export default function UsersPage() {
     try {
       const res = await api.toggleUserStatus(user._id);
       if (res.success) {
-        setSuccess(`User ${res.data?.isActive ? 'activated' : 'deactivated'} successfully`);
+        const isNowActive = res.data?.isActive ?? !user.isActive;
+        const syncMessage = res.syncError ? ' (MSSQL sync failed, but local update succeeded)' : '';
+        setSuccess(`User ${isNowActive ? 'activated' : 'deactivated'} successfully${syncMessage}`);
         loadData();
       } else {
         setError(res.message || 'Failed to update status');
@@ -596,8 +602,24 @@ export default function UsersPage() {
   // Open from employee dialog
   const openFromEmployeeDialog = () => {
     loadEmployeesWithoutAccount();
+    setEmployeeSearch('');
+    setShowEmployeeDropdown(false);
     setShowFromEmployeeDialog(true);
   };
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (employeeDropdownRef.current && !employeeDropdownRef.current.contains(event.target as Node)) {
+        setShowEmployeeDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   // Copy to clipboard
   const copyToClipboard = (text: string) => {
@@ -1378,7 +1400,7 @@ export default function UsersPage() {
                     }}
                     className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   >
-                    {ROLES.filter((r) => r.value !== 'super_admin').map((role) => (
+                    {ROLES.map((role) => (
                       <option key={role.value} value={role.value}>
                         {role.label}
                       </option>
@@ -1489,30 +1511,96 @@ export default function UsersPage() {
               </p>
 
               <form onSubmit={handleCreateFromEmployee} className="space-y-4">
-                <div>
+                <div ref={employeeDropdownRef} className="relative">
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                     Select Employee *
                   </label>
-                  <select
-                    value={employeeFormData.employeeId}
-                    onChange={(e) => {
-                      const emp = employeesWithoutAccount.find((emp) => emp.emp_no === e.target.value);
-                      setEmployeeFormData({
-                        ...employeeFormData,
-                        employeeId: e.target.value,
-                        email: emp?.email || '',
-                      });
-                    }}
-                    required
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  >
-                    <option value="">Select Employee</option>
-                    {employeesWithoutAccount.map((emp) => (
-                      <option key={emp._id} value={emp.emp_no}>
-                        {emp.emp_no} - {emp.employee_name} {emp.department_id?.name ? `(${emp.department_id.name})` : ''}
-                      </option>
-                    ))}
-                  </select>
+
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                      <SearchIcon />
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Search or Select Employee..."
+                      value={employeeSearch}
+                      onFocus={() => setShowEmployeeDropdown(true)}
+                      onClick={() => setShowEmployeeDropdown(true)}
+                      onChange={(e) => {
+                        setEmployeeSearch(e.target.value);
+                        setShowEmployeeDropdown(true);
+                        // If user clears input, allow re-selection
+                        if (e.target.value === '') {
+                          setEmployeeFormData({
+                            ...employeeFormData,
+                            employeeId: '',
+                            email: ''
+                          });
+                        }
+                      }}
+                      className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-10 py-2.5 text-sm focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    />
+                    <div
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center cursor-pointer"
+                      onClick={() => setShowEmployeeDropdown(!showEmployeeDropdown)}
+                    >
+                      <svg className={`w-4 h-4 text-slate-400 transition-transform ${showEmployeeDropdown ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </div>
+                  </div>
+
+                  {showEmployeeDropdown && (
+                    <div className="absolute z-10 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-800">
+                      {employeesWithoutAccount
+                        .filter(emp =>
+                          !employeeSearch ||
+                          emp.employee_name.toLowerCase().includes(employeeSearch.toLowerCase()) ||
+                          emp.emp_no.toLowerCase().includes(employeeSearch.toLowerCase())
+                        )
+                        .length === 0 ? (
+                        <div className="p-3 text-sm text-slate-500 text-center">No employees found</div>
+                      ) : (
+                        <div className="divide-y divide-slate-100 dark:divide-slate-700">
+                          {employeesWithoutAccount
+                            .filter(emp =>
+                              !employeeSearch ||
+                              emp.employee_name.toLowerCase().includes(employeeSearch.toLowerCase()) ||
+                              emp.emp_no.toLowerCase().includes(employeeSearch.toLowerCase())
+                            )
+                            .map((emp) => (
+                              <div
+                                key={emp._id}
+                                onClick={() => {
+                                  setEmployeeFormData({
+                                    ...employeeFormData,
+                                    employeeId: emp.emp_no,
+                                    email: emp?.email || '',
+                                  });
+                                  setEmployeeSearch(`${emp.emp_no} - ${emp.employee_name}`);
+                                  setShowEmployeeDropdown(false);
+                                }}
+                                className={`flex items-center justify-between p-3 cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 ${employeeFormData.employeeId === emp.emp_no ? 'bg-blue-50 dark:bg-blue-900/30' : ''
+                                  }`}
+                              >
+                                <div>
+                                  <div className="font-medium text-slate-900 dark:text-white">
+                                    {emp.employee_name}
+                                  </div>
+                                  <div className="text-xs text-slate-500 dark:text-slate-400">
+                                    {emp.emp_no} • {emp.department_id?.name || 'No Dept'}
+                                  </div>
+                                </div>
+                                {employeeFormData.employeeId === emp.emp_no && (
+                                  <CheckCircleIcon />
+                                )}
+                              </div>
+                            ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {employeesWithoutAccount.length === 0 && (
                     <p className="mt-2 text-sm text-amber-600 dark:text-amber-400">
                       All employees already have user accounts
@@ -1625,7 +1713,7 @@ export default function UsersPage() {
                 </div>
               </form>
             </div>
-          </div>
+          </div >
         )
       }
 
@@ -1675,7 +1763,7 @@ export default function UsersPage() {
                     disabled={selectedUser.role === 'super_admin'}
                     className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white disabled:opacity-50"
                   >
-                    {ROLES.map((role) => (
+                    {ROLES.filter((r) => r.value !== 'super_admin').map((role) => (
                       <option key={role.value} value={role.value}>
                         {role.label}
                       </option>
@@ -1912,195 +2000,197 @@ export default function UsersPage() {
         )
       }
       {/* View User Dialog */}
-      {showViewDialog && selectedViewUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm"
-            onClick={() => setShowViewDialog(false)}
-          />
-          <div className="relative z-50 w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-0 shadow-2xl dark:bg-slate-900">
-            {/* Header */}
-            <div className="relative border-b border-slate-100 bg-slate-50/50 p-6 dark:border-slate-800 dark:bg-slate-900/50">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 text-2xl font-bold text-white shadow-lg shadow-blue-500/20">
-                    {selectedViewUser.name?.[0]?.toUpperCase() || '?'}
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                      {selectedViewUser.name}
-                    </h2>
-                    <p className="text-sm text-slate-500 dark:text-slate-400">
-                      {selectedViewUser.email}
-                    </p>
-                    <div className="mt-2 flex items-center gap-2">
-                      <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold ${getRoleColor(selectedViewUser.role)}`}>
-                        {getRoleLabel(selectedViewUser.role)}
-                      </span>
-                      <span className={`inline-flex px-2.5 py-1 text-xs font-semibold rounded-lg ${selectedViewUser.isActive
-                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                        : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                        }`}>
-                        {selectedViewUser.isActive ? 'Active' : 'Inactive'}
-                      </span>
+      {
+        showViewDialog && selectedViewUser && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div
+              className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm"
+              onClick={() => setShowViewDialog(false)}
+            />
+            <div className="relative z-50 w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-0 shadow-2xl dark:bg-slate-900">
+              {/* Header */}
+              <div className="relative border-b border-slate-100 bg-slate-50/50 p-6 dark:border-slate-800 dark:bg-slate-900/50">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 text-2xl font-bold text-white shadow-lg shadow-blue-500/20">
+                      {selectedViewUser.name?.[0]?.toUpperCase() || '?'}
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                        {selectedViewUser.name}
+                      </h2>
+                      <p className="text-sm text-slate-500 dark:text-slate-400">
+                        {selectedViewUser.email}
+                      </p>
+                      <div className="mt-2 flex items-center gap-2">
+                        <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold ${getRoleColor(selectedViewUser.role)}`}>
+                          {getRoleLabel(selectedViewUser.role)}
+                        </span>
+                        <span className={`inline-flex px-2.5 py-1 text-xs font-semibold rounded-lg ${selectedViewUser.isActive
+                          ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                          : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                          }`}>
+                          {selectedViewUser.isActive ? 'Active' : 'Inactive'}
+                        </span>
+                      </div>
                     </div>
                   </div>
+                  <button
+                    onClick={() => setShowViewDialog(false)}
+                    className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 dark:text-slate-500 dark:hover:bg-slate-800"
+                  >
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
                 </div>
+              </div>
+
+              <div className="p-6 space-y-8">
+                {/* Access Scope Section */}
+                <section>
+                  <div className="mb-4 flex items-center gap-2">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400">
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                      </svg>
+                    </div>
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                      Access Scope & Assignments
+                    </h3>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-800 dark:bg-slate-900/50">
+                    {selectedViewUser.role === 'super_admin' ? (
+                      <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
+                        Super Admin has full global access to all divisions and departments.
+                      </p>
+                    ) : selectedViewUser.dataScope === 'all' ? (
+                      <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
+                        Global Access - Can view data across all divisions and departments.
+                      </p>
+                    ) : selectedViewUser.dataScope === 'own' ? (
+                      <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
+                        Restricted Access - Can only view their own data.
+                      </p>
+                    ) : (
+                      <div className="space-y-4">
+                        {/* Division/Dept Hierarchy Display */}
+                        {(!selectedViewUser.divisionMapping || selectedViewUser.divisionMapping.length === 0) ? (
+                          <div className="text-sm text-slate-500 italic">No specific assignments found.</div>
+                        ) : (
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            {selectedViewUser.divisionMapping.map((mapping: any, idx) => {
+                              const divId = typeof mapping.division === 'string' ? mapping.division : mapping.division?._id;
+                              const divisionName = divisions.find(d => d._id === divId)?.name || 'Unknown Division';
+                              const deptIds = mapping.departments?.map((d: any) => typeof d === 'string' ? d : d._id) || [];
+
+                              return (
+                                <div key={idx} className="rounded-xl border border-white bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+                                  <div className="mb-2 font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                                    <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+                                    {divisionName}
+                                  </div>
+                                  <div className="pl-3.5 border-l-2 border-slate-100 dark:border-slate-700">
+                                    {deptIds.length === 0 ? (
+                                      <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded dark:bg-blue-900/30 dark:text-blue-400">
+                                        All Departments
+                                      </span>
+                                    ) : (
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {deptIds.map((deptId: string) => {
+                                          const deptName = departments.find(d => d._id === deptId)?.name || 'Unknown Dept';
+                                          return (
+                                            <span key={deptId} className="inline-block rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+                                              {deptName}
+                                            </span>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </section>
+
+                {/* Feature Control Section */}
+                <section>
+                  <div className="mb-4 flex items-center gap-2">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400">
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                    </div>
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                      Feature Controls
+                    </h3>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-950">
+                    {!selectedViewUser.featureControl || selectedViewUser.featureControl.length === 0 ? (
+                      <p className="text-sm text-slate-500 italic">No specific feature overrides. User inherits default role permissions.</p>
+                    ) : (
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        {MODULE_CATEGORIES.map(category => {
+                          const enabledModules = category.modules.filter(m => selectedViewUser.featureControl?.includes(m.code));
+                          if (enabledModules.length === 0) return null;
+
+                          return (
+                            <div key={category.code} className="rounded-xl border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900">
+                              <div className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                                <span>{category.icon}</span> {category.name}
+                              </div>
+                              <div className="space-y-1">
+                                {enabledModules.map(m => (
+                                  <div key={m.code} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-200">
+                                    <svg className="h-4 w-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                    {m.label}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </section>
+              </div>
+
+              {/* Footer */}
+              <div className="border-t border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/50 flex justify-end gap-3">
                 <button
                   onClick={() => setShowViewDialog(false)}
-                  className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 dark:text-slate-500 dark:hover:bg-slate-800"
+                  className="rounded-xl px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
                 >
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  Close
+                </button>
+                <button
+                  onClick={() => {
+                    setShowViewDialog(false);
+                    openEditDialog(selectedViewUser);
+                  }}
+                  className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 hover:from-blue-600 hover:to-indigo-600"
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                   </svg>
+                  Edit User
                 </button>
               </div>
             </div>
-
-            <div className="p-6 space-y-8">
-              {/* Access Scope Section */}
-              <section>
-                <div className="mb-4 flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400">
-                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                    </svg>
-                  </div>
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                    Access Scope & Assignments
-                  </h3>
-                </div>
-
-                <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-800 dark:bg-slate-900/50">
-                  {selectedViewUser.role === 'super_admin' ? (
-                    <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
-                      Super Admin has full global access to all divisions and departments.
-                    </p>
-                  ) : selectedViewUser.dataScope === 'all' ? (
-                    <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
-                      Global Access - Can view data across all divisions and departments.
-                    </p>
-                  ) : selectedViewUser.dataScope === 'own' ? (
-                    <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
-                      Restricted Access - Can only view their own data.
-                    </p>
-                  ) : (
-                    <div className="space-y-4">
-                      {/* Division/Dept Hierarchy Display */}
-                      {(!selectedViewUser.divisionMapping || selectedViewUser.divisionMapping.length === 0) ? (
-                        <div className="text-sm text-slate-500 italic">No specific assignments found.</div>
-                      ) : (
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          {selectedViewUser.divisionMapping.map((mapping: any, idx) => {
-                            const divId = typeof mapping.division === 'string' ? mapping.division : mapping.division?._id;
-                            const divisionName = divisions.find(d => d._id === divId)?.name || 'Unknown Division';
-                            const deptIds = mapping.departments?.map((d: any) => typeof d === 'string' ? d : d._id) || [];
-
-                            return (
-                              <div key={idx} className="rounded-xl border border-white bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-                                <div className="mb-2 font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                                  <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
-                                  {divisionName}
-                                </div>
-                                <div className="pl-3.5 border-l-2 border-slate-100 dark:border-slate-700">
-                                  {deptIds.length === 0 ? (
-                                    <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded dark:bg-blue-900/30 dark:text-blue-400">
-                                      All Departments
-                                    </span>
-                                  ) : (
-                                    <div className="flex flex-wrap gap-1.5">
-                                      {deptIds.map((deptId: string) => {
-                                        const deptName = departments.find(d => d._id === deptId)?.name || 'Unknown Dept';
-                                        return (
-                                          <span key={deptId} className="inline-block rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600 dark:bg-slate-700 dark:text-slate-300">
-                                            {deptName}
-                                          </span>
-                                        );
-                                      })}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </section>
-
-              {/* Feature Control Section */}
-              <section>
-                <div className="mb-4 flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400">
-                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                  </div>
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                    Feature Controls
-                  </h3>
-                </div>
-
-                <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-950">
-                  {!selectedViewUser.featureControl || selectedViewUser.featureControl.length === 0 ? (
-                    <p className="text-sm text-slate-500 italic">No specific feature overrides. User inherits default role permissions.</p>
-                  ) : (
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                      {MODULE_CATEGORIES.map(category => {
-                        const enabledModules = category.modules.filter(m => selectedViewUser.featureControl?.includes(m.code));
-                        if (enabledModules.length === 0) return null;
-
-                        return (
-                          <div key={category.code} className="rounded-xl border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900">
-                            <div className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                              <span>{category.icon}</span> {category.name}
-                            </div>
-                            <div className="space-y-1">
-                              {enabledModules.map(m => (
-                                <div key={m.code} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-200">
-                                  <svg className="h-4 w-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                  </svg>
-                                  {m.label}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </section>
-            </div>
-
-            {/* Footer */}
-            <div className="border-t border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/50 flex justify-end gap-3">
-              <button
-                onClick={() => setShowViewDialog(false)}
-                className="rounded-xl px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-              >
-                Close
-              </button>
-              <button
-                onClick={() => {
-                  setShowViewDialog(false);
-                  openEditDialog(selectedViewUser);
-                }}
-                className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 hover:from-blue-600 hover:to-indigo-600"
-              >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
-                Edit User
-              </button>
-            </div>
           </div>
-        </div>
-      )}
+        )
+      }
     </div >
   );
 }

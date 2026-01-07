@@ -52,23 +52,31 @@ export default function DashboardPage() {
 
     const fetchAttendance = async () => {
       const u = auth.getUser();
-      // Ensure specific params are available
-      if (!u || !u.employeeId || !u.emp_no) return;
+      // Try to get employee number from various possible fields
+      const empNo = u?.emp_no || (u as any)?.employeeNumber;
+
+      if (!u || !empNo) {
+        console.warn('Dashboard: No employee number found for attendance fetch', u);
+        return;
+      }
+
+      console.log('Fetching attendance for:', empNo);
 
       try {
         const today = new Date().toISOString().split('T')[0];
-        const response = await api.getOTRequests({
-          employeeId: u.employeeId,
-          employeeNumber: u.emp_no,
-          date: today,
-          status: 'approved'
-        });
+        const response = await api.getAttendanceDetail(empNo, today);
 
         if (response.success && response.data) {
-          setAttendanceData(response.data);
+          console.log('Attendance data loaded:', response.data);
+          // Wrap in array as UI expects list
+          setAttendanceData([response.data]);
+        } else {
+          console.log('No attendance data found for today');
+          setAttendanceData([]);
         }
       } catch (err) {
         console.error("Error fetching attendance:", err);
+        setAttendanceData([]);
       }
     };
 
@@ -103,6 +111,19 @@ export default function DashboardPage() {
       </div>
     );
   }
+
+  // Helper to determine if attendance is present (case insensitive)
+  const isPresent = (data: any[]) => {
+    if (!data || data.length === 0) return false;
+    const status = data[0].status?.toUpperCase();
+    return status === 'PRESENT' || status === 'PARTIAL' || status === 'HALF_DAY';
+  };
+
+  const getStatusDisplay = (data: any[]) => {
+    if (loading) return 'SYNCING...';
+    if (!data || data.length === 0) return 'ABSENT';
+    return data[0].status || 'Running';
+  };
 
   return (
     <div className="space-y-3 md:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 bg-green-50 p-2 md:p-6 rounded-xl md:rounded-[2rem]">
@@ -149,9 +170,9 @@ export default function DashboardPage() {
                 </div>
               </div>
               <span className={`px-3 py-1 md:px-4 md:py-1.5 rounded-full text-[10px] md:text-xs font-bold uppercase tracking-widest shadow-sm border backdrop-blur-md w-full md:w-auto text-center ${loading ? 'bg-white/10 text-white/50 border-white/10' :
-                (attendanceData ? 'bg-white text-emerald-600 border-white' : 'bg-white/10 text-white border-white/20')
+                (isPresent(attendanceData) ? 'bg-white text-emerald-600 border-white' : 'bg-white/10 text-white border-white/20')
                 }`}>
-                {loading ? 'SYNCING...' : (attendanceData ? 'PRESENT' : 'ABSENT')}
+                {getStatusDisplay(attendanceData)}
               </span>
             </div>
 
@@ -170,18 +191,22 @@ export default function DashboardPage() {
                     <div key={idx} className="flex items-center justify-between">
                       <div className="flex flex-col">
                         <span className="text-[10px] md:text-xs font-semibold text-emerald-100 uppercase tracking-wider">Shift Info</span>
-                        <span className="text-xs md:text-sm font-bold text-white">{record.shiftId?.name || 'Standard Shift'}</span>
+                        <span className="text-xs md:text-sm font-bold text-white">{record.shiftId?.name || record.shift || 'General Shift'}</span>
+                      </div>
+                      <div className="flex flex-col items-center">
+                        <span className="text-[10px] md:text-xs font-semibold text-emerald-100 uppercase tracking-wider">In Time</span>
+                        <span className="text-sm md:text-base font-bold text-white font-mono">{record.inTime ? new Date(record.inTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}</span>
                       </div>
                       <div className="flex flex-col items-end">
-                        <span className="text-[10px] md:text-xs font-semibold text-emerald-100 uppercase tracking-wider">Punch Out</span>
-                        <span className="text-base md:text-lg font-black text-white font-mono tracking-tight">{record.otOutTime || '--:--'}</span>
+                        <span className="text-[10px] md:text-xs font-semibold text-emerald-100 uppercase tracking-wider">Out Time</span>
+                        <span className="text-sm md:text-base font-bold text-white font-mono">{record.outTime ? new Date(record.outTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}</span>
                       </div>
                     </div>
                   ))
                 ) : (
                   <div className="text-center py-2 flex flex-col items-center">
-                    <p className="text-emerald-50 text-sm font-medium">No active session found</p>
-                    <p className="text-emerald-200/60 text-xs">Waiting for check-in</p>
+                    <p className="text-emerald-50 text-sm font-medium">No check-in found</p>
+                    <p className="text-emerald-200/60 text-xs">Waiting for attendance log</p>
                   </div>
                 )}
               </div>
@@ -215,7 +240,7 @@ function HRDashboard({ stats, hasPermission }: { stats: DashboardStats; hasPermi
           icon={<ClockIcon className="w-6 h-6" />}
           trend="Requires action"
           color="amber"
-          highlight={true}
+          // highlight={true}
         />
         <StatCard
           title="Ready for Payroll"

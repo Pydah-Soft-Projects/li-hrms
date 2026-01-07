@@ -1468,7 +1468,8 @@ export default function EmployeesPage() {
       console.log(`API response for ${action} employee ${empNo}:`, response);
 
       if (response.success) {
-        setSuccess(`Employee ${action}d successfully!`);
+        const syncMessage = response.syncError ? ' (MSSQL sync failed, but local update succeeded)' : '';
+        setSuccess(`Employee ${action}d successfully!${syncMessage}`);
         // Update with actual server data if available to ensure consistency
         if (response.data) {
           setEmployees((prev) =>
@@ -1529,7 +1530,8 @@ export default function EmployeesPage() {
       );
 
       if (response.success) {
-        setSuccess('Employee left date set successfully!');
+        const syncMessage = response.syncError ? ' (MSSQL sync failed, but local update succeeded)' : '';
+        setSuccess(`Employee left date set successfully!${syncMessage}`);
         setShowLeftDateModal(false);
         setSelectedEmployeeForLeftDate(null);
         setLeftDateForm({ leftDate: '', leftReason: '' });

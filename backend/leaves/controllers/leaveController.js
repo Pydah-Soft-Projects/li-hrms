@@ -908,7 +908,11 @@ exports.cancelLeave = async (req, res) => {
 exports.getPendingApprovals = async (req, res) => {
   try {
     const userRole = req.user.role;
-    let filter = { isActive: true };
+    // Base filter: Active AND Not Applied by Me (Self-requests go to "My Leaves")
+    let filter = {
+      isActive: true,
+      appliedBy: { $ne: req.user._id }
+    };
 
     // 1. Super Admin / Sub Admin: View all non-final leaves
     if (['sub_admin', 'super_admin'].includes(userRole)) {
@@ -916,12 +920,28 @@ exports.getPendingApprovals = async (req, res) => {
     }
     // 2. HOD: View leaves assigned to HOD role within their department
     else if (userRole === 'hod') {
-      filter['$or'] = [
+      const nextApproverCondition = [
         { 'workflow.nextApprover': 'hod' },
         { 'workflow.nextApproverRole': 'hod' }
       ];
+
       if (req.user.department) {
-        filter.department = req.user.department;
+        // Use $and to combine status check and department scope
+        filter = {
+          $and: [
+            filter, // Include base filter (isActive + not self)
+            { $or: nextApproverCondition },
+            {
+              $or: [
+                { department: req.user.department },
+                { department_id: req.user.department }
+              ]
+            }
+          ]
+        };
+      } else {
+        // Fallback if no department set (though HODs should have one)
+        filter['$or'] = nextApproverCondition;
       }
     }
     // 3. HR: View leaves assigned to HR or Final Authority
@@ -933,7 +953,7 @@ exports.getPendingApprovals = async (req, res) => {
     }
     // 4. Manager: View leaves assigned to Manager within their scope
     else if (userRole === 'manager') {
-      filter['$or'] = [
+      const nextApproverCondition = [
         { 'workflow.nextApprover': 'manager' },
         { 'workflow.nextApproverRole': 'manager' }
       ];
@@ -945,36 +965,39 @@ exports.getPendingApprovals = async (req, res) => {
       if (req.user.allowedDivisions && req.user.allowedDivisions.length > 0) {
         const divisionIds = req.user.allowedDivisions.map(d => (typeof d === 'string' ? d : d._id));
         scopeConditions.push({ division_id: { $in: divisionIds } });
+        scopeConditions.push({ division: { $in: divisionIds } }); // Safety
       }
 
       // B. Direct Departments
       if (req.user.departments && req.user.departments.length > 0) {
         const deptIds = req.user.departments.map(d => (typeof d === 'string' ? d : d._id));
         scopeConditions.push({ department: { $in: deptIds } });
+        scopeConditions.push({ department_id: { $in: deptIds } }); // Safety
       }
 
       // C. Division Mapping (Approximation for Query)
       if (req.user.divisionMapping && req.user.divisionMapping.length > 0) {
-        // This is complex to query perfectly in one go if logic is "Division X but NOT Department Y"
-        // For now, we include any Division mentioned in mapping
         const mappedDivIds = req.user.divisionMapping.map(m => (typeof m.division === 'string' ? m.division : m.division._id));
-        scopeConditions.push({ division_id: { $in: mappedDivIds } });
+        if (mappedDivIds.length > 0) {
+          scopeConditions.push({ division_id: { $in: mappedDivIds } });
+        }
       }
 
       if (scopeConditions.length > 0) {
-        filter['$and'] = [
-          filter['$or'], // The role check
-          { $or: scopeConditions } // The scope check
-        ];
-        delete filter['$or']; // Moved inside $and
+        filter = {
+          $and: [
+            filter, // Include base filter (isActive + not self)
+            { $or: nextApproverCondition },
+            { $or: scopeConditions }
+          ]
+        };
       } else {
-        // No scope defined? Maybe show nothing or everything? 
-        // Safest is to show nothing if manager has no scope, ensuring security.
-        // But maybe they are a "General Manager"?
-        // Let's assume strict scope.
         console.warn(`Manager ${req.user._id} has no scope defined calling getPendingApprovals`);
-        // filter matches role, but we might want to restrict. 
-        // For now, let generic 'nextApprover' rule stand, but warned.
+        // Default behavior: show nothing if no scope, or allow all?
+        // To be safe, we'll return nothing if no scope is found but role is manager
+        // But for now let's just stick to the role check if scope is missing (legacy behavior), 
+        // effectively treating them as global manager if no restrictions
+        filter['$or'] = nextApproverCondition;
       }
     }
     // 5. Generic / Custom Role: View leaves explicitly assigned to this role

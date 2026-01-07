@@ -477,10 +477,12 @@ export default function LeavesPage() {
         setCheckingApprovedRecords(false);
 
       } else {
-        // Manager/Admin Plan: Fetch ALL (limited) + Pending Approvals
+        // Manager/HOD/Admin Plan:
+        // 1. "Leaves" tab -> MY Leaves (Self Requests)
+        // 2. "Pending Approvals" tab -> Team Requests (Approvals)
         const [leavesRes, odsRes, pendingLeavesRes, pendingODsRes] = await Promise.all([
-          api.getLeaves({ limit: 50 }),
-          api.getODs({ limit: 50 }),
+          api.getMyLeaves(), // Fetch self leaves for the main tab
+          api.getMyODs(),    // Fetch self ODs for the OD tab
           api.getPendingLeaveApprovals(),
           api.getPendingODApprovals(),
         ]);
@@ -705,13 +707,11 @@ export default function LeavesPage() {
     try {
       if (!currentUser) return;
 
-
-
       // Load employees logic (based on Role)
       if (currentUser) {
         // 1. Employee: Load self profile only
         if (currentUser.role === 'employee') {
-          console.log('[Workspace Leaves] Loading data for employee:', currentUser);
+          // console.log('[Workspace Leaves] Loading data for employee:', currentUser);
           // Try to get employee details using linked employeeId or emp_no
           const identifier = (currentUser as any).emp_no || currentUser.employeeId;
 
@@ -724,15 +724,18 @@ export default function LeavesPage() {
                 setEmployees([response.data]);
                 employeeLoaded = true;
               }
-            } catch (fetchErr) {
-              console.error('Error fetching employee details:', fetchErr);
+            } catch (fetchErr: any) {
+              // Only log if it's not a known "deactivated" error which we handle by fallback
+              if (!fetchErr?.message?.includes('deactivated')) {
+                console.error('Error fetching employee details:', fetchErr);
+              }
             }
           }
 
           // Fallback: If API failed or no identifier, but we are logged in as employee,
           // create a synthetic employee object from currentUser to allow application
           if (!employeeLoaded) {
-            console.warn('Using synthetic employee data from currentUser');
+            // console.warn('Using synthetic employee data from currentUser');
             const syntheticEmployee: any = {
               _id: currentUser!.id || 'current-user',
               emp_no: identifier || 'UNKNOWN',
@@ -744,12 +747,11 @@ export default function LeavesPage() {
             };
             setEmployees([syntheticEmployee]);
           }
-          console.log('[Workspace Leaves] Loaded employees list:', employeeLoaded ? 'From API' : 'Synthetic');
 
         }
         // 2. HOD: Access to own department employees
-        else if (['hod', 'manager', 'hr', 'sub_admin', 'super_admin'].includes(currentUser.role)) {
-          console.log(`[Workspace Leaves] Loading employees for ${currentUser.role}.`);
+        else {
+          // console.log(`[Workspace Leaves] Loading employees for ${currentUser.role}.`);
 
           const query: any = { is_active: true };
           if (currentUser.role === 'hod') {
@@ -760,12 +762,18 @@ export default function LeavesPage() {
           }
 
           const response = await api.getEmployees(query);
-          if (response.success && response.data) {
+          if (response.success) {
+            if (!Array.isArray(response.data)) {
+              console.error('[Workspace Leaves] Expected array for employees but got:', typeof response.data);
+              setEmployees([]);
+              return;
+            }
+
             let employeesList = response.data;
 
             // Ensure current user is included in the list (if they have an emp_no)
             const identifier = (currentUser as any).emp_no || currentUser.employeeId;
-            const selfExists = employeesList.some((emp: any) => emp.emp_no === identifier || emp._id === currentUser.id);
+            const selfExists = employeesList.some((emp: any) => emp && (emp.emp_no === identifier || emp._id === currentUser.id));
 
             if (!selfExists && identifier) {
               try {
@@ -779,14 +787,23 @@ export default function LeavesPage() {
             }
 
             setEmployees(employeesList);
+          } else {
+            // Suppress error for deactivated accounts as this is expected state for some contexts
+            if (response.message !== 'Employee account is deactivated') {
+              console.error('[Workspace Leaves] Failed to fetch employees:', response.message);
+            }
           }
         }
       } else {
         // Fallback if currentUser not loaded yet
         setEmployees([]);
       }
-    } catch (err) {
-      console.error('Failed to load employees:', err);
+    } catch (err: any) {
+      console.error('Failed to load employees [Critical]:', err?.message || err);
+      // Attempt to print full error object if possible
+      try {
+        console.error(JSON.stringify(err, null, 2));
+      } catch (e) { /* ignore */ }
       setEmployees([]);
     }
   };
@@ -1557,46 +1574,57 @@ export default function LeavesPage() {
         </div>
 
         {/* Tabs */}
-        {/* Tabs */}
         <div className="mb-6">
-          <div className="relative flex gap-8 border-b border-slate-200 dark:border-slate-700">
-            {/* Slider */}
-            <div
-              className={`absolute bottom-0 h-0.5 bg-blue-600 transition-all duration-300 ease-in-out ${activeTab === 'leaves' ? 'w-[102px] left-0' :
-                  activeTab === 'od' ? 'w-[108px] left-[134px]' :
-                    'w-[178px] left-[274px]'
-                }`}
-            />
-
+          <div className="inline-flex items-center p-1.5 rounded-xl bg-slate-100/80 dark:bg-slate-800/50 border border-slate-200/50 dark:border-slate-700/50 backdrop-blur-sm">
             <button
               onClick={() => setActiveTab('leaves')}
-              className={`pb-3 font-medium text-sm transition-all flex items-center gap-2 ${activeTab === 'leaves'
-                ? 'text-blue-600'
-                : 'text-slate-500 hover:text-slate-700'
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${activeTab === 'leaves'
+                ? 'bg-white text-blue-600 shadow-sm ring-1 ring-slate-200/50 dark:bg-slate-700 dark:text-blue-400 dark:ring-0 dark:shadow-none'
+                : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
                 }`}
             >
               <CalendarIcon className="w-4 h-4" />
-              Leaves ({leaves.length})
+              <span>Leaves</span>
+              <span className={`ml-1.5 px-2 py-0.5 rounded-full text-[10px] ${activeTab === 'leaves'
+                ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300'
+                : 'bg-slate-200/50 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
+                }`}>
+                {leaves.length}
+              </span>
             </button>
             <button
               onClick={() => setActiveTab('od')}
-              className={`pb-3 font-medium text-sm transition-all flex items-center gap-2 ${activeTab === 'od'
-                ? 'text-blue-600' // Keeping primary color for active tab consistency, or could use purple
-                : 'text-slate-500 hover:text-slate-700'
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${activeTab === 'od'
+                ? 'bg-white text-purple-600 shadow-sm ring-1 ring-slate-200/50 dark:bg-slate-700 dark:text-purple-400 dark:ring-0 dark:shadow-none'
+                : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
                 }`}
             >
               <BriefcaseIcon className="w-4 h-4" />
-              On Duty ({ods.length})
+              <span>On Duty</span>
+              <span className={`ml-1.5 px-2 py-0.5 rounded-full text-[10px] ${activeTab === 'od'
+                ? 'bg-purple-50 text-purple-600 dark:bg-purple-900/30 dark:text-purple-300'
+                : 'bg-slate-200/50 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
+                }`}>
+                {ods.length}
+              </span>
             </button>
             <button
               onClick={() => setActiveTab('pending')}
-              className={`pb-3 font-medium text-sm transition-all flex items-center gap-2 ${activeTab === 'pending'
-                ? 'text-blue-600'
-                : 'text-slate-500 hover:text-slate-700'
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${activeTab === 'pending'
+                ? 'bg-white text-orange-600 shadow-sm ring-1 ring-slate-200/50 dark:bg-slate-700 dark:text-orange-400 dark:ring-0 dark:shadow-none'
+                : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
                 }`}
             >
               <ClockIcon className="w-4 h-4" />
-              Pending Approvals ({totalPending})
+              <span>Pending</span>
+              {totalPending >= 0 && (
+                <span className={`ml-1.5 px-2 py-0.5 rounded-full text-[10px] ${activeTab === 'pending'
+                  ? 'bg-orange-50 text-orange-600 dark:bg-orange-900/30 dark:text-orange-300'
+                  : 'bg-slate-200/50 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
+                  }`}>
+                  {totalPending}
+                </span>
+              )}
             </button>
           </div>
         </div>
@@ -1604,29 +1632,26 @@ export default function LeavesPage() {
         {/* Content */}
         <div className="mt-4">
           {activeTab === 'leaves' && (
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 dark:bg-slate-800 dark:border-slate-700 overflow-hidden">
+            <div className="bg-white rounded-lg border border-slate-200 shadow-sm dark:bg-slate-800 dark:border-slate-700 overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300">
-                  <thead className="bg-slate-50/80 text-xs font-semibold uppercase text-slate-500 tracking-wider dark:bg-slate-700/50 dark:text-slate-400">
+                <table className="w-full text-left border-collapse">
+                  <thead className="bg-slate-100/75 border-b border-slate-200 dark:bg-slate-700/50 dark:border-slate-700">
                     <tr>
                       {currentUser?.role !== 'employee' && (
-                        <th scope="col" className="px-6 py-4">Employee</th>
+                        <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Employee</th>
                       )}
-                      <th scope="col" className="px-6 py-4">Leave Type</th>
-                      <th scope="col" className="px-6 py-4">Dates</th>
-                      <th scope="col" className="px-6 py-4 text-center">Duration</th>
-                      <th scope="col" className="px-6 py-4 text-center">Status</th>
-                      <th scope="col" className="px-6 py-4 text-right">Actions</th>
+                      <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Leave Type</th>
+                      <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Dates</th>
+                      <th scope="col" className="px-6 py-3.5 text-xs font-bold text-center text-slate-600 uppercase tracking-wider dark:text-slate-300">Duration</th>
+                      <th scope="col" className="px-6 py-3.5 text-xs font-bold text-center text-slate-600 uppercase tracking-wider dark:text-slate-300">Status</th>
+                      <th scope="col" className="px-6 py-3.5 text-right text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                     {leaves.length === 0 ? (
                       <tr>
-                        <td colSpan={currentUser?.role !== 'employee' ? 6 : 5} className="px-6 py-12 text-center text-slate-400">
-                          <div className="flex flex-col items-center justify-center gap-2">
-                            <CalendarIcon className="w-8 h-8 text-slate-300" />
-                            <p>No leave applications found</p>
-                          </div>
+                        <td colSpan={currentUser?.role !== 'employee' ? 6 : 5} className="px-6 py-10 text-center text-slate-500 text-sm">
+                          No leave applications found
                         </td>
                       </tr>
                     ) : (
@@ -1634,16 +1659,16 @@ export default function LeavesPage() {
                         <tr
                           key={leave._id}
                           onClick={() => openDetailDialog(leave, 'leave')}
-                          className="group hover:bg-slate-50/80 dark:hover:bg-slate-700/30 transition-all cursor-pointer"
+                          className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors cursor-pointer"
                         >
                           {currentUser?.role !== 'employee' && (
-                            <td className="px-6 py-4">
+                            <td className="px-6 py-3.5">
                               <div className="flex items-center gap-3">
-                                <div className="h-9 w-9 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-blue-600 dark:text-blue-400 font-bold text-xs shrink-0 ring-2 ring-white dark:ring-slate-800">
+                                <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-700 dark:text-blue-400 font-bold text-xs shrink-0">
                                   {getEmployeeInitials({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: '' } as any)}
                                 </div>
-                                <div>
-                                  <div className="font-semibold text-slate-900 dark:text-white">
+                                <div className="min-w-0">
+                                  <div className="font-medium text-slate-900 dark:text-white text-sm truncate max-w-[150px]">
                                     {leave.employeeId?.employee_name || `${leave.employeeId?.first_name || ''} ${leave.employeeId?.last_name || ''}`.trim() || leave.emp_no}
                                   </div>
                                   <div className="text-xs text-slate-500">
@@ -1653,49 +1678,49 @@ export default function LeavesPage() {
                               </div>
                             </td>
                           )}
-                          <td className="px-6 py-4">
-                            <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300 capitalize">
+                          <td className="px-6 py-3.5">
+                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300 capitalize">
                               {leave.leaveType?.replace('_', ' ')}
                             </span>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="flex flex-col text-sm">
-                              <span className="font-medium text-slate-900 dark:text-white">
-                                {formatDate(leave.fromDate)}
-                              </span>
+                          <td className="px-6 py-3.5 whitespace-nowrap">
+                            <div className="text-sm text-slate-700 dark:text-slate-300">
+                              <span className="font-medium">{formatDate(leave.fromDate)}</span>
                               {leave.fromDate !== leave.toDate && (
-                                <span className="text-xs text-slate-500">
-                                  to {formatDate(leave.toDate)}
-                                </span>
+                                <span className="text-slate-400 mx-1.5">-</span>
+                              )}
+                              {leave.fromDate !== leave.toDate && (
+                                <span>{formatDate(leave.toDate)}</span>
                               )}
                             </div>
                           </td>
-                          <td className="px-6 py-4 text-center">
-                            <div className="inline-flex flex-col items-center">
-                              <span className="font-semibold text-slate-700 dark:text-slate-300">
+                          <td className="px-6 py-3.5 text-center">
+                            <div className="inline-flex items-center gap-1.5 bg-slate-100 rounded-md px-2 py-1 dark:bg-slate-800">
+                              <span className="font-semibold text-slate-700 dark:text-slate-300 text-sm">
                                 {leave.numberOfDays}d
                               </span>
                               {leave.isHalfDay && (
-                                <span className="text-[10px] uppercase font-bold text-orange-500 bg-orange-50 px-1.5 py-0.5 rounded dark:bg-orange-900/20">
-                                  {leave.halfDayType === 'first_half' ? '1st Half' : '2nd Half'}
+                                <span className="text-[10px] font-bold text-orange-600 uppercase">
+                                  {leave.halfDayType === 'first_half' ? '(1st)' : '(2nd)'}
                                 </span>
                               )}
                             </div>
                           </td>
-                          <td className="px-6 py-4 text-center">
-                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold capitalize ${getStatusColor(leave.status)}`}>
+                          <td className="px-6 py-3.5 text-center">
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize border ${getStatusColor(leave.status) === 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' ? 'border-green-200' : 'border-transparent' // subtle border for approved
+                              } ${getStatusColor(leave.status)}`}>
                               {leave.status?.replace('_', ' ')}
                             </span>
                           </td>
-                          <td className="px-6 py-4 text-right">
+                          <td className="px-6 py-3.5 text-right">
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 openDetailDialog(leave, 'leave');
                               }}
-                              className="text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg group-hover:visible"
+                              className="text-sm text-blue-600 hover:text-blue-800 font-medium dark:text-blue-400 dark:hover:text-blue-300"
                             >
-                              <span className="text-xs font-semibold">Details</span>
+                              View
                             </button>
                           </td>
                         </tr>
@@ -1709,30 +1734,27 @@ export default function LeavesPage() {
 
 
           {activeTab === 'od' && (
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 dark:bg-slate-800 dark:border-slate-700 overflow-hidden">
+            <div className="bg-white rounded-lg border border-slate-200 shadow-sm dark:bg-slate-800 dark:border-slate-700 overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300">
-                  <thead className="bg-slate-50/80 text-xs font-semibold uppercase text-slate-500 tracking-wider dark:bg-slate-700/50 dark:text-slate-400">
+                <table className="w-full text-left border-collapse">
+                  <thead className="bg-slate-100/75 border-b border-slate-200 dark:bg-slate-700/50 dark:border-slate-700">
                     <tr>
                       {currentUser?.role !== 'employee' && (
-                        <th scope="col" className="px-6 py-4">Employee</th>
+                        <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Employee</th>
                       )}
-                      <th scope="col" className="px-6 py-4">OD Type</th>
-                      <th scope="col" className="px-6 py-4">Place Visited</th>
-                      <th scope="col" className="px-6 py-4">Dates</th>
-                      <th scope="col" className="px-6 py-4 text-center">Duration</th>
-                      <th scope="col" className="px-6 py-4 text-center">Status</th>
-                      <th scope="col" className="px-6 py-4 text-right">Actions</th>
+                      <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">OD Type</th>
+                      <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Place Visited</th>
+                      <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Dates</th>
+                      <th scope="col" className="px-6 py-3.5 text-xs font-bold text-center text-slate-600 uppercase tracking-wider dark:text-slate-300">Duration</th>
+                      <th scope="col" className="px-6 py-3.5 text-xs font-bold text-center text-slate-600 uppercase tracking-wider dark:text-slate-300">Status</th>
+                      <th scope="col" className="px-6 py-3.5 text-right text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                     {ods.length === 0 ? (
                       <tr>
-                        <td colSpan={currentUser?.role !== 'employee' ? 7 : 6} className="px-6 py-12 text-center text-slate-400">
-                          <div className="flex flex-col items-center justify-center gap-2">
-                            <BriefcaseIcon className="w-8 h-8 text-slate-300" />
-                            <p>No OD applications found</p>
-                          </div>
+                        <td colSpan={currentUser?.role !== 'employee' ? 7 : 6} className="px-6 py-10 text-center text-slate-500 text-sm">
+                          No OD applications found
                         </td>
                       </tr>
                     ) : (
@@ -1740,16 +1762,16 @@ export default function LeavesPage() {
                         <tr
                           key={od._id}
                           onClick={() => openDetailDialog(od, 'od')}
-                          className="group hover:bg-slate-50/80 dark:hover:bg-slate-700/30 transition-all cursor-pointer"
+                          className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors cursor-pointer"
                         >
                           {currentUser?.role !== 'employee' && (
-                            <td className="px-6 py-4">
+                            <td className="px-6 py-3.5">
                               <div className="flex items-center gap-3">
-                                <div className="h-9 w-9 rounded-full bg-purple-50 dark:bg-purple-900/20 flex items-center justify-center text-purple-600 dark:text-purple-400 font-bold text-xs shrink-0 ring-2 ring-white dark:ring-slate-800">
+                                <div className="h-8 w-8 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-700 dark:text-purple-400 font-bold text-xs shrink-0">
                                   {getEmployeeInitials({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: '' } as any)}
                                 </div>
-                                <div>
-                                  <div className="font-semibold text-slate-900 dark:text-white">
+                                <div className="min-w-0">
+                                  <div className="font-medium text-slate-900 dark:text-white text-sm truncate max-w-[150px]">
                                     {od.employeeId?.employee_name || `${od.employeeId?.first_name || ''} ${od.employeeId?.last_name || ''}`.trim() || od.emp_no}
                                   </div>
                                   <div className="text-xs text-slate-500">
@@ -1759,52 +1781,52 @@ export default function LeavesPage() {
                               </div>
                             </td>
                           )}
-                          <td className="px-6 py-4">
-                            <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300 capitalize">
+                          <td className="px-6 py-3.5">
+                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300 capitalize">
                               {od.odType?.replace('_', ' ')}
                             </span>
                           </td>
-                          <td className="px-6 py-4 max-w-[150px] truncate font-medium text-slate-900 dark:text-white" title={od.placeVisited}>
+                          <td className="px-6 py-3.5 max-w-[180px] truncate text-sm text-slate-700 dark:text-slate-300" title={od.placeVisited}>
                             {od.placeVisited || '-'}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="flex flex-col text-sm">
-                              <span className="font-medium text-slate-900 dark:text-white">
-                                {formatDate(od.fromDate)}
-                              </span>
+                          <td className="px-6 py-3.5 whitespace-nowrap">
+                            <div className="text-sm text-slate-700 dark:text-slate-300">
+                              <span className="font-medium">{formatDate(od.fromDate)}</span>
                               {od.fromDate !== od.toDate && (
-                                <span className="text-xs text-slate-500">
-                                  to {formatDate(od.toDate)}
-                                </span>
+                                <span className="text-slate-400 mx-1.5">-</span>
+                              )}
+                              {od.fromDate !== od.toDate && (
+                                <span>{formatDate(od.toDate)}</span>
                               )}
                             </div>
                           </td>
-                          <td className="px-6 py-4 text-center">
-                            <div className="inline-flex flex-col items-center">
-                              <span className="font-semibold text-slate-700 dark:text-slate-300">
+                          <td className="px-6 py-3.5 text-center">
+                            <div className="inline-flex items-center gap-1.5 bg-slate-100 rounded-md px-2 py-1 dark:bg-slate-800">
+                              <span className="font-semibold text-slate-700 dark:text-slate-300 text-sm">
                                 {od.numberOfDays}d
                               </span>
                               {od.isHalfDay && (
-                                <span className="text-[10px] uppercase font-bold text-orange-500 bg-orange-50 px-1.5 py-0.5 rounded dark:bg-orange-900/20">
-                                  {od.halfDayType === 'first_half' ? '1st Half' : '2nd Half'}
+                                <span className="text-[10px] font-bold text-orange-600 uppercase">
+                                  {od.halfDayType === 'first_half' ? '(1st)' : '(2nd)'}
                                 </span>
                               )}
                             </div>
                           </td>
-                          <td className="px-6 py-4 text-center">
-                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold capitalize ${getStatusColor(od.status)}`}>
+                          <td className="px-6 py-3.5 text-center">
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize border ${getStatusColor(od.status) === 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' ? 'border-green-200' : 'border-transparent'
+                              } ${getStatusColor(od.status)}`}>
                               {od.status?.replace('_', ' ')}
                             </span>
                           </td>
-                          <td className="px-6 py-4 text-right">
+                          <td className="px-6 py-3.5 text-right">
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 openDetailDialog(od, 'od');
                               }}
-                              className="text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors p-2 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg group-hover:visible"
+                              className="text-sm text-purple-600 hover:text-purple-800 font-medium dark:text-purple-400 dark:hover:text-purple-300"
                             >
-                              <span className="text-xs font-semibold">Details</span>
+                              View
                             </button>
                           </td>
                         </tr>
@@ -1886,29 +1908,7 @@ export default function LeavesPage() {
                           </div>
 
                           {/* Actions */}
-                          {currentUser?.role !== 'employee' &&
-                            !['approved', 'rejected', 'cancelled'].includes(leave.status) &&
-                            !leave.status.includes('rejected') &&
-                            !(currentUser?.role === 'hod' && leave.status === 'hod_approved') &&
-                            !(currentUser?.role === 'hr' && leave.status === 'hr_approved') &&
-                            ['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser?.role || '') && (
-                              <div className="flex items-center gap-2 mt-auto">
-                                <button
-                                  onClick={() => handleAction(leave._id, 'leave', 'approve')}
-                                  className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-green-500/10 py-2 text-sm font-semibold text-green-600 transition-colors hover:bg-green-500 hover:text-white dark:bg-green-500/20 dark:text-green-400 dark:hover:bg-green-500 dark:hover:text-white"
-                                  title="Approve Leave"
-                                >
-                                  <CheckIcon /> Approve
-                                </button>
-                                <button
-                                  onClick={() => handleAction(leave._id, 'leave', 'reject')}
-                                  className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-500/10 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500 hover:text-white dark:bg-red-500/20 dark:text-red-400 dark:hover:bg-red-500 dark:hover:text-white"
-                                  title="Reject Leave"
-                                >
-                                  <XIcon /> Reject
-                                </button>
-                              </div>
-                            )}
+
                           {canPerformAction(leave) && (
                             <div className="flex items-center gap-2 mt-auto">
                               <button
@@ -2473,7 +2473,7 @@ export default function LeavesPage() {
                 {/* Header */}
                 <div className={`shrink-0 px-6 py-4 border-b border-white/10 ${detailType === 'leave'
                   ? 'bg-blue-600'
-                  : 'bg-fuchsia-500'
+                  : 'bg-purple-500'
                   }`}>
                   <div className="flex items-center justify-between text-white">
                     <h2 className="text-base font-bold flex items-center gap-2">
@@ -2491,7 +2491,7 @@ export default function LeavesPage() {
                     <div className="flex items-center gap-4">
                       <div className={`w-14 h-14 rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-sm ${detailType === 'leave'
                         ? 'bg-blue-600'
-                        : 'bg-fuchsia-600'
+                        : 'bg-purple-600'
                         }`}>
                         {(selectedItem.employeeId?.employee_name?.[0] || selectedItem.emp_no?.[0] || 'E').toUpperCase()}
                       </div>

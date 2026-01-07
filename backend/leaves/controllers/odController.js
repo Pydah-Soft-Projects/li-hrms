@@ -965,15 +965,34 @@ exports.cancelOD = async (req, res) => {
 exports.getPendingApprovals = async (req, res) => {
   try {
     const userRole = req.user.role;
-    let filter = { isActive: true };
+    // Base filter: Active AND Not Applied by Me (Self-requests go to "My Leaves")
+    let filter = {
+      isActive: true,
+      appliedBy: { $ne: req.user._id }
+    };
 
     if (userRole === 'hod') {
-      filter['$or'] = [
+      const nextApproverCondition = [
         { 'workflow.nextApprover': 'hod' },
         { 'workflow.nextApproverRole': 'hod' }
       ];
+
       if (req.user.department) {
-        filter.department = req.user.department;
+        // Robust HOD filter:
+        filter = {
+          $and: [
+            filter, // Base filter (isActive + not self)
+            { $or: nextApproverCondition }, // Waiting for HOD
+            {
+              $or: [
+                { department: req.user.department },
+                { department_id: req.user.department }
+              ]
+            }
+          ]
+        };
+      } else {
+        filter['$or'] = nextApproverCondition;
       }
     } else if (userRole === 'hr') {
       filter['$or'] = [

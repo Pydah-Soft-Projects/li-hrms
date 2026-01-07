@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-hot-toast';
 
-type Shift = { _id: string; name: string; code?: string };
+type Shift = { _id: string; name: string; code?: string; color?: string };
 type Employee = { _id: string; employee_name?: string; emp_no: string; department?: { name: string; _id: string } };
 type RosterCell = { shiftId?: string | null; status?: 'WO' };
 type RosterState = Map<string, Record<string, RosterCell>>;
@@ -39,7 +39,9 @@ function RosterPage() {
   const [strict, setStrict] = useState(false);
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [divisions, setDivisions] = useState<DepartmentOption[]>([]);
   const [departments, setDepartments] = useState<DepartmentOption[]>([]);
+  const [selectedDivision, setSelectedDivision] = useState<string>('');
   const [selectedDept, setSelectedDept] = useState<string>('');
   const [selectedShiftForAssign, setSelectedShiftForAssign] = useState<string>('');
   const [roster, setRoster] = useState<RosterState>(new Map());
@@ -58,51 +60,53 @@ function RosterPage() {
   const loadData = async () => {
     try {
       setLoading(true);
-      
-      // Initialize with empty arrays to prevent errors
-      setShifts([]);
-      setEmployees([]);
-      setDepartments([]);
-      setRoster(new Map());
-      
-      const [shiftRes, empRes, rosterRes] = await Promise.all([
+
+      const filters: any = {};
+      if (selectedDept) filters.department_id = selectedDept;
+      if (selectedDivision) filters.division_id = selectedDivision;
+
+      const [shiftRes, empRes, rosterRes, divRes, deptRes] = await Promise.all([
         api.getShifts().catch((err) => {
           console.error('Failed to load shifts:', err);
           return { data: [] };
         }),
-        api.getEmployees({ department_id: selectedDept || undefined }).catch((err) => {
+        api.getEmployees(filters).catch((err) => {
           console.error('Failed to load employees:', err);
           return { data: [] };
         }),
-        api.getRoster(month, { departmentId: selectedDept || undefined }).catch((err) => {
+        api.getRoster(month, { departmentId: selectedDept || undefined, divisionId: selectedDivision || undefined }).catch((err) => {
           console.error('Failed to load roster:', err);
           return { data: { entries: [], strict: false } };
         }),
+        api.getDivisions().catch((err) => {
+          console.error('Failed to load divisions:', err);
+          return { data: [] };
+        }),
+        api.getDepartments().catch((err) => {
+          console.error('Failed to load departments:', err);
+          return { data: [] };
+        })
       ]);
 
       // Ensure arrays
       const shiftList = Array.isArray(shiftRes?.data) ? shiftRes.data : (Array.isArray(shiftRes) ? shiftRes : []);
       setShifts(shiftList);
-      
+
       const empList = Array.isArray(empRes?.data) ? empRes.data : (Array.isArray(empRes) ? empRes : []);
       setEmployees(empList);
-      
-      // Build department options (load all departments for filter dropdown)
-      try {
-        const allEmpsRes = await api.getEmployees();
-        const allEmps = Array.isArray(allEmpsRes?.data) ? allEmpsRes.data : (Array.isArray(allEmpsRes) ? allEmpsRes : []);
-        const deptMap = new Map<string, string>();
-        allEmps.forEach((e: any) => {
-          if (e.department?._id) {
-            deptMap.set(e.department._id, e.department.name || e.department._id);
-          }
-        });
-        const deptOpts = Array.from(deptMap.entries()).map(([id, name]) => ({ _id: id, name }));
-        setDepartments(deptOpts);
-      } catch (deptErr) {
-        console.error('Failed to load departments:', deptErr);
-        setDepartments([]);
+
+      // Build division options
+      const divList = Array.isArray(divRes?.data) ? divRes.data : (Array.isArray(divRes) ? divRes : []);
+      setDivisions(divList.map((d: any) => ({ _id: d._id, name: d.name })));
+
+      // Build department options (filter by division if selected)
+      let deptList = Array.isArray(deptRes?.data) ? deptRes.data : (Array.isArray(deptRes) ? deptRes : []);
+      if (selectedDivision) {
+        deptList = deptList.filter((d: any) =>
+          d.divisions?.some((div: any) => (typeof div === 'string' ? div : div._id) === selectedDivision)
+        );
       }
+      setDepartments(deptList.map((d: any) => ({ _id: d._id, name: d.name })));
 
       const map: RosterState = new Map();
       const entries = Array.isArray(rosterRes?.data?.entries) ? rosterRes.data.entries : [];
@@ -116,8 +120,8 @@ function RosterPage() {
         // Backend now explicitly returns status: 'WO' for week offs
         // Also handle legacy data where shiftId is null (fallback)
         const isWeekOff = e.status === 'WO' || (!e.shiftId && !e.shift);
-        row[e.date] = { 
-          shiftId: e.shiftId || null, 
+        row[e.date] = {
+          shiftId: e.shiftId || null,
           status: isWeekOff ? 'WO' : undefined
         };
       });
@@ -138,7 +142,7 @@ function RosterPage() {
 
   useEffect(() => {
     loadData();
-  }, [month, selectedDept]);
+  }, [month, selectedDept, selectedDivision]);
 
   const updateCell = (empNo: string, date: string, value: RosterCell) => {
     setRoster((prev) => {
@@ -189,15 +193,15 @@ function RosterPage() {
         Object.entries(row).forEach(([date, cell]) => {
           // Skip empty cells
           if (!cell) return;
-          
+
           // Skip if neither shiftId nor status is set
           if (!cell.shiftId && cell.status !== 'WO') return;
-          
+
           const entry: any = {
             employeeNumber: empNo,
             date,
           };
-          
+
           // Handle week off
           if (cell.status === 'WO') {
             entry.shiftId = null;
@@ -211,11 +215,11 @@ function RosterPage() {
             entry.shiftId = cell.shiftId;
             // Don't include status for regular shifts
           }
-          
+
           entries.push(entry);
         });
       });
-      
+
       console.log(`[Frontend] Prepared ${entries.length} entries to save:`, entries.slice(0, 5));
 
       if (entries.length === 0) {
@@ -228,7 +232,7 @@ function RosterPage() {
       setSavingProgress(30);
       const resp = await api.saveRoster({ month, strict, entries });
       setSavingProgress(90);
-      
+
       if (resp?.success) {
         toast.success(`Roster saved successfully! (${entries.length} entries)`);
         // Reload data to reflect saved changes
@@ -309,10 +313,10 @@ function RosterPage() {
         const isWeekOff = cell?.status === 'WO';
         const shiftId = isWeekOff ? 'WO' : (cell?.shiftId || null);
         const label = isWeekOff ? 'Week Off' : (shiftId ? shiftLabel(shifts.find((s) => s._id === shiftId)) : 'Unassigned');
-        
+
         // Use a consistent key for week offs
         const mapKey = isWeekOff ? 'WO' : shiftId;
-        
+
         if (!shiftMap.has(mapKey)) {
           shiftMap.set(mapKey, { label, dates: [] });
         }
@@ -344,27 +348,69 @@ function RosterPage() {
     return summary.sort((a, b) => (a.employee.employee_name || a.employee.emp_no).localeCompare(b.employee.employee_name || b.employee.emp_no));
   }, [employees, roster, shifts]);
 
-  if (loading) {
-    return <div className="p-6 text-slate-600 dark:text-slate-300">Loading roster...</div>;
+  const isInitialLoad = loading && employees.length === 0;
+
+  if (isInitialLoad) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 p-6">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4" />
+        <p className="text-slate-600 dark:text-slate-300 font-medium">Loading roster data...</p>
+      </div>
+    );
   }
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="min-h-screen p-6 space-y-4 bg-green-50 dark:bg-green-950/20">
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Shift Roster</h1>
             <p className="text-sm text-slate-500 dark:text-slate-400">Assign shifts for the selected month</p>
           </div>
+          <div className="flex flex-wrap items-center gap-3 bg-white/50 dark:bg-slate-800/30 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 backdrop-blur-sm">
+            <span className="text-[11px] font-bold text-slate-900 dark:text-slate-700 uppercase tracking-wider mr-1">Shifts:</span>
+            <div className="flex items-center gap-1.5">
+              <div className="w-2.5 h-2.5 rounded-full border border-orange-200 bg-orange-100 shadow-sm"></div>
+              <span className="text-xs text-slate-600 dark:text-slate-700">WO</span>
+            </div>
+            {shifts.map(shift => (
+              <div key={shift._id} className="flex items-center gap-1.5">
+                <div
+                  className="w-2.5 h-2.5 rounded-full shadow-sm"
+                  style={{ backgroundColor: shift.color || '#3b82f6' }}
+                ></div>
+                <span className="text-xs text-slate-600 dark:text-slate-400">{shiftLabel(shift)}</span>
+              </div>
+            ))}
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-nowrap items-center gap-10 px-3 py-1.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm transition-all hover:shadow-md overflow-x-auto scrollbar-hide">
+          <div className="flex items-center gap-1.5">
+            <label className="text-sm font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap">Division:</label>
+            <select
+              value={selectedDivision}
+              onChange={(e) => {
+                setSelectedDivision(e.target.value);
+                setSelectedDept(''); // Reset department when division changes
+              }}
+              className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs dark:border-slate-800 dark:bg-slate-950 dark:text-white min-w-[110px] focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
+            >
+              <option value="">All Divisions</option>
+              {divisions.map((d) => (
+                <option key={d._id} value={d._id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-1.5">
             <label className="text-sm font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap">Department:</label>
             <select
               value={selectedDept}
               onChange={(e) => setSelectedDept(e.target.value)}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white min-w-[180px]"
+              className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs dark:border-slate-800 dark:bg-slate-950 dark:text-white min-w-[110px] focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
             >
               <option value="">All departments</option>
               {departments.map((d) => (
@@ -375,35 +421,36 @@ function RosterPage() {
             </select>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <label className="text-sm font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap">Month:</label>
             <input
               type="month"
               value={month}
               onChange={(e) => setMonth(e.target.value)}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs dark:border-slate-800 dark:bg-slate-950 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
             />
           </div>
 
-          <div className="flex items-center gap-2">
-            <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
-              <input
-                type="checkbox"
-                checked={strict}
-                onChange={(e) => setStrict(e.target.checked)}
-                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-              />
+          <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
+            <input
+              type="checkbox"
+              id="strict-mode"
+              checked={strict}
+              onChange={(e) => setStrict(e.target.checked)}
+              className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500/20 transition-all cursor-pointer"
+            />
+            <label htmlFor="strict-mode" className="text-xs font-medium text-slate-600 dark:text-slate-300 cursor-pointer select-none">
               Strict
             </label>
           </div>
 
-          <div className="flex items-center gap-2 ml-auto">
-            <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <label className="text-sm font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap">Shift:</label>
               <select
                 value={selectedShiftForAssign}
                 onChange={(e) => setSelectedShiftForAssign(e.target.value)}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white min-w-[150px]"
+                className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs dark:border-slate-800 dark:bg-slate-950 dark:text-white min-w-[100px] focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
               >
                 <option value="">Select shift</option>
                 {shifts.map((s) => (
@@ -416,40 +463,40 @@ function RosterPage() {
             <button
               onClick={handleAssignAll}
               disabled={!selectedShiftForAssign}
-              className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="px-3 py-1 rounded-lg bg-blue-600 text-white text-[10px] font-bold uppercase tracking-wider hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md active:scale-95 whitespace-nowrap"
             >
               Assign All
             </button>
             <button
               onClick={() => setShowWeekOff(true)}
-              className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-colors"
+              className="px-3 py-1 rounded-lg bg-slate-800 text-white text-[10px] font-bold uppercase tracking-wider hover:bg-slate-900 dark:bg-indigo-600 dark:hover:bg-indigo-700 transition-all shadow-sm hover:shadow-md active:scale-95 whitespace-nowrap"
             >
-              Assign Weekly Offs
+              Weekly Offs
             </button>
           </div>
         </div>
       </div>
+
+
 
       {/* Tabs */}
       <div className="border-b border-slate-200 dark:border-slate-700">
         <div className="flex gap-1">
           <button
             onClick={() => setActiveTab('roster')}
-            className={`px-4 py-2 text-sm font-medium transition-colors ${
-              activeTab === 'roster'
-                ? 'text-blue-600 border-b-2 border-blue-600 dark:text-blue-400 dark:border-blue-400'
-                : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
-            }`}
+            className={`px-4 py-2 text-sm font-medium transition-colors ${activeTab === 'roster'
+              ? 'text-blue-600 border-b-2 border-blue-600 dark:text-blue-400 dark:border-blue-400'
+              : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
+              }`}
           >
             Roster View
           </button>
           <button
             onClick={() => setActiveTab('assigned')}
-            className={`px-4 py-2 text-sm font-medium transition-colors ${
-              activeTab === 'assigned'
-                ? 'text-blue-600 border-b-2 border-blue-600 dark:text-blue-400 dark:border-blue-400'
-                : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
-            }`}
+            className={`px-4 py-2 text-sm font-medium transition-colors ${activeTab === 'assigned'
+              ? 'text-blue-600 border-b-2 border-blue-600 dark:text-blue-400 dark:border-blue-400'
+              : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
+              }`}
           >
             Assigned Shifts
           </button>
@@ -458,168 +505,225 @@ function RosterPage() {
 
       {/* Roster View */}
       {activeTab === 'roster' && (
-        <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-x-auto">
-        <table className="min-w-full text-sm">
-          <thead className="bg-slate-50 dark:bg-slate-800 sticky top-0 z-10">
-            <tr>
-              <th className="px-3 py-2 text-left w-48 sticky left-0 bg-slate-50 dark:bg-slate-800">Employee</th>
-              {days.map((d) => (
-                <th key={d} className="px-2 py-2 text-center w-16 text-xs text-slate-500 dark:text-slate-400">
-                  {new Date(d).getDate()}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {employees.map((emp) => {
-              const row = roster.get(emp.emp_no) || {};
-              return (
-                <tr key={emp._id} className="border-t border-slate-100 dark:border-slate-700">
-                  <td className="px-3 py-2 sticky left-0 bg-white dark:bg-slate-900">
-                    <div className="flex items-center justify-between gap-2">
-                      <div>
-                        <div className="font-semibold text-slate-900 dark:text-white">{emp.employee_name || emp.emp_no}</div>
-                        <div className="text-xs text-slate-500">{emp.emp_no}</div>
-                      </div>
-                      <select
-                        className="text-xs rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1"
-                        onChange={(e) => applyEmployeeAllDays(emp.emp_no, e.target.value || null, e.target.value === 'WO' ? 'WO' : undefined)}
-                        defaultValue=""
-                      >
-                        <option value="">All days</option>
-                        <option value="WO">Week Off</option>
-                        {shifts.map((s) => (
-                          <option key={s._id} value={s._id}>
-                            {shiftLabel(s)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </td>
+        <div className={`relative border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden bg-white dark:bg-slate-900 shadow-xl transition-opacity duration-300 ${loading ? 'opacity-70' : 'opacity-100'}`}>
+          {loading && (
+            <div className="absolute inset-0 z-40 bg-white/10 dark:bg-slate-900/10 backdrop-blur-[1px] flex items-center justify-center">
+              <div className="bg-white/80 dark:bg-slate-800/80 px-4 py-2 rounded-full shadow-lg border border-slate-200 dark:border-slate-700 flex items-center gap-3">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600" />
+                <span className="text-xs font-medium text-slate-700 dark:text-slate-200">Updating...</span>
+              </div>
+            </div>
+          )}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm border-collapse">
+              <thead className="bg-slate-50/80 dark:bg-slate-800/80 sticky top-0 z-20 backdrop-blur-sm shadow-sm">
+                <tr>
+                  <th className="px-4 py-2 text-left w-16 sticky left-0 z-30 bg-slate-50 dark:bg-slate-800 font-semibold text-slate-700 dark:text-slate-200 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.05)] border-b border-r border-black dark:border-slate-500">
+                    Employee
+                  </th>
                   {days.map((d) => {
-                    const cell = row[d];
-                    const current = cell?.status === 'WO' ? 'WO' : cell?.shiftId || '';
+                    const date = new Date(d);
+                    const isWeekend = date.getDay() === 0 || date.getDay() === 6;
                     return (
-                      <td key={d} className="px-1 py-1 text-center">
-                        <select
-                          value={current}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            if (val === 'WO') {
-                              updateCell(emp.emp_no, d, { shiftId: null, status: 'WO' });
-                            } else {
-                              updateCell(emp.emp_no, d, { shiftId: val || null, status: undefined });
-                            }
-                          }}
-                          className="w-full text-xs rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-1 py-1"
-                        >
-                          <option value="">-</option>
-                          <option value="WO">WO</option>
-                          {shifts.map((s) => (
-                            <option key={s._id} value={s._id}>
-                              {shiftLabel(s)}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
+                      <th
+                        key={d}
+                        className={`w-6 px-0.5 py-2 text-center text-[10px] border-b border-r border-black dark:border-slate-500 ${isWeekend ? 'bg-slate-100/50 dark:bg-slate-800' : ''
+                          }`}
+                      >
+                        <div className="font-semibold text-slate-700 dark:text-slate-300">{date.getDate()}</div>
+                        <div className="text-[9px] text-slate-400 font-normal uppercase">{weekdays[date.getDay()].slice(0, 2)}</div>
+                      </th>
                     );
                   })}
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-      )}
+              </thead>
+              <tbody>
+                {employees.map((emp) => {
+                  const row = roster.get(emp.emp_no) || {};
+                  return (
+                    <tr key={emp._id} className="group border-b border-slate-300 dark:border-slate-700/30 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                      <td className="px-2 py-2 sticky left-0 z-10 bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-slate-800/50 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.05)] border-r border-black dark:border-slate-500">
+                        <div className="flex flex-col gap-1.5">
+                          <div>
+                            <div className="font-semibold text-slate-900 dark:text-white truncate max-w-[7rem] text-xs">{emp.employee_name || emp.emp_no}</div>
+                            <div className="text-[10px] text-slate-500 flex items-center gap-1.5">
+                              <span>{emp.emp_no}</span>
+                              {emp.department && <span className="px-1 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-[9px] truncate max-w-[4rem]">{emp.department.name}</span>}
+                            </div>
+                          </div>
+                          <select
+                            className="w-24 text-[9px] rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-1.5 py-1 cursor-pointer hover:border-blue-400 transition-colors focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                            onChange={(e) => applyEmployeeAllDays(emp.emp_no, e.target.value || null, e.target.value === 'WO' ? 'WO' : undefined)}
+                            defaultValue=""
+                          >
+                            <option value="">Apply to all days...</option>
+                            <option value="WO">Set Week Off</option>
+                            {shifts.map((s) => (
+                              <option key={s._id} value={s._id}>
+                                Set {shiftLabel(s)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </td>
+                      {days.map((d) => {
+                        const cell = row[d];
+                        const current = cell?.status === 'WO' ? 'WO' : cell?.shiftId || '';
+                        const isWeekend = new Date(d).getDay() === 0 || new Date(d).getDay() === 6;
+                        return (
+                          <td
+                            key={d}
+                            className={`p-0.5 text-center relative h-10 border-r border-black dark:border-slate-500 last:border-r-0 ${isWeekend ? 'bg-slate-50/50 dark:bg-slate-800/30' : ''
+                              }`}
+                            style={
+                              current && current !== 'WO'
+                                ? { backgroundColor: `${shifts.find(s => s._id === current)?.color || '#3b82f6'}30` }
+                                : current === 'WO' ? { backgroundColor: '#ffedd5' } : {}
+                            }
+                          >
+                            {/* Removed solid bar */}
+                            <select
+                              value={current}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === 'WO') {
+                                  updateCell(emp.emp_no, d, { shiftId: null, status: 'WO' });
+                                } else {
+                                  updateCell(emp.emp_no, d, { shiftId: val || null, status: undefined });
+                                }
+                              }}
+                              className="w-full h-full text-[10px] font-medium rounded bg-transparent px-1 py-1 focus:ring-0 focus:outline-none appearance-none text-center cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                              style={{
+                                color: current === 'WO' ? '#c2410c' : 'inherit',
+                              }}
+                            >
+                              <option value="">-</option>
+                              <option value="WO">WO</option>
+                              {shifts.map((s) => (
+                                <option key={s._id} value={s._id} style={{ color: s.color }}>
+                                  {shiftLabel(s)}
+                                </option>
+                              ))}
+                            </select>
+
+                            {/* Custom downward arrow for cleaner look, hidden if empty to look like a clean cell */}
+                            {
+                              !current && (
+                                <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-0 group-hover:opacity-20">
+                                  <div className="w-1 h-1 rounded-full bg-slate-400"></div>
+                                </div>
+                              )
+                            }
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )
+      }
 
       {/* Assigned Shifts View */}
-      {activeTab === 'assigned' && (
-        <div className="space-y-4">
-          {assignedShiftsSummary.length === 0 ? (
-            <div className="text-center py-12 text-slate-500 dark:text-slate-400">
-              <p className="text-lg font-medium mb-2">No shifts assigned</p>
-              <p className="text-sm">Switch to Roster View to assign shifts to employees</p>
-            </div>
-          ) : (
-            <div className="grid gap-4">
-              {assignedShiftsSummary.map((item) => (
-                <div
-                  key={item.employee._id}
-                  className="border border-slate-200 dark:border-slate-700 rounded-lg p-4 bg-white dark:bg-slate-800 hover:shadow-md transition-shadow"
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <h3 className="font-semibold text-slate-900 dark:text-white text-lg">
-                        {item.employee.employee_name || item.employee.emp_no}
-                      </h3>
-                      <p className="text-sm text-slate-500 dark:text-slate-400">{item.employee.emp_no}</p>
-                      {item.employee.department && (
-                        <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">{item.employee.department.name}</p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-4 text-right">
+      {
+        activeTab === 'assigned' && (
+          <div className="space-y-4">
+            {assignedShiftsSummary.length === 0 ? (
+              <div className="text-center py-12 text-slate-500 dark:text-slate-400">
+                <p className="text-lg font-medium mb-2">No shifts assigned</p>
+                <p className="text-sm">Switch to Roster View to assign shifts to employees</p>
+              </div>
+            ) : (
+              <div className="grid gap-4">
+                {assignedShiftsSummary.map((item) => (
+                  <div
+                    key={item.employee._id}
+                    className="border border-slate-200 dark:border-slate-700 rounded-lg p-4 bg-white dark:bg-slate-800 hover:shadow-md transition-shadow"
+                  >
+                    <div className="flex items-start justify-between mb-3">
                       <div>
-                        <div className="text-sm font-medium text-slate-700 dark:text-slate-300">Week Offs</div>
-                        <div className={`text-lg font-bold ${item.weekOffs > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-slate-400 dark:text-slate-500'}`}>
-                          {item.weekOffs}
-                        </div>
+                        <h3 className="font-semibold text-slate-900 dark:text-white text-lg">
+                          {item.employee.employee_name || item.employee.emp_no}
+                        </h3>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">{item.employee.emp_no}</p>
+                        {item.employee.department && (
+                          <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">{item.employee.department.name}</p>
+                        )}
                       </div>
-                      <div>
-                        <div className="text-sm font-medium text-slate-700 dark:text-slate-300">Total Days</div>
-                        <div className="text-lg font-bold text-blue-600 dark:text-blue-400">{item.totalDays}</div>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {item.shifts.map((shift, idx) => (
-                      <div
-                        key={idx}
-                        className={`p-3 rounded-lg border ${
-                          shift.shiftId === 'WO'
-                            ? 'bg-orange-50 border-orange-200 dark:bg-orange-900/20 dark:border-orange-800'
-                            : 'bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <span className={`font-semibold text-sm ${
-                            shift.shiftId === 'WO'
-                              ? 'text-orange-700 dark:text-orange-300'
-                              : 'text-blue-700 dark:text-blue-300'
-                          }`}>
-                            {shift.shiftLabel}
-                          </span>
-                          <span className={`text-xs font-medium px-2 py-0.5 rounded ${
-                            shift.shiftId === 'WO'
-                              ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300'
-                              : 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300'
-                          }`}>
-                            {shift.days} {shift.days === 1 ? 'day' : 'days'}
-                          </span>
-                        </div>
-                        <div className="text-xs text-slate-600 dark:text-slate-400 space-y-1">
-                          <div className="font-medium">Dates:</div>
-                          <div className="flex flex-wrap gap-1">
-                            {shift.dates.slice(0, 5).map((d) => (
-                              <span key={d} className="px-1.5 py-0.5 bg-white dark:bg-slate-700 rounded text-xs">
-                                {new Date(d).getDate()}
-                              </span>
-                            ))}
-                            {shift.dates.length > 5 && (
-                              <span className="px-1.5 py-0.5 bg-white dark:bg-slate-700 rounded text-xs">
-                                +{shift.dates.length - 5} more
-                              </span>
-                            )}
+                      <div className="flex items-center gap-4 text-right">
+                        <div>
+                          <div className="text-sm font-medium text-slate-700 dark:text-slate-300">Week Offs</div>
+                          <div className={`text-lg font-bold ${item.weekOffs > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-slate-400 dark:text-slate-500'}`}>
+                            {item.weekOffs}
                           </div>
                         </div>
+                        <div>
+                          <div className="text-sm font-medium text-slate-700 dark:text-slate-300">Total Days</div>
+                          <div className="text-lg font-bold text-blue-600 dark:text-blue-400">{item.totalDays}</div>
+                        </div>
                       </div>
-                    ))}
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {item.shifts.map((shift, idx) => {
+                        const originalShift = shifts.find(s => s._id === shift.shiftId);
+                        const shiftColor = originalShift?.color || '#3b82f6';
+
+                        return (
+                          <div
+                            key={idx}
+                            className={`p-3 rounded-lg border ${shift.shiftId === 'WO'
+                              ? 'bg-orange-50 border-orange-200 dark:bg-orange-900/20 dark:border-orange-800'
+                              : 'bg-white border-slate-200 dark:bg-slate-800 dark:border-slate-700'
+                              }`}
+                            style={shift.shiftId !== 'WO' ? {
+                              borderLeftWidth: '4px',
+                              borderLeftColor: shiftColor,
+                              backgroundColor: `${shiftColor}10`
+                            } : {}}
+                          >
+                            <div className="flex items-center justify-between mb-2">
+                              <span
+                                className={`font-semibold text-sm ${shift.shiftId === 'WO' ? 'text-orange-700 dark:text-orange-300' : ''}`}
+                                style={shift.shiftId !== 'WO' ? { color: shiftColor } : {}}
+                              >
+                                {shift.shiftLabel}
+                              </span>
+                              <span className={`text-xs font-medium px-2 py-0.5 rounded ${shift.shiftId === 'WO'
+                                ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300'
+                                : 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
+                                }`}>
+                                {shift.days} {shift.days === 1 ? 'day' : 'days'}
+                              </span>
+                            </div>
+                            <div className="text-xs text-slate-600 dark:text-slate-400 space-y-1">
+                              <div className="font-medium">Dates:</div>
+                              <div className="flex flex-wrap gap-1">
+                                {shift.dates.slice(0, 5).map((d) => (
+                                  <span key={d} className="px-1.5 py-0.5 bg-white dark:bg-slate-700 rounded text-xs">
+                                    {new Date(d).getDate()}
+                                  </span>
+                                ))}
+                                {shift.dates.length > 5 && (
+                                  <span className="px-1.5 py-0.5 bg-white dark:bg-slate-700 rounded text-xs">
+                                    +{shift.dates.length - 5} more
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      }
 
       <div className="flex items-center justify-between">
         <div className="text-xs text-slate-500 dark:text-slate-400">
@@ -633,44 +737,48 @@ function RosterPage() {
           {saving ? 'Saving...' : 'Save roster'}
         </button>
       </div>
-      {saving && (
-        <div className="h-1 w-full rounded bg-slate-200 dark:bg-slate-800 overflow-hidden">
-          <div
-            className="h-full bg-green-500 transition-all"
-            style={{ width: `${savingProgress ?? 50}%` }}
-          />
-        </div>
-      )}
+      {
+        saving && (
+          <div className="h-1 w-full rounded bg-slate-200 dark:bg-slate-800 overflow-hidden">
+            <div
+              className="h-full bg-green-500 transition-all"
+              style={{ width: `${savingProgress ?? 50}%` }}
+            />
+          </div>
+        )
+      }
 
-      {showWeekOff && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
-          <div className="bg-white dark:bg-slate-800 rounded-xl p-4 w-full max-w-md space-y-4">
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Assign Weekly Offs</h3>
-            <div className="grid grid-cols-2 gap-2">
-              {weekdays.map((w) => (
-                <label key={w} className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
-                  <input
-                    type="checkbox"
-                    checked={weekOffDays[w]}
-                    onChange={(e) => setWeekOffDays((prev) => ({ ...prev, [w]: e.target.checked }))}
-                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                  />
-                  {w}
-                </label>
-              ))}
-            </div>
-            <div className="flex justify-end gap-2">
-              <button onClick={() => setShowWeekOff(false)} className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-sm">
-                Cancel
-              </button>
-              <button onClick={applyWeekOffs} className="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold">
-                Apply
-              </button>
+      {
+        showWeekOff && (
+          <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
+            <div className="bg-white dark:bg-slate-800 rounded-xl p-4 w-full max-w-md space-y-4">
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Assign Weekly Offs</h3>
+              <div className="grid grid-cols-2 gap-2">
+                {weekdays.map((w) => (
+                  <label key={w} className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                    <input
+                      type="checkbox"
+                      checked={weekOffDays[w]}
+                      onChange={(e) => setWeekOffDays((prev) => ({ ...prev, [w]: e.target.checked }))}
+                      className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    {w}
+                  </label>
+                ))}
+              </div>
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setShowWeekOff(false)} className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-sm">
+                  Cancel
+                </button>
+                <button onClick={applyWeekOffs} className="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold">
+                  Apply
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )
+      }
+    </div >
   );
 }
 

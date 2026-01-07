@@ -209,6 +209,9 @@ export interface ApiResponse<T> {
   qrSecret?: string;
   waitTime?: number;
   newPassword?: string;
+  syncError?: any;
+  identifier?: string;
+  generatedPassword?: string;
 }
 
 export interface LoginResponse {
@@ -305,6 +308,7 @@ export interface Shift {
   duration: number;
   payableShifts?: number;
   isActive?: boolean;
+  color?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -995,10 +999,11 @@ export const api = {
   },
 
   // Employees
-  getEmployees: async (filters?: { is_active?: boolean; department_id?: string; designation_id?: string; includeLeft?: boolean }) => {
+  getEmployees: async (filters?: { is_active?: boolean; department_id?: string; division_id?: string; designation_id?: string; includeLeft?: boolean }) => {
     const params = new URLSearchParams();
     if (filters?.is_active !== undefined) params.append('is_active', String(filters.is_active));
     if (filters?.department_id) params.append('department_id', filters.department_id);
+    if (filters?.division_id) params.append('division_id', filters.division_id);
     if (filters?.designation_id) params.append('designation_id', filters.designation_id);
     if (filters?.includeLeft !== undefined) params.append('includeLeft', String(filters.includeLeft));
     const query = params.toString() ? `?${params.toString()}` : '';
@@ -1453,11 +1458,12 @@ export const api = {
   // ==========================================
   // SHIFT ROSTER
   // ==========================================
-  getRoster: async (month: string, params?: { employeeNumber?: string; departmentId?: string }) => {
+  getRoster: async (month: string, params?: { employeeNumber?: string; departmentId?: string; divisionId?: string }) => {
     const query = new URLSearchParams();
     query.append('month', month);
     if (params?.employeeNumber) query.append('employeeNumber', params.employeeNumber);
     if (params?.departmentId) query.append('departmentId', params.departmentId);
+    if (params?.divisionId) query.append('divisionId', params.divisionId);
     return apiRequest<any>(`/shifts/roster?${query.toString()}`, { method: 'GET' });
   },
 

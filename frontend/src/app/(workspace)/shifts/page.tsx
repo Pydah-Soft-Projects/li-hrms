@@ -12,10 +12,23 @@ export default function ShiftsPage() {
   const [scopedDesignations, setScopedDesignations] = useState<Designation[]>([]);
   const [showAllShifts, setShowAllShifts] = useState(false);
 
-  // Core Data
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [loading, setLoading] = useState(true);
   const [allowedDurations, setAllowedDurations] = useState<number[]>([]);
+  const [color, setColor] = useState('#3b82f6');
+
+  const SHIFT_COLORS = [
+    '#3b82f6', // blue-500
+    '#ef4444', // red-500
+    '#f59e0b', // amber-500
+    '#10b981', // emerald-500
+    '#8b5cf6', // violet-500
+    '#ec4899', // pink-500
+    '#06b6d4', // cyan-500
+    '#f43f5e', // rose-500
+    '#14b8a6', // teal-500
+    '#6366f1', // indigo-500
+  ];
 
   // UI State
   const [showForm, setShowForm] = useState(false);
@@ -356,6 +369,7 @@ export default function ShiftsPage() {
         endTime,
         duration: Number(duration),
         payableShifts: payableShifts || 1,
+        color,
       };
 
       let response;
@@ -393,6 +407,7 @@ export default function ShiftsPage() {
     } else {
       setSuggestedPayableShifts(null);
     }
+    setColor(shift.color || '#3b82f6');
     setLastChanged(null);
     setIllegalTimingWarning('');
     setShowForm(true);
@@ -422,6 +437,7 @@ export default function ShiftsPage() {
     setSuggestedPayableShifts(null);
     setError('');
     setIllegalTimingWarning('');
+    setColor('#3b82f6');
     setLastChanged(null);
   };
 
@@ -441,7 +457,7 @@ export default function ShiftsPage() {
       key={shift._id}
       className="group relative overflow-hidden rounded-xl border border-slate-200 bg-white/80 backdrop-blur-sm p-4 shadow-lg transition-all hover:border-blue-300 hover:shadow-xl dark:border-slate-700 dark:bg-slate-900/80"
     >
-      <div className="absolute top-0 left-0 h-0.5 w-full bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500"></div>
+      <div className="absolute top-0 left-0 h-1 w-full" style={{ backgroundColor: shift.color || '#3b82f6' }}></div>
 
       <div className="mb-3 flex items-start justify-between">
         <div className="flex-1 min-w-0">
@@ -479,7 +495,8 @@ export default function ShiftsPage() {
         <div className="flex gap-2 border-t border-slate-200 pt-3 dark:border-slate-800">
           <button
             onClick={() => handleEdit(shift)}
-            className="flex-1 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-500 px-3 py-1.5 text-xs font-semibold text-white shadow-md shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600"
+            style={{ backgroundColor: shift.color || '#3b82f6' }}
+            className="flex-1 rounded-lg px-3 py-1.5 text-xs font-semibold text-white shadow-md transition-all hover:opacity-90"
           >
             Edit
           </button>
@@ -561,6 +578,27 @@ export default function ShiftsPage() {
                     className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                     placeholder="e.g., Morning Shift"
                   />
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                    Shift Color
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {SHIFT_COLORS.map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => setColor(c)}
+                        className={`h-8 w-8 rounded-full border-2 transition-all ${color === c
+                          ? 'border-slate-600 dark:border-white scale-110 shadow-md ring-2 ring-offset-2 ring-blue-500/50 dark:ring-offset-slate-900'
+                          : 'border-transparent hover:scale-105 hover:shadow-sm'
+                          }`}
+                        style={{ backgroundColor: c }}
+                        title={c}
+                      />
+                    ))}
+                  </div>
                 </div>
 
                 <div>
