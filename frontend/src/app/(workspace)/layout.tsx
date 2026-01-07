@@ -10,180 +10,60 @@ import { AuthProvider } from '@/contexts/AuthContext';
 import { WorkspaceProvider, useWorkspace, setWorkspaceDataFromLogin, Workspace } from '@/contexts/WorkspaceContext';
 import Spinner from '@/components/Spinner';
 
-// Icon components
-type IconProps = React.SVGProps<SVGSVGElement>;
+import {
+  LayoutDashboard,
+  Plane,
+  Users,
+  Watch,
+  Building,
+  CalendarClock,
+  UserCog,
+  Settings,
+  PiggyBank,
+  AlertTriangle,
+  BarChart3,
+  Wallet,
+  Receipt,
+  LogOut,
+  ChevronLeft,
+  ChevronRight,
+  Menu,
+  X,
+  CreditCard,
+  Sheet,
+  Banknote
+} from 'lucide-react';
 
-const DashboardIcon = ({ className, ...props }: IconProps) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
-    <rect x="3" y="3" width="7" height="7" />
-    <rect x="14" y="3" width="7" height="7" />
-    <rect x="14" y="14" width="7" height="7" />
-    <rect x="3" y="14" width="7" height="7" />
-  </svg>
-);
-
-const LeavesIcon = ({ className, ...props }: IconProps) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
-    <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-    <line x1="16" y1="2" x2="16" y2="6" />
-    <line x1="8" y1="2" x2="8" y2="6" />
-    <line x1="3" y1="10" x2="21" y2="10" />
-  </svg>
-);
-
-const EmployeesIcon = ({ className, ...props }: IconProps) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
-    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-    <circle cx="9" cy="7" r="4" />
-    <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
-    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-  </svg>
-);
-
-const ShiftsIcon = ({ className, ...props }: IconProps) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
-    <circle cx="12" cy="12" r="10" />
-    <polyline points="12 6 12 12 16 14" />
-  </svg>
-);
-
-const DepartmentsIcon = ({ className, ...props }: IconProps) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
-    <path d="M3 21h18" />
-    <path d="M5 21V7l8-4v18" />
-    <path d="M19 21V11l-6-4" />
-  </svg>
-);
-
-const AttendanceIcon = ({ className, ...props }: IconProps) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
-    <path d="M9 11l3 3L22 4" />
-    <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
-  </svg>
-);
-
-const ProfileIcon = ({ className, ...props }: IconProps) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
-    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-    <circle cx="12" cy="7" r="4" />
-  </svg>
-);
-
-const SettingsIcon = ({ className, ...props }: IconProps) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
-    <circle cx="12" cy="12" r="3" />
-    <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z" />
-  </svg>
-);
-
-const LoansIcon = ({ className, ...props }: IconProps) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
-    <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-  </svg>
-);
-
-const OTPermissionIcon = ({ className, ...props }: IconProps) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
-    <circle cx="12" cy="12" r="10" />
-    <polyline points="12 6 12 12 16 14" />
-  </svg>
-);
-
-const ConfusedShiftIcon = ({ className, ...props }: IconProps) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
-    <circle cx="12" cy="12" r="10" />
-    <path d="M12 6v6l4 2" />
-    <path d="M9 12h6" />
-  </svg>
-);
-
-const UsersIcon = ({ className, ...props }: IconProps) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
-    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-    <circle cx="9" cy="7" r="4" />
-    <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-  </svg>
-);
-
-const ReportsIcon = ({ className, ...props }: IconProps) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
-    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-    <polyline points="14 2 14 8 20 8" />
-    <line x1="16" y1="13" x2="8" y2="13" />
-    <line x1="16" y1="17" x2="8" y2="17" />
-    <polyline points="10 9 9 9 8 9" />
-  </svg>
-);
-
-const AllowancesDeductionsIcon = ({ className, ...props }: IconProps) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
-    <line x1="12" y1="1" x2="12" y2="23" />
-    <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-  </svg>
-);
-
-const LogoutIcon = ({ className, ...props }: IconProps) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
-    <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
-    <polyline points="16 17 21 12 16 7" />
-    <line x1="21" y1="12" x2="9" y2="12" />
-  </svg>
-);
-
-const ChevronDownIcon = ({ className, ...props }: IconProps) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
-    <polyline points="6 9 12 15 18 9" />
-  </svg>
-);
-
-const CollapseIcon = ({ className, ...props }: IconProps) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
-    <path d="M9 18l-6-6 6-6" />
-  </svg>
-);
-
-const ExpandIcon = ({ className, ...props }: IconProps) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
-    <path d="M15 18l6-6-6-6" />
-  </svg>
-);
-
-const PayslipsIcon = ({ className, ...props }: IconProps) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
-    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-    <polyline points="14 2 14 8 20 8" />
-    <path d="M12 18v-6" />
-    <path d="M9 15l3 3 3-3" />
-  </svg>
-);
+// Icon Props type is already compatible usually, but let's clear the old definitions
 
 // Module code to icon mapping
-const moduleIcons: Record<string, React.ComponentType<IconProps>> = {
-  DASHBOARD: DashboardIcon,
-  LEAVE: LeavesIcon,
-  OD: LeavesIcon,
-  EMPLOYEE: EmployeesIcon,
-  EMPLOYEES: EmployeesIcon,
-  SHIFT: ShiftsIcon,
-  SHIFTS: ShiftsIcon,
-  DEPARTMENT: DepartmentsIcon,
-  DEPARTMENTS: DepartmentsIcon,
-  ATTENDANCE: AttendanceIcon,
-  PROFILE: ProfileIcon,
-  SETTINGS: SettingsIcon,
-  LOANS: LoansIcon,
-  LOAN: LoansIcon,
-  OT_PERMISSIONS: OTPermissionIcon,
-  CONFUSED_SHIFTS: ConfusedShiftIcon,
-  USERS: UsersIcon,
-  REPORTS: ReportsIcon,
-  ALLOWANCES_DEDUCTIONS: AllowancesDeductionsIcon,
-  PAYROLL_TRANSACTIONS: ReportsIcon,
-  PAY_REGISTER: ReportsIcon,
-  PAYSLIPS: PayslipsIcon,
-  PAYROLL: PayslipsIcon,
-  LOANS_SALARY_ADVANCE: LoansIcon,
+const moduleIcons: Record<string, React.ComponentType<{ className?: string }>> = {
+  DASHBOARD: LayoutDashboard,
+  LEAVE: Plane,
+  OD: Plane,
+  LEAVE_OD: Plane,
+  EMPLOYEE: Users,
+  EMPLOYEES: Users,
+  SHIFT: Watch,
+  SHIFTS: Watch,
+  SHIFT_ROSTER: CalendarClock, // Using CalendarClock for consistency with superadmin
+  DEPARTMENT: Building,
+  DEPARTMENTS: Building,
+  ATTENDANCE: CalendarClock,
+  PROFILE: UserCog,
+  SETTINGS: Settings,
+  LOANS: PiggyBank,
+  LOAN: PiggyBank,
+  OT_PERMISSIONS: Watch, // Or Clock, let's stick to valid ones
+  CONFUSED_SHIFTS: AlertTriangle,
+  USERS: UserCog,
+  REPORTS: BarChart3,
+  ALLOWANCES_DEDUCTIONS: Wallet,
+  PAYROLL_TRANSACTIONS: CreditCard,
+  PAY_REGISTER: Sheet,
+  PAYSLIPS: Receipt,
+  PAYROLL: Banknote,
+  LOANS_SALARY_ADVANCE: PiggyBank,
 };
 
 // Module code to route mapping
@@ -220,19 +100,7 @@ function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<{ name: string; email: string; role: string; emp_no?: string; featureControl?: string[] | null } | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [featureControl, setFeatureControl] = useState<string[] | null>(null);
-  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
 
-  const toggleCategory = (categoryCode: string) => {
-    setCollapsedCategories(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(categoryCode)) {
-        newSet.delete(categoryCode);
-      } else {
-        newSet.add(categoryCode);
-      }
-      return newSet;
-    });
-  };
 
   useEffect(() => {
     const fetchFeatureControl = async () => {
@@ -292,8 +160,6 @@ function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {
   };
 
   // No workspace switcher needed anymore
-  // Unified Theme Colors (Slate/Blue)
-  const themeColor = { bg: 'bg-slate-800', text: 'text-slate-900', border: 'border-slate-200' };
 
   if (isLoading) {
     return (
@@ -316,45 +182,40 @@ function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen bg-gray-50">
       {/* Sidebar */}
       <aside
-        className={`fixed top-0 left-0 h-screen bg-white border-r border-gray-200 transition-all duration-300 ease-in-out z-40 ${sidebarCollapsed ? 'w-[70px]' : 'w-64'
-          }`}
+        className={`fixed top-0 left-0 h-screen bg-white border-r border-slate-200/60 transition-all duration-300 ease-in-out z-40 ${sidebarCollapsed ? 'w-[70px]' : 'w-[240px]'}`}
       >
         {/* Collapse/Expand Button */}
         <button
           onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-          className="absolute -right-3 top-1/2 -translate-y-1/2 h-6 w-6 rounded-full bg-white border border-gray-200 shadow-md flex items-center justify-center hover:bg-gray-50 transition-colors z-50"
+          className="absolute -right-3 top-6 h-6 w-6 rounded-full bg-white border border-slate-200 shadow-md flex items-center justify-center hover:bg-slate-50 transition-colors z-50 text-slate-500"
         >
           {sidebarCollapsed ? (
-            <ExpandIcon className="h-3 w-3 text-black" />
+            <ChevronRight className="h-3.5 w-3.5" />
           ) : (
-            <CollapseIcon className="h-3 w-3 text-black" />
+            <ChevronLeft className="h-3.5 w-3.5" />
           )}
         </button>
 
-        <div className="flex flex-col h-full">
-          {/* Workspace Header - Simplified */}
-          <div className={`p-4 border-b border-gray-200 ${sidebarCollapsed ? 'flex justify-center' : ''}`}>
-            <div className="flex items-center gap-3 justify-center w-full">
-              <div className="h-8 w-8 rounded-lg bg-blue-600 flex items-center justify-center shadow-sm text-white font-bold">
-                L
+        <div className="flex flex-col h-full overflow-hidden">
+          {/* Logo/Header */}
+          <div className={`px-4 py-4 flex items-center border-b border-slate-200/60 ${sidebarCollapsed ? 'justify-center' : 'justify-between'}`}>
+            <div className={`flex items-center gap-3 ${sidebarCollapsed ? 'justify-center w-full' : ''}`}>
+              <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-500/20 flex-shrink-0">
+                <span className="text-sm font-bold text-white">H</span>
               </div>
               {!sidebarCollapsed && (
-                <div className="flex-1 min-w-0">
-                  <h2 className="text-base font-bold text-slate-900">Li-HRMS</h2>
-                </div>
+                <h2 className="text-lg font-bold text-slate-900 tracking-tight">HRMS</h2>
               )}
             </div>
           </div>
 
-          {/* Navigation - Categorized */}
-          <nav className="flex-1 overflow-y-auto py-4 space-y-2">
+          {/* Navigation */}
+          <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-6 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300">
             {MODULE_CATEGORIES.map(category => {
-              // Check if category has any enabled modules
               if (!isCategoryEnabled(category.code, featureControl)) {
                 return null;
               }
 
-              const isCategoryCollapsed = collapsedCategories.has(category.code);
               const enabledModules = category.modules.filter(module =>
                 isModuleEnabled(module.code, featureControl)
               );
@@ -362,95 +223,89 @@ function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {
               if (enabledModules.length === 0) return null;
 
               return (
-                <div key={category.code} className="space-y-1">
+                <div key={category.code}>
                   {/* Category Header */}
                   {!sidebarCollapsed && (
-                    <button
-                      onClick={() => toggleCategory(category.code)}
-                      className="w-full px-4 py-2 flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-gray-500 hover:text-gray-700 transition-colors"
-                    >
-                      <span className="flex items-center gap-2">
-                        <span>{category.icon}</span>
-                        <span>{category.name}</span>
-                      </span>
-                      <ChevronDownIcon
-                        className={`w-4 h-4 transition-transform ${isCategoryCollapsed ? '-rotate-90' : ''}`}
-                      />
-                    </button>
+                    <h3 className="px-3 mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                      {category.name}
+                    </h3>
                   )}
 
-                  {/* Category Modules */}
-                  {(!isCategoryCollapsed || sidebarCollapsed) && (
-                    <ul className="space-y-1 px-2">
-                      {enabledModules.map(module => {
-                        const isActive = pathname === module.href ||
-                          (module.code === 'LEAVE_OD' && (pathname === '/leaves' || pathname === '/od'));
+                  <ul className="space-y-1">
+                    {enabledModules.map(module => {
+                      const isActive = pathname === module.href ||
+                        (module.code === 'LEAVE_OD' && (pathname === '/leaves' || pathname === '/od'));
 
-                        const Icon = moduleIcons[module.code] || DashboardIcon;
+                      const Icon = moduleIcons[module.code] || LayoutDashboard;
 
-                        return (
-                          <li key={module.code}>
-                            <Link
-                              href={module.href}
-                              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${isActive
-                                ? 'bg-blue-50 text-blue-600 font-medium shadow-sm'
-                                : 'text-gray-700 hover:bg-gray-100'
-                                } ${sidebarCollapsed ? 'justify-center' : ''}`}
-                              title={sidebarCollapsed ? module.label : ''}
-                            >
-                              <Icon className="w-5 h-5 flex-shrink-0" />
-                              {!sidebarCollapsed && (
-                                <span className="text-sm">{module.label}</span>
-                              )}
-                            </Link>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
+                      return (
+                        <li key={module.code}>
+                          <Link
+                            href={module.href}
+                            className={`flex items-center px-3 py-2.5 rounded-xl transition-all duration-200 group relative
+                              ${isActive
+                                ? 'bg-gradient-to-r from-emerald-50 to-teal-50 text-emerald-700 font-medium shadow-sm'
+                                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                              }
+                              ${sidebarCollapsed ? 'justify-center px-2' : ''}
+                            `}
+                            title={sidebarCollapsed ? module.label : undefined}
+                          >
+                            <Icon className={`w-[18px] h-[18px] flex-shrink-0 transition-colors duration-200 ${isActive ? 'text-emerald-600' : 'text-slate-400 group-hover:text-slate-600'}`} />
+
+                            {!sidebarCollapsed && (
+                              <span className="ms-3 text-sm">{module.label}</span>
+                            )}
+
+                            {/* Active Indicator Strip */}
+                            {isActive && !sidebarCollapsed && (
+                              <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-emerald-500 rounded-r-full" />
+                            )}
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
                 </div>
               );
             })}
           </nav>
 
           {/* User Section & Logout */}
-          <div className="border-t border-gray-200 p-3 space-y-2">
-            <div className={`flex items-center gap-3 px-3 py-2 ${sidebarCollapsed ? 'justify-center' : ''}`}>
-              {!sidebarCollapsed && user ? (
-                <>
-                  <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-700 font-semibold text-sm flex-shrink-0">
-                    {user.name?.[0]?.toUpperCase() || 'U'}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">{user.name}</p>
-                    <p className="text-xs text-gray-500 truncate">{user.email}</p>
-                    {user.emp_no && (
-                      <p className="text-xs text-blue-600 font-medium">ID: {user.emp_no}</p>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-700 font-semibold text-sm">
-                  {user?.name?.[0]?.toUpperCase() || 'U'}
+          <div className="border-t border-slate-200/60 p-4 space-y-2 bg-slate-50/50">
+            {/* Profile Link - Mimicking Sidebar.tsx style */}
+            <div
+              className={`flex items-center gap-3 p-2 rounded-xl transition-all duration-200
+                ${sidebarCollapsed ? 'justify-center' : ''}`}
+            >
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-bold text-xs flex-shrink-0 shadow-sm">
+                {user?.name?.[0]?.toUpperCase() || 'U'}
+              </div>
+              {!sidebarCollapsed && (
+                <div className="shrink-0 max-w-[140px]">
+                  <p className="text-sm font-semibold text-slate-900 truncate">{user?.name || 'User'}</p>
+                  <p className="text-[10px] text-slate-500 truncate">{user?.role || '...'}</p>
                 </div>
               )}
             </div>
 
             <button
               onClick={handleLogout}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-red-600 hover:bg-red-50 ${sidebarCollapsed ? 'justify-center' : ''
-                }`}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-200 text-slate-500 hover:bg-red-50 hover:text-red-600
+                ${sidebarCollapsed ? 'justify-center' : ''}`}
               title={sidebarCollapsed ? 'Logout' : undefined}
             >
-              <LogoutIcon className="h-5 w-5 flex-shrink-0" />
-              {!sidebarCollapsed && <span className="text-sm font-medium">Logout</span>}
+              <LogOut className="h-[18px] w-[18px] flex-shrink-0" />
+              {!sidebarCollapsed && (
+                <span className="text-sm font-medium">Logout</span>
+              )}
             </button>
           </div>
         </div>
       </aside>
 
       {/* Main Content */}
-      <div className={`transition-all duration-300 ${sidebarCollapsed ? 'ml-[70px]' : 'ml-64'}`}>
+      <div className={`transition-all duration-300 ${sidebarCollapsed ? 'ml-[70px]' : 'ml-[240px]'}`}>
 
 
         <main className="p-6">
