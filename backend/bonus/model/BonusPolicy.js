@@ -18,12 +18,22 @@ const bonusPolicySchema = new mongoose.Schema(
       required: [true, 'Policy type is required'],
       default: 'attendance_regular',
     },
-    // Which salary component to base the bonus calculation on (e.g., 'gross_salary', 'basic', 'fixed_pay')
+    // Which salary component to base the bonus calculation on
     salaryComponent: {
       type: String,
-      enum: ['gross_salary', 'basic', 'ctc', 'fixed_pay'],
+      enum: ['gross_salary', 'fixed_amount'], // SIMPLIFIED ENUM
       default: 'gross_salary',
       required: true,
+    },
+    // If salaryComponent is 'fixed_amount', this value is used as the base
+    fixedBonusAmount: {
+      type: Number,
+      default: 0,
+    },
+    // If salaryComponent is 'gross_salary', multiply by this factor (e.g., 2x Gross Salary)
+    grossSalaryMultiplier: {
+      type: Number,
+      default: 1,
     },
     // Filter criteria: Apply this policy automatically to specific groups (optional)
     filters: {
@@ -38,8 +48,7 @@ const bonusPolicySchema = new mongoose.Schema(
       {
         minPercentage: { type: Number, required: true }, // e.g., 75
         maxPercentage: { type: Number, required: true }, // e.g., 100
-        bonusMultiplier: { type: Number, required: true }, // e.g., 1.5 (means 1.5x salary component)
-        flatAmount: { type: Number, default: 0 }, // Optional: Flat amount instead/addition
+        bonusPercentage: { type: Number, required: true }, // e.g., 10 (means 10% of base)
       }
     ],
     isActive: {

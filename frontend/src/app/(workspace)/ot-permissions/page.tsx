@@ -9,7 +9,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import LocationPhotoCapture from '@/components/LocationPhotoCapture';
 import Spinner from '@/components/Spinner';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
-import { CheckIcon, XIcon, CalendarIcon, BriefcaseIcon, ClockIcon } from 'lucide-react';
+import { CheckIcon, XIcon, CalendarIcon, BriefcaseIcon, ClockIcon, PlusIcon } from 'lucide-react';
 import { getEmployeeInitials } from '@/lib/utils';
 
 const Portal = ({ children }: { children: React.ReactNode }) => {
@@ -786,85 +786,77 @@ export default function OTAndPermissionsPage() {
 
       <div className="relative z-10 mx-auto max-w-[1920px] px-4 py-8 sm:px-6 lg:px-8">
         {/* Header */}
-        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-slate-900 dark:text-white">OT & Permissions Management</h1>
-            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">Manage overtime requests and permission applications</p>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">OT & Permissions Management</h1>
+            <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">Manage overtime requests and permission applications</p>
           </div>
 
-          <div className="flex items-center gap-3">
-            {/* Tabs - Same size as attendance page toggle */}
-            <div className="flex rounded-xl border border-slate-200 bg-white p-1 dark:border-slate-700 dark:bg-slate-900">
+          <div className="flex items-center gap-2">
+            {/* Tabs - Compact & Clean */}
+            <div className="flex rounded-lg border border-slate-200 bg-white p-1 dark:border-slate-700 dark:bg-slate-900">
               <button
                 onClick={() => setActiveTab('ot')}
-                className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${activeTab === 'ot'
-                  ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg shadow-blue-500/30'
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-all flex items-center gap-1.5 ${activeTab === 'ot'
+                  ? 'bg-blue-600 text-white shadow-sm'
                   : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
                   }`}
               >
-                <svg className="mr-2 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Overtime Requests ({otRequests.length})
+                <ClockIcon className="w-3.5 h-3.5" />
+                Overtime ({otRequests.length})
               </button>
               <button
                 onClick={() => setActiveTab('permissions')}
-                className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${activeTab === 'permissions'
-                  ? 'bg-gradient-to-r from-green-500 to-green-500 text-white shadow-lg shadow-green-500/30'
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-all flex items-center gap-1.5 ${activeTab === 'permissions'
+                  ? 'bg-emerald-600 text-white shadow-sm'
                   : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
                   }`}
               >
-                <svg className="mr-2 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                </svg>
+                <CheckIcon className="w-3.5 h-3.5" />
                 Permissions ({permissions.length})
               </button>
               <button
                 onClick={() => setActiveTab('pending')}
-                className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${activeTab === 'pending'
-                  ? 'bg-gradient-to-r from-yellow-500 to-orange-500 text-white shadow-lg shadow-orange-500/30'
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-all flex items-center gap-1.5 ${activeTab === 'pending'
+                  ? 'bg-orange-500 text-white shadow-sm'
                   : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
                   }`}
               >
-                <svg className="mr-2 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
+                <CalendarIcon className="w-3.5 h-3.5" />
                 Pending ({totalPending})
               </button>
             </div>
+
+            <div className="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-1" />
 
             <button
               onClick={() => {
                 setActiveTab('ot');
                 setShowOTDialog(true);
               }}
-              className="rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-3 py-2 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600"
+              className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-blue-700 transition-colors flex items-center gap-1.5"
             >
-              <svg className="mr-2 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
-              Create OT Request
+              <PlusIcon className="w-3.5 h-3.5" />
+              Create OT
             </button>
             <button
               onClick={() => {
                 setActiveTab('permissions');
                 setShowPermissionDialog(true);
               }}
-              className="rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-3 py-2 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
+              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 transition-colors flex items-center gap-1.5"
             >
-              <svg className="mr-2 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
+              <PlusIcon className="w-3.5 h-3.5" />
               Create Permission
             </button>
           </div>
         </div>
 
         {/* Filters */}
-        <div className="mb-6 rounded-xl border border-slate-200 bg-white/80 backdrop-blur-sm p-4 dark:border-slate-700 dark:bg-slate-900/80">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+        <div className="mb-4 rounded-lg border border-slate-200 bg-white/80 backdrop-blur-sm p-3 dark:border-slate-700 dark:bg-slate-900/80">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Employee Number</label>
+              <label className="mb-1 block text-[10px] font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">Employee Number</label>
               <input
                 type="text"
                 value={activeTab === 'ot' ? otFilters.employeeNumber : permissionFilters.employeeNumber}
@@ -876,11 +868,11 @@ export default function OTAndPermissionsPage() {
                   }
                 }}
                 placeholder="Filter by employee"
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Status</label>
+              <label className="mb-1 block text-[10px] font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">Status</label>
               <select
                 value={activeTab === 'ot' ? otFilters.status : permissionFilters.status}
                 onChange={(e) => {
@@ -890,7 +882,7 @@ export default function OTAndPermissionsPage() {
                     setPermissionFilters(prev => ({ ...prev, status: e.target.value }));
                   }
                 }}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
               >
                 <option value="">All Status</option>
                 <option value="pending">Pending</option>
@@ -899,7 +891,7 @@ export default function OTAndPermissionsPage() {
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Start Date</label>
+              <label className="mb-1 block text-[10px] font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">Start Date</label>
               <input
                 type="date"
                 value={activeTab === 'ot' ? otFilters.startDate : permissionFilters.startDate}
@@ -910,11 +902,11 @@ export default function OTAndPermissionsPage() {
                     setPermissionFilters(prev => ({ ...prev, startDate: e.target.value }));
                   }
                 }}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">End Date</label>
+              <label className="mb-1 block text-[10px] font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">End Date</label>
               <input
                 type="date"
                 value={activeTab === 'ot' ? otFilters.endDate : permissionFilters.endDate}
@@ -925,7 +917,7 @@ export default function OTAndPermissionsPage() {
                     setPermissionFilters(prev => ({ ...prev, endDate: e.target.value }));
                   }
                 }}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
               />
             </div>
           </div>
