@@ -83,7 +83,11 @@ function buildScopeFilter(user) {
                 user.divisionMapping.forEach(mapping => {
                     const condition = { division_id: mapping.division };
                     if (mapping.departments && Array.isArray(mapping.departments) && mapping.departments.length > 0) {
-                        condition.department_id = { $in: mapping.departments };
+                        // Support dual field names for department within division scope
+                        condition.$or = [
+                            { department_id: { $in: mapping.departments } },
+                            { department: { $in: mapping.departments } }
+                        ];
                     }
                     orConditions.push(condition);
                 });
@@ -92,19 +96,34 @@ function buildScopeFilter(user) {
                 administrativeFilter = { division_id: { $in: user.allowedDivisions } };
             } else if (user.departments && user.departments.length > 0) {
                 // Fallback to departments if divisions not setup correctly
-                administrativeFilter = { department_id: { $in: user.departments } };
+                administrativeFilter = {
+                    $or: [
+                        { department_id: { $in: user.departments } },
+                        { department: { $in: user.departments } }
+                    ]
+                };
             }
             break;
 
         case 'department':
             if (user.department) {
-                administrativeFilter = { department_id: user.department };
+                administrativeFilter = {
+                    $or: [
+                        { department_id: user.department },
+                        { department: user.department }
+                    ]
+                };
             }
             break;
 
         case 'departments':
             if (user.departments && user.departments.length > 0) {
-                administrativeFilter = { department_id: { $in: user.departments } };
+                administrativeFilter = {
+                    $or: [
+                        { department_id: { $in: user.departments } },
+                        { department: { $in: user.departments } }
+                    ]
+                };
             }
             break;
 
@@ -215,24 +234,80 @@ function hasAccessToResource(user, resource) {
                     if (!matchDivision) return false;
                     // If departments array is empty, access to all departments in that division
                     if (!mapping.departments || mapping.departments.length === 0) return true;
-                    return mapping.departments.some(d => d.toString() === resource.department_id?.toString());
+
+                    // Support dual field names for department match
+                    const resourceDeptId = (resource.department_id || resource.department)?.toString();
+                    return mapping.departments.some(d => d.toString() === resourceDeptId);
                 });
             }
             if (user.allowedDivisions && user.allowedDivisions.length > 0) {
                 return user.allowedDivisions.some(d => d.toString() === resource.division_id?.toString());
             }
-            // Fallback
-            return user.departments?.some(d => d.toString() === resource.department_id?.toString());
+            // Fallback (Support dual field names)
+            const fallbackDeptId = (resource.department_id || resource.department)?.toString();
+            return user.departments?.some(d => d.toString() === fallbackDeptId);
 
         case 'department':
-            return resource.department_id?.toString() === user.department?.toString();
+            const singleDeptId = (resource.department_id || resource.department)?.toString();
+            return singleDeptId === user.department?.toString();
 
         case 'departments':
-            return user.departments?.some(d => d.toString() === resource.department_id?.toString());
+            const multiDeptId = (resource.department_id || resource.department)?.toString();
+            return user.departments?.some(d => d.toString() === multiDeptId);
 
         default:
             return false;
     }
+}
+
+/**
+ * Get all employee IDs that fall within a user's assigned scope
+ * Use this for "Employee-First Scoping" in controllers
+ * @param {Object} user - User object with scoping fields
+ * @returns {Promise<Array>} Array of Employee ObjectIds
+ */
+async function getEmployeeIdsInScope(user) {
+    if (!user) return [];
+
+    // Super Admins see everything
+    if (user.role === 'super_admin' || user.role === 'sub_admin') {
+        const employees = await Employee.find({ isActive: true }).select('_id');
+        return employees.map(e => e._id);
+    }
+
+    const { allowedDivisions, divisionMapping, departments, department } = user;
+    const orConditions = [];
+
+    // 1. Division Mapping (Strict mandatory intersection)
+    if (divisionMapping && Array.isArray(divisionMapping) && divisionMapping.length > 0) {
+        divisionMapping.forEach(m => {
+            const divId = typeof m.division === 'string' ? m.division : m.division?._id;
+            if (divId) {
+                const divCondition = { division_id: divId };
+                if (m.departments && Array.isArray(m.departments) && m.departments.length > 0) {
+                    divCondition.department_id = { $in: m.departments };
+                }
+                orConditions.push(divCondition);
+            }
+        });
+    }
+
+    // 2. Allowed Divisions (fallback/broad access)
+    if (allowedDivisions && Array.isArray(allowedDivisions) && allowedDivisions.length > 0) {
+        orConditions.push({ division_id: { $in: allowedDivisions } });
+    }
+
+    // 3. Direct Departments
+    const allDepts = Array.isArray(departments) ? [...departments] : [];
+    if (department) allDepts.push(department);
+    if (allDepts.length > 0) {
+        orConditions.push({ department_id: { $in: allDepts } });
+    }
+
+    if (orConditions.length === 0) return [];
+
+    const employees = await Employee.find({ $or: orConditions }).select('_id');
+    return employees.map(e => e._id);
 }
 
 module.exports = {
@@ -240,5 +315,6 @@ module.exports = {
     buildScopeFilter,
     buildWorkflowVisibilityFilter,
     hasAccessToResource,
-    getDefaultScope
+    getDefaultScope,
+    getEmployeeIdsInScope
 };

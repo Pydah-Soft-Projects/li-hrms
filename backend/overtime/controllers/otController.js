@@ -8,7 +8,10 @@ const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 const ConfusedShift = require('../../shifts/model/ConfusedShift');
 const Employee = require('../../employees/model/Employee');
 const { createOTRequest, approveOTRequest, rejectOTRequest, convertExtraHoursToOT } = require('../services/otService');
-const { buildWorkflowVisibilityFilter } = require('../../shared/middleware/dataScopeMiddleware');
+const {
+  buildWorkflowVisibilityFilter,
+  getEmployeeIdsInScope
+} = require('../../shared/middleware/dataScopeMiddleware');
 
 /**
  * @desc    Create OT request
@@ -43,8 +46,8 @@ exports.createOT = async (req, res) => {
       (employeeNumber && employeeNumber.toUpperCase() === req.user.employeeId?.toUpperCase()) ||
       (employeeId && employeeId.toString() === req.user.employeeRef?.toString());
 
-    const isGlobalAdmin = ['hod', 'hr', 'sub_admin', 'super_admin'].includes(req.user.role);
-    const isManager = req.user.role === 'manager';
+    const isGlobalAdmin = ['hr', 'sub_admin', 'super_admin'].includes(req.user.role);
+    const isScopedAdmin = ['hod', 'manager'].includes(req.user.role);
 
     // 1. SELF APPLICATION (Always Allowed)
     if (isSelf) {
@@ -54,8 +57,8 @@ exports.createOT = async (req, res) => {
     else if (isGlobalAdmin) {
       // Proceed
     }
-    // 3. MANAGER APPLICATION (Scoped)
-    else if (isManager) {
+    // 3. SCOPED ADMIN APPLICATION (HOD/Manager)
+    else if (isScopedAdmin) {
       // Resolve target employee for scope check
       // Employee model is already imported at the top of the file.
 
@@ -79,19 +82,37 @@ exports.createOT = async (req, res) => {
       const employeeDivisionId = targetEmployee.division_id?.toString();
       const isDivisionScoped = allowedDivisions?.some(divId => divId.toString() === employeeDivisionId);
 
-      let isDepartmentScoped = true;
-      if (isDivisionScoped && divisionMapping && divisionMapping.length > 0) {
-        const mapping = divisionMapping.find(m => m.division?.toString() === employeeDivisionId);
-        if (mapping && mapping.departments && mapping.departments.length > 0) {
-          const employeeDeptId = (targetEmployee.department_id || targetEmployee.department)?.toString();
-          isDepartmentScoped = mapping.departments.some(d => d.toString() === employeeDeptId);
+      let isDepartmentScoped = false;
+      const targetDeptId = (targetEmployee.department_id || targetEmployee.department)?.toString();
+
+      if (isDivisionScoped) {
+        if (!divisionMapping || divisionMapping.length === 0) {
+          isDepartmentScoped = true; // All departments in this division
+        } else {
+          const mapping = divisionMapping.find(m => m.division?.toString() === employeeDivisionId);
+          if (mapping) {
+            if (!mapping.departments || mapping.departments.length === 0) {
+              isDepartmentScoped = true;
+            } else {
+              isDepartmentScoped = mapping.departments.some(d => d.toString() === targetDeptId);
+            }
+          }
         }
       }
 
-      if (!isDivisionScoped || !isDepartmentScoped) {
+      // Direct Department Check (fallback for HOD/unmapped Managers)
+      if (!isDepartmentScoped) {
+        if (req.user.department && req.user.department.toString() === targetDeptId) {
+          isDepartmentScoped = true;
+        } else if (req.user.departments && req.user.departments.length > 0) {
+          isDepartmentScoped = req.user.departments.some(d => d.toString() === targetDeptId);
+        }
+      }
+
+      if (!isDivisionScoped && !isDepartmentScoped) {
         return res.status(403).json({
           success: false,
-          message: 'You are not authorized to apply for overtime for employees outside your assigned data scope.'
+          message: `You are not authorized to apply for OT for employees outside your assigned data scope.`
         });
       }
     }
@@ -166,7 +187,15 @@ exports.getOTRequests = async (req, res) => {
 
     // Apply Sequential Workflow Visibility ("Travel Flow")
     const workflowFilter = buildWorkflowVisibilityFilter(req.user);
-    const combinedQuery = { $and: [query, req.scopeFilter || {}, workflowFilter] };
+
+    // Apply Employee-First Scoping for Scoped Roles (HOD, HR, Manager)
+    let scopeLimitFilter = req.scopeFilter || {};
+    if (['hod', 'hr', 'manager'].includes(req.user.role)) {
+      const employeeIds = await getEmployeeIdsInScope(req.user);
+      scopeLimitFilter = { ...scopeLimitFilter, employeeId: { $in: employeeIds } };
+    }
+
+    const combinedQuery = { $and: [query, scopeLimitFilter, workflowFilter] };
 
     const otRequests = await OT.find(combinedQuery)
       .populate('employeeId', 'emp_no employee_name department designation')

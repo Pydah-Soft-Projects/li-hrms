@@ -50,6 +50,12 @@ const createOTRequest = async (data, userId) => {
       };
     }
 
+    // Populate division and department for snapshotting
+    await employee.populate([
+      { path: 'division_id', select: 'name' },
+      { path: 'department_id', select: 'name' }
+    ]);
+
     // Validate OT request - check conflicts and attendance
     const validation = await validateOTRequest(employeeId, employeeNumber, date);
     if (!validation.isValid) {
@@ -223,6 +229,10 @@ const createOTRequest = async (data, userId) => {
       employeeNumber: employeeNumber.toUpperCase(),
       date: date,
       attendanceRecordId: attendanceRecord._id,
+      division_id: employee.division_id?._id || employee.division_id,
+      division_name: employee.division_id?.name || 'N/A',
+      department_id: employee.department_id?._id || employee.department_id,
+      department_name: employee.department_id?.name || 'N/A',
       shiftId: finalShiftId,
       employeeInTime: attendanceRecord.inTime,
       shiftEndTime: shift.endTime,

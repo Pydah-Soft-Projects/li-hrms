@@ -48,6 +48,12 @@ const createPermissionRequest = async (data, userId) => {
       };
     }
 
+    // Populate division and department for snapshotting
+    await employee.populate([
+      { path: 'division_id', select: 'name' },
+      { path: 'department_id', select: 'name' }
+    ]);
+
     // Ensure times are Date objects
     const startTime = permissionStartTime instanceof Date ? permissionStartTime : new Date(permissionStartTime);
     const endTime = permissionEndTime instanceof Date ? permissionEndTime : new Date(permissionEndTime);
@@ -190,6 +196,10 @@ const createPermissionRequest = async (data, userId) => {
       employeeNumber: employeeNumber.toUpperCase(),
       date: date,
       attendanceRecordId: attendanceRecord._id,
+      division_id: employee.division_id?._id || employee.division_id,
+      division_name: employee.division_id?.name || 'N/A',
+      department_id: employee.department_id?._id || employee.department_id,
+      department_name: employee.department_id?.name || 'N/A',
       permissionStartTime: startTime,
       permissionEndTime: endTime,
       permissionHours: permissionHours,

@@ -10,7 +10,10 @@ const {
   updateLeaveForAttendance,
   getLeaveConflicts
 } = require('../services/leaveConflictService');
-const { buildWorkflowVisibilityFilter } = require('../../shared/middleware/dataScopeMiddleware');
+const {
+  buildWorkflowVisibilityFilter,
+  getEmployeeIdsInScope
+} = require('../../shared/middleware/dataScopeMiddleware');
 
 /**
  * Get employee settings from database
@@ -310,8 +313,8 @@ exports.applyLeave = async (req, res) => {
       const isSelf = req.user.emp_no && (req.user.emp_no === empNo || req.user.emp_no.toLowerCase() === empNo.toLowerCase());
 
       // Check if user has permission to apply for others
-      // Allow super_admin, hr, sub_admin, manager (backward compatibility)
-      const allowedRoles = ['hr', 'sub_admin', 'super_admin', 'manager'];
+      // Allow hod, hr, sub_admin, super_admin, manager (backward compatibility)
+      const allowedRoles = ['hod', 'hr', 'sub_admin', 'super_admin', 'manager'];
       const userRole = req.user.role ? req.user.role.toLowerCase() : '';
       const hasRolePermission = allowedRoles.includes(userRole) || isSelf;
 
@@ -363,8 +366,16 @@ exports.applyLeave = async (req, res) => {
       // Find employee by emp_no (checks MongoDB first, then MSSQL based on settings)
       employee = await findEmployeeByEmpNo(empNo);
 
-      // Enforce Manager Scope
-      if (req.user.role === 'manager' && employee) {
+      if (employee) {
+        // Populate division and department to get names for snapshotting
+        await employee.populate([
+          { path: 'division_id', select: 'name' },
+          { path: 'department_id', select: 'name' }
+        ]);
+      }
+
+      // Enforce HOD & Manager Scope
+      if (['manager', 'hod'].includes(req.user.role) && employee) {
         // 1. Allow Self Application
         // Check if the target employee is the manager themselves
         const isSelf = (req.user.employeeId && req.user.employeeId.toString() === employee._id.toString()) ||
@@ -410,26 +421,34 @@ exports.applyLeave = async (req, res) => {
           }
 
           // Check Direct Department Assignment
-          if (!isDepartmentScoped && req.user.departments && req.user.departments.length > 0) {
-            isDepartmentScoped = req.user.departments.some(d =>
-              (typeof d === 'string' ? d : d._id.toString()) === employeeDepartmentId
-            );
+          if (!isDepartmentScoped) {
+            // Check singular department (common for HOD)
+            if (req.user.department) {
+              isDepartmentScoped = req.user.department.toString() === employeeDepartmentId;
+            }
+
+            // Check departments array
+            if (!isDepartmentScoped && req.user.departments && req.user.departments.length > 0) {
+              isDepartmentScoped = req.user.departments.some(d =>
+                (typeof d === 'string' ? d : d._id.toString()) === employeeDepartmentId
+              );
+            }
           }
 
           if (!isDivisionScoped && !isDepartmentScoped) {
-            console.log(`[Apply Leave] ❌ Manager ${req.user._id} blocked from applying for employee ${empNo}.`);
+            console.log(`[Apply Leave] ❌ ${req.user.role} ${req.user._id} blocked from applying for employee ${empNo}.`);
             console.log(`Debug: EmpDiv: ${employeeDivisionId}, EmpDept: ${employeeDepartmentId}, UserDivs: ${JSON.stringify(allowedDivisions)}`);
             return res.status(403).json({
               success: false,
-              error: 'You are not authorized to apply for employees outside your assigned data scope (Division/Department).',
+              error: `You are not authorized to apply for employees outside your assigned data scope (Division/Department).`,
             });
           }
         }
       }
     } else if (employeeId) {
       // Legacy: Check if user has permission to apply for others
-      // Allow super_admin, hr, sub_admin, manager (backward compatibility)
-      const hasRolePermission = ['hr', 'sub_admin', 'super_admin', 'manager'].includes(req.user.role);
+      // Allow hod, hr, sub_admin, super_admin, manager (backward compatibility)
+      const hasRolePermission = ['hod', 'hr', 'sub_admin', 'super_admin', 'manager'].includes(req.user.role);
 
       console.log(`[Apply Leave] User ${req.user._id} (${req.user.role}) applying for employee ${employeeId}(legacy)`);
       console.log(`[Apply Leave] Has role permission: ${hasRolePermission} `);
@@ -637,8 +656,11 @@ exports.applyLeave = async (req, res) => {
       purpose,
       contactNumber,
       emergencyContact,
-      division_id: employee.division_id, // Save division at time of application
-      department: employee.department_id || employee.department, // Support both field names
+      division_id: employee.division_id?._id || employee.division_id, // Save division at time of application
+      division_name: employee.division_id?.name || 'N/A',
+      department: employee.department_id?._id || employee.department_id || employee.department, // Support both field names
+      department_id: employee.department_id?._id || employee.department_id,
+      department_name: employee.department_id?.name || 'N/A',
       designation: employee.designation_id || employee.designation, // Support both field names
       appliedBy: req.user._id,
       appliedAt: new Date(),
@@ -914,67 +936,29 @@ exports.getPendingApprovals = async (req, res) => {
     if (['sub_admin', 'super_admin'].includes(userRole)) {
       filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
     }
-    // 2. HOD: View leaves assigned to HOD role within their department
-    else if (userRole === 'hod') {
-      filter['$or'] = [
-        { 'workflow.nextApprover': 'hod' },
-        { 'workflow.nextApproverRole': 'hod' }
-      ];
-      if (req.user.department) {
-        filter.department = req.user.department;
-      }
-    }
-    // 3. HR: View leaves assigned to HR or Final Authority
-    else if (userRole === 'hr') {
-      filter['$or'] = [
-        { 'workflow.nextApprover': { $in: ['hr', 'final_authority'] } },
-        { 'workflow.nextApproverRole': { $in: ['hr', 'final_authority'] } }
-      ];
-    }
-    // 4. Manager: View leaves assigned to Manager within their scope
-    else if (userRole === 'manager') {
-      filter['$or'] = [
-        { 'workflow.nextApprover': 'manager' },
-        { 'workflow.nextApproverRole': 'manager' }
-      ];
-
-      // Construct Manager Scope Query
-      const scopeConditions = [];
-
-      // A. Allowed Divisions
-      if (req.user.allowedDivisions && req.user.allowedDivisions.length > 0) {
-        const divisionIds = req.user.allowedDivisions.map(d => (typeof d === 'string' ? d : d._id));
-        scopeConditions.push({ division_id: { $in: divisionIds } });
-      }
-
-      // B. Direct Departments
-      if (req.user.departments && req.user.departments.length > 0) {
-        const deptIds = req.user.departments.map(d => (typeof d === 'string' ? d : d._id));
-        scopeConditions.push({ department: { $in: deptIds } });
-      }
-
-      // C. Division Mapping (Approximation for Query)
-      if (req.user.divisionMapping && req.user.divisionMapping.length > 0) {
-        // This is complex to query perfectly in one go if logic is "Division X but NOT Department Y"
-        // For now, we include any Division mentioned in mapping
-        const mappedDivIds = req.user.divisionMapping.map(m => (typeof m.division === 'string' ? m.division : m.division._id));
-        scopeConditions.push({ division_id: { $in: mappedDivIds } });
-      }
-
-      if (scopeConditions.length > 0) {
-        filter['$and'] = [
-          filter['$or'], // The role check
-          { $or: scopeConditions } // The scope check
+    // 2, 3, 4: Scoped Roles (HOD, HR, Manager)
+    else if (['hod', 'hr', 'manager'].includes(userRole)) {
+      // 1. Role-based turn check
+      if (userRole === 'hr') {
+        filter['$or'] = [
+          { 'workflow.nextApprover': { $in: ['hr', 'final_authority'] } },
+          { 'workflow.nextApproverRole': { $in: ['hr', 'final_authority'] } }
         ];
-        delete filter['$or']; // Moved inside $and
       } else {
-        // No scope defined? Maybe show nothing or everything? 
-        // Safest is to show nothing if manager has no scope, ensuring security.
-        // But maybe they are a "General Manager"?
-        // Let's assume strict scope.
-        console.warn(`Manager ${req.user._id} has no scope defined calling getPendingApprovals`);
-        // filter matches role, but we might want to restrict. 
-        // For now, let generic 'nextApprover' rule stand, but warned.
+        filter['$or'] = [
+          { 'workflow.nextApprover': userRole },
+          { 'workflow.nextApproverRole': userRole }
+        ];
+      }
+
+      // 2. Strict Employee-First Scope Match
+      const employeeIds = await getEmployeeIdsInScope(req.user);
+
+      if (employeeIds.length > 0) {
+        filter.employeeId = { $in: employeeIds };
+      } else {
+        console.warn(`[GetPendingApprovals] User ${req.user._id} (${userRole}) has no employees in scope.`);
+        filter.employeeId = { $in: [] };
       }
     }
     // 5. Generic / Custom Role: View leaves explicitly assigned to this role

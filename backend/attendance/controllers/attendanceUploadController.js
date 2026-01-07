@@ -9,6 +9,9 @@ const { processAndAggregateLogs } = require('../services/attendanceSyncService')
 const { detectAndAssignShift } = require('../../shifts/services/shiftDetectionService');
 const { batchDetectExtraHours } = require('../services/extraHoursService');
 const XLSX = require('xlsx');
+const dayjs = require('dayjs');
+const customParseFormat = require('dayjs/plugin/customParseFormat');
+dayjs.extend(customParseFormat);
 
 /**
  * @desc    Upload attendance from Excel
@@ -24,8 +27,13 @@ exports.uploadExcel = async (req, res) => {
       });
     }
 
-    // Parse Excel file
-    const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+    // Parse Excel file with date/serial awareness
+    const workbook = XLSX.read(req.file.buffer, {
+      type: 'buffer',
+      cellDates: true,
+      cellNF: true,
+      cellText: false
+    });
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
     const data = XLSX.utils.sheet_to_json(worksheet);
@@ -43,7 +51,7 @@ exports.uploadExcel = async (req, res) => {
 
     for (let i = 0; i < data.length; i++) {
       const row = data[i];
-      
+
       try {
         // Try different column name variations
         const empNo = row['Employee Number'] || row['EmployeeNumber'] || row['Emp No'] || row['EmpNo'] || row['emp_no'];
@@ -55,10 +63,10 @@ exports.uploadExcel = async (req, res) => {
           continue;
         }
 
-        // Parse dates
-        const inTimeDate = new Date(inTime);
-        if (isNaN(inTimeDate.getTime())) {
-          errors.push(`Row ${i + 2}: Invalid In-Time format`);
+        // Parse dates focusing on 24-hour format and Excel serials
+        const inTimeDate = parseExcelDate(inTime);
+        if (!inTimeDate || isNaN(inTimeDate.getTime())) {
+          errors.push(`Row ${i + 2}: Invalid In-Time format. Use 24-hour format (e.g., 14:30) or standard Excel date/time.`);
           continue;
         }
 
@@ -86,8 +94,10 @@ exports.uploadExcel = async (req, res) => {
 
         // Insert OUT log if provided
         if (outTime) {
-          const outTimeDate = new Date(outTime);
-          if (!isNaN(outTimeDate.getTime())) {
+          // Use inTimeDate as fallback so OutTime on the same day works even if just time is provided
+          const outTimeDate = parseExcelDate(outTime, inTimeDate);
+
+          if (outTimeDate && !isNaN(outTimeDate.getTime())) {
             const outLog = {
               employeeNumber: String(empNo).trim().toUpperCase(),
               timestamp: outTimeDate,
@@ -121,21 +131,21 @@ exports.uploadExcel = async (req, res) => {
     // This ensures extra hours are calculated for all attendance records from Excel upload
     try {
       console.log('[ExcelUpload] Detecting extra hours for all processed records...');
-      
+
       // Get unique dates from the processed logs
       const processedDates = [...new Set(rawLogs.map(log => {
         const d = new Date(log.timestamp);
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       }))];
-      
+
       if (processedDates.length > 0) {
         const minDate = processedDates.sort()[0];
         const maxDate = processedDates.sort()[processedDates.length - 1];
-        
+
         // Batch detect extra hours for all records in the date range
         const extraHoursStats = await batchDetectExtraHours(minDate, maxDate);
         console.log(`[ExcelUpload] Extra hours detection: ${extraHoursStats.message}`);
-        
+
         // Add extra hours stats to response
         stats.extraHoursDetected = extraHoursStats.updated;
         stats.extraHoursProcessed = extraHoursStats.processed;
@@ -174,8 +184,84 @@ exports.uploadExcel = async (req, res) => {
  * Format date to YYYY-MM-DD
  */
 const formatDate = (date) => {
-  const d = new Date(date);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return dayjs(date).format('YYYY-MM-DD');
+};
+
+/**
+ * Robust date/time parser for Excel inputs
+ * Extracts components and rebases "Time Only" values to current/target date
+ */
+const parseExcelDate = (val, fallbackDate = null) => {
+  if (!val) return null;
+
+  let y, m, d, H, M, S;
+
+  if (typeof val === 'number') {
+    // 1. Handle Excel Serial Number
+    const dateObj = XLSX.SSF.parse_date_code(val);
+    y = dateObj.y;
+    m = dateObj.m;
+    d = dateObj.d;
+    H = dateObj.H;
+    M = dateObj.M;
+    S = dateObj.S;
+  } else if (val instanceof Date) {
+    // 2. Handle JS Date object (parsed by XLSX with cellDates: true)
+    y = val.getFullYear();
+    m = val.getMonth() + 1;
+    d = val.getDate();
+    H = val.getHours();
+    M = val.getMinutes();
+    S = val.getSeconds();
+  } else {
+    // 3. Handle String
+    const str = String(val).trim();
+
+    // Detect if this is a time-only string (HH:mm or HH:mm:ss)
+    const isTimeOnly = /^([01]\d|2[0-3]):([0-5]\d)(:([0-5]\d))?$/.test(str);
+
+    const formats = [
+      'YYYY-MM-DD HH:mm:ss',
+      'YYYY-MM-DD HH:mm',
+      'DD-MM-YYYY HH:mm:ss',
+      'DD-MM-YYYY HH:mm',
+      'YYYY/MM/DD HH:mm:ss',
+      'DD/MM/YYYY HH:mm',
+      'HH:mm:ss',
+      'HH:mm'
+    ];
+
+    const parsed = dayjs(str, formats, true);
+    if (parsed.isValid()) {
+      y = isTimeOnly ? 1900 : parsed.year(); // Force rebase for time-only
+      m = parsed.month() + 1;
+      d = parsed.date();
+      H = parsed.hour();
+      M = parsed.minute();
+      S = parsed.second();
+    } else {
+      const native = new Date(str.replace(/Z|[+-]\d{2}(:?\d{2})?$/g, '')); // Strip timezone/UTC indicator for strict local construction
+      if (isNaN(native.getTime())) return null;
+      y = native.getFullYear();
+      m = native.getMonth() + 1;
+      d = native.getDate();
+      H = native.getHours();
+      M = native.getMinutes();
+      S = native.getSeconds();
+    }
+  }
+
+  // REBASE Logic: Excel defaults "Time Only" cells to 1899-12-30 or 1900-01-01
+  // Or dayjs defaults to current date for time-only strings
+  if (y < 1920) {
+    const base = fallbackDate || new Date();
+    y = base.getFullYear();
+    m = base.getMonth() + 1;
+    d = base.getDate();
+  }
+
+  // Return local Date object
+  return new Date(y, m - 1, d, H, M, S);
 };
 
 /**
@@ -185,17 +271,17 @@ const formatDate = (date) => {
  */
 exports.downloadTemplate = async (req, res) => {
   try {
-    // Create sample data
+    // Create sample data with strict 24-hour format
     const sampleData = [
       {
         'Employee Number': 'EMP001',
-        'In-Time': new Date().toISOString(),
-        'Out-Time': new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString(), // 8 hours later
+        'In-Time': dayjs().format('YYYY-MM-DD 09:00:00'),
+        'Out-Time': dayjs().format('YYYY-MM-DD 18:00:00'),
       },
       {
         'Employee Number': 'EMP002',
-        'In-Time': new Date().toISOString(),
-        'Out-Time': '', // Optional
+        'In-Time': dayjs().format('YYYY-MM-DD 14:30:00'),
+        'Out-Time': dayjs().format('YYYY-MM-DD 23:15:00'),
       },
     ];
 

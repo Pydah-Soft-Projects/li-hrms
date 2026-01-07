@@ -96,6 +96,7 @@ const processAndAggregateLogs = async (rawLogs, previousDayLinking = false, skip
           $gte: formatDate(minDateObj),
           $lte: formatDate(maxDateObj),
         },
+        timestamp: { $gte: new Date('2020-01-01') }, // Ignore ancient logs (1899/1900)
         type: { $in: ['IN', 'OUT'] }, // CRITICAL: Only process IN/OUT logs, exclude null-type (BREAK/OT)
       }).sort({ timestamp: 1 }); // Sort chronologically
 
