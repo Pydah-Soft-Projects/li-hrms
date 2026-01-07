@@ -1326,29 +1326,22 @@ const autoAssignNearestShift = async (employeeNumber, date, inTime, outTime = nu
       };
     }
 
-    // Convert in-time to minutes from midnight
-    const inMinutes = inTime.getHours() * 60 + inTime.getMinutes();
+    // Use the existing findCandidateShifts logic which handles:
+    // 1. Proximity matching (preferred shifts within 35 min)
+    // 2. Start-before-log preference
+    // 3. Source priority tie-breaking (Designation > Department > Division > Global)
+    const candidates = findCandidateShifts(inTime, shifts, date);
 
-    // Find shift with start time closest to in-time
-    let nearestShift = null;
-    let minDifference = Infinity;
-
-    for (const shift of shifts) {
-      const shiftStartMinutes = timeToMinutes(shift.startTime);
-
-      // Calculate difference (handle overnight shifts)
-      let difference = Math.abs(inMinutes - shiftStartMinutes);
-
-      // If difference is more than 12 hours, consider it might be next day
-      if (difference > 12 * 60) {
-        difference = 24 * 60 - difference;
-      }
-
-      if (difference < minDifference) {
-        minDifference = difference;
-        nearestShift = shift;
-      }
+    if (candidates.length === 0) {
+      return {
+        success: false,
+        message: 'No matching shifts found within tolerance',
+      };
     }
+
+    // Get the best candidate (already sorted by preference + priority)
+    const bestCandidate = candidates[0];
+    const nearestShift = shifts.find(s => s._id.toString() === bestCandidate.shiftId.toString());
 
     if (!nearestShift) {
       return {
@@ -1366,12 +1359,14 @@ const autoAssignNearestShift = async (employeeNumber, date, inTime, outTime = nu
       assignedShift: nearestShift._id,
       shiftName: nearestShift.name,
       source: 'auto_assign_nearest',
+      sourcePriority: nearestShift.sourcePriority || 99,
       lateInMinutes: lateInMinutes > 0 ? lateInMinutes : null,
       earlyOutMinutes: earlyOutMinutes && earlyOutMinutes > 0 ? earlyOutMinutes : null,
       isLateIn: lateInMinutes > 0,
       isEarlyOut: earlyOutMinutes && earlyOutMinutes > 0,
       expectedHours: nearestShift.duration,
-      differenceMinutes: minDifference,
+      differenceMinutes: bestCandidate.differenceMinutes,
+      isPreferred: bestCandidate.isPreferred,
     };
 
   } catch (error) {
