@@ -113,19 +113,15 @@ function buildScopeFilter(user) {
                     };
 
                     // Filter matching Departments within Division
-                    let departmentCondition = {};
+                    let departmentCondition = null;
                     if (mapping.departments && Array.isArray(mapping.departments) && mapping.departments.length > 0) {
-                        departmentCondition = {
-                            $or: [
-                                { department_id: { $in: mapping.departments } },
-                                { department: { $in: mapping.departments } }
-                            ]
-                        };
+                        departmentCondition = createDepartmentFilter(mapping.departments);
                     }
 
                     // Combined condition for this mapping entry
                     // (Division MATCH) AND (Optional Department MATCH)
-                    if (Object.keys(departmentCondition).length > 0) {
+                    // If no specific departments provided, user gets access to ALL departments in that division
+                    if (departmentCondition && Object.keys(departmentCondition).length > 0 && !departmentCondition._id) {
                         orConditions.push({
                             $and: [divisionCondition, departmentCondition]
                         });
@@ -135,39 +131,22 @@ function buildScopeFilter(user) {
                 });
                 administrativeFilter = orConditions.length === 1 ? orConditions[0] : { $or: orConditions };
             } else if (user.allowedDivisions && user.allowedDivisions.length > 0) {
+                // If mapping is empty but divisions are assigned, allow access to all departments in those divisions
                 administrativeFilter = createDivisionFilter(user.allowedDivisions);
             } else if (user.departments && user.departments.length > 0) {
                 // Fallback to departments if divisions not setup correctly
                 administrativeFilter = createDepartmentFilter(user.departments);
-                administrativeFilter = {
-                    $or: [
-                        { department_id: { $in: user.departments } },
-                        { department: { $in: user.departments } }
-                    ]
-                };
             }
             break;
 
         case 'department':
             if (user.department) {
                 administrativeFilter = createDepartmentFilter([user.department]);
-                administrativeFilter = {
-                    $or: [
-                        { department_id: user.department },
-                        { department: user.department }
-                    ]
-                };
             }
             break;
 
         case 'departments':
             if (user.departments && user.departments.length > 0) {
-                administrativeFilter = {
-                    $or: [
-                        { department_id: { $in: user.departments } },
-                        { department: { $in: user.departments } }
-                    ]
-                };
                 administrativeFilter = createDepartmentFilter(user.departments);
             }
             break;
