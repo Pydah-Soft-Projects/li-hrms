@@ -171,7 +171,7 @@ export default function Sidebar() {
           <div className={`px-4 py-4 flex items-center border-b border-slate-200/60 dark:border-slate-800 ${isCollapsed ? 'justify-center' : 'justify-between'}`}>
             <div className={`flex items-center gap-3 ${isCollapsed ? 'justify-center w-full' : ''}`}>
               <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-500/20 flex-shrink-0">
-                <span className="text-sm font-bold text-white">P</span>
+                <span className="text-sm font-bold text-white">H</span>
               </div>
               {(!isCollapsed || isMobileOpen) && (
                 <h2 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">HRMS</h2>

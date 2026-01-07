@@ -170,7 +170,6 @@ interface PermissionRequest {
   outpassUrl?: string;
   comments?: string;
   gateOutTime?: string;
-  gateOutTime?: string;
   gateInTime?: string;
   workflow?: {
     currentStepRole: string;
@@ -358,20 +357,32 @@ export default function OTAndPermissionsPage() {
         api.getShifts(),
       ]);
 
-      if (employeesRes.success) {
-        const employeesList = employeesRes.data || [];
-        console.log('Loaded employees:', employeesList.length, employeesList);
-        setEmployees(employeesList);
+      if (employeesRes && employeesRes.success) {
+        if (Array.isArray(employeesRes.data)) {
+          const employeesList = employeesRes.data;
+          console.log('Loaded employees:', employeesList.length);
+          setEmployees(employeesList);
+        } else {
+          console.error('Expected array for employees but got:', typeof employeesRes.data);
+          setEmployees([]);
+        }
       } else {
-        console.error('Failed to load employees:', employeesRes);
-        showToast('Failed to load employees', 'error');
+        console.error('Failed to load employees. Response:', JSON.stringify(employeesRes));
+        // Only show toast if there's a meaningful message
+        if (employeesRes && (employeesRes as any).message) {
+          showToast((employeesRes as any).message, 'error');
+        }
       }
 
       if (shiftsRes.success) {
         setShifts(shiftsRes.data || []);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading data:', error);
+      // Try to print full error if object
+      try {
+        if (typeof error === 'object') console.error(JSON.stringify(error));
+      } catch (e) { /* ignore */ }
     } finally {
       setLoading(false);
     }
@@ -755,13 +766,13 @@ export default function OTAndPermissionsPage() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'approved':
-        return 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400';
+        return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
       case 'rejected':
-        return 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400';
+        return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
       case 'pending':
-        return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400';
+        return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400';
       default:
-        return 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-400';
+        return 'bg-slate-100 text-slate-700 dark:bg-slate-900/30 dark:text-slate-400';
     }
   };
 
@@ -1136,67 +1147,79 @@ export default function OTAndPermissionsPage() {
             </div>
           </div>
         ) : activeTab === 'ot' ? (
-          <div className="rounded-xl border border-slate-200 bg-white/80 backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/80">
+          <div className="bg-white rounded-lg border border-slate-200 shadow-sm dark:bg-slate-800 dark:border-slate-700 overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-slate-50 dark:bg-slate-800">
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-slate-100/75 border-b border-slate-200 dark:bg-slate-700/50 dark:border-slate-700">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Employee</th>
-                    {showDivision && <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Division</th>}
-                    {showDepartment && <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Department</th>}
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Date</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Shift</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">OT In</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">OT Out</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">OT Hours</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Status</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Actions</th>
+                    <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Employee</th>
+                    {showDivision && <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Division</th>}
+                    {showDepartment && <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Department</th>}
+                    <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Date</th>
+                    <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Shift</th>
+                    <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300 text-center">In Time</th>
+                    <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300 text-center">Out Time</th>
+                    <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300 text-center">Hours</th>
+                    <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300 text-center">Status</th>
+                    <th scope="col" className="px-6 py-3.5 text-right text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                   {otRequests.length === 0 ? (
                     <tr>
-
-                      <td colSpan={8 + (showDivision ? 1 : 0) + (showDepartment ? 1 : 0)} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                      <td colSpan={8 + (showDivision ? 1 : 0) + (showDepartment ? 1 : 0)} className="px-6 py-10 text-center text-slate-500 text-sm">
                         No OT requests found
                       </td>
                     </tr>
                   ) : (
                     otRequests.map((ot) => (
-                      <tr key={ot._id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                        <td className="px-4 py-3">
-                          <div className="text-sm font-medium text-slate-900 dark:text-white">
-                            {ot.employeeId?.employee_name || ot.employeeNumber}
+                      <tr key={ot._id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
+                        <td className="px-6 py-3.5">
+                          <div className="flex items-center gap-3">
+                            <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-700 dark:text-blue-400 font-bold text-xs shrink-0">
+                              {getEmployeeInitials({ employee_name: ot.employeeId?.employee_name || '', first_name: '', last_name: '', emp_no: '' } as any)}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="font-medium text-slate-900 dark:text-white text-sm truncate max-w-[150px]">
+                                {ot.employeeId?.employee_name || ot.employeeNumber}
+                              </div>
+                              <div className="text-xs text-slate-500">
+                                {ot.employeeNumber}
+                              </div>
+                            </div>
                           </div>
-                          <div className="text-xs text-slate-500 dark:text-slate-400">{ot.employeeNumber}</div>
                         </td>
-                        {showDivision && <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">{ot.employeeId?.department?.division?.name || '-'}</td>}
-                        {showDepartment && <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">{ot.employeeId?.department?.name || '-'}</td>}
-                        <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">{formatDate(ot.date)}</td>
-                        <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">
+                        {showDivision && <td className="px-6 py-3.5 text-sm text-slate-700 dark:text-slate-300">{ot.employeeId?.department?.division?.name || '-'}</td>}
+                        {showDepartment && <td className="px-6 py-3.5 text-sm text-slate-700 dark:text-slate-300">{ot.employeeId?.department?.name || '-'}</td>}
+                        <td className="px-6 py-3.5 whitespace-nowrap text-sm font-medium text-slate-900 dark:text-white">{formatDate(ot.date)}</td>
+                        <td className="px-6 py-3.5 text-sm text-slate-700 dark:text-slate-300">
                           {ot.shiftId?.name || '-'}
                         </td>
-                        <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">{formatTime(ot.otInTime)}</td>
-                        <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">{formatTime(ot.otOutTime)}</td>
-                        <td className="px-4 py-3 text-sm font-medium text-slate-900 dark:text-white">{ot.otHours} hrs</td>
-                        <td className="px-4 py-3">
-                          <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${getStatusColor(ot.status)}`}>
+                        <td className="px-6 py-3.5 text-center text-sm text-slate-700 dark:text-slate-300">{formatTime(ot.otInTime)}</td>
+                        <td className="px-6 py-3.5 text-center text-sm text-slate-700 dark:text-slate-300">{formatTime(ot.otOutTime)}</td>
+                        <td className="px-6 py-3.5 text-center">
+                          <span className="font-bold text-slate-900 dark:text-white text-sm">{ot.otHours}h</span>
+                        </td>
+                        <td className="px-6 py-3.5 text-center">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize border ${getStatusColor(ot.status) === 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' ? 'border-green-200' : 'border-transparent'} ${getStatusColor(ot.status)}`}>
                             {ot.status}
                           </span>
                         </td>
-                        <td className="px-4 py-3">
-                          <div className="flex gap-2">
+                        <td className="px-6 py-3.5 text-right">
+                          <div className="flex items-center justify-end gap-2">
                             {canPerformAction(ot) && (
                               <>
                                 <button
                                   onClick={() => handleApprove('ot', ot._id)}
-                                  className="rounded-lg bg-green-500 px-3 py-1 text-xs font-medium text-white hover:bg-green-600"
+                                  className="text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 text-sm font-medium"
+                                  title="Approve"
                                 >
                                   Approve
                                 </button>
                                 <button
                                   onClick={() => handleReject('ot', ot._id)}
-                                  className="rounded-lg bg-red-500 px-3 py-1 text-xs font-medium text-white hover:bg-red-600"
+                                  className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 text-sm font-medium"
+                                  title="Reject"
                                 >
                                   Reject
                                 </button>
@@ -1212,65 +1235,77 @@ export default function OTAndPermissionsPage() {
             </div>
           </div>
         ) : (
-          <div className="rounded-xl border border-slate-200 bg-white/80 backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/80">
+          <div className="bg-white rounded-lg border border-slate-200 shadow-sm dark:bg-slate-800 dark:border-slate-700 overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-slate-50 dark:bg-slate-800">
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-slate-100/75 border-b border-slate-200 dark:bg-slate-700/50 dark:border-slate-700">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Employee</th>
-                    {showDivision && <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Division</th>}
-                    {showDepartment && <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Department</th>}
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Date</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Time Range</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Hours</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Purpose</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Status</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">Actions</th>
+                    <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Employee</th>
+                    {showDivision && <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Division</th>}
+                    {showDepartment && <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Department</th>}
+                    <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Date</th>
+                    <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300 text-center">Time Range</th>
+                    <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300 text-center">Hours</th>
+                    <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Purpose</th>
+                    <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300 text-center">Status</th>
+                    <th scope="col" className="px-6 py-3.5 text-right text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                   {permissions.length === 0 ? (
                     <tr>
-
-                      <td colSpan={7 + (showDivision ? 1 : 0) + (showDepartment ? 1 : 0)} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                      <td colSpan={7 + (showDivision ? 1 : 0) + (showDepartment ? 1 : 0)} className="px-6 py-10 text-center text-slate-500 text-sm">
                         No permission requests found
                       </td>
                     </tr>
                   ) : (
                     permissions.map((perm) => (
-                      <tr key={perm._id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                        <td className="px-4 py-3">
-                          <div className="text-sm font-medium text-slate-900 dark:text-white">
-                            {perm.employeeId?.employee_name || perm.employeeNumber}
+                      <tr key={perm._id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
+                        <td className="px-6 py-3.5">
+                          <div className="flex items-center gap-3">
+                            <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-700 dark:text-blue-400 font-bold text-xs shrink-0">
+                              {getEmployeeInitials({ employee_name: perm.employeeId?.employee_name || '', first_name: '', last_name: '', emp_no: '' } as any)}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="font-medium text-slate-900 dark:text-white text-sm truncate max-w-[150px]">
+                                {perm.employeeId?.employee_name || perm.employeeNumber}
+                              </div>
+                              <div className="text-xs text-slate-500">
+                                {perm.employeeNumber}
+                              </div>
+                            </div>
                           </div>
-                          <div className="text-xs text-slate-500 dark:text-slate-400">{perm.employeeNumber}</div>
                         </td>
-                        {showDivision && <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">{perm.employeeId?.department?.division?.name || '-'}</td>}
-                        {showDepartment && <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">{perm.employeeId?.department?.name || '-'}</td>}
-                        <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">{formatDate(perm.date)}</td>
-                        <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">
+                        {showDivision && <td className="px-6 py-3.5 text-sm text-slate-700 dark:text-slate-300">{perm.employeeId?.department?.division?.name || '-'}</td>}
+                        {showDepartment && <td className="px-6 py-3.5 text-sm text-slate-700 dark:text-slate-300">{perm.employeeId?.department?.name || '-'}</td>}
+                        <td className="px-6 py-3.5 whitespace-nowrap text-sm font-medium text-slate-900 dark:text-white">{formatDate(perm.date)}</td>
+                        <td className="px-6 py-3.5 whitespace-nowrap text-sm text-center text-slate-700 dark:text-slate-300">
                           {formatTime(perm.permissionStartTime)} - {formatTime(perm.permissionEndTime)}
                         </td>
-                        <td className="px-4 py-3 text-sm font-medium text-slate-900 dark:text-white">{perm.permissionHours} hrs</td>
-                        <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">{perm.purpose}</td>
-                        <td className="px-4 py-3">
-                          <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${getStatusColor(perm.status)}`}>
+                        <td className="px-6 py-3.5 text-center">
+                          <span className="font-bold text-slate-900 dark:text-white text-sm">{perm.permissionHours}h</span>
+                        </td>
+                        <td className="px-6 py-3.5 text-sm text-slate-700 max-w-[150px] truncate" title={perm.purpose}>{perm.purpose}</td>
+                        <td className="px-6 py-3.5 text-center">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize border ${getStatusColor(perm.status) === 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' ? 'border-green-200' : 'border-transparent'} ${getStatusColor(perm.status)}`}>
                             {perm.status}
                           </span>
                         </td>
-                        <td className="px-4 py-3">
-                          <div className="flex gap-2">
+                        <td className="px-6 py-3.5 text-right">
+                          <div className="flex items-center justify-end gap-2">
                             {canPerformAction(perm) && (
                               <>
                                 <button
                                   onClick={() => handleApprove('permission', perm._id)}
-                                  className="rounded-lg bg-green-500 px-3 py-1 text-xs font-medium text-white hover:bg-green-600"
+                                  className="text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 text-sm font-medium"
+                                  title="Approve"
                                 >
                                   Approve
                                 </button>
                                 <button
                                   onClick={() => handleReject('permission', perm._id)}
-                                  className="rounded-lg bg-red-500 px-3 py-1 text-xs font-medium text-white hover:bg-red-600"
+                                  className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 text-sm font-medium"
+                                  title="Reject"
                                 >
                                   Reject
                                 </button>
@@ -1282,7 +1317,7 @@ export default function OTAndPermissionsPage() {
                                   setSelectedQR(perm);
                                   setShowQRDialog(true);
                                 }}
-                                className="rounded-lg bg-blue-500 px-3 py-1 text-xs font-medium text-white hover:bg-blue-600"
+                                className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 text-sm font-medium"
                               >
                                 Gate Pass
                               </button>

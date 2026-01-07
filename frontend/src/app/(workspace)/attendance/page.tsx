@@ -101,7 +101,7 @@ interface Designation {
 }
 
 export default function AttendancePage() {
-  const [viewMode, setViewMode] = useState<'calendar' | 'list'>('list'); // Default to list view
+
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showPayslipModal, setShowPayslipModal] = useState(false);
   const [selectedEmployeeForPayslip, setSelectedEmployeeForPayslip] = useState<Employee | null>(null);
@@ -128,21 +128,28 @@ export default function AttendancePage() {
   const [loadingSummary, setLoadingSummary] = useState(false);
 
   // Filter states
+  const [divisions, setDivisions] = useState<any[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [designations, setDesignations] = useState<Designation[]>([]);
+  const [selectedDivision, setSelectedDivision] = useState<string>('');
   const [selectedDepartment, setSelectedDepartment] = useState<string>('');
   const [selectedDesignation, setSelectedDesignation] = useState<string>('');
   const [filteredMonthlyData, setFilteredMonthlyData] = useState<MonthlyAttendanceData[]>([]);
 
-  // OutTime dialog state
-  const [showOutTimeDialog, setShowOutTimeDialog] = useState(false);
-  const [selectedRecordForOutTime, setSelectedRecordForOutTime] = useState<{ employee: Employee; date: string } | null>(null);
-  const [outTimeValue, setOutTimeValue] = useState('');
-  const [updatingOutTime, setUpdatingOutTime] = useState(false);
+  // Search state
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Table type state
+  const [tableType, setTableType] = useState<'complete' | 'present_absent' | 'in_out' | 'leaves' | 'od' | 'ot'>('complete');
 
   // OT conversion state
   const [convertingToOT, setConvertingToOT] = useState(false);
   const [hasExistingOT, setHasExistingOT] = useState(false);
+
+  // Type-specific summary state
+  const [showTypeSummaryModal, setShowTypeSummaryModal] = useState(false);
+  const [typeSummaryData, setTypeSummaryData] = useState<{ type: string; item: MonthlyAttendanceData } | null>(null);
 
   // Shift selection and out-time state
   const [availableShifts, setAvailableShifts] = useState<any[]>([]);
@@ -154,6 +161,11 @@ export default function AttendancePage() {
   const [savingShift, setSavingShift] = useState(false);
   const [savingOutTime, setSavingOutTime] = useState(false);
 
+  const [showOutTimeDialog, setShowOutTimeDialog] = useState(false);
+  const [selectedRecordForOutTime, setSelectedRecordForOutTime] = useState<any>(null);
+  const [outTimeValue, setOutTimeValue] = useState('');
+  const [updatingOutTime, setUpdatingOutTime] = useState(false);
+
   // Leave conflict state
   const [leaveConflicts, setLeaveConflicts] = useState<any[]>([]);
   const [loadingConflicts, setLoadingConflicts] = useState(false);
@@ -164,8 +176,20 @@ export default function AttendancePage() {
   const month = currentDate.getMonth() + 1;
 
   useEffect(() => {
+    loadDivisions();
     loadDepartments();
   }, []);
+
+  useEffect(() => {
+    if (selectedDivision) {
+      loadDepartments(selectedDivision);
+    } else {
+      setDepartments([]);
+      setSelectedDepartment('');
+      setDesignations([]);
+      setSelectedDesignation('');
+    }
+  }, [selectedDivision]);
 
   useEffect(() => {
     if (selectedDepartment) {
@@ -177,16 +201,29 @@ export default function AttendancePage() {
   }, [selectedDepartment]);
 
   useEffect(() => {
-    if (viewMode === 'list') {
-      loadMonthlyAttendance();
-    } else if (viewMode === 'calendar') {
-      loadAllEmployeesAttendance();
-    }
-  }, [viewMode, year, month, selectedDepartment, selectedDesignation]);
+    loadMonthlyAttendance();
+  }, [year, month]);
 
   useEffect(() => {
     // Apply filters to monthly data
     let filtered = [...monthlyData];
+
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(item =>
+        item.employee.employee_name.toLowerCase().includes(query) ||
+        item.employee.emp_no.toLowerCase().includes(query)
+      );
+    }
+
+    if (selectedDivision) {
+      filtered = filtered.filter(item => {
+        const dept = item.employee.department as any;
+        if (!dept) return false;
+        const divId = typeof dept.division === 'string' ? dept.division : dept.division?._id;
+        return divId === selectedDivision;
+      });
+    }
 
     if (selectedDepartment) {
       filtered = filtered.filter(item =>
@@ -201,13 +238,28 @@ export default function AttendancePage() {
     }
 
     setFilteredMonthlyData(filtered);
-  }, [monthlyData, selectedDepartment, selectedDesignation]);
+  }, [monthlyData, selectedDivision, selectedDepartment, selectedDesignation, searchQuery]);
 
-  const loadDepartments = async () => {
+  const loadDivisions = async () => {
+    try {
+      const response = await api.getDivisions();
+      if (response.success && response.data) {
+        setDivisions(response.data);
+      }
+    } catch (err) {
+      console.error('Error loading divisions:', err);
+    }
+  };
+
+  const loadDepartments = async (divisionId?: string) => {
     try {
       const response = await api.getDepartments(true);
       if (response.success && response.data) {
-        setDepartments(response.data);
+        let depts = response.data;
+        if (divisionId) {
+          depts = depts.filter((d: any) => d.division === divisionId || (d.division?._id === divisionId));
+        }
+        setDepartments(depts);
       }
     } catch (err) {
       console.error('Error loading departments:', err);
@@ -753,6 +805,11 @@ export default function AttendancePage() {
     }
   };
 
+  const handleViewTypeSummary = (item: MonthlyAttendanceData, type: string) => {
+    setTypeSummaryData({ item, type });
+    setShowTypeSummaryModal(true);
+  };
+
   const handleExportPDF = () => {
     window.print();
   };
@@ -921,12 +978,65 @@ export default function AttendancePage() {
       <div className="relative z-10 mx-auto max-w-[1920px]">
         {/* Header */}
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Attendance Management</h1>
-            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">View and manage employee attendance records</p>
+          <div className="flex-1 flex items-center min-w-[200px]">
+            {showSearch ? (
+              <div className="flex-1 flex items-center gap-2">
+                <div className="relative flex-1 max-w-md">
+                  <input
+                    autoFocus
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search employee name or number..."
+                    className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white shadow-sm"
+                  />
+                  <svg className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
+                <button
+                  onClick={() => { setShowSearch(false); setSearchQuery(''); }}
+                  className="p-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-4">
+                <div>
+                  <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Attendance Management</h1>
+                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">View and manage employee attendance records</p>
+                </div>
+                <button
+                  onClick={() => setShowSearch(true)}
+                  className="p-2.5 rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-green-600 transition-all shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
+                  title="Search employees"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            {/* Division Filter */}
+            <select
+              value={selectedDivision}
+              onChange={(e) => setSelectedDivision(e.target.value)}
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white shadow-sm"
+            >
+              <option value="">All Divisions</option>
+              {divisions.map((div) => (
+                <option key={div._id} value={div._id}>
+                  {div.name}
+                </option>
+              ))}
+            </select>
+
             {/* Department Filter */}
             <select
               value={selectedDepartment}
@@ -934,7 +1044,7 @@ export default function AttendancePage() {
                 setSelectedDepartment(e.target.value);
                 setSelectedDesignation('');
               }}
-              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white shadow-sm"
             >
               <option value="">All Departments</option>
               {departments.map((dept) => (
@@ -949,7 +1059,7 @@ export default function AttendancePage() {
               <select
                 value={selectedDesignation}
                 onChange={(e) => setSelectedDesignation(e.target.value)}
-                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white shadow-sm"
               >
                 <option value="">All Designations</option>
                 {designations.map((desig) => (
@@ -960,41 +1070,22 @@ export default function AttendancePage() {
               </select>
             )}
 
-            {/* View Toggle */}
-            <div className="flex rounded-lg border border-slate-200 bg-white p-0.5 dark:border-slate-700 dark:bg-slate-800">
-              <button
-                onClick={() => setViewMode('list')}
-                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-all ${viewMode === 'list'
-                    ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-sm'
-                    : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-700'
-                  }`}
-              >
-                <svg className="mr-1.5 inline h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
-                </svg>
-                List View
-              </button>
-              <button
-                onClick={() => {
-                  setViewMode('calendar');
-                  if (!selectedEmployee && monthlyData.length > 0) {
-                    setSelectedEmployee(monthlyData[0].employee);
-                  }
-                }}
-                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-all ${viewMode === 'calendar'
-                    ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-sm'
-                    : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-700'
-                  }`}
-              >
-                <svg className="mr-1.5 inline h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-                Calendar View
-              </button>
-            </div>
+            {/* Table Type Dropdown */}
+            <select
+              value={tableType}
+              onChange={(e) => setTableType(e.target.value as any)}
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-green-700 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-700 dark:bg-slate-800 shadow-sm"
+            >
+              <option value="complete">Complete Table</option>
+              <option value="present_absent">Present & Absent Table</option>
+              <option value="in_out">In Time & Out Time Table</option>
+              <option value="leaves">Leaves Table</option>
+              <option value="od">OD Table</option>
+              <option value="ot">OT Table</option>
+            </select>
 
             {/* Month Selection */}
-            <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800">
+            <div className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800 shadow-sm">
               <button
                 onClick={() => navigateMonth('prev')}
                 className="rounded-md p-1 text-slate-600 transition-colors hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
@@ -1010,7 +1101,7 @@ export default function AttendancePage() {
                   newDate.setMonth(parseInt(e.target.value) - 1);
                   setCurrentDate(newDate);
                 }}
-                className="rounded-md border-0 bg-transparent px-1.5 py-0.5 text-xs font-medium text-slate-900 focus:outline-none focus:ring-0 dark:text-white"
+                className="rounded-md border-0 bg-transparent px-1.5 py-0.5 text-xs font-bold text-slate-900 focus:outline-none focus:ring-0 dark:text-white"
               >
                 {monthNames.map((name, idx) => (
                   <option key={idx} value={idx + 1}>{name}</option>
@@ -1023,7 +1114,7 @@ export default function AttendancePage() {
                   newDate.setFullYear(parseInt(e.target.value));
                   setCurrentDate(newDate);
                 }}
-                className="rounded-md border-0 bg-transparent px-1.5 py-0.5 text-xs font-medium text-slate-900 focus:outline-none focus:ring-0 dark:text-white"
+                className="rounded-md border-0 bg-transparent px-1.5 py-0.5 text-xs font-bold text-slate-900 focus:outline-none focus:ring-0 dark:text-white"
               >
                 {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i).map((y) => (
                   <option key={y} value={y}>{y}</option>
@@ -1038,107 +1129,126 @@ export default function AttendancePage() {
                 </svg>
               </button>
             </div>
-
-            {/* Sync Shifts Button */}
-            <button
-              onClick={handleSyncShifts}
-              disabled={syncingShifts}
-              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-            >
-              {syncingShifts ? (
-                <>
-                  <div className="mr-2 inline h-4 w-4 animate-spin rounded-full border-2 border-slate-600 border-t-transparent"></div>
-                  Syncing...
-                </>
-              ) : (
-                <>
-                  <svg className="mr-2 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  Sync Shifts
-                </>
-              )}
-            </button>
-
-            {/* Upload Excel Button */}
-            <button
-              onClick={() => setShowUploadDialog(true)}
-              className="rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
-            >
-              <svg className="mr-2 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-              </svg>
-              Upload Excel
-            </button>
           </div>
+
+          {/* Sync Shifts Button */}
+          <button
+            onClick={handleSyncShifts}
+            disabled={syncingShifts}
+            className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+          >
+            {syncingShifts ? (
+              <>
+                <div className="mr-2 inline h-4 w-4 animate-spin rounded-full border-2 border-slate-600 border-t-transparent"></div>
+                Syncing...
+              </>
+            ) : (
+              <>
+                <svg className="mr-2 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Sync Shifts
+              </>
+            )}
+          </button>
+
+          {/* Upload Excel Button */}
+          <button
+            onClick={() => setShowUploadDialog(true)}
+            className="rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
+          >
+            <svg className="mr-2 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+            Upload Excel
+          </button>
         </div>
+      </div>
 
-        {/* Messages */}
-        {error && (
-          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
-            {error}
-          </div>
-        )}
-        {success && (
-          <div className="mb-4 rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-800 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400">
-            {success}
-          </div>
-        )}
+      {/* Messages */}
+      {error && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+          {error}
+        </div>
+      )}
+      {success && (
+        <div className="mb-4 rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-800 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400">
+          {success}
+        </div>
+      )}
 
 
-        {/* List View */}
-        {viewMode === 'list' && (
-          <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-xs">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
-                    <th className="sticky left-0 z-10 w-[180px] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                      Employee
-                    </th>
-                    {daysArray.map((day) => (
-                      <th
-                        key={day}
-                        className="w-[calc((100%-180px-80px)/31)] border-r border-slate-200 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300"
-                      >
-                        {day}
-                      </th>
-                    ))}
-                    <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-blue-50 dark:bg-blue-900/20">
-                      Days Present
-                    </th>
-                    <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-orange-50 dark:bg-orange-900/20">
-                      OT Hours
-                    </th>
-                    <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-purple-50 dark:bg-purple-900/20">
-                      Extra Hours
-                    </th>
-                    <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-cyan-50 dark:bg-cyan-900/20">
-                      Permissions
-                    </th>
-                    <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-green-50 dark:bg-green-900/20">
-                      Payable Shifts
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                  {loading ? (
-                    <>
-                      {/* Skeleton Loading - only tbody cells */}
-                      {[1, 2, 3, 4, 5].map((i) => (
-                        <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                          <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
-                            <div className="h-4 w-32 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                            <div className="mt-1 h-3 w-24 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                          </td>
-                          {daysArray.map((day) => (
-                            <td
-                              key={day}
-                              className="border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700"
-                            >
-                              <div className="h-8 w-full animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                            </td>
-                          ))}
+      {/* Attendance Table */}
+      <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-xs">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
+                <th className="sticky left-0 z-10 w-[180px] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                  Employee
+                </th>
+                {daysArray.map((day) => (
+                  <th
+                    key={day}
+                    className="w-[calc((100%-180px-80px)/31)] border-r border-slate-200 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300"
+                  >
+                    {day}
+                  </th>
+                ))}
+                {tableType === 'complete' && (
+                  <>
+                    <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-blue-50 dark:bg-blue-900/20">Days Present</th>
+                    <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-orange-50 dark:bg-orange-900/20">OT Hours</th>
+                    <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-purple-50 dark:bg-purple-900/20">Extra Hours</th>
+                    <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-cyan-50 dark:bg-cyan-900/20">Permissions</th>
+                    <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-green-900/20 bg-green-50">Payable Shifts</th>
+                  </>
+                )}
+                {tableType === 'present_absent' && (
+                  <>
+                    <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-green-50 text-green-700">Present (M)</th>
+                    <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-red-50 text-red-700">Absent (M)</th>
+                    <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-green-100 text-green-800">Total P</th>
+                    <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-red-100 text-red-800">Total A</th>
+                  </>
+                )}
+                {tableType === 'in_out' && (
+                  <th className="w-[100px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-blue-50 text-blue-700">Total Days Present</th>
+                )}
+                {tableType === 'leaves' && (
+                  <th className="w-[100px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-orange-50 text-orange-700">Total Leaves</th>
+                )}
+                {tableType === 'od' && (
+                  <th className="w-[100px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-indigo-50 text-indigo-700">Total ODs</th>
+                )}
+                {tableType === 'ot' && (
+                  <>
+                    <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-orange-50 text-orange-700">OT Hours</th>
+                    <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-purple-50 text-purple-700">Extra Hours</th>
+                  </>
+                )}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+              {loading ? (
+                <>
+                  {/* Skeleton Loading - only tbody cells */}
+                  {[1, 2, 3, 4, 5].map((i) => (
+                    <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                      <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+                        <div className="h-4 w-32 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                        <div className="mt-1 h-3 w-24 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                      </td>
+                      {daysArray.map((day) => (
+                        <td
+                          key={day}
+                          className="border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700"
+                        >
+                          <div className="h-8 w-full animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                        </td>
+                      ))}
+                      {tableType === 'complete' && (
+                        <>
                           <td className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-blue-900/20">
                             <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
                           </td>
@@ -1154,83 +1264,116 @@ export default function AttendancePage() {
                           <td className="border-r-0 border-slate-200 bg-green-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-green-900/20">
                             <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
                           </td>
-                        </tr>
-                      ))}
-                    </>
+                        </>
+                      )}
+                      {tableType === 'present_absent' && (
+                        <>
+                          <td className="border-r border-slate-200 bg-green-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
+                          <td className="border-r border-slate-200 bg-red-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
+                          <td className="border-r border-slate-200 bg-green-100 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
+                          <td className="border-r border-slate-200 bg-red-100 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
+                        </>
+                      )}
+                      {tableType === 'in_out' && (
+                        <td className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
+                      )}
+                      {tableType === 'leaves' && (
+                        <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
+                      )}
+                      {tableType === 'od' && (
+                        <td className="border-r border-slate-200 bg-indigo-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
+                      )}
+                      {tableType === 'ot' && (
+                        <>
+                          <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
+                          <td className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
+                        </>
+                      )}
+                    </tr>
+                  ))}
+                </>
+              ) : (
+                <>
+                  {filteredMonthlyData.length === 0 ? (
+                    <tr>
+                      <td colSpan={daysArray.length + (tableType === 'complete' ? 6 : tableType === 'present_absent' ? 5 : tableType === 'ot' ? 3 : 2)} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                        No employees found matching the selected filters.
+                      </td>
+                    </tr>
                   ) : (
-                    <>
-                      {filteredMonthlyData.length === 0 ? (
-                        <tr>
-                          <td colSpan={daysArray.length + 5} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
-                            No employees found matching the selected filters.
-                          </td>
-                        </tr>
-                      ) : (
-                        filteredMonthlyData.map((item) => {
-                          // Use presentDays from API if available, otherwise calculate
-                          const daysPresent = item.presentDays !== undefined
-                            ? item.presentDays
-                            : Object.values(item.dailyAttendance).filter(
-                              (record) => record && (record.status === 'PRESENT' || record.status === 'PARTIAL')
-                            ).length;
-                          const payableShifts = item.payableShifts !== undefined ? item.payableShifts : 0;
+                    filteredMonthlyData.map((item) => {
+                      const daysPresent = item.presentDays !== undefined
+                        ? item.presentDays
+                        : Object.values(item.dailyAttendance).filter(
+                          (record) => record && (record.status === 'PRESENT' || record.status === 'PARTIAL')
+                        ).length;
+                      const payableShifts = item.payableShifts !== undefined ? item.payableShifts : 0;
 
-                          return (
-                            <tr key={item.employee._id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                              <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 text-[11px] font-medium text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white">
-                                <div>
-                                  <div className="flex items-center gap-2">
-                                    <div
-                                      className="font-semibold truncate cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex-1"
-                                      onClick={() => handleEmployeeClick(item.employee)}
-                                      title="Click to view monthly summary"
-                                    >
-                                      {item.employee.employee_name}
-                                    </div>
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleViewPayslip(item.employee);
-                                      }}
-                                      className="rounded-md bg-gradient-to-r from-green-500 to-green-600 px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:from-green-600 hover:to-green-700 hover:shadow-md"
-                                      title="View Payslip"
-                                    >
-                                      Payslip
-                                    </button>
-                                  </div>
-                                  <div className="text-[9px] text-slate-500 dark:text-slate-400 truncate mt-1">
-                                    {item.employee.emp_no}
-                                    {item.employee.department && ` • ${(item.employee.department as any)?.name || ''}`}
-                                  </div>
+                      // Helper calculations for specific tables
+                      const monthPresent = Object.values(item.dailyAttendance).filter(r => r?.status === 'PRESENT').length;
+                      const monthAbsent = Object.values(item.dailyAttendance).filter(r => r?.status === 'ABSENT').length;
+                      const daysAbsent = daysInMonth - daysPresent;
+                      const totalLeaves = Object.values(item.dailyAttendance).filter(r => r?.status === 'LEAVE' || r?.hasLeave).length;
+                      const totalODs = Object.values(item.dailyAttendance).filter(r => r?.status === 'OD' || r?.hasOD).length;
+
+                      return (
+                        <tr key={item.employee._id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                          <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 text-[11px] font-medium text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <div
+                                  className="font-semibold truncate cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex-1"
+                                  onClick={() => handleEmployeeClick(item.employee)}
+                                  title="Click to view monthly summary"
+                                >
+                                  {item.employee.employee_name}
                                 </div>
-                              </td>
-                              {daysArray.map((day) => {
-                                const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                                const record = item.dailyAttendance[dateStr] || null;
-                                const shiftName = record?.shiftId && typeof record.shiftId === 'object' ? record.shiftId.name : '-';
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleViewPayslip(item.employee);
+                                  }}
+                                  className="rounded-md bg-gradient-to-r from-green-500 to-green-600 px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:from-green-600 hover:to-green-700 hover:shadow-md"
+                                  title="View Payslip"
+                                >
+                                  Payslip
+                                </button>
+                              </div>
+                              <div className="text-[9px] text-slate-500 dark:text-slate-400 truncate mt-1">
+                                {item.employee.emp_no}
+                                {item.employee.department && ` • ${(item.employee.department as any)?.name || ''}`}
+                              </div>
+                            </div>
+                          </td>
+                          {daysArray.map((day) => {
+                            const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                            const record = item.dailyAttendance[dateStr] || null;
+                            const shiftName = record?.shiftId && typeof record.shiftId === 'object' ? record.shiftId.name : '-';
 
-                                // Determine display status - check for leave/OD even if no attendance record
-                                let displayStatus = 'A';
-                                if (record) {
-                                  if (record.status === 'PRESENT') displayStatus = 'P';
-                                  else if (record.status === 'PARTIAL') displayStatus = 'PT';
-                                  else if (record.status === 'LEAVE' || record.hasLeave) displayStatus = 'L';
-                                  else if (record.status === 'OD' || record.hasOD) displayStatus = 'OD';
-                                  else displayStatus = 'A';
-                                }
+                            // Determine display status - check for leave/OD even if no attendance record
+                            let displayStatus = 'A';
+                            if (record) {
+                              if (record.status === 'PRESENT') displayStatus = 'P';
+                              else if (record.status === 'PARTIAL') displayStatus = 'PT';
+                              else if (record.status === 'LEAVE' || record.hasLeave) displayStatus = 'L';
+                              else if (record.status === 'OD' || record.hasOD) displayStatus = 'OD';
+                              else displayStatus = 'A';
+                            }
 
-                                // Check if there's any data to display (attendance, leave, or OD)
-                                const hasData = record && (record.status || record.hasLeave || record.hasOD);
+                            // Check if there's any data to display (attendance, leave, or OD)
+                            const hasData = record && (record.status || record.hasLeave || record.hasOD);
 
-                                return (
-                                  <td
-                                    key={day}
-                                    onClick={() => hasData && handleDateClick(item.employee, dateStr)}
-                                    className={`border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700 ${hasData ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : ''
-                                      } ${getStatusColor(record)} ${getCellBackgroundColor(record)}`}
-                                  >
-                                    {hasData ? (
-                                      <div className="space-y-0.5">
+                            return (
+                              <td
+                                key={day}
+                                onClick={() => hasData && handleDateClick(item.employee, dateStr)}
+                                className={`border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700 ${hasData ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : ''
+                                  } ${getStatusColor(record)} ${getCellBackgroundColor(record)}`}
+                              >
+                                {hasData ? (
+                                  <div className="space-y-0.5">
+                                    {tableType === 'complete' && (
+                                      <>
                                         <div className="font-semibold text-[9px]">{displayStatus}</div>
                                         {shiftName !== '-' && record?.shiftId && (
                                           <div className="text-[8px] opacity-75 truncate" title={shiftName}>{shiftName.substring(0, 3)}</div>
@@ -1238,980 +1381,106 @@ export default function AttendancePage() {
                                         {record && record.totalHours !== null && (
                                           <div className="text-[8px] font-semibold">{formatHours(record.totalHours)}</div>
                                         )}
-                                      </div>
-                                    ) : (
-                                      <span className="text-slate-400 text-[9px]">-</span>
+                                      </>
                                     )}
-                                  </td>
-                                );
-                              })}
-                              <td className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center text-[11px] font-bold text-blue-700 dark:border-slate-700 dark:bg-blue-900/20 dark:text-blue-300">
+                                    {tableType === 'present_absent' && (
+                                      <div className="font-bold text-[10px]">{displayStatus}</div>
+                                    )}
+                                    {tableType === 'in_out' && (
+                                      <div className="text-[8px] font-medium leading-tight">
+                                        <div className="text-green-600 dark:text-green-400">{record?.inTime ? formatTime(record.inTime) : '-'}</div>
+                                        <div className="text-red-600 dark:text-red-400">{record?.outTime ? formatTime(record.outTime) : '-'}</div>
+                                      </div>
+                                    )}
+                                    {tableType === 'leaves' && (
+                                      <div className="font-bold text-[10px] text-orange-600">{displayStatus === 'L' ? 'L' : '-'}</div>
+                                    )}
+                                    {tableType === 'od' && (
+                                      <div className="font-bold text-[10px] text-indigo-600">{displayStatus === 'OD' ? 'OD' : '-'}</div>
+                                    )}
+                                    {tableType === 'ot' && (
+                                      <div className="text-[8px] font-medium leading-tight">
+                                        <div className="text-orange-600">{record?.otHours ? record.otHours.toFixed(1) : '-'}</div>
+                                        <div className="text-purple-600">{record?.extraHours ? record.extraHours.toFixed(1) : '-'}</div>
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="text-slate-400 text-[9px]">-</span>
+                                )}
+                              </td>
+                            );
+                          })}
+                          {tableType === 'complete' && (
+                            <>
+                              <td onClick={() => handleViewTypeSummary(item, 'present')} className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center text-[11px] font-bold text-blue-700 dark:border-slate-700 dark:bg-blue-900/20 dark:text-blue-300 cursor-pointer hover:bg-blue-100">
                                 {daysPresent}
                               </td>
-                              <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300">
+                              <td onClick={() => handleViewTypeSummary(item, 'ot')} className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300 cursor-pointer hover:bg-orange-100">
                                 {Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.otHours || 0), 0).toFixed(1)}
                               </td>
-                              <td className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700 dark:border-slate-700 dark:bg-purple-900/20 dark:text-purple-300">
+                              <td onClick={() => handleViewTypeSummary(item, 'extra')} className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700 dark:border-slate-700 dark:bg-purple-900/20 dark:text-purple-300 cursor-pointer hover:bg-purple-100">
                                 {Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.extraHours || 0), 0).toFixed(1)}
                               </td>
-                              <td className="border-r border-slate-200 bg-cyan-50 px-2 py-2 text-center text-[11px] font-bold text-cyan-700 dark:border-slate-700 dark:bg-cyan-900/20 dark:text-cyan-300">
+                              <td onClick={() => handleViewTypeSummary(item, 'permission')} className="border-r border-slate-200 bg-cyan-50 px-2 py-2 text-center text-[11px] font-bold text-cyan-700 dark:border-slate-700 dark:bg-cyan-900/20 dark:text-cyan-300 cursor-pointer hover:bg-cyan-100">
                                 {Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.permissionCount || 0), 0)}
                               </td>
-                              <td className="border-r-0 border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:border-slate-700 dark:bg-green-900/20 dark:text-green-300">
+                              <td onClick={() => handleEmployeeClick(item.employee)} className="border-r-0 border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:border-slate-700 dark:bg-green-900/20 dark:text-green-300 cursor-pointer hover:bg-green-100">
                                 {payableShifts.toFixed(2)}
                               </td>
-                            </tr>
-                          );
-                        })
-                      )}
-                    </>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* Calendar View */}
-        {viewMode === 'calendar' && (
-          <div className="space-y-6">
-            {loadingAttendance ? (
-              <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm p-6 shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
-                <div className="space-y-4">
-                  {[1, 2, 3].map((i) => (
-                    <div key={i} className="space-y-2">
-                      <div className="h-6 w-48 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                      <div className="grid grid-cols-7 gap-1">
-                        {Array.from({ length: 35 }).map((_, j) => (
-                          <div key={j} className="h-12 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              filteredMonthlyData.map((item) => (
-                <div key={item.employee._id} className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm p-3 shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
-                  <div className="mb-3">
-                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                      {item.employee.employee_name}
-                    </h3>
-                    <p className="text-xs text-slate-600 dark:text-slate-400">
-                      {item.employee.emp_no}
-                      {item.employee.department && ` • ${(item.employee.department as any)?.name || ''}`}
-                    </p>
-                  </div>
-                  <div className="grid grid-cols-7 gap-1">
-                    {dayNames.map((day) => (
-                      <div key={day} className="p-1 text-center text-[9px] font-semibold text-slate-600 dark:text-slate-400">
-                        {day}
-                      </div>
-                    ))}
-                    {getCalendarDays().map((dayInfo) => {
-                      if (!dayInfo) {
-                        return <div key={`empty-${Math.random()}`} className="aspect-square"></div>;
-                      }
-                      const record = item.dailyAttendance[dayInfo.date] || null;
-                      return (
-                        <div
-                          key={dayInfo.date}
-                          onClick={() => record && handleDateClick(item.employee, dayInfo.date)}
-                          className={`aspect-square cursor-pointer rounded border p-0.5 transition-all hover:scale-105 ${record ? 'cursor-pointer' : ''
-                            } ${getStatusColor(record)} ${getCellBackgroundColor(record)}`}
-                        >
-                          <div className="flex h-full flex-col items-center justify-center text-center">
-                            <div className="text-[10px] font-bold">{dayInfo.day}</div>
-                            {record && (
-                              <>
-                                {record.hasLeave && (
-                                  <div className="mt-0.5 text-[7px] font-semibold text-orange-700 dark:text-orange-300">
-                                    L
-                                  </div>
-                                )}
-                                {record.hasOD && (
-                                  <div className="mt-0.5 text-[7px] font-semibold text-blue-700 dark:text-blue-300">
-                                    OD
-                                  </div>
-                                )}
-                                {record.shiftId && typeof record.shiftId === 'object' && (
-                                  <div className="mt-0.5 text-[7px] font-medium opacity-75 truncate w-full" title={record.shiftId.name}>
-                                    {record.shiftId.name.substring(0, 3)}
-                                  </div>
-                                )}
-                                {record.totalHours !== null && (
-                                  <div className="mt-0.5 text-[7px] font-semibold">
-                                    {formatHours(record.totalHours)}
-                                  </div>
-                                )}
-                              </>
-                            )}
-                          </div>
-                        </div>
+                            </>
+                          )}
+                          {tableType === 'present_absent' && (
+                            <>
+                              <td onClick={() => handleViewTypeSummary(item, 'present')} className="border-r border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 cursor-pointer hover:bg-green-100">{monthPresent}</td>
+                              <td onClick={() => handleViewTypeSummary(item, 'absent')} className="border-r border-slate-200 bg-red-50 px-2 py-2 text-center text-[11px] font-bold text-red-700 cursor-pointer hover:bg-red-100">{monthAbsent}</td>
+                              <td onClick={() => handleViewTypeSummary(item, 'present')} className="border-r border-slate-200 bg-green-100 px-2 py-2 text-center text-[11px] font-bold text-green-800 cursor-pointer hover:bg-green-200">{daysPresent}</td>
+                              <td onClick={() => handleViewTypeSummary(item, 'absent')} className="border-r border-slate-200 bg-red-100 px-2 py-2 text-center text-[11px] font-bold text-red-800 cursor-pointer hover:bg-red-200">{daysAbsent}</td>
+                            </>
+                          )}
+                          {tableType === 'in_out' && (
+                            <td onClick={() => handleViewTypeSummary(item, 'in_out')} className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center text-[11px] font-bold text-blue-700 cursor-pointer hover:bg-blue-100">{daysPresent}</td>
+                          )}
+                          {tableType === 'leaves' && (
+                            <td onClick={() => handleViewTypeSummary(item, 'leaves')} className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 cursor-pointer hover:bg-orange-100">{totalLeaves}</td>
+                          )}
+                          {tableType === 'od' && (
+                            <td onClick={() => handleViewTypeSummary(item, 'od')} className="border-r border-slate-200 bg-indigo-50 px-2 py-2 text-center text-[11px] font-bold text-indigo-700 cursor-pointer hover:bg-indigo-100">{totalODs}</td>
+                          )}
+                          {tableType === 'ot' && (
+                            <>
+                              <td onClick={() => handleViewTypeSummary(item, 'ot')} className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 cursor-pointer hover:bg-orange-100">
+                                {Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.otHours || 0), 0).toFixed(1)}
+                              </td>
+                              <td onClick={() => handleViewTypeSummary(item, 'extra')} className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700 cursor-pointer hover:bg-purple-100">
+                                {Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.extraHours || 0), 0).toFixed(1)}
+                              </td>
+                            </>
+                          )}
+                        </tr>
                       );
-                    })}
-                  </div>
-                </div>
-              ))
-            )}
-            {!loadingAttendance && filteredMonthlyData.length === 0 && (
-              <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm p-12 text-center shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
-                <p className="text-slate-500 dark:text-slate-400">No employees found matching the selected filters.</p>
-              </div>
-            )}
-          </div>
-        )}
+                    })
+                  )}
+                </>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
-      {showUploadDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Upload Attendance Excel</h3>
-              <button
-                onClick={() => {
-                  setShowUploadDialog(false);
-                  setUploadFile(null);
-                }}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
-              >
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
 
-            <div className="space-y-4">
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Select Excel File
-                </label>
-                <input
-                  id="excel-upload-input"
-                  type="file"
-                  accept=".xlsx,.xls,.csv"
-                  onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                />
-              </div>
 
-              <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
-                <button
-                  onClick={handleDownloadTemplate}
-                  className="text-blue-600 hover:underline dark:text-blue-400"
-                >
-                  Download Template
-                </button>
-              </div>
+      {/* Dialogs */}
+      {
 
-              <div className="flex gap-3">
-                <button
-                  onClick={handleExcelUpload}
-                  disabled={!uploadFile || uploading}
-                  className="flex-1 rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {uploading ? 'Uploading...' : 'Upload'}
-                </button>
+        showUploadDialog && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Upload Attendance Excel</h3>
                 <button
                   onClick={() => {
                     setShowUploadDialog(false);
                     setUploadFile(null);
-                  }}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* OutTime Dialog for PARTIAL Attendance */}
-      {showOutTimeDialog && selectedRecordForOutTime && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Enter Out Time</h3>
-              <button
-                onClick={() => {
-                  setShowOutTimeDialog(false);
-                  setSelectedRecordForOutTime(null);
-                  setOutTimeValue('');
-                }}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
-              >
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800">
-                <div className="text-sm font-medium text-slate-900 dark:text-white">
-                  {selectedRecordForOutTime.employee.employee_name}
-                </div>
-                <div className="text-xs text-slate-600 dark:text-slate-400">
-                  {selectedRecordForOutTime.employee.emp_no} • {selectedRecordForOutTime.date}
-                </div>
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Out Time *
-                </label>
-                <input
-                  type="datetime-local"
-                  value={outTimeValue}
-                  onChange={(e) => setOutTimeValue(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                  required
-                />
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                  Enter the logout time. Shift will be automatically assigned based on in-time and out-time.
-                </p>
-              </div>
-
-              <div className="flex gap-3">
-                <button
-                  onClick={handleUpdateOutTime}
-                  disabled={!outTimeValue || updatingOutTime}
-                  className="flex-1 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {updatingOutTime ? 'Updating...' : 'Update Out Time'}
-                </button>
-                <button
-                  onClick={() => {
-                    setShowOutTimeDialog(false);
-                    setSelectedRecordForOutTime(null);
-                    setOutTimeValue('');
-                  }}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Detail Dialog */}
-      {showDetailDialog && attendanceDetail && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900 scrollbar-thin scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-600">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                Attendance Details - {selectedDate}
-                {selectedEmployee && (
-                  <span className="ml-2 text-sm font-normal text-slate-500 dark:text-slate-400">
-                    ({selectedEmployee.employee_name})
-                  </span>
-                )}
-              </h3>
-              <button
-                onClick={() => {
-                  setShowDetailDialog(false);
-                  setError('');
-                  setSuccess('');
-                }}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
-              >
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            {/* Success/Error Messages */}
-            {success && (
-              <div className="mb-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400">
-                {success}
-              </div>
-            )}
-            {error && (
-              <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
-                {error}
-              </div>
-            )}
-
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Status</label>
-                  <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
-                    {attendanceDetail.status || 'ABSENT'}
-                  </div>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Shift</label>
-                  <div className="mt-1 flex items-center gap-2">
-                    {!editingShift ? (
-                      <>
-                        <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                          {attendanceDetail.shiftId && typeof attendanceDetail.shiftId === 'object'
-                            ? attendanceDetail.shiftId.name
-                            : '-'}
-                        </div>
-                        <button
-                          onClick={() => {
-                            setEditingShift(true);
-                            if (attendanceDetail.shiftId && typeof attendanceDetail.shiftId === 'object') {
-                              setSelectedShiftId(attendanceDetail.shiftId._id);
-                            }
-                          }}
-                          className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"
-                        >
-                          {attendanceDetail.shiftId ? 'Change' : 'Assign'}
-                        </button>
-                      </>
-                    ) : (
-                      <div className="flex-1 flex items-center gap-2">
-                        <select
-                          value={selectedShiftId}
-                          onChange={(e) => setSelectedShiftId(e.target.value)}
-                          className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                        >
-                          <option value="">Select Shift</option>
-                          {availableShifts.map((shift) => (
-                            <option key={shift._id} value={shift._id}>
-                              {shift.name} ({shift.startTime} - {shift.endTime})
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          onClick={handleAssignShift}
-                          disabled={savingShift || !selectedShiftId}
-                          className="rounded-lg bg-green-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {savingShift ? 'Saving...' : 'Save'}
-                        </button>
-                        <button
-                          onClick={() => {
-                            setEditingShift(false);
-                            setSelectedShiftId('');
-                          }}
-                          className="rounded-lg bg-slate-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-slate-600"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-slate-600 dark:text-slate-400">In Time</label>
-                  <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
-                    {formatTime(attendanceDetail.inTime)}
-                  </div>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Out Time</label>
-                  <div className="mt-1 flex items-center gap-2">
-                    {!editingOutTime ? (
-                      <>
-                        <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                          {attendanceDetail.outTime ? formatTime(attendanceDetail.outTime, true, selectedDate || '') : '-'}
-                        </div>
-                        {!attendanceDetail.outTime && (
-                          <button
-                            onClick={() => {
-                              setEditingOutTime(true);
-                              if (attendanceDetail.outTime) {
-                                const date = new Date(attendanceDetail.outTime);
-                                setOutTimeInput(`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`);
-                              }
-                            }}
-                            className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"
-                          >
-                            Add
-                          </button>
-                        )}
-                        {attendanceDetail.outTime && (
-                          <button
-                            onClick={() => {
-                              setEditingOutTime(true);
-                              const date = new Date(attendanceDetail.outTime);
-                              setOutTimeInput(`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`);
-                            }}
-                            className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"
-                          >
-                            Edit
-                          </button>
-                        )}
-                      </>
-                    ) : (
-                      <div className="flex-1 flex items-center gap-2">
-                        <input
-                          type="time"
-                          value={outTimeInput}
-                          onChange={(e) => setOutTimeInput(e.target.value)}
-                          className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                        />
-                        <button
-                          onClick={handleSaveOutTime}
-                          disabled={savingOutTime || !outTimeInput}
-                          className="rounded-lg bg-green-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {savingOutTime ? 'Saving...' : 'Save'}
-                        </button>
-                        <button
-                          onClick={() => {
-                            setEditingOutTime(false);
-                            setOutTimeInput('');
-                          }}
-                          className="rounded-lg bg-slate-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-slate-600"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Total Hours</label>
-                  <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
-                    {formatHours(attendanceDetail.totalHours)}
-                  </div>
-                </div>
-                {attendanceDetail.isLateIn && attendanceDetail.lateInMinutes && (
-                  <div>
-                    <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Late In</label>
-                    <div className="mt-1 text-sm font-semibold text-orange-600 dark:text-orange-400">
-                      +{attendanceDetail.lateInMinutes} minutes
-                    </div>
-                  </div>
-                )}
-                {attendanceDetail.isEarlyOut && attendanceDetail.earlyOutMinutes && (
-                  <div>
-                    <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Early Out</label>
-                    <div className="mt-1 text-sm font-semibold text-orange-600 dark:text-orange-400">
-                      -{attendanceDetail.earlyOutMinutes} minutes
-                    </div>
-                    {attendanceDetail.earlyOutDeduction?.deductionApplied && (
-                      <p className="text-[11px] text-amber-600 dark:text-amber-400">
-                        Deduction: {attendanceDetail.earlyOutDeduction.deductionType?.replace('_', ' ')}
-                        {attendanceDetail.earlyOutDeduction.deductionDays ? ` (${attendanceDetail.earlyOutDeduction.deductionDays} day(s))` : ''}
-                        {attendanceDetail.earlyOutDeduction.deductionAmount ? ` (₹${attendanceDetail.earlyOutDeduction.deductionAmount})` : ''}
-                      </p>
-                    )}
-                  </div>
-                )}
-                {attendanceDetail.otHours && attendanceDetail.otHours > 0 && (
-                  <div>
-                    <label className="text-xs font-medium text-slate-600 dark:text-slate-400">OT Hours</label>
-                    <div className="mt-1 text-sm font-semibold text-orange-600 dark:text-orange-400">
-                      {attendanceDetail.otHours.toFixed(2)} hrs
-                    </div>
-                  </div>
-                )}
-                {attendanceDetail.extraHours && attendanceDetail.extraHours > 0 && (
-                  <div className="col-span-2">
-                    <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Extra Hours</label>
-                    <div className="mt-1 flex items-center justify-between">
-                      <div className="text-sm font-semibold text-purple-600 dark:text-purple-400">
-                        {attendanceDetail.extraHours.toFixed(2)} hrs
-                      </div>
-                      {!hasExistingOT && attendanceDetail.shiftId && (
-                        <button
-                          onClick={handleConvertExtraHoursToOT}
-                          disabled={convertingToOT}
-                          className="ml-3 rounded-lg bg-gradient-to-r from-purple-500 to-indigo-500 px-3 py-1.5 text-xs font-semibold text-white shadow-md shadow-purple-500/30 transition-all hover:from-purple-600 hover:to-indigo-600 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {convertingToOT ? 'Converting...' : 'Convert to OT'}
-                        </button>
-                      )}
-                      {hasExistingOT && (
-                        <span className="ml-3 rounded-full bg-green-100 px-2 py-1 text-[10px] font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                          Already Converted
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )}
-                {attendanceDetail.permissionHours && attendanceDetail.permissionHours > 0 && (
-                  <div>
-                    <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Permission Hours</label>
-                    <div className="mt-1 text-sm font-semibold text-cyan-600 dark:text-cyan-400">
-                      {attendanceDetail.permissionHours.toFixed(2)} hrs ({attendanceDetail.permissionCount || 0} permissions)
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Leave Conflicts - Show if attendance is present and leave conflicts exist */}
-              {attendanceDetail.status === 'PRESENT' && leaveConflicts.length > 0 && (
-                <div className="mt-4 rounded-lg border border-red-300 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/20">
-                  <div className="mb-3 flex items-center gap-2">
-                    <svg className="h-5 w-5 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                    </svg>
-                    <h4 className="text-base font-semibold text-red-900 dark:text-red-200">Leave Conflict Detected</h4>
-                  </div>
-                  <p className="mb-3 text-sm text-red-800 dark:text-red-300">
-                    Employee has approved leave but attendance is logged for this date.
-                  </p>
-                  {leaveConflicts.map((conflict) => (
-                    <div key={conflict.leaveId} className="mb-3 rounded-lg border border-red-200 bg-white p-3 dark:border-red-700 dark:bg-slate-800">
-                      <div className="mb-2 text-sm font-medium text-red-900 dark:text-red-200">
-                        {conflict.leaveType} - {conflict.numberOfDays} day(s)
-                      </div>
-                      <div className="mb-2 text-xs text-red-700 dark:text-red-300">
-                        {new Date(conflict.fromDate).toLocaleDateString()}
-                        {conflict.fromDate !== conflict.toDate && ` - ${new Date(conflict.toDate).toLocaleDateString()}`}
-                        {conflict.isHalfDay && ` (${conflict.halfDayType === 'first_half' ? 'First Half' : 'Second Half'})`}
-                      </div>
-                      <div className="flex gap-2">
-                        {conflict.conflictType === 'full_day' ? (
-                          <button
-                            onClick={() => handleRevokeLeave(conflict.leaveId)}
-                            disabled={revokingLeave}
-                            className="rounded-lg bg-red-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-all hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {revokingLeave ? 'Revoking...' : 'Revoke Leave'}
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => handleUpdateLeave(conflict.leaveId)}
-                            disabled={updatingLeave}
-                            className="rounded-lg bg-orange-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-all hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {updatingLeave ? 'Updating...' : 'Update Leave'}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Leave Information */}
-              {attendanceDetail.hasLeave && attendanceDetail.leaveInfo && (
-                <div className="mt-4 rounded-lg border border-orange-200 bg-orange-50 p-4 dark:border-orange-800 dark:bg-orange-900/20">
-                  <h4 className="mb-3 text-base font-semibold text-orange-900 dark:text-orange-200">Leave Information</h4>
-
-                  {/* Purpose/Reason */}
-                  {attendanceDetail.leaveInfo.purpose ? (
-                    <div className="mb-3">
-                      <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Purpose/Reason</label>
-                      <div className="mt-1 text-sm text-orange-900 dark:text-orange-100">
-                        {attendanceDetail.leaveInfo.purpose}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  <div className="grid grid-cols-2 gap-3 text-sm mb-3">
-                    <div>
-                      <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Leave Type</label>
-                      <div className="mt-1 font-semibold text-orange-900 dark:text-orange-100">
-                        {attendanceDetail.leaveInfo.leaveType || 'N/A'}
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Half Day</label>
-                      <div className="mt-1 font-semibold text-orange-900 dark:text-orange-100">
-                        {attendanceDetail.leaveInfo.isHalfDay ? 'Yes' : 'No'}
-                        {attendanceDetail.leaveInfo.isHalfDay && attendanceDetail.leaveInfo.halfDayType && (
-                          <span className="ml-1 text-xs">({attendanceDetail.leaveInfo.halfDayType === 'first_half' ? 'First Half' : 'Second Half'})</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Date Range */}
-                  {attendanceDetail.leaveInfo.fromDate && attendanceDetail.leaveInfo.toDate && (
-                    <div className="mb-3">
-                      <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Date Range</label>
-                      <div className="mt-1 text-sm font-semibold text-orange-900 dark:text-orange-100">
-                        {new Date(attendanceDetail.leaveInfo.fromDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} - {new Date(attendanceDetail.leaveInfo.toDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Number of Days and Day in Leave */}
-                  <div className="grid grid-cols-2 gap-3 text-sm mb-3">
-                    <div>
-                      <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Total Days</label>
-                      <div className="mt-1 font-semibold text-orange-900 dark:text-orange-100">
-                        {attendanceDetail.leaveInfo.numberOfDays !== undefined && attendanceDetail.leaveInfo.numberOfDays !== null
-                          ? `${attendanceDetail.leaveInfo.numberOfDays} ${attendanceDetail.leaveInfo.numberOfDays === 1 ? 'day' : 'days'}`
-                          : 'N/A'}
-                      </div>
-                    </div>
-                    {attendanceDetail.leaveInfo.dayInLeave !== undefined && attendanceDetail.leaveInfo.dayInLeave !== null && (
-                      <div>
-                        <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Day in Leave</label>
-                        <div className="mt-1 font-semibold text-orange-900 dark:text-orange-100">
-                          {attendanceDetail.leaveInfo.dayInLeave === 1 ? '1st day' : attendanceDetail.leaveInfo.dayInLeave === 2 ? '2nd day' : attendanceDetail.leaveInfo.dayInLeave === 3 ? '3rd day' : `${attendanceDetail.leaveInfo.dayInLeave}th day`}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Applied Date */}
-                  {attendanceDetail.leaveInfo.appliedAt && (
-                    <div className="mb-3">
-                      <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Applied On</label>
-                      <div className="mt-1 text-sm text-orange-900 dark:text-orange-100">
-                        {new Date(attendanceDetail.leaveInfo.appliedAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Approved By and When */}
-                  {attendanceDetail.leaveInfo.approvedBy && (
-                    <div className="mb-3 grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Approved By</label>
-                        <div className="mt-1 text-sm font-semibold text-orange-900 dark:text-orange-100">
-                          {attendanceDetail.leaveInfo.approvedBy.name || attendanceDetail.leaveInfo.approvedBy.email || 'N/A'}
-                        </div>
-                      </div>
-                      {attendanceDetail.leaveInfo.approvedAt && (
-                        <div>
-                          <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Approved On</label>
-                          <div className="mt-1 text-sm text-orange-900 dark:text-orange-100">
-                            {new Date(attendanceDetail.leaveInfo.approvedAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {attendanceDetail.isConflict && (
-                    <div className="mt-2 rounded border border-red-300 bg-red-50 p-2 text-xs font-semibold text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
-                      ⚠️ Conflict: Leave approved but attendance logged for this date
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* OD Information */}
-              {attendanceDetail.hasOD && attendanceDetail.odInfo && (
-                <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
-                  <h4 className="mb-3 text-base font-semibold text-blue-900 dark:text-blue-200">On Duty (OD) Information</h4>
-
-                  {/* Early-Out Info */}
-                  {attendanceDetail.earlyOutMinutes !== undefined && attendanceDetail.earlyOutMinutes !== null && (
-                    <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-900/20">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-xs font-medium text-amber-700 dark:text-amber-300">Early-Out Minutes</p>
-                          <p className="text-lg font-semibold text-amber-900 dark:text-amber-100">
-                            {attendanceDetail.earlyOutMinutes} min
-                          </p>
-                        </div>
-                        {attendanceDetail.earlyOutDeduction?.deductionApplied && (
-                          <div className="text-right">
-                            <p className="text-xs font-medium text-amber-700 dark:text-amber-300">Deduction Applied</p>
-                            <p className="text-sm font-semibold text-amber-900 dark:text-amber-100 capitalize">
-                              {attendanceDetail.earlyOutDeduction.deductionType?.replace('_', ' ') || 'N/A'}
-                            </p>
-                            {attendanceDetail.earlyOutDeduction.deductionDays && (
-                              <p className="text-xs text-amber-700 dark:text-amber-300">
-                                {attendanceDetail.earlyOutDeduction.deductionDays} day(s)
-                              </p>
-                            )}
-                            {attendanceDetail.earlyOutDeduction.deductionAmount && (
-                              <p className="text-xs text-amber-700 dark:text-amber-300">
-                                ₹{attendanceDetail.earlyOutDeduction.deductionAmount}
-                              </p>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      {attendanceDetail.earlyOutDeduction?.reason && (
-                        <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
-                          {attendanceDetail.earlyOutDeduction.reason}
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Purpose/Reason */}
-                  {attendanceDetail.odInfo.purpose && (
-                    <div className="mb-3">
-                      <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Purpose/Reason</label>
-                      <div className="mt-1 text-sm text-blue-900 dark:text-blue-100">
-                        {attendanceDetail.odInfo.purpose}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Place Visited */}
-                  {attendanceDetail.odInfo.placeVisited && (
-                    <div className="mb-3">
-                      <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Place Visited</label>
-                      <div className="mt-1 text-sm text-blue-900 dark:text-blue-100">
-                        {attendanceDetail.odInfo.placeVisited}
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-2 gap-3 text-sm mb-3">
-                    <div>
-                      <label className="text-xs font-medium text-blue-700 dark:text-blue-300">OD Type</label>
-                      <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
-                        {attendanceDetail.odInfo.odType || 'N/A'}
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-blue-700 dark:text-blue-300">
-                        {attendanceDetail.odInfo.odType_extended === 'hours' ? 'Duration Type' : 'Half Day'}
-                      </label>
-                      <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
-                        {attendanceDetail.odInfo.odType_extended === 'hours' ? (
-                          'Hour-Based OD'
-                        ) : attendanceDetail.odInfo.isHalfDay ? (
-                          <>
-                            Yes
-                            {attendanceDetail.odInfo.halfDayType && (
-                              <span className="ml-1 text-xs">({attendanceDetail.odInfo.halfDayType === 'first_half' ? 'First Half' : 'Second Half'})</span>
-                            )}
-                          </>
-                        ) : (
-                          'No'
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Date Range */}
-                  {attendanceDetail.odInfo.fromDate && attendanceDetail.odInfo.toDate && (
-                    <div className="mb-3">
-                      <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Date Range</label>
-                      <div className="mt-1 text-sm font-semibold text-blue-900 dark:text-blue-100">
-                        {new Date(attendanceDetail.odInfo.fromDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} - {new Date(attendanceDetail.odInfo.toDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Hour-Based OD: Show Hours */}
-                  {attendanceDetail.odInfo.odType_extended === 'hours' && attendanceDetail.odInfo.durationHours && (
-                    <div className="mb-3 p-3 rounded-lg bg-blue-100 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-700">
-                      <label className="text-xs font-medium text-blue-700 dark:text-blue-300 block mb-2">OD Hours</label>
-                      <div className="text-lg font-bold text-blue-900 dark:text-blue-100">
-                        {(() => {
-                          const hours = Math.floor(attendanceDetail.odInfo.durationHours || 0);
-                          const mins = Math.round((attendanceDetail.odInfo.durationHours || 0) % 1 * 60);
-                          return `${hours}h ${mins}m`;
-                        })()}
-                      </div>
-                      {attendanceDetail.odInfo.odStartTime && attendanceDetail.odInfo.odEndTime && (
-                        <div className="text-sm text-blue-700 dark:text-blue-300 mt-1">
-                          Time: {attendanceDetail.odInfo.odStartTime} - {attendanceDetail.odInfo.odEndTime}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Full Day / Half Day: Show Days */}
-                  {attendanceDetail.odInfo.odType_extended !== 'hours' && (
-                    <div className="grid grid-cols-2 gap-3 text-sm mb-3">
-                      <div>
-                        <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Total Days</label>
-                        <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
-                          {attendanceDetail.odInfo.numberOfDays || 'N/A'} {attendanceDetail.odInfo.numberOfDays === 1 ? 'day' : 'days'}
-                        </div>
-                      </div>
-                      {attendanceDetail.odInfo.dayInOD && (
-                        <div>
-                          <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Day in OD</label>
-                          <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
-                            {attendanceDetail.odInfo.dayInOD === 1 ? '1st day' : attendanceDetail.odInfo.dayInOD === 2 ? '2nd day' : attendanceDetail.odInfo.dayInOD === 3 ? '3rd day' : `${attendanceDetail.odInfo.dayInOD}th day`}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Applied Date */}
-                  {attendanceDetail.odInfo.appliedAt && (
-                    <div className="mb-3">
-                      <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Applied On</label>
-                      <div className="mt-1 text-sm text-blue-900 dark:text-blue-100">
-                        {new Date(attendanceDetail.odInfo.appliedAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Approved By and When */}
-                  {attendanceDetail.odInfo.approvedBy && (
-                    <div className="mb-3 grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Approved By</label>
-                        <div className="mt-1 text-sm font-semibold text-blue-900 dark:text-blue-100">
-                          {attendanceDetail.odInfo.approvedBy.name || attendanceDetail.odInfo.approvedBy.email || 'N/A'}
-                        </div>
-                      </div>
-                      {attendanceDetail.odInfo.approvedAt && (
-                        <div>
-                          <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Approved On</label>
-                          <div className="mt-1 text-sm text-blue-900 dark:text-blue-100">
-                            {new Date(attendanceDetail.odInfo.approvedAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Only show conflict for full-day OD (not for half-day or hour-based OD) */}
-                  {attendanceDetail.isConflict &&
-                    attendanceDetail.odInfo &&
-                    attendanceDetail.odInfo.odType_extended !== 'half_day' &&
-                    attendanceDetail.odInfo.odType_extended !== 'hours' && (
-                      <div className="mt-2 rounded border border-red-300 bg-red-50 p-2 text-xs font-semibold text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
-                        ⚠️ Conflict: OD approved but attendance logged for this date
-                      </div>
-                    )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Monthly Summary Modal */}
-      {showSummaryModal && selectedEmployeeForSummary !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900 print:shadow-none">
-            <div className="mb-4 flex items-center justify-between print:hidden">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Monthly Attendance Summary</h3>
-              <button
-                onClick={() => {
-                  setShowSummaryModal(false);
-                  setSelectedEmployeeForSummary(null);
-                  setMonthlySummary(null);
-                }}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
-              >
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            {loadingSummary ? (
-              <div className="flex items-center justify-center p-12">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
-              </div>
-            ) : monthlySummary ? (
-              <div className="space-y-6">
-                {/* Employee Details */}
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
-                  <h4 className="mb-3 text-base font-bold text-slate-900 dark:text-white">Employee Details</h4>
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <span className="font-medium text-slate-600 dark:text-slate-400">Name:</span>
-                      <span className="ml-2 text-slate-900 dark:text-white">{selectedEmployeeForSummary?.employee_name || '-'}</span>
-                    </div>
-                    <div>
-                      <span className="font-medium text-slate-600 dark:text-slate-400">Employee Number:</span>
-                      <span className="ml-2 text-slate-900 dark:text-white">{selectedEmployeeForSummary?.emp_no || '-'}</span>
-                    </div>
-                    {selectedEmployeeForSummary && selectedEmployeeForSummary.department && (
-                      <div>
-                        <span className="font-medium text-slate-600 dark:text-slate-400">Department:</span>
-                        <span className="ml-2 text-slate-900 dark:text-white">{(selectedEmployeeForSummary.department as any)?.name || '-'}</span>
-                      </div>
-                    )}
-                    {selectedEmployeeForSummary && selectedEmployeeForSummary.designation && (
-                      <div>
-                        <span className="font-medium text-slate-600 dark:text-slate-400">Designation:</span>
-                        <span className="ml-2 text-slate-900 dark:text-white">{(selectedEmployeeForSummary.designation as any)?.name || '-'}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Monthly Summary Table */}
-                <div className="rounded-lg border border-slate-200 dark:border-slate-700">
-                  <table className="w-full border-collapse text-sm">
-                    <thead className="bg-slate-100 dark:bg-slate-800">
-                      <tr>
-                        <th className="border border-slate-300 px-4 py-2 text-left font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Month</th>
-                        <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Total Leaves</th>
-                        <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Total ODs</th>
-                        <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Present Days</th>
-                        <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Total Days</th>
-                        <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Payable Shifts</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td className="border border-slate-300 px-4 py-2 text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.monthName || `${monthNames[month - 1]} ${year}`}</td>
-                        <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalLeaves || 0}</td>
-                        <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalODs || 0}</td>
-                        <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalPresentDays || 0}</td>
-                        <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalDaysInMonth || 0}</td>
-                        <td className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalPayableShifts?.toFixed(2) || '0.00'}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Footer with Signature and Timestamp */}
-                <div className="mt-8 flex items-end justify-between border-t border-slate-200 pt-4 dark:border-slate-700 print:mt-12">
-                  <div>
-                    <div className="mb-2 text-sm font-medium text-slate-600 dark:text-slate-400">Authorized Signature</div>
-                    <div className="h-12 w-48 border-b border-slate-300 dark:border-slate-600"></div>
-                  </div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400">
-                    Printed: {new Date().toLocaleString()}
-                  </div>
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex justify-end gap-3 print:hidden">
-                  <button
-                    onClick={handleExportPDF}
-                    className="rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600"
-                  >
-                    Export as PDF
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowSummaryModal(false);
-                      setSelectedEmployeeForSummary(null);
-                      setMonthlySummary(null);
-                    }}
-                    className="rounded-xl border border-slate-200 bg-white px-6 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="p-12 text-center text-slate-500 dark:text-slate-400">
-                No summary data available
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Payslip Modal */}
-      {showPayslipModal && selectedEmployeeForPayslip !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="w-full max-w-5xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900 print:shadow-none print:max-w-full print:rounded-none">
-            <div className="mb-4 flex items-center justify-between print:hidden">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Payslip</h3>
-              <div className="flex items-center gap-2">
-                {error && error.includes('not found') && (
-                  <button
-                    onClick={handleCalculatePayroll}
-                    disabled={calculatingPayroll}
-                    className="rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:from-blue-600 hover:to-indigo-700 disabled:opacity-50"
-                  >
-                    {calculatingPayroll ? 'Calculating...' : 'Calculate Payroll'}
-                  </button>
-                )}
-                <button
-                  onClick={() => {
-                    setShowPayslipModal(false);
-                    setSelectedEmployeeForPayslip(null);
-                    setPayslipData(null);
-                    setError('');
                   }}
                   className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
                 >
@@ -2220,212 +1489,1201 @@ export default function AttendancePage() {
                   </svg>
                 </button>
               </div>
-            </div>
 
-            {loadingPayslip ? (
-              <div className="flex items-center justify-center p-12">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
-              </div>
-            ) : error && !error.includes('not found') ? (
-              <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200">
-                {error}
-              </div>
-            ) : payslipData ? (
-              <div className="space-y-4 print:space-y-3">
-                {/* Payslip Header */}
-                <div className="border-b-2 border-slate-300 pb-3 dark:border-slate-600">
-                  <h2 className="text-center text-xl font-bold text-slate-900 dark:text-white">
-                    PAYSLIP FOR THE MONTH OF: {(() => {
-                      const monthStr = payslipData.month || `${monthNames[month - 1]} ${year}`;
-                      // Format as "DEC 19" style
-                      const monthMatch = monthStr.match(/(\w+)\s+(\d{4})/);
-                      if (monthMatch) {
-                        const monthName = monthMatch[1].substring(0, 3).toUpperCase();
-                        const yearShort = monthMatch[2].substring(2);
-                        return `${monthName} ${yearShort}`;
-                      }
-                      return monthStr.toUpperCase();
-                    })()}
-                  </h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Select Excel File
+                  </label>
+                  <input
+                    id="excel-upload-input"
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                  />
                 </div>
 
-                {/* Employee Details - Matching exact format from image */}
-                <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
-                  <div className="flex">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">Emp Code:</span>
-                    <span className="text-slate-900 dark:text-white">{payslipData.employee?.emp_no || '-'}</span>
-                  </div>
-                  <div className="flex">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300 w-32">Emp Name:</span>
-                    <span className="text-slate-900 dark:text-white">{payslipData.employee?.name || '-'}</span>
-                  </div>
-                  <div className="flex">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">Department:</span>
-                    <span className="text-slate-900 dark:text-white">{payslipData.employee?.department || '-'}</span>
-                  </div>
-                  <div className="flex">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300 w-32">Designation:</span>
-                    <span className="text-slate-900 dark:text-white">{payslipData.employee?.designation || '-'}</span>
-                  </div>
-                  <div className="flex">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">Location:</span>
-                    <span className="text-slate-900 dark:text-white">{payslipData.employee?.location || '-'}</span>
-                  </div>
-                  <div className="flex">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300 w-32">Bank A/c No.:</span>
-                    <span className="text-slate-900 dark:text-white">{payslipData.employee?.bank_account_no || '-'}</span>
-                  </div>
-                  <div className="flex">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">PAID LEAVES:</span>
-                    <span className="text-slate-900 dark:text-white">{payslipData.employee?.paidLeaves || 0}</span>
-                  </div>
-                  <div className="flex">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300 w-32">PAID DAYS:</span>
-                    <span className="font-bold text-slate-900 dark:text-white">{payslipData.paidDays || payslipData.totalPayableShifts || 0}</span>
-                  </div>
-                  <div className="flex">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">PF Code No.:</span>
-                    <span className="text-slate-900 dark:text-white">{payslipData.employee?.pf_number || '-'}</span>
-                  </div>
-                  <div className="flex">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300 w-32">PF UAN:</span>
-                    <span className="text-slate-900 dark:text-white">{payslipData.employee?.pf_number || '-'}</span>
-                  </div>
-                  <div className="flex">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">ESI No.:</span>
-                    <span className="text-slate-900 dark:text-white">{payslipData.employee?.esi_number || '-'}</span>
-                  </div>
-                </div>
-
-                {/* Earnings and Deductions Side by Side */}
-                <div className="grid grid-cols-2 gap-4">
-                  {/* Earnings Section - Left Side */}
-                  <div className="border border-slate-300 dark:border-slate-600">
-                    <h3 className="border-b border-slate-300 bg-slate-100 px-4 py-2 text-left font-bold text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white">
-                      EARNINGS
-                    </h3>
-                    <div className="divide-y divide-slate-200 dark:divide-slate-700">
-                      <div className="flex justify-between px-4 py-2">
-                        <span className="text-slate-700 dark:text-slate-300">Basic:</span>
-                        <span className="font-semibold text-slate-900 dark:text-white">{payslipData.earnings?.basicPay?.toFixed(2) || '0.00'}</span>
-                      </div>
-                      {/* Map allowances - VDA, HRA, WA, etc. */}
-                      {payslipData.earnings?.allowances && payslipData.earnings.allowances.length > 0 && payslipData.earnings.allowances.map((allowance: any, idx: number) => (
-                        <div key={idx} className="flex justify-between px-4 py-2">
-                          <span className="text-slate-700 dark:text-slate-300">{allowance.name?.toUpperCase() || 'ALLOWANCE'}:</span>
-                          <span className="font-semibold text-slate-900 dark:text-white">{allowance.amount?.toFixed(2) || '0.00'}</span>
-                        </div>
-                      ))}
-                      {payslipData.earnings?.incentive !== 0 && (
-                        <div className="flex justify-between px-4 py-2">
-                          <span className="text-slate-700 dark:text-slate-300">INCENTIVE:</span>
-                          <span className="font-semibold text-slate-900 dark:text-white">{payslipData.earnings?.incentive?.toFixed(2) || '0.00'}</span>
-                        </div>
-                      )}
-                      {payslipData.earnings?.otPay > 0 && (
-                        <div className="flex justify-between px-4 py-2">
-                          <span className="text-slate-700 dark:text-slate-300">OT PAY:</span>
-                          <span className="font-semibold text-slate-900 dark:text-white">{payslipData.earnings?.otPay?.toFixed(2) || '0.00'}</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between border-t-2 border-slate-300 bg-slate-100 px-4 py-2 font-bold dark:border-slate-600 dark:bg-slate-800">
-                        <span className="text-slate-900 dark:text-white">Gross Salary Rs.:</span>
-                        <span className="text-slate-900 dark:text-white">{payslipData.earnings?.grossSalary?.toFixed(2) || '0.00'}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Deductions Section - Right Side */}
-                  <div className="border border-slate-300 dark:border-slate-600">
-                    <h3 className="border-b border-slate-300 bg-slate-100 px-4 py-2 text-left font-bold text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white">
-                      DEDUCTIONS
-                    </h3>
-                    <div className="divide-y divide-slate-200 dark:divide-slate-700">
-                      {/* Other deductions first (PF, ESIC, TDS, etc.) */}
-                      {payslipData.deductions?.otherDeductions && payslipData.deductions.otherDeductions.length > 0 && payslipData.deductions.otherDeductions.map((deduction: any, idx: number) => (
-                        <div key={idx} className="flex justify-between px-4 py-2">
-                          <span className="text-slate-700 dark:text-slate-300">{deduction.name || 'Deduction'}:</span>
-                          <span className="font-semibold text-red-600 dark:text-red-400">{deduction.amount?.toFixed(2) || '0.00'}</span>
-                        </div>
-                      ))}
-                      {/* TDS - if exists in other deductions, otherwise show if configured */}
-                      {payslipData.deductions?.attendanceDeduction > 0 && (
-                        <div className="flex justify-between px-4 py-2">
-                          <span className="text-slate-700 dark:text-slate-300">Attendance Deduction:</span>
-                          <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.deductions.attendanceDeduction.toFixed(2)}</span>
-                        </div>
-                      )}
-                      {payslipData.deductions?.permissionDeduction > 0 && (
-                        <div className="flex justify-between px-4 py-2">
-                          <span className="text-slate-700 dark:text-slate-300">Permission Deduction:</span>
-                          <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.deductions.permissionDeduction.toFixed(2)}</span>
-                        </div>
-                      )}
-                      {payslipData.deductions?.leaveDeduction > 0 && (
-                        <div className="flex justify-between px-4 py-2">
-                          <span className="text-slate-700 dark:text-slate-300">Leave Deduction:</span>
-                          <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.deductions.leaveDeduction.toFixed(2)}</span>
-                        </div>
-                      )}
-                      {payslipData.loanAdvance?.advanceDeduction > 0 && (
-                        <div className="flex justify-between px-4 py-2">
-                          <span className="text-slate-700 dark:text-slate-300">AdV:</span>
-                          <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.loanAdvance.advanceDeduction.toFixed(2)}</span>
-                        </div>
-                      )}
-                      {payslipData.loanAdvance?.totalEMI > 0 && (
-                        <div className="flex justify-between px-4 py-2">
-                          <span className="text-slate-700 dark:text-slate-300">Loan EMI:</span>
-                          <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.loanAdvance.totalEMI.toFixed(2)}</span>
-                        </div>
-                      )}
-                      {/* BANK PAY and CASH PAY - these would be calculated from net salary */}
-                      <div className="flex justify-between border-t-2 border-slate-300 bg-slate-100 px-4 py-2 font-bold dark:border-slate-600 dark:bg-slate-800">
-                        <span className="text-slate-900 dark:text-white">Total Deductions:</span>
-                        <span className="text-red-600 dark:text-red-400">
-                          {((payslipData.deductions?.totalDeductions || 0) + (payslipData.loanAdvance?.totalEMI || 0) + (payslipData.loanAdvance?.advanceDeduction || 0)).toFixed(2)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Net Salary and Payment Details */}
-                <div className="space-y-3">
-                  {/* Net Salary */}
-                  <div className="border-2 border-green-500 bg-green-50 p-3 dark:border-green-600 dark:bg-green-900/20">
-                    <div className="flex justify-between items-center">
-                      <span className="text-lg font-bold text-green-900 dark:text-green-200">Net Salary:</span>
-                      <span className="text-2xl font-bold text-green-900 dark:text-green-200">{payslipData.netSalary?.toFixed(2) || '0.00'}</span>
-                    </div>
-                  </div>
-
-                  {/* Rupees In Words */}
-                  <div className="border border-slate-300 bg-slate-50 px-4 py-2 dark:border-slate-600 dark:bg-slate-800">
-                    <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Rupees In Words:</span>
-                    <span className="ml-2 text-sm text-slate-900 dark:text-white">{numberToWords(payslipData.netSalary || 0)}</span>
-                  </div>
-                </div>
-
-                {/* Print Button */}
-                <div className="flex justify-end gap-3 print:hidden">
+                <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
                   <button
-                    onClick={() => window.print()}
-                    className="rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 px-6 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:from-blue-600 hover:to-indigo-700"
+                    onClick={handleDownloadTemplate}
+                    className="text-blue-600 hover:underline dark:text-blue-400"
                   >
-                    Print Payslip
+                    Download Template
+                  </button>
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleExcelUpload}
+                    disabled={!uploadFile || uploading}
+                    className="flex-1 rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {uploading ? 'Uploading...' : 'Upload'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowUploadDialog(false);
+                      setUploadFile(null);
+                    }}
+                    className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                  >
+                    Cancel
                   </button>
                 </div>
               </div>
-            ) : (
-              <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-yellow-800 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-200">
-                {error || 'Payslip not found. Please calculate payroll first.'}
+            </div>
+          </div>
+        )
+      }
+
+      {/* OutTime Dialog for PARTIAL Attendance */}
+      {
+        showOutTimeDialog && selectedRecordForOutTime && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Enter Out Time</h3>
+                <button
+                  onClick={() => {
+                    setShowOutTimeDialog(false);
+                    setSelectedRecordForOutTime(null);
+                    setOutTimeValue('');
+                  }}
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
               </div>
-            )}
+
+              <div className="space-y-4">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800">
+                  <div className="text-sm font-medium text-slate-900 dark:text-white">
+                    {selectedRecordForOutTime.employee.employee_name}
+                  </div>
+                  <div className="text-xs text-slate-600 dark:text-slate-400">
+                    {selectedRecordForOutTime.employee.emp_no} • {selectedRecordForOutTime.date}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Out Time *
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={outTimeValue}
+                    onChange={(e) => setOutTimeValue(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                    required
+                  />
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Enter the logout time. Shift will be automatically assigned based on in-time and out-time.
+                  </p>
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleUpdateOutTime}
+                    disabled={!outTimeValue || updatingOutTime}
+                    className="flex-1 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {updatingOutTime ? 'Updating...' : 'Update Out Time'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowOutTimeDialog(false);
+                      setSelectedRecordForOutTime(null);
+                      setOutTimeValue('');
+                    }}
+                    className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      }
+
+      {/* Detail Dialog */}
+      {
+        showDetailDialog && attendanceDetail && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900 scrollbar-thin scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-600">
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                  Attendance Details - {selectedDate}
+                  {selectedEmployee && (
+                    <span className="ml-2 text-sm font-normal text-slate-500 dark:text-slate-400">
+                      ({selectedEmployee.employee_name})
+                    </span>
+                  )}
+                </h3>
+                <button
+                  onClick={() => {
+                    setShowDetailDialog(false);
+                    setError('');
+                    setSuccess('');
+                  }}
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Success/Error Messages */}
+              {success && (
+                <div className="mb-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400">
+                  {success}
+                </div>
+              )}
+              {error && (
+                <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+                  {error}
+                </div>
+              )}
+
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Status</label>
+                    <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
+                      {attendanceDetail.status || 'ABSENT'}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Shift</label>
+                    <div className="mt-1 flex items-center gap-2">
+                      {!editingShift ? (
+                        <>
+                          <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                            {attendanceDetail.shiftId && typeof attendanceDetail.shiftId === 'object'
+                              ? attendanceDetail.shiftId.name
+                              : '-'}
+                          </div>
+                          <button
+                            onClick={() => {
+                              setEditingShift(true);
+                              if (attendanceDetail.shiftId && typeof attendanceDetail.shiftId === 'object') {
+                                setSelectedShiftId(attendanceDetail.shiftId._id);
+                              }
+                            }}
+                            className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"
+                          >
+                            {attendanceDetail.shiftId ? 'Change' : 'Assign'}
+                          </button>
+                        </>
+                      ) : (
+                        <div className="flex-1 flex items-center gap-2">
+                          <select
+                            value={selectedShiftId}
+                            onChange={(e) => setSelectedShiftId(e.target.value)}
+                            className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                          >
+                            <option value="">Select Shift</option>
+                            {availableShifts.map((shift) => (
+                              <option key={shift._id} value={shift._id}>
+                                {shift.name} ({shift.startTime} - {shift.endTime})
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            onClick={handleAssignShift}
+                            disabled={savingShift || !selectedShiftId}
+                            className="rounded-lg bg-green-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {savingShift ? 'Saving...' : 'Save'}
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEditingShift(false);
+                              setSelectedShiftId('');
+                            }}
+                            className="rounded-lg bg-slate-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-slate-600"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-600 dark:text-slate-400">In Time</label>
+                    <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
+                      {formatTime(attendanceDetail.inTime)}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Out Time</label>
+                    <div className="mt-1 flex items-center gap-2">
+                      {!editingOutTime ? (
+                        <>
+                          <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                            {attendanceDetail.outTime ? formatTime(attendanceDetail.outTime, true, selectedDate || '') : '-'}
+                          </div>
+                          {!attendanceDetail.outTime && (
+                            <button
+                              onClick={() => {
+                                setEditingOutTime(true);
+                                if (attendanceDetail.outTime) {
+                                  const date = new Date(attendanceDetail.outTime);
+                                  setOutTimeInput(`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`);
+                                }
+                              }}
+                              className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"
+                            >
+                              Add
+                            </button>
+                          )}
+                          {attendanceDetail.outTime && (
+                            <button
+                              onClick={() => {
+                                setEditingOutTime(true);
+                                const date = new Date(attendanceDetail.outTime);
+                                setOutTimeInput(`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`);
+                              }}
+                              className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"
+                            >
+                              Edit
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <div className="flex-1 flex items-center gap-2">
+                          <input
+                            type="time"
+                            value={outTimeInput}
+                            onChange={(e) => setOutTimeInput(e.target.value)}
+                            className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                          />
+                          <button
+                            onClick={handleSaveOutTime}
+                            disabled={savingOutTime || !outTimeInput}
+                            className="rounded-lg bg-green-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {savingOutTime ? 'Saving...' : 'Save'}
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEditingOutTime(false);
+                              setOutTimeInput('');
+                            }}
+                            className="rounded-lg bg-slate-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-slate-600"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Total Hours</label>
+                    <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
+                      {formatHours(attendanceDetail.totalHours)}
+                    </div>
+                  </div>
+                  {attendanceDetail.isLateIn && attendanceDetail.lateInMinutes && (
+                    <div>
+                      <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Late In</label>
+                      <div className="mt-1 text-sm font-semibold text-orange-600 dark:text-orange-400">
+                        +{attendanceDetail.lateInMinutes} minutes
+                      </div>
+                    </div>
+                  )}
+                  {attendanceDetail.isEarlyOut && attendanceDetail.earlyOutMinutes && (
+                    <div>
+                      <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Early Out</label>
+                      <div className="mt-1 text-sm font-semibold text-orange-600 dark:text-orange-400">
+                        -{attendanceDetail.earlyOutMinutes} minutes
+                      </div>
+                      {attendanceDetail.earlyOutDeduction?.deductionApplied && (
+                        <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                          Deduction: {attendanceDetail.earlyOutDeduction.deductionType?.replace('_', ' ')}
+                          {attendanceDetail.earlyOutDeduction.deductionDays ? ` (${attendanceDetail.earlyOutDeduction.deductionDays} day(s))` : ''}
+                          {attendanceDetail.earlyOutDeduction.deductionAmount ? ` (₹${attendanceDetail.earlyOutDeduction.deductionAmount})` : ''}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {attendanceDetail.otHours && attendanceDetail.otHours > 0 && (
+                    <div>
+                      <label className="text-xs font-medium text-slate-600 dark:text-slate-400">OT Hours</label>
+                      <div className="mt-1 text-sm font-semibold text-orange-600 dark:text-orange-400">
+                        {attendanceDetail.otHours.toFixed(2)} hrs
+                      </div>
+                    </div>
+                  )}
+                  {attendanceDetail.extraHours && attendanceDetail.extraHours > 0 && (
+                    <div className="col-span-2">
+                      <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Extra Hours</label>
+                      <div className="mt-1 flex items-center justify-between">
+                        <div className="text-sm font-semibold text-purple-600 dark:text-purple-400">
+                          {attendanceDetail.extraHours.toFixed(2)} hrs
+                        </div>
+                        {!hasExistingOT && attendanceDetail.shiftId && (
+                          <button
+                            onClick={handleConvertExtraHoursToOT}
+                            disabled={convertingToOT}
+                            className="ml-3 rounded-lg bg-gradient-to-r from-purple-500 to-indigo-500 px-3 py-1.5 text-xs font-semibold text-white shadow-md shadow-purple-500/30 transition-all hover:from-purple-600 hover:to-indigo-600 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {convertingToOT ? 'Converting...' : 'Convert to OT'}
+                          </button>
+                        )}
+                        {hasExistingOT && (
+                          <span className="ml-3 rounded-full bg-green-100 px-2 py-1 text-[10px] font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                            Already Converted
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {attendanceDetail.permissionHours && attendanceDetail.permissionHours > 0 && (
+                    <div>
+                      <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Permission Hours</label>
+                      <div className="mt-1 text-sm font-semibold text-cyan-600 dark:text-cyan-400">
+                        {attendanceDetail.permissionHours.toFixed(2)} hrs ({attendanceDetail.permissionCount || 0} permissions)
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Leave Conflicts - Show if attendance is present and leave conflicts exist */}
+                {attendanceDetail.status === 'PRESENT' && leaveConflicts.length > 0 && (
+                  <div className="mt-4 rounded-lg border border-red-300 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/20">
+                    <div className="mb-3 flex items-center gap-2">
+                      <svg className="h-5 w-5 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                      <h4 className="text-base font-semibold text-red-900 dark:text-red-200">Leave Conflict Detected</h4>
+                    </div>
+                    <p className="mb-3 text-sm text-red-800 dark:text-red-300">
+                      Employee has approved leave but attendance is logged for this date.
+                    </p>
+                    {leaveConflicts.map((conflict) => (
+                      <div key={conflict.leaveId} className="mb-3 rounded-lg border border-red-200 bg-white p-3 dark:border-red-700 dark:bg-slate-800">
+                        <div className="mb-2 text-sm font-medium text-red-900 dark:text-red-200">
+                          {conflict.leaveType} - {conflict.numberOfDays} day(s)
+                        </div>
+                        <div className="mb-2 text-xs text-red-700 dark:text-red-300">
+                          {new Date(conflict.fromDate).toLocaleDateString()}
+                          {conflict.fromDate !== conflict.toDate && ` - ${new Date(conflict.toDate).toLocaleDateString()}`}
+                          {conflict.isHalfDay && ` (${conflict.halfDayType === 'first_half' ? 'First Half' : 'Second Half'})`}
+                        </div>
+                        <div className="flex gap-2">
+                          {conflict.conflictType === 'full_day' ? (
+                            <button
+                              onClick={() => handleRevokeLeave(conflict.leaveId)}
+                              disabled={revokingLeave}
+                              className="rounded-lg bg-red-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-all hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {revokingLeave ? 'Revoking...' : 'Revoke Leave'}
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleUpdateLeave(conflict.leaveId)}
+                              disabled={updatingLeave}
+                              className="rounded-lg bg-orange-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-all hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {updatingLeave ? 'Updating...' : 'Update Leave'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Leave Information */}
+                {attendanceDetail.hasLeave && attendanceDetail.leaveInfo && (
+                  <div className="mt-4 rounded-lg border border-orange-200 bg-orange-50 p-4 dark:border-orange-800 dark:bg-orange-900/20">
+                    <h4 className="mb-3 text-base font-semibold text-orange-900 dark:text-orange-200">Leave Information</h4>
+
+                    {/* Purpose/Reason */}
+                    {attendanceDetail.leaveInfo.purpose ? (
+                      <div className="mb-3">
+                        <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Purpose/Reason</label>
+                        <div className="mt-1 text-sm text-orange-900 dark:text-orange-100">
+                          {attendanceDetail.leaveInfo.purpose}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <div className="grid grid-cols-2 gap-3 text-sm mb-3">
+                      <div>
+                        <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Leave Type</label>
+                        <div className="mt-1 font-semibold text-orange-900 dark:text-orange-100">
+                          {attendanceDetail.leaveInfo.leaveType || 'N/A'}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Half Day</label>
+                        <div className="mt-1 font-semibold text-orange-900 dark:text-orange-100">
+                          {attendanceDetail.leaveInfo.isHalfDay ? 'Yes' : 'No'}
+                          {attendanceDetail.leaveInfo.isHalfDay && attendanceDetail.leaveInfo.halfDayType && (
+                            <span className="ml-1 text-xs">({attendanceDetail.leaveInfo.halfDayType === 'first_half' ? 'First Half' : 'Second Half'})</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Date Range */}
+                    {attendanceDetail.leaveInfo.fromDate && attendanceDetail.leaveInfo.toDate && (
+                      <div className="mb-3">
+                        <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Date Range</label>
+                        <div className="mt-1 text-sm font-semibold text-orange-900 dark:text-orange-100">
+                          {new Date(attendanceDetail.leaveInfo.fromDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} - {new Date(attendanceDetail.leaveInfo.toDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Number of Days and Day in Leave */}
+                    <div className="grid grid-cols-2 gap-3 text-sm mb-3">
+                      <div>
+                        <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Total Days</label>
+                        <div className="mt-1 font-semibold text-orange-900 dark:text-orange-100">
+                          {attendanceDetail.leaveInfo.numberOfDays !== undefined && attendanceDetail.leaveInfo.numberOfDays !== null
+                            ? `${attendanceDetail.leaveInfo.numberOfDays} ${attendanceDetail.leaveInfo.numberOfDays === 1 ? 'day' : 'days'}`
+                            : 'N/A'}
+                        </div>
+                      </div>
+                      {attendanceDetail.leaveInfo.dayInLeave !== undefined && attendanceDetail.leaveInfo.dayInLeave !== null && (
+                        <div>
+                          <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Day in Leave</label>
+                          <div className="mt-1 font-semibold text-orange-900 dark:text-orange-100">
+                            {attendanceDetail.leaveInfo.dayInLeave === 1 ? '1st day' : attendanceDetail.leaveInfo.dayInLeave === 2 ? '2nd day' : attendanceDetail.leaveInfo.dayInLeave === 3 ? '3rd day' : `${attendanceDetail.leaveInfo.dayInLeave}th day`}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Applied Date */}
+                    {attendanceDetail.leaveInfo.appliedAt && (
+                      <div className="mb-3">
+                        <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Applied On</label>
+                        <div className="mt-1 text-sm text-orange-900 dark:text-orange-100">
+                          {new Date(attendanceDetail.leaveInfo.appliedAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Approved By and When */}
+                    {attendanceDetail.leaveInfo.approvedBy && (
+                      <div className="mb-3 grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Approved By</label>
+                          <div className="mt-1 text-sm font-semibold text-orange-900 dark:text-orange-100">
+                            {attendanceDetail.leaveInfo.approvedBy.name || attendanceDetail.leaveInfo.approvedBy.email || 'N/A'}
+                          </div>
+                        </div>
+                        {attendanceDetail.leaveInfo.approvedAt && (
+                          <div>
+                            <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Approved On</label>
+                            <div className="mt-1 text-sm text-orange-900 dark:text-orange-100">
+                              {new Date(attendanceDetail.leaveInfo.approvedAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {attendanceDetail.isConflict && (
+                      <div className="mt-2 rounded border border-red-300 bg-red-50 p-2 text-xs font-semibold text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
+                        ⚠️ Conflict: Leave approved but attendance logged for this date
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* OD Information */}
+                {attendanceDetail.hasOD && attendanceDetail.odInfo && (
+                  <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
+                    <h4 className="mb-3 text-base font-semibold text-blue-900 dark:text-blue-200">On Duty (OD) Information</h4>
+
+                    {/* Early-Out Info */}
+                    {attendanceDetail.earlyOutMinutes !== undefined && attendanceDetail.earlyOutMinutes !== null && (
+                      <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-900/20">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-xs font-medium text-amber-700 dark:text-amber-300">Early-Out Minutes</p>
+                            <p className="text-lg font-semibold text-amber-900 dark:text-amber-100">
+                              {attendanceDetail.earlyOutMinutes} min
+                            </p>
+                          </div>
+                          {attendanceDetail.earlyOutDeduction?.deductionApplied && (
+                            <div className="text-right">
+                              <p className="text-xs font-medium text-amber-700 dark:text-amber-300">Deduction Applied</p>
+                              <p className="text-sm font-semibold text-amber-900 dark:text-amber-100 capitalize">
+                                {attendanceDetail.earlyOutDeduction.deductionType?.replace('_', ' ') || 'N/A'}
+                              </p>
+                              {attendanceDetail.earlyOutDeduction.deductionDays && (
+                                <p className="text-xs text-amber-700 dark:text-amber-300">
+                                  {attendanceDetail.earlyOutDeduction.deductionDays} day(s)
+                                </p>
+                              )}
+                              {attendanceDetail.earlyOutDeduction.deductionAmount && (
+                                <p className="text-xs text-amber-700 dark:text-amber-300">
+                                  ₹{attendanceDetail.earlyOutDeduction.deductionAmount}
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        {attendanceDetail.earlyOutDeduction?.reason && (
+                          <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+                            {attendanceDetail.earlyOutDeduction.reason}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Purpose/Reason */}
+                    {attendanceDetail.odInfo.purpose && (
+                      <div className="mb-3">
+                        <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Purpose/Reason</label>
+                        <div className="mt-1 text-sm text-blue-900 dark:text-blue-100">
+                          {attendanceDetail.odInfo.purpose}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Place Visited */}
+                    {attendanceDetail.odInfo.placeVisited && (
+                      <div className="mb-3">
+                        <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Place Visited</label>
+                        <div className="mt-1 text-sm text-blue-900 dark:text-blue-100">
+                          {attendanceDetail.odInfo.placeVisited}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-3 text-sm mb-3">
+                      <div>
+                        <label className="text-xs font-medium text-blue-700 dark:text-blue-300">OD Type</label>
+                        <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
+                          {attendanceDetail.odInfo.odType || 'N/A'}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-blue-700 dark:text-blue-300">
+                          {attendanceDetail.odInfo.odType_extended === 'hours' ? 'Duration Type' : 'Half Day'}
+                        </label>
+                        <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
+                          {attendanceDetail.odInfo.odType_extended === 'hours' ? (
+                            'Hour-Based OD'
+                          ) : attendanceDetail.odInfo.isHalfDay ? (
+                            <>
+                              Yes
+                              {attendanceDetail.odInfo.halfDayType && (
+                                <span className="ml-1 text-xs">({attendanceDetail.odInfo.halfDayType === 'first_half' ? 'First Half' : 'Second Half'})</span>
+                              )}
+                            </>
+                          ) : (
+                            'No'
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Date Range */}
+                    {attendanceDetail.odInfo.fromDate && attendanceDetail.odInfo.toDate && (
+                      <div className="mb-3">
+                        <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Date Range</label>
+                        <div className="mt-1 text-sm font-semibold text-blue-900 dark:text-blue-100">
+                          {new Date(attendanceDetail.odInfo.fromDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} - {new Date(attendanceDetail.odInfo.toDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Hour-Based OD: Show Hours */}
+                    {attendanceDetail.odInfo.odType_extended === 'hours' && attendanceDetail.odInfo.durationHours && (
+                      <div className="mb-3 p-3 rounded-lg bg-blue-100 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-700">
+                        <label className="text-xs font-medium text-blue-700 dark:text-blue-300 block mb-2">OD Hours</label>
+                        <div className="text-lg font-bold text-blue-900 dark:text-blue-100">
+                          {(() => {
+                            const hours = Math.floor(attendanceDetail.odInfo.durationHours || 0);
+                            const mins = Math.round((attendanceDetail.odInfo.durationHours || 0) % 1 * 60);
+                            return `${hours}h ${mins}m`;
+                          })()}
+                        </div>
+                        {attendanceDetail.odInfo.odStartTime && attendanceDetail.odInfo.odEndTime && (
+                          <div className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                            Time: {attendanceDetail.odInfo.odStartTime} - {attendanceDetail.odInfo.odEndTime}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Full Day / Half Day: Show Days */}
+                    {attendanceDetail.odInfo.odType_extended !== 'hours' && (
+                      <div className="grid grid-cols-2 gap-3 text-sm mb-3">
+                        <div>
+                          <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Total Days</label>
+                          <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
+                            {attendanceDetail.odInfo.numberOfDays || 'N/A'} {attendanceDetail.odInfo.numberOfDays === 1 ? 'day' : 'days'}
+                          </div>
+                        </div>
+                        {attendanceDetail.odInfo.dayInOD && (
+                          <div>
+                            <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Day in OD</label>
+                            <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
+                              {attendanceDetail.odInfo.dayInOD === 1 ? '1st day' : attendanceDetail.odInfo.dayInOD === 2 ? '2nd day' : attendanceDetail.odInfo.dayInOD === 3 ? '3rd day' : `${attendanceDetail.odInfo.dayInOD}th day`}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Applied Date */}
+                    {attendanceDetail.odInfo.appliedAt && (
+                      <div className="mb-3">
+                        <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Applied On</label>
+                        <div className="mt-1 text-sm text-blue-900 dark:text-blue-100">
+                          {new Date(attendanceDetail.odInfo.appliedAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Approved By and When */}
+                    {attendanceDetail.odInfo.approvedBy && (
+                      <div className="mb-3 grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Approved By</label>
+                          <div className="mt-1 text-sm font-semibold text-blue-900 dark:text-blue-100">
+                            {attendanceDetail.odInfo.approvedBy.name || attendanceDetail.odInfo.approvedBy.email || 'N/A'}
+                          </div>
+                        </div>
+                        {attendanceDetail.odInfo.approvedAt && (
+                          <div>
+                            <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Approved On</label>
+                            <div className="mt-1 text-sm text-blue-900 dark:text-blue-100">
+                              {new Date(attendanceDetail.odInfo.approvedAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Only show conflict for full-day OD (not for half-day or hour-based OD) */}
+                    {attendanceDetail.isConflict &&
+                      attendanceDetail.odInfo &&
+                      attendanceDetail.odInfo.odType_extended !== 'half_day' &&
+                      attendanceDetail.odInfo.odType_extended !== 'hours' && (
+                        <div className="mt-2 rounded border border-red-300 bg-red-50 p-2 text-xs font-semibold text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
+                          ⚠️ Conflict: OD approved but attendance logged for this date
+                        </div>
+                      )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )
+      }
+
+      {/* Monthly Summary Modal */}
+      {
+        showSummaryModal && selectedEmployeeForSummary !== null && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900 print:shadow-none">
+              <div className="mb-4 flex items-center justify-between print:hidden">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Monthly Attendance Summary</h3>
+                <button
+                  onClick={() => {
+                    setShowSummaryModal(false);
+                    setSelectedEmployeeForSummary(null);
+                    setMonthlySummary(null);
+                  }}
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {loadingSummary ? (
+                <div className="flex items-center justify-center p-12">
+                  <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
+                </div>
+              ) : monthlySummary ? (
+                <div className="space-y-6">
+                  {/* Employee Details */}
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
+                    <h4 className="mb-3 text-base font-bold text-slate-900 dark:text-white">Employee Details</h4>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="font-medium text-slate-600 dark:text-slate-400">Name:</span>
+                        <span className="ml-2 text-slate-900 dark:text-white">{selectedEmployeeForSummary?.employee_name || '-'}</span>
+                      </div>
+                      <div>
+                        <span className="font-medium text-slate-600 dark:text-slate-400">Employee Number:</span>
+                        <span className="ml-2 text-slate-900 dark:text-white">{selectedEmployeeForSummary?.emp_no || '-'}</span>
+                      </div>
+                      {selectedEmployeeForSummary && selectedEmployeeForSummary.department && (
+                        <div>
+                          <span className="font-medium text-slate-600 dark:text-slate-400">Department:</span>
+                          <span className="ml-2 text-slate-900 dark:text-white">{(selectedEmployeeForSummary.department as any)?.name || '-'}</span>
+                        </div>
+                      )}
+                      {selectedEmployeeForSummary && selectedEmployeeForSummary.designation && (
+                        <div>
+                          <span className="font-medium text-slate-600 dark:text-slate-400">Designation:</span>
+                          <span className="ml-2 text-slate-900 dark:text-white">{(selectedEmployeeForSummary.designation as any)?.name || '-'}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Monthly Summary Table */}
+                  <div className="rounded-lg border border-slate-200 dark:border-slate-700">
+                    <table className="w-full border-collapse text-sm">
+                      <thead className="bg-slate-100 dark:bg-slate-800">
+                        <tr>
+                          <th className="border border-slate-300 px-4 py-2 text-left font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Month</th>
+                          <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Total Leaves</th>
+                          <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Total ODs</th>
+                          <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Present Days</th>
+                          <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Total Days</th>
+                          <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Payable Shifts</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td className="border border-slate-300 px-4 py-2 text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.monthName || `${monthNames[month - 1]} ${year}`}</td>
+                          <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalLeaves || 0}</td>
+                          <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalODs || 0}</td>
+                          <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalPresentDays || 0}</td>
+                          <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalDaysInMonth || 0}</td>
+                          <td className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalPayableShifts?.toFixed(2) || '0.00'}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Footer with Signature and Timestamp */}
+                  <div className="mt-8 flex items-end justify-between border-t border-slate-200 pt-4 dark:border-slate-700 print:mt-12">
+                    <div>
+                      <div className="mb-2 text-sm font-medium text-slate-600 dark:text-slate-400">Authorized Signature</div>
+                      <div className="h-12 w-48 border-b border-slate-300 dark:border-slate-600"></div>
+                    </div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                      Printed: {new Date().toLocaleString()}
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex justify-end gap-3 print:hidden">
+                    <button
+                      onClick={handleExportPDF}
+                      className="rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600"
+                    >
+                      Export as PDF
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowSummaryModal(false);
+                        setSelectedEmployeeForSummary(null);
+                        setMonthlySummary(null);
+                      }}
+                      className="rounded-xl border border-slate-200 bg-white px-6 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-12 text-center text-slate-500 dark:text-slate-400">
+                  No summary data available
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      }
+
+      {/* Type-Specific Summary Modal */}
+      {showTypeSummaryModal && typeSummaryData && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+            <div className="p-6 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/50">
+              <div>
+                <h3 className="text-xl font-bold text-slate-900 dark:text-white capitalize">
+                  {typeSummaryData.type.replace('_', ' ')} Details
+                </h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  {typeSummaryData.item.employee.employee_name} • {monthNames[month - 1]} {year}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowTypeSummaryModal(false)}
+                className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 transition-colors"
+              >
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6">
+              <div className="rounded-xl border border-slate-200 overflow-hidden dark:border-slate-700 shadow-sm">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-700 dark:text-slate-300">
+                    <tr>
+                      <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">Date</th>
+                      {typeSummaryData.type === 'in_out' ? (
+                        <>
+                          <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">In Time</th>
+                          <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">Out Time</th>
+                        </>
+                      ) : typeSummaryData.type === 'ot' || typeSummaryData.type === 'extra' ? (
+                        <>
+                          <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">OT Hours</th>
+                          <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">Extra Hours</th>
+                        </>
+                      ) : typeSummaryData.type === 'leaves' ? (
+                        <>
+                          <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">Leave Type</th>
+                          <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">Reason</th>
+                        </>
+                      ) : typeSummaryData.type === 'od' ? (
+                        <>
+                          <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">OD Type</th>
+                          <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">Place/Purpose</th>
+                        </>
+                      ) : (
+                        <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">Status</th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {Object.entries(typeSummaryData.item.dailyAttendance)
+                      .filter(([_, record]) => {
+                        if (!record) return false;
+                        if (typeSummaryData.type === 'present') return record.status === 'PRESENT' || record.status === 'PARTIAL';
+                        if (typeSummaryData.type === 'absent') return record.status === 'ABSENT' || (!record.status && !record.hasLeave && !record.hasOD);
+                        if (typeSummaryData.type === 'leaves') return record.hasLeave;
+                        if (typeSummaryData.type === 'od') return record.hasOD;
+                        if (typeSummaryData.type === 'ot') return (record.otHours || 0) > 0;
+                        if (typeSummaryData.type === 'extra') return (record.extraHours || 0) > 0;
+                        if (typeSummaryData.type === 'permission') return (record.permissionCount || 0) > 0;
+                        if (typeSummaryData.type === 'in_out') return !!record.inTime;
+                        return true;
+                      })
+                      .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
+                      .map(([date, record]) => (
+                        <tr key={date} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                          <td className="px-4 py-3 font-medium text-slate-900 dark:text-white">
+                            {new Date(date).toLocaleDateString(undefined, { day: '2-digit', month: 'short', weekday: 'short' })}
+                          </td>
+                          {typeSummaryData.type === 'in_out' ? (
+                            <>
+                              <td className="px-4 py-3 text-green-600 font-semibold">{record?.inTime ? formatTime(record.inTime) : '-'}</td>
+                              <td className="px-4 py-3 text-red-600 font-semibold">{record?.outTime ? formatTime(record.outTime) : '-'}</td>
+                            </>
+                          ) : typeSummaryData.type === 'ot' || typeSummaryData.type === 'extra' ? (
+                            <>
+                              <td className="px-4 py-3 text-orange-600 font-bold">{record?.otHours?.toFixed(1) || '0.0'}</td>
+                              <td className="px-4 py-3 text-purple-600 font-bold">{record?.extraHours?.toFixed(1) || '0.0'}</td>
+                            </>
+                          ) : typeSummaryData.type === 'leaves' ? (
+                            <>
+                              <td className="px-4 py-3 font-semibold text-orange-600">{record?.leaveInfo?.leaveType || 'Leave'}</td>
+                              <td className="px-4 py-3 text-slate-500 truncate max-w-[200px]" title={record?.leaveInfo?.purpose || ''}>{record?.leaveInfo?.purpose || '-'}</td>
+                            </>
+                          ) : typeSummaryData.type === 'od' ? (
+                            <>
+                              <td className="px-4 py-3 font-semibold text-indigo-600">{record?.odInfo?.odType || 'OD'}</td>
+                              <td className="px-4 py-3 text-slate-500 truncate max-w-[200px]" title={`${record?.odInfo?.placeVisited || ''} ${record?.odInfo?.purpose || ''}`}>
+                                {record?.odInfo?.placeVisited || record?.odInfo?.purpose || '-'}
+                              </td>
+                            </>
+                          ) : (
+                            <td className="px-4 py-3 font-semibold">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] ${record?.status === 'PRESENT' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                {record?.status || 'ABSENT'}
+                              </span>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    {Object.entries(typeSummaryData.item.dailyAttendance).filter(([_, record]) => {
+                      if (!record) return false;
+                      if (typeSummaryData.type === 'present') return record.status === 'PRESENT' || record.status === 'PARTIAL';
+                      if (typeSummaryData.type === 'absent') return record.status === 'ABSENT' || (!record.status && !record.hasLeave && !record.hasOD);
+                      if (typeSummaryData.type === 'leaves') return record.hasLeave;
+                      if (typeSummaryData.type === 'od') return record.hasOD;
+                      if (typeSummaryData.type === 'ot') return (record.otHours || 0) > 0;
+                      if (typeSummaryData.type === 'extra') return (record.extraHours || 0) > 0;
+                      if (typeSummaryData.type === 'permission') return (record.permissionCount || 0) > 0;
+                      if (typeSummaryData.type === 'in_out') return !!record.inTime;
+                      return true;
+                    }).length === 0 && (
+                        <tr>
+                          <td colSpan={3} className="px-4 py-8 text-center text-slate-400 italic">No records found for this category.</td>
+                        </tr>
+                      )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 flex justify-end">
+              <button
+                onClick={() => setShowTypeSummaryModal(false)}
+                className="px-6 py-2 bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl font-bold hover:bg-slate-300 dark:hover:bg-slate-600 transition-all shadow-sm"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}
-    </div>
+
+      {/* Payslip Modal */}
+      {
+
+        showPayslipModal && selectedEmployeeForPayslip !== null && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="w-full max-w-5xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900 print:shadow-none print:max-w-full print:rounded-none">
+              <div className="mb-4 flex items-center justify-between print:hidden">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Payslip</h3>
+                <div className="flex items-center gap-2">
+                  {error && error.includes('not found') && (
+                    <button
+                      onClick={handleCalculatePayroll}
+                      disabled={calculatingPayroll}
+                      className="rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:from-blue-600 hover:to-indigo-700 disabled:opacity-50"
+                    >
+                      {calculatingPayroll ? 'Calculating...' : 'Calculate Payroll'}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      setShowPayslipModal(false);
+                      setSelectedEmployeeForPayslip(null);
+                      setPayslipData(null);
+                      setError('');
+                    }}
+                    className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
+                  >
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              {loadingPayslip ? (
+                <div className="flex items-center justify-center p-12">
+                  <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
+                </div>
+              ) : error && !error.includes('not found') ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200">
+                  {error}
+                </div>
+              ) : payslipData ? (
+                <div className="space-y-4 print:space-y-3">
+                  {/* Payslip Header */}
+                  <div className="border-b-2 border-slate-300 pb-3 dark:border-slate-600">
+                    <h2 className="text-center text-xl font-bold text-slate-900 dark:text-white">
+                      PAYSLIP FOR THE MONTH OF: {(() => {
+                        const monthStr = payslipData.month || `${monthNames[month - 1]} ${year}`;
+                        // Format as "DEC 19" style
+                        const monthMatch = monthStr.match(/(\w+)\s+(\d{4})/);
+                        if (monthMatch) {
+                          const monthName = monthMatch[1].substring(0, 3).toUpperCase();
+                          const yearShort = monthMatch[2].substring(2);
+                          return `${monthName} ${yearShort}`;
+                        }
+                        return monthStr.toUpperCase();
+                      })()}
+                    </h2>
+                  </div>
+
+                  {/* Employee Details - Matching exact format from image */}
+                  <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
+                    <div className="flex">
+                      <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">Emp Code:</span>
+                      <span className="text-slate-900 dark:text-white">{payslipData.employee?.emp_no || '-'}</span>
+                    </div>
+                    <div className="flex">
+                      <span className="font-semibold text-slate-700 dark:text-slate-300 w-32">Emp Name:</span>
+                      <span className="text-slate-900 dark:text-white">{payslipData.employee?.name || '-'}</span>
+                    </div>
+                    <div className="flex">
+                      <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">Department:</span>
+                      <span className="text-slate-900 dark:text-white">{payslipData.employee?.department || '-'}</span>
+                    </div>
+                    <div className="flex">
+                      <span className="font-semibold text-slate-700 dark:text-slate-300 w-32">Designation:</span>
+                      <span className="text-slate-900 dark:text-white">{payslipData.employee?.designation || '-'}</span>
+                    </div>
+                    <div className="flex">
+                      <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">Location:</span>
+                      <span className="text-slate-900 dark:text-white">{payslipData.employee?.location || '-'}</span>
+                    </div>
+                    <div className="flex">
+                      <span className="font-semibold text-slate-700 dark:text-slate-300 w-32">Bank A/c No.:</span>
+                      <span className="text-slate-900 dark:text-white">{payslipData.employee?.bank_account_no || '-'}</span>
+                    </div>
+                    <div className="flex">
+                      <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">PAID LEAVES:</span>
+                      <span className="text-slate-900 dark:text-white">{payslipData.employee?.paidLeaves || 0}</span>
+                    </div>
+                    <div className="flex">
+                      <span className="font-semibold text-slate-700 dark:text-slate-300 w-32">PAID DAYS:</span>
+                      <span className="font-bold text-slate-900 dark:text-white">{payslipData.paidDays || payslipData.totalPayableShifts || 0}</span>
+                    </div>
+                    <div className="flex">
+                      <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">PF Code No.:</span>
+                      <span className="text-slate-900 dark:text-white">{payslipData.employee?.pf_number || '-'}</span>
+                    </div>
+                    <div className="flex">
+                      <span className="font-semibold text-slate-700 dark:text-slate-300 w-32">PF UAN:</span>
+                      <span className="text-slate-900 dark:text-white">{payslipData.employee?.pf_number || '-'}</span>
+                    </div>
+                    <div className="flex">
+                      <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">ESI No.:</span>
+                      <span className="text-slate-900 dark:text-white">{payslipData.employee?.esi_number || '-'}</span>
+                    </div>
+                  </div>
+
+                  {/* Earnings and Deductions Side by Side */}
+                  <div className="grid grid-cols-2 gap-4">
+                    {/* Earnings Section - Left Side */}
+                    <div className="border border-slate-300 dark:border-slate-600">
+                      <h3 className="border-b border-slate-300 bg-slate-100 px-4 py-2 text-left font-bold text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white">
+                        EARNINGS
+                      </h3>
+                      <div className="divide-y divide-slate-200 dark:divide-slate-700">
+                        <div className="flex justify-between px-4 py-2">
+                          <span className="text-slate-700 dark:text-slate-300">Basic:</span>
+                          <span className="font-semibold text-slate-900 dark:text-white">{payslipData.earnings?.basicPay?.toFixed(2) || '0.00'}</span>
+                        </div>
+                        {/* Map allowances - VDA, HRA, WA, etc. */}
+                        {payslipData.earnings?.allowances && payslipData.earnings.allowances.length > 0 && payslipData.earnings.allowances.map((allowance: any, idx: number) => (
+                          <div key={idx} className="flex justify-between px-4 py-2">
+                            <span className="text-slate-700 dark:text-slate-300">{allowance.name?.toUpperCase() || 'ALLOWANCE'}:</span>
+                            <span className="font-semibold text-slate-900 dark:text-white">{allowance.amount?.toFixed(2) || '0.00'}</span>
+                          </div>
+                        ))}
+                        {payslipData.earnings?.incentive !== 0 && (
+                          <div className="flex justify-between px-4 py-2">
+                            <span className="text-slate-700 dark:text-slate-300">INCENTIVE:</span>
+                            <span className="font-semibold text-slate-900 dark:text-white">{payslipData.earnings?.incentive?.toFixed(2) || '0.00'}</span>
+                          </div>
+                        )}
+                        {payslipData.earnings?.otPay > 0 && (
+                          <div className="flex justify-between px-4 py-2">
+                            <span className="text-slate-700 dark:text-slate-300">OT PAY:</span>
+                            <span className="font-semibold text-slate-900 dark:text-white">{payslipData.earnings?.otPay?.toFixed(2) || '0.00'}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between border-t-2 border-slate-300 bg-slate-100 px-4 py-2 font-bold dark:border-slate-600 dark:bg-slate-800">
+                          <span className="text-slate-900 dark:text-white">Gross Salary Rs.:</span>
+                          <span className="text-slate-900 dark:text-white">{payslipData.earnings?.grossSalary?.toFixed(2) || '0.00'}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Deductions Section - Right Side */}
+                    <div className="border border-slate-300 dark:border-slate-600">
+                      <h3 className="border-b border-slate-300 bg-slate-100 px-4 py-2 text-left font-bold text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white">
+                        DEDUCTIONS
+                      </h3>
+                      <div className="divide-y divide-slate-200 dark:divide-slate-700">
+                        {/* Other deductions first (PF, ESIC, TDS, etc.) */}
+                        {payslipData.deductions?.otherDeductions && payslipData.deductions.otherDeductions.length > 0 && payslipData.deductions.otherDeductions.map((deduction: any, idx: number) => (
+                          <div key={idx} className="flex justify-between px-4 py-2">
+                            <span className="text-slate-700 dark:text-slate-300">{deduction.name || 'Deduction'}:</span>
+                            <span className="font-semibold text-red-600 dark:text-red-400">{deduction.amount?.toFixed(2) || '0.00'}</span>
+                          </div>
+                        ))}
+                        {/* TDS - if exists in other deductions, otherwise show if configured */}
+                        {payslipData.deductions?.attendanceDeduction > 0 && (
+                          <div className="flex justify-between px-4 py-2">
+                            <span className="text-slate-700 dark:text-slate-300">Attendance Deduction:</span>
+                            <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.deductions.attendanceDeduction.toFixed(2)}</span>
+                          </div>
+                        )}
+                        {payslipData.deductions?.permissionDeduction > 0 && (
+                          <div className="flex justify-between px-4 py-2">
+                            <span className="text-slate-700 dark:text-slate-300">Permission Deduction:</span>
+                            <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.deductions.permissionDeduction.toFixed(2)}</span>
+                          </div>
+                        )}
+                        {payslipData.deductions?.leaveDeduction > 0 && (
+                          <div className="flex justify-between px-4 py-2">
+                            <span className="text-slate-700 dark:text-slate-300">Leave Deduction:</span>
+                            <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.deductions.leaveDeduction.toFixed(2)}</span>
+                          </div>
+                        )}
+                        {payslipData.loanAdvance?.advanceDeduction > 0 && (
+                          <div className="flex justify-between px-4 py-2">
+                            <span className="text-slate-700 dark:text-slate-300">AdV:</span>
+                            <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.loanAdvance.advanceDeduction.toFixed(2)}</span>
+                          </div>
+                        )}
+                        {payslipData.loanAdvance?.totalEMI > 0 && (
+                          <div className="flex justify-between px-4 py-2">
+                            <span className="text-slate-700 dark:text-slate-300">Loan EMI:</span>
+                            <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.loanAdvance.totalEMI.toFixed(2)}</span>
+                          </div>
+                        )}
+                        {/* BANK PAY and CASH PAY - these would be calculated from net salary */}
+                        <div className="flex justify-between border-t-2 border-slate-300 bg-slate-100 px-4 py-2 font-bold dark:border-slate-600 dark:bg-slate-800">
+                          <span className="text-slate-900 dark:text-white">Total Deductions:</span>
+                          <span className="text-red-600 dark:text-red-400">
+                            {((payslipData.deductions?.totalDeductions || 0) + (payslipData.loanAdvance?.totalEMI || 0) + (payslipData.loanAdvance?.advanceDeduction || 0)).toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Net Salary and Payment Details */}
+                  <div className="space-y-3">
+                    {/* Net Salary */}
+                    <div className="border-2 border-green-500 bg-green-50 p-3 dark:border-green-600 dark:bg-green-900/20">
+                      <div className="flex justify-between items-center">
+                        <span className="text-lg font-bold text-green-900 dark:text-green-200">Net Salary:</span>
+                        <span className="text-2xl font-bold text-green-900 dark:text-green-200">{payslipData.netSalary?.toFixed(2) || '0.00'}</span>
+                      </div>
+                    </div>
+
+                    {/* Rupees In Words */}
+                    <div className="border border-slate-300 bg-slate-50 px-4 py-2 dark:border-slate-600 dark:bg-slate-800">
+                      <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Rupees In Words:</span>
+                      <span className="ml-2 text-sm text-slate-900 dark:text-white">{numberToWords(payslipData.netSalary || 0)}</span>
+                    </div>
+                  </div>
+
+                  {/* Print Button */}
+                  <div className="flex justify-end gap-3 print:hidden">
+                    <button
+                      onClick={() => window.print()}
+                      className="rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 px-6 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:from-blue-600 hover:to-indigo-700"
+                    >
+                      Print Payslip
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-yellow-800 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-200">
+                  {error || 'Payslip not found. Please calculate payroll first.'}
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      }
+    </div >
   );
 }
 

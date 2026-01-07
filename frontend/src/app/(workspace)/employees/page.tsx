@@ -812,7 +812,7 @@ export default function EmployeesPage() {
           }
           return {
             ...emp,
-            status: emp.leftDate ? 'Left' : (emp.is_active !== false ? 'Active' : 'Inactive'),
+            status: emp.leftDate ? 'Left' : ((emp.is_active === false || emp.is_active === 'false' || emp.is_active === 0) ? 'Inactive' : 'Active'),
             paidLeaves,
           };
         });
@@ -1283,16 +1283,69 @@ export default function EmployeesPage() {
   };
 
   const handleDeactivate = async (empNo: string, currentStatus: boolean) => {
-    const action = currentStatus ? 'deactivate' : 'activate';
-    if (!confirm(`Are you sure you want to ${action} this employee?`)) return;
+    // Legacy support: if currentStatus is false (inactive), route to handleActivate for clarity
+    if (!currentStatus) {
+      return handleActivate(empNo);
+    }
+
+    if (!confirm(`Are you sure you want to deactivate this employee?`)) return;
 
     try {
-      const response = await api.updateEmployee(empNo, { is_active: !currentStatus });
+      setError('');
+      setSuccess('');
+      const response = await api.updateEmployee(empNo, { is_active: false });
+
       if (response.success) {
-        setSuccess(`Employee ${action}d successfully!`);
-        loadEmployees();
+        // Optimistic update
+        setEmployees(prev => prev.map(e => {
+          if (e.emp_no === empNo) {
+            return { ...e, is_active: false, status: 'Inactive' };
+          }
+          return e;
+        }));
+
+        let msg = `Employee deactivated successfully!`;
+        if ((response as any).syncError) {
+          msg += ` (MSSQL sync failed, but local update succeeded: ${(response as any).syncError})`;
+        }
+        setSuccess(msg);
+        // Force reload to update UI status immediately
+        await loadEmployees();
       } else {
-        setError(response.message || `Failed to ${action} employee`);
+        setError(response.message || `Failed to deactivate employee`);
+      }
+    } catch (err) {
+      setError('An error occurred');
+      console.error(err);
+    }
+  };
+
+  const handleActivate = async (empNo: string) => {
+    if (!confirm('Are you sure you want to activate this employee?')) return;
+
+    try {
+      setError('');
+      setSuccess('');
+      const response = await api.updateEmployee(empNo, { is_active: true });
+
+      if (response.success) {
+        // Optimistic update
+        setEmployees(prev => prev.map(e => {
+          if (e.emp_no === empNo) {
+            return { ...e, is_active: true, status: 'Active' };
+          }
+          return e;
+        }));
+
+        let msg = 'Employee activated successfully!';
+        if ((response as any).syncError) {
+          msg += ` (MSSQL sync failed, but local update succeeded: ${(response as any).syncError})`;
+        }
+        setSuccess(msg);
+        // Force reload to update UI status immediately
+        await loadEmployees();
+      } else {
+        setError(response.message || 'Failed to activate employee');
       }
     } catch (err) {
       setError('An error occurred');
@@ -2278,7 +2331,11 @@ export default function EmployeesPage() {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleDeactivate(employee.emp_no, employee.is_active !== false);
+                                if (employee.is_active !== false) {
+                                  handleDeactivate(employee.emp_no, true);
+                                } else {
+                                  handleActivate(employee.emp_no);
+                                }
                               }}
                               className={`rounded-lg p-2 transition-all ${employee.is_active !== false
                                 ? 'text-slate-400 hover:bg-orange-50 hover:text-orange-600 dark:hover:bg-orange-900/30 dark:hover:text-orange-400'

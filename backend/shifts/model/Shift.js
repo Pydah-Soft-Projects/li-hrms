@@ -54,6 +54,10 @@ const shiftSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    color: {
+      type: String,
+      default: '#3b82f6', // Default blue-500
+    },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
@@ -86,31 +90,31 @@ shiftSchema.methods.calculateDuration = function () {
 
 // Validate duration against allowed durations before saving
 shiftSchema.pre('save', async function () {
-    // Calculate duration if not set
-    if (!this.duration || this.isModified('startTime') || this.isModified('endTime')) {
-      this.duration = this.calculateDuration();
-    }
+  // Calculate duration if not set
+  if (!this.duration || this.isModified('startTime') || this.isModified('endTime')) {
+    this.duration = this.calculateDuration();
+  }
 
-    // Validate against allowed durations from ShiftDuration model
-    // Use mongoose.model to avoid circular dependency
-    if (mongoose.models.ShiftDuration) {
-      const ShiftDuration = mongoose.model('ShiftDuration');
-      const allowedDurations = await ShiftDuration.find({ isActive: true }).select('duration');
+  // Validate against allowed durations from ShiftDuration model
+  // Use mongoose.model to avoid circular dependency
+  if (mongoose.models.ShiftDuration) {
+    const ShiftDuration = mongoose.model('ShiftDuration');
+    const allowedDurations = await ShiftDuration.find({ isActive: true }).select('duration');
 
-      if (allowedDurations && allowedDurations.length > 0) {
-        const durationValues = allowedDurations.map((d) => d.duration);
-        const isAllowed = durationValues.some(
-          (allowed) => Math.abs(allowed - this.duration) < 0.01 // Allow small floating point differences
-        );
+    if (allowedDurations && allowedDurations.length > 0) {
+      const durationValues = allowedDurations.map((d) => d.duration);
+      const isAllowed = durationValues.some(
+        (allowed) => Math.abs(allowed - this.duration) < 0.01 // Allow small floating point differences
+      );
 
-        if (!isAllowed) {
+      if (!isAllowed) {
         throw new Error(
-              `Duration ${this.duration} hours is not allowed. Allowed durations: ${durationValues.join(', ')} hours`
-          );
-        }
+          `Duration ${this.duration} hours is not allowed. Allowed durations: ${durationValues.join(', ')} hours`
+        );
       }
     }
-    // If ShiftDuration model doesn't exist yet, skip validation (for initial setup)
+  }
+  // If ShiftDuration model doesn't exist yet, skip validation (for initial setup)
 });
 
 module.exports = mongoose.models.Shift || mongoose.model('Shift', shiftSchema);

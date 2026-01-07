@@ -10,11 +10,88 @@ interface Manager {
     email: string;
 }
 
-interface Manager {
-    _id: string;
-    name: string;
-    email: string;
+// Helper Components
+function StatCard({ title, value, icon, trend, color }: {
+    title: string;
+    value: number;
+    icon: React.ReactNode;
+    trend: string;
+    color: 'emerald' | 'amber' | 'blue' | 'indigo';
+}) {
+    const gradients = {
+        emerald: 'from-emerald-500 to-emerald-600 shadow-emerald-500/20',
+        amber: 'from-amber-500 to-amber-600 shadow-amber-500/20',
+        blue: 'from-blue-500 to-blue-600 shadow-blue-500/20',
+        indigo: 'from-indigo-500 to-indigo-600 shadow-indigo-500/20',
+    };
+
+    const bgColors = {
+        emerald: 'bg-emerald-50 border-emerald-100',
+        amber: 'bg-amber-50 border-amber-100',
+        blue: 'bg-blue-50 border-blue-100',
+        indigo: 'bg-indigo-50 border-indigo-100',
+    };
+
+    return (
+        <div className="relative p-3 md:p-6 rounded-2xl md:rounded-3xl transition-all duration-300 hover:shadow-xl hover:-translate-y-1 group bg-white border border-slate-100 shadow-sm">
+            <div className="flex items-start justify-between mb-2 md:mb-6">
+                <div className={`w-10 h-10 md:w-14 md:h-14 rounded-xl md:rounded-2xl bg-gradient-to-br ${gradients[color]} flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform duration-300`}>
+                    {React.isValidElement(icon) ? React.cloneElement(icon as React.ReactElement<any>, { className: 'w-5 h-5 md:w-7 md:h-7' }) : icon}
+                </div>
+            </div>
+            <div>
+                <p className="text-slate-500 font-semibold text-[9px] md:text-sm mb-0.5 md:mb-1 uppercase tracking-wider truncate">{title}</p>
+                <h3 className="text-xl md:text-4xl font-black text-slate-900 tracking-tight">{value}</h3>
+                <div className={`mt-1.5 md:mt-4 inline-flex items-center gap-1 md:gap-2 px-1.5 py-0.5 md:px-3 md:py-1 rounded-full text-[8px] md:text-xs font-bold ${bgColors[color]} text-${color}-700`}>
+                    {trend}
+                </div>
+            </div>
+        </div>
+    );
 }
+
+// Icons
+const EditIcon = () => (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+    </svg>
+);
+
+const TrashIcon = () => (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+    </svg>
+);
+
+const UserIcon = ({ className = "w-4 h-4" }) => (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+    </svg>
+);
+
+const BuildingIcon = ({ className = "w-6 h-6" }) => (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+    </svg>
+);
+
+const UsersIcon = ({ className = "w-6 h-6" }) => (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+    </svg>
+);
+
+const ArrowPathIcon = ({ className = "w-6 h-6" }) => (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+    </svg>
+);
+
+const CheckBadgeIcon = ({ className = "w-6 h-6" }) => (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+    </svg>
+);
 
 export default function DivisionsPage() {
     const [divisions, setDivisions] = useState<Division[]>([]);
@@ -281,61 +358,160 @@ export default function DivisionsPage() {
 
     return (
         <div className="relative min-h-screen">
+            {/* Background Pattern */}
             <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(to_right,#e2e8f01f_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f01f_1px,transparent_1px)] bg-[size:28px_28px] dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.12)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.12)_1px,transparent_1px)]" />
-            <div className="pointer-events-none fixed inset-0 bg-gradient-to-br from-blue-50/40 via-indigo-50/35 to-transparent dark:from-slate-900/60 dark:via-slate-900/65 dark:to-slate-900/80" />
 
-            <div className="relative z-10 p-6 sm:p-8 lg:p-10">
-                <div className="mb-8 flex flex-wrap items-center justify-between gap-4 rounded-3xl border border-slate-200/80 bg-white/95 px-6 py-5 shadow-[0_8px_26px_rgba(30,64,175,0.08)] backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/90 sm:px-8">
-                    <div>
-                        <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100 sm:text-3xl">Division Management</h1>
-                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Manage organizational units and their hierarchies</p>
-                    </div>
-                    <button
-                        onClick={() => { resetForm(); setShowCreateDialog(true); }}
-                        className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 hover:shadow-xl hover:shadow-blue-500/40"
-                    >
-                        <span className="text-lg">+</span>
-                        <span>Create Division</span>
-                    </button>
-                </div>
+            <div className="relative z-10 space-y-3 md:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 bg-green-50 p-2 md:p-6 rounded-xl md:rounded-[2rem] mx-4 my-4 md:mx-8 md:my-8 border border-slate-200/50">
+                {/* Header Section - Dashboard Style */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2 md:gap-6">
+                    {/* Page Role Card */}
+                    <div className="md:col-span-1 bg-white p-3 md:p-6 rounded-xl md:rounded-3xl shadow-sm border border-slate-100 relative overflow-hidden group hover:shadow-md transition-shadow">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-50 to-white rounded-full -mr-10 -mt-10 blur-2xl transition-all duration-500 group-hover:bg-blue-100/60" />
 
-                <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                    {divisions.map((div) => (
-                        <div key={div._id} className="group relative rounded-3xl border border-slate-200/80 bg-white/80 p-6 shadow-md backdrop-blur-sm transition-all hover:scale-[1.02] hover:shadow-xl dark:border-slate-800 dark:bg-slate-900/80">
-                            <div className="mb-4 flex items-start justify-between">
-                                <div>
-                                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">{div.name}</h3>
-                                    <span className="inline-block rounded-lg bg-blue-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-blue-700 dark:bg-blue-900/40 dark:text-blue-400">{div.code}</span>
-                                </div>
-                                <div className="flex gap-2">
-                                    <button onClick={() => { setShowEditDialog(div); setName(div.name); setCode(div.code); setDescription(div.description || ''); setManagerId(typeof div.manager === 'string' ? div.manager : div.manager?._id || ''); }} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-blue-600 dark:hover:bg-slate-800"><EditIcon /></button>
-                                    <button onClick={() => handleDeleteDivision(div._id)} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-red-600 dark:hover:bg-slate-800"><TrashIcon /></button>
-                                </div>
+                        <div className="relative z-10 flex items-center h-full gap-3 md:gap-5">
+                            <div className="w-12 h-12 md:w-16 md:h-16 md:ml-4 rounded-xl md:rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/20 ring-2 md:ring-4 ring-blue-50 shrink-0">
+                                <BuildingIcon className="w-6 h-6 md:w-8 md:h-8" />
                             </div>
-
-                            {div.description && <p className="mb-4 text-sm text-slate-500 line-clamp-2">{div.description}</p>}
-
-                            <div className="space-y-3 border-t border-slate-100 pt-4 dark:border-slate-800">
-                                <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-                                    <UserIcon /> <span className="font-medium">Manager:</span> {div.manager ? div.manager.name : 'Not Assigned'}
-                                </div>
-                                <div className="flex flex-wrap gap-2 text-xs">
-                                    <button
-                                        onClick={() => { setShowLinkDeptDialog(div); setSelectedDeptIds(div.departments?.map(d => typeof d === 'string' ? d : d._id) || []); }}
-                                        className="rounded-lg bg-indigo-50 px-3 py-2 font-medium text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-400"
-                                    >
-                                        {div.departments?.length || 0} Departments
-                                    </button>
-                                    <button
-                                        onClick={() => openShiftDialog(div)}
-                                        className="rounded-lg bg-amber-50 px-3 py-2 font-medium text-amber-700 hover:bg-amber-100 dark:bg-amber-900/30 dark:text-amber-400"
-                                    >
-                                        Assign Shifts
-                                    </button>
+                            <div className="flex flex-col justify-center">
+                                <p className="text-slate-500 font-medium text-[10px] md:text-xs uppercase tracking-wider mb-0.5">Organization</p>
+                                <h3 className="text-lg md:text-2xl font-black text-slate-900 tracking-tight capitalize">
+                                    Divisions
+                                </h3>
+                                <div className="flex items-center gap-2 mt-1">
+                                    <span className="text-xs font-semibold text-slate-400">Master Control</span>
                                 </div>
                             </div>
                         </div>
-                    ))}
+                    </div>
+
+                    {/* Action Card */}
+                    <div className="md:col-span-2 bg-gradient-to-br from-blue-500 to-indigo-600 p-3 md:p-8 rounded-xl md:rounded-3xl shadow-lg shadow-blue-500/20 border border-blue-400/20 relative overflow-hidden group">
+                        <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-10 -mt-10 blur-3xl transition-all duration-500 group-hover:bg-white/20" />
+
+                        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between h-full gap-4">
+                            <div>
+                                <h3 className="text-xl md:text-2xl font-bold text-white mb-1">Structure Your Workspace</h3>
+                                <p className="text-blue-100 text-sm md:text-base opacity-90">Create and manage top-level organizational units to group your departments and workforce.</p>
+                            </div>
+                            <button
+                                onClick={() => { resetForm(); setShowCreateDialog(true); }}
+                                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-6 py-4 text-sm font-bold text-blue-600 shadow-xl transition-all hover:scale-105 active:scale-95 whitespace-nowrap"
+                            >
+                                <span className="text-xl">+</span>
+                                <span>Create Division</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Stats Grid */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-6">
+                    <StatCard
+                        title="Total Units"
+                        value={divisions.length}
+                        icon={<BuildingIcon />}
+                        trend="Active divisions"
+                        color="blue"
+                    />
+                    <StatCard
+                        title="Linked Depts"
+                        value={divisions.reduce((acc, div) => acc + (div.departments?.length || 0), 0)}
+                        icon={<UsersIcon />}
+                        trend="Across all units"
+                        color="emerald"
+                    />
+                    <StatCard
+                        title="Avg. Hierarchy"
+                        value={divisions.length ? Math.round(divisions.reduce((acc, div) => acc + (div.departments?.length || 0), 0) / divisions.length) : 0}
+                        icon={<ArrowPathIcon />}
+                        trend="Depts per division"
+                        color="amber"
+                    />
+                    <StatCard
+                        title="Governance"
+                        value={divisions.filter(d => d.manager).length}
+                        icon={<CheckBadgeIcon />}
+                        trend="Units with manager"
+                        color="indigo"
+                    />
+                </div>
+
+                {/* Main Content Area */}
+                <div className="bg-white rounded-3xl border border-slate-100 p-4 md:p-8 shadow-sm">
+                    <div className="flex items-center justify-between mb-8">
+                        <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                            <span className="w-1.5 h-6 bg-blue-500 rounded-full" />
+                            Organizational Units
+                        </h2>
+                        <span className="text-xs font-semibold text-slate-400 uppercase tracking-widest">{divisions.length} Divisions Found</span>
+                    </div>
+
+                    <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3">
+                        {divisions.map((div) => (
+                            <div key={div._id} className="group relative flex flex-col p-5 md:p-6 rounded-2xl md:rounded-3xl bg-white border border-slate-100 hover:border-blue-200 hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
+                                <div className="flex items-start justify-between mb-6">
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center font-black shadow-inner border border-blue-100 group-hover:scale-110 transition-transform">
+                                            {div.code.substring(0, 2)}
+                                        </div>
+                                        <div>
+                                            <h3 className="text-lg font-bold text-slate-900 tracking-tight group-hover:text-blue-600 transition-colors">{div.name}</h3>
+                                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{div.code}</span>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button onClick={() => { setShowEditDialog(div); setName(div.name); setCode(div.code); setDescription(div.description || ''); setManagerId(typeof div.manager === 'string' ? div.manager : div.manager?._id || ''); }} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"><EditIcon /></button>
+                                        <button onClick={() => handleDeleteDivision(div._id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"><TrashIcon /></button>
+                                    </div>
+                                </div>
+
+                                {div.description && (
+                                    <p className="text-sm text-slate-500 line-clamp-2 mb-6 min-h-[40px]">
+                                        {div.description}
+                                    </p>
+                                )}
+
+                                <div className="mt-auto space-y-4">
+                                    <div className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-100/50">
+                                        <div className="w-8 h-8 rounded-xl bg-white flex items-center justify-center text-slate-400 shadow-sm">
+                                            <UserIcon className="w-4 h-4" />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Manager</p>
+                                            <p className="text-sm font-bold text-slate-700 truncate">{div.manager ? (typeof div.manager === 'string' ? div.manager : (div.manager as any).name) : 'Vacant Position'}</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <button
+                                            onClick={() => { setShowLinkDeptDialog(div); setSelectedDeptIds(div.departments?.map(d => typeof d === 'string' ? d : d._id) || []); }}
+                                            className="flex flex-col items-center justify-center p-3 rounded-2xl bg-indigo-50/50 border border-indigo-100/50 hover:bg-indigo-50 hover:border-indigo-200 transition-all group/btn"
+                                        >
+                                            <span className="text-lg font-black text-indigo-600">{div.departments?.length || 0}</span>
+                                            <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Departments</span>
+                                        </button>
+                                        <button
+                                            onClick={() => openShiftDialog(div)}
+                                            className="flex flex-col items-center justify-center p-3 rounded-2xl bg-amber-50/50 border border-amber-100/50 hover:bg-amber-50 hover:border-amber-200 transition-all group/btn"
+                                        >
+                                            <span className="text-lg font-black text-amber-600 tracking-tighter">Assign</span>
+                                            <span className="text-[10px] font-bold text-amber-400 uppercase tracking-widest">Shifts</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+
+                        {divisions.length === 0 && (
+                            <div className="col-span-full py-20 text-center">
+                                <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
+                                    <BuildingIcon className="w-10 h-10" />
+                                </div>
+                                <h3 className="text-xl font-bold text-slate-900">No divisions yet</h3>
+                                <p className="text-slate-500 mt-2">Start by creating your first organizational unit.</p>
+                            </div>
+                        )}
+                    </div>
                 </div>
 
                 {/* Create/Edit Dialog */}
@@ -510,21 +686,4 @@ export default function DivisionsPage() {
     );
 }
 
-// Re-using icons from User page
-const EditIcon = () => (
-    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-    </svg>
-);
-
-const TrashIcon = () => (
-    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-    </svg>
-);
-
-const UserIcon = () => (
-    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-    </svg>
-);
+// End of file
