@@ -12,7 +12,8 @@ const {
 } = require('../services/leaveConflictService');
 const {
   buildWorkflowVisibilityFilter,
-  getEmployeeIdsInScope
+  getEmployeeIdsInScope,
+  checkJurisdiction
 } = require('../../shared/middleware/dataScopeMiddleware');
 
 /**
@@ -1057,55 +1058,19 @@ exports.processLeaveAction = async (req, res) => {
           leave.department?.toString() === req.user.department?.toString();
         canProcess = isDeptMatch;
       }
-    } else if (requiredRole === 'manager') {
-      if (userRole === 'manager') {
-        // Manager Scope Logic
-        const leaveDivisionId = leave.division_id ? leave.division_id.toString() : null;
-        const leaveDepartmentId = leave.department ? leave.department.toString() : null;
+    } else if (requiredRole === 'manager' || requiredRole === 'hr' || requiredRole === 'final_authority') {
+      // Logic for Manager and HR (Scoped Roles)
+      if (userRole === requiredRole || (requiredRole === 'final_authority' && (userRole === 'hr' || userRole === 'super_admin'))) {
+        // Use req.scopedUser if available (from middleware), otherwise fetch
+        const fullUser = req.scopedUser || await User.findById(req.user.userId || req.user._id);
 
-        let isScopeMatch = false;
-
-        if (leaveDivisionId) {
-          // Check Allowed Divisions
-          const allowedDivisions = req.user.allowedDivisions || [];
-          const isDivisionScoped = allowedDivisions.some(div =>
-            (typeof div === 'string' ? div : div._id.toString()) === leaveDivisionId
-          );
-          if (isDivisionScoped) isScopeMatch = true;
-
-          // Check Division Mapping
-          if (!isScopeMatch && req.user.divisionMapping && req.user.divisionMapping.length > 0) {
-            const mapping = req.user.divisionMapping.find(m =>
-              (typeof m.division === 'string' ? m.division : m.division._id.toString()) === leaveDivisionId
-            );
-            if (mapping) {
-              if (!mapping.departments || mapping.departments.length === 0) {
-                isScopeMatch = true;
-              } else if (leaveDepartmentId) {
-                isScopeMatch = mapping.departments.some(d =>
-                  (typeof d === 'string' ? d : d._id.toString()) === leaveDepartmentId
-                );
-              }
-            }
-          }
-        }
-
-        // Direct Department Assignment
-        if (!isScopeMatch && req.user.departments && req.user.departments.length > 0 && leaveDepartmentId) {
-          isScopeMatch = req.user.departments.some(d =>
-            (typeof d === 'string' ? d : d._id.toString()) === leaveDepartmentId
-          );
-        }
-
-        canProcess = isScopeMatch;
+        // Enforce Centralized Jurisdictional Check
+        canProcess = checkJurisdiction(fullUser, leave);
       }
-    } else if (requiredRole === 'final_authority') {
-      // Usually HR acts as final authority unless specified
-      if (userRole === 'hr' || userRole === 'super_admin') canProcess = true;
     }
 
-    // 3. Admin Override (Super Admins/Sub Admins/Managers can generally approve any step)
-    if (['sub_admin', 'super_admin', 'manager'].includes(userRole)) {
+    // 3. Admin Override (Super Admins and Sub Admins can generally approve any step)
+    if (['sub_admin', 'super_admin'].includes(userRole)) {
       canProcess = true;
     }
 

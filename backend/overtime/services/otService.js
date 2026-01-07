@@ -11,6 +11,7 @@ const Employee = require('../../employees/model/Employee');
 const { detectAndAssignShift } = require('../../shifts/services/shiftDetectionService');
 const { calculateMonthlySummary } = require('../../attendance/services/summaryCalculationService');
 const { validateOTRequest } = require('../../shared/services/conflictValidationService');
+const { checkJurisdiction } = require('../../shared/middleware/dataScopeMiddleware');
 const OvertimeSettings = require('../model/OvertimeSettings');
 
 /**
@@ -326,9 +327,22 @@ const approveOTRequest = async (otId, userId, userRole) => {
       const currentStepIndex = workflow.approvalChain.findIndex(step => step.isCurrent);
       const currentStep = workflow.approvalChain[currentStepIndex];
 
-      // 1. Authorization Check
-      if (currentStep.role !== userRole && userRole !== 'super_admin') {
-        return { success: false, message: `Unauthorized. Required: ${currentStep.role.toUpperCase()}` };
+      // 1. Authorization & Scoping Check
+      const User = require('../../users/model/User');
+      const fullUser = await User.findById(userId);
+      if (!fullUser) return { success: false, message: 'User record not found' };
+
+      const myRole = String(userRole || '').toLowerCase().trim();
+      const requiredRole = String(currentStep.role || '').toLowerCase().trim();
+
+      // Basic Role Match
+      if (myRole !== requiredRole && myRole !== 'super_admin') {
+        return { success: false, message: `Unauthorized. Required: ${requiredRole.toUpperCase()}` };
+      }
+
+      // Enforce Centralized Jurisdictional Check
+      if (!checkJurisdiction(fullUser, otRequest)) {
+        return { success: false, message: 'Not authorized. OT request is outside your assigned data scope.' };
       }
 
       // 2. Update Current Step

@@ -7,7 +7,8 @@ const Settings = require('../../settings/model/Settings');
 const { isHRMSConnected, getEmployeeByIdMSSQL } = require('../../employees/config/sqlHelper');
 const {
   buildWorkflowVisibilityFilter,
-  getEmployeeIdsInScope
+  getEmployeeIdsInScope,
+  checkJurisdiction
 } = require('../../shared/middleware/dataScopeMiddleware');
 
 /**
@@ -1101,36 +1102,25 @@ exports.processODAction = async (req, res) => {
     const currentApprover = activeStep.role;
     const requiredRole = currentApprover;
 
-    // Validate user can perform this action
+    // --- Authorization Check (Scoped) ---
+    // Use req.scopedUser if available (from middleware), otherwise fetch full User record
+    const fullUser = req.scopedUser || await User.findById(req.user.userId || req.user._id);
+
+    if (!fullUser) {
+      return res.status(401).json({ success: false, message: 'User record not found' });
+    }
+
+    // Verify user can perform the action on the record's scope using centralized helper
+    // 1. Check if the user's role matches the required role (or is a valid bypass)
     let canProcess = false;
+    const isRoleMatch = userRole === requiredRole || (requiredRole === 'final_authority' && userRole === 'hr');
+    const isGlobalAdmin = ['super_admin', 'sub_admin'].includes(userRole);
 
-    // Normalize roles for comparison
-    const approverRole = String(currentApprover || '').toLowerCase().trim();
-    const myRole = String(userRole || '').toLowerCase().trim();
-
-    // 1. Super Admin / Sub Admin / Manager Override
-    if (['super_admin', 'sub_admin', 'manager'].includes(myRole)) {
+    if (isGlobalAdmin) {
       canProcess = true;
-    }
-    // 2. HR Step
-    else if (approverRole === 'hr' && myRole === 'hr') {
-      canProcess = true;
-    }
-    // 3. Final Authority Step
-    else if (approverRole === 'final_authority') {
-      if (['hr', 'manager', 'hod', 'super_admin', 'sub_admin'].includes(myRole)) {
-        canProcess = true;
-      }
-    }
-    // 4. Manager / HOD / Reporting Manager Steps (Interchangeable for now to ensure flow)
-    else if (['manager', 'hod', 'reporting_manager'].includes(approverRole)) {
-      // Allow Manager or HOD to process these steps if they have scope
-      if (myRole === 'manager' || myRole === 'hod') {
-        // OD logic is often simpler in legacy, but we'll apply basic leniency 
-        canProcess = true;
-
-        // If needed, we can add division checks here similar to LEAVE, but for now allow to unblock 403
-      }
+    } else if (isRoleMatch) {
+      // 2. If roles match, enforce Jurisdictional Check
+      canProcess = checkJurisdiction(fullUser, od);
     }
 
     if (!canProcess) {

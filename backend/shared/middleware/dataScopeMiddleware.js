@@ -104,13 +104,8 @@ function buildScopeFilter(user) {
                 const orConditions = [];
                 user.divisionMapping.forEach(mapping => {
                     // Filter matching Division
-                    const divisionCondition = {
-                        $or: [
-                            { division_id: mapping.division },
-                            // Add 'division' field just in case, though typically it's division_id
-                            { division: mapping.division }
-                        ]
-                    };
+                    const divisionId = typeof mapping.division === 'string' ? mapping.division : mapping.division?._id;
+                    const divisionCondition = createDivisionFilter([divisionId]);
 
                     // Filter matching Departments within Division
                     let departmentCondition = null;
@@ -145,8 +140,29 @@ function buildScopeFilter(user) {
             }
             break;
 
+        case 'hr':
         case 'departments':
-            if (user.departments && user.departments.length > 0) {
+            // Priority 1: Division Mapping (Complex Scoping)
+            if (user.divisionMapping && Array.isArray(user.divisionMapping) && user.divisionMapping.length > 0) {
+                const orConditions = [];
+                user.divisionMapping.forEach(mapping => {
+                    const divisionId = typeof mapping.division === 'string' ? mapping.division : mapping.division?._id;
+                    const divisionCondition = createDivisionFilter([divisionId]);
+                    if (mapping.departments && Array.isArray(mapping.departments) && mapping.departments.length > 0) {
+                        const departmentCondition = createDepartmentFilter(mapping.departments);
+                        orConditions.push({ $and: [divisionCondition, departmentCondition] });
+                    } else {
+                        orConditions.push(divisionCondition);
+                    }
+                });
+                administrativeFilter = orConditions.length === 1 ? orConditions[0] : { $or: orConditions };
+            }
+            // Priority 2: Allowed Divisions (Broad Division Scope)
+            else if (user.allowedDivisions && Array.isArray(user.allowedDivisions) && user.allowedDivisions.length > 0) {
+                administrativeFilter = createDivisionFilter(user.allowedDivisions);
+            }
+            // Priority 3: Specific Departments (Traditional HR Scope)
+            else if (user.departments && user.departments.length > 0) {
                 administrativeFilter = createDepartmentFilter(user.departments);
             }
             break;
@@ -235,49 +251,73 @@ const applyScopeFilter = async (req, res, next) => {
 };
 
 /**
- * Helper to check if user has access to specific resource
+ * Centralized Jurisdictional Helper
+ * Verifies if a record falls within the user's assigned administrative data scope.
+ * @param {Object} user - User object from req.scopedUser or full database fetch
+ * @param {Object} record - The document (Leave, OD, OT, Permission) to check
+ * @returns {Boolean} True if authorized, false otherwise
  */
-function hasAccessToResource(user, resource) {
+function checkJurisdiction(user, record) {
+    if (!user || !record) return false;
+
+    // 1. Global Bypass (Super Admin / Sub Admin / Global HR)
+    if (user.role === 'super_admin' || user.role === 'sub_admin' || user.dataScope === 'all') {
+        return true;
+    }
+
+    // 2. Ownership (Applicants can always access their own records)
+    const isOwner =
+        record.employeeId?.toString() === user.employeeRef?.toString() ||
+        record.emp_no === user.employeeId ||
+        record.employeeNumber === user.employeeId ||
+        record.appliedBy?.toString() === user._id?.toString();
+
+    if (isOwner) return true;
+
+    // 3. Organizational Scope Enforcement
+    // Capture IDs from record (dual-field support)
+    const resDivId = record.division_id?.toString() || record.division?.toString();
+    const resDeptId = (record.department_id || record.department)?.toString();
+
     const scope = user.dataScope || getDefaultScope(user.role);
 
-    if (scope === 'all' || user.role === 'super_admin') return true;
-
     switch (scope) {
-        case 'own':
-            return (
-                resource._id?.toString() === user.employeeRef?.toString() ||
-                resource.employeeId?.toString() === user.employeeRef?.toString() ||
-                resource.emp_no === user.employeeId
-            );
-
-        case 'division':
+        case 'hr':
         case 'divisions':
+        case 'division':
+            // Priority 1: Division Mapping (Complex Scoping)
             if (user.divisionMapping && Array.isArray(user.divisionMapping) && user.divisionMapping.length > 0) {
-                return user.divisionMapping.some(mapping => {
-                    const matchDivision = resource.division_id?.toString() === mapping.division?.toString();
+                const hasMappingMatch = user.divisionMapping.some(mapping => {
+                    const matchDivision = resDivId === (mapping.division?._id || mapping.division)?.toString();
                     if (!matchDivision) return false;
+
                     // If departments array is empty, access to all departments in that division
                     if (!mapping.departments || mapping.departments.length === 0) return true;
 
-                    // Support dual field names for department match
-                    const resourceDeptId = (resource.department_id || resource.department)?.toString();
-                    return mapping.departments.some(d => d.toString() === resourceDeptId);
+                    // Support department match
+                    return mapping.departments.some(d => d.toString() === resDeptId);
                 });
+                if (hasMappingMatch) return true;
             }
-            if (user.allowedDivisions && user.allowedDivisions.length > 0) {
-                return user.allowedDivisions.some(d => d.toString() === resource.division_id?.toString());
-            }
-            // Fallback (Support dual field names)
-            const fallbackDeptId = (resource.department_id || resource.department)?.toString();
-            return user.departments?.some(d => d.toString() === fallbackDeptId);
 
-        case 'department':
-            const singleDeptId = (resource.department_id || resource.department)?.toString();
-            return singleDeptId === user.department?.toString();
+            // Priority 2: Allowed Divisions (Broad Division Scope)
+            if (user.allowedDivisions && Array.isArray(user.allowedDivisions) && user.allowedDivisions.length > 0) {
+                if (user.allowedDivisions.some(d => d.toString() === resDivId)) return true;
+            }
+
+            // Priority 3: Fallback to departments (for 'hr' or backup)
+            if (scope === 'hr' || scope === 'departments') {
+                if (user.departments?.some(d => d.toString() === resDeptId)) return true;
+                if (user.department?.toString() === resDeptId) return true;
+            }
+            return false;
 
         case 'departments':
-            const multiDeptId = (resource.department_id || resource.department)?.toString();
-            return user.departments?.some(d => d.toString() === multiDeptId);
+        case 'department':
+            // Direct Department check
+            if (user.departments?.some(d => d.toString() === resDeptId)) return true;
+            if (user.department?.toString() === resDeptId) return true;
+            return false;
 
         default:
             return false;
@@ -307,11 +347,13 @@ async function getEmployeeIdsInScope(user) {
         divisionMapping.forEach(m => {
             const divId = typeof m.division === 'string' ? m.division : m.division?._id;
             if (divId) {
-                const divCondition = { division_id: divId };
+                const divCondition = createDivisionFilter([divId]);
                 if (m.departments && Array.isArray(m.departments) && m.departments.length > 0) {
-                    divCondition.department_id = { $in: m.departments };
+                    const deptFilter = createDepartmentFilter(m.departments);
+                    orConditions.push({ $and: [divCondition, deptFilter] });
+                } else {
+                    orConditions.push(divCondition);
                 }
-                orConditions.push(divCondition);
             }
         });
     }
@@ -338,7 +380,7 @@ module.exports = {
     applyScopeFilter,
     buildScopeFilter,
     buildWorkflowVisibilityFilter,
-    hasAccessToResource,
+    checkJurisdiction,
     getDefaultScope,
     getEmployeeIdsInScope
 };
