@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { api, Division, Department, Designation, Shift } from '@/lib/api';
 import Spinner from '@/components/Spinner';
 

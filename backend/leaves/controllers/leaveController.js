@@ -1020,30 +1020,6 @@ exports.getPendingApprovals = async (req, res) => {
         // To be safe, we'll return nothing if no scope is found but role is manager
         // But for now let's just stick to the role check if scope is missing (legacy behavior), 
         // effectively treating them as global manager if no restrictions
-        filter['$or'] = nextApproverCondition;
-    // 2, 3, 4: Scoped Roles (HOD, HR, Manager)
-    else if (['hod', 'hr', 'manager'].includes(userRole)) {
-      // 1. Role-based turn check
-      if (userRole === 'hr') {
-        filter['$or'] = [
-          { 'workflow.nextApprover': { $in: ['hr', 'final_authority'] } },
-          { 'workflow.nextApproverRole': { $in: ['hr', 'final_authority'] } }
-        ];
-      } else {
-        filter['$or'] = [
-          { 'workflow.nextApprover': userRole },
-          { 'workflow.nextApproverRole': userRole }
-        ];
-      }
-
-      // 2. Strict Employee-First Scope Match
-      const employeeIds = await getEmployeeIdsInScope(req.user);
-
-      if (employeeIds.length > 0) {
-        filter.employeeId = { $in: employeeIds };
-      } else {
-        console.warn(`[GetPendingApprovals] User ${req.user._id} (${userRole}) has no employees in scope.`);
-        filter.employeeId = { $in: [] };
       }
     }
     // 5. Generic / Custom Role: View leaves explicitly assigned to this role

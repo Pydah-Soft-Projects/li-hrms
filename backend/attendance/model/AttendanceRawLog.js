@@ -30,7 +30,7 @@ const attendanceRawLogSchema = new mongoose.Schema(
     },
     source: {
       type: String,
-      enum: ['mssql', 'excel', 'manual', 'biometric-realtime'],
+      enum: ['mssql', 'excel', 'manual', 'biometric-realtime', 'excel-legacy'],
       required: [true, 'Source is required'],
     },
     rawData: {
