@@ -38,6 +38,26 @@ const permissionSchema = new mongoose.Schema(
       default: null,
     },
 
+    // Division at the time of application
+    division_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Division',
+    },
+    division_name: {
+      type: String,
+      trim: true,
+    },
+
+    // Department at the time of application
+    department_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Department',
+    },
+    department_name: {
+      type: String,
+      trim: true,
+    },
+
     // Permission time range
     permissionStartTime: {
       type: Date,

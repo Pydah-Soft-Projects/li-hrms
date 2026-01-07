@@ -231,11 +231,23 @@ const LeaveSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Division',
     },
+    division_name: {
+      type: String,
+      trim: true,
+    },
 
     // Department at the time of application
     department: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Department',
+    },
+    department_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Department',
+    },
+    department_name: {
+      type: String,
+      trim: true,
     },
 
     // Designation at the time of application

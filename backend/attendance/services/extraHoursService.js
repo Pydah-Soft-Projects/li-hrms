@@ -74,40 +74,40 @@ const detectExtraHours = async (employeeNumber, date) => {
     const [shiftStartHour, shiftStartMin] = shift.startTime.split(':').map(Number);
     const shiftStartMinutes = shiftStartHour * 60 + shiftStartMin;
     const shiftEndMinutes = shiftEndHour * 60 + shiftEndMin;
-    
+
     // Check if this is an overnight shift (end time < start time in minutes)
     // This means shift spans midnight (e.g., 20:00-04:00, 22:00-06:00, etc.)
     // Works for ANY shift that crosses midnight, not just 20:00+
     const isOvernight = shiftEndMinutes < shiftStartMinutes;
-    
+
     // Get grace period from shift (default 15 minutes)
     const gracePeriodMinutes = shift.gracePeriod || 15;
-    
+
     // Get out-time as Date object (ensure it's a proper Date object)
-    const outTimeDate = attendanceRecord.outTime instanceof Date 
-      ? new Date(attendanceRecord.outTime) 
+    const outTimeDate = attendanceRecord.outTime instanceof Date
+      ? new Date(attendanceRecord.outTime)
       : new Date(attendanceRecord.outTime);
-    
+
     // Parse the attendance date string (YYYY-MM-DD) - this is the shift start date
     const dateParts = date.split('-');
     const attendanceYear = parseInt(dateParts[0], 10);
     const attendanceMonth = parseInt(dateParts[1], 10) - 1; // Month is 0-indexed
     const attendanceDay = parseInt(dateParts[2], 10);
-    
+
     // Get out-time's date components (in local timezone to match shift end time)
     const outTimeYear = outTimeDate.getFullYear();
     const outTimeMonth = outTimeDate.getMonth();
     const outTimeDay = outTimeDate.getDate();
     const outTimeHour = outTimeDate.getHours();
     const outTimeMinute = outTimeDate.getMinutes();
-    
+
     // Determine the correct date for shift end time
     // For same-day shifts: shift end is on the same date as shift start
     // For overnight shifts: shift end is on the next day from shift start
     let shiftEndYear = attendanceYear;
     let shiftEndMonth = attendanceMonth;
     let shiftEndDay = attendanceDay;
-    
+
     if (isOvernight) {
       // For overnight shifts, end time is on the next day relative to shift start
       // Example: Shift starts Dec 6 20:00, ends Dec 7 04:00
@@ -118,21 +118,21 @@ const detectExtraHours = async (employeeNumber, date) => {
       shiftEndMonth = shiftStartDate.getMonth();
       shiftEndDay = shiftStartDate.getDate();
     }
-    
+
     // Create shift end time using the determined date
     // Use local timezone to match outTime's local representation
     const shiftEndTime = new Date(shiftEndYear, shiftEndMonth, shiftEndDay, shiftEndHour, shiftEndMin, 0, 0);
-    
+
     // Add grace period to shift end time for extra hours calculation
     // Extra hours only count AFTER the grace period (shift end + grace period)
     const shiftEndWithGrace = new Date(shiftEndTime);
     shiftEndWithGrace.setMinutes(shiftEndWithGrace.getMinutes() + gracePeriodMinutes);
-    
+
     // Convert both to timestamps for accurate comparison (milliseconds since epoch)
     // This ensures timezone-independent comparison
     const shiftEndWithGraceTimestamp = shiftEndWithGrace.getTime();
     const outTimeTimestamp = outTimeDate.getTime();
-    
+
     console.log(`[ExtraHours] ========================================`);
     console.log(`[ExtraHours] Employee: ${employeeNumber}, Attendance Date: ${date}`);
     console.log(`[ExtraHours] Shift: ${shift.startTime} - ${shift.endTime}, Overnight: ${isOvernight}`);
@@ -153,8 +153,15 @@ const detectExtraHours = async (employeeNumber, date) => {
     // Extra hours start counting AFTER the grace period
     if (outTimeTimestamp > shiftEndWithGraceTimestamp) {
       const diffMs = outTimeTimestamp - shiftEndWithGraceTimestamp;
-      const extraHours = Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100;
-      
+      let extraHours = Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100;
+
+      // SANITY CHECK: Excel 1899/2026 date mismatch can cause millions of hours
+      // We cap extra hours at 16 hours. Anything more is likely a data error.
+      if (extraHours > 16) {
+        console.warn(`[ExtraHours] ⚠️ Absurd extra hours detected (${extraHours}). Capping to 0 to prevent data corruption. Check date mismatch.`);
+        extraHours = 0;
+      }
+
       console.log(`[ExtraHours] ✓ Extra hours calculated: ${extraHours} hours (${Math.round(diffMs / (1000 * 60))} minutes after grace period)`);
       console.log(`[ExtraHours] Current extraHours in record: ${attendanceRecord.extraHours || 0}`);
       console.log(`[ExtraHours] Current otHours in record: ${attendanceRecord.otHours || 0}`);
@@ -163,13 +170,13 @@ const detectExtraHours = async (employeeNumber, date) => {
       // (OT hours take precedence - if OT is approved, don't count as extra hours)
       if (extraHours > 0 && (!attendanceRecord.otHours || attendanceRecord.otHours === 0)) {
         const previousExtraHours = attendanceRecord.extraHours || 0;
-        
+
         // Only update if the value has changed
         if (Math.abs(previousExtraHours - extraHours) > 0.01) {
           attendanceRecord.extraHours = extraHours;
           attendanceRecord.markModified('extraHours'); // Ensure Mongoose recognizes the change
           await attendanceRecord.save();
-          
+
           console.log(`[ExtraHours] ✓ Updated extra hours from ${previousExtraHours} to ${extraHours}`);
         } else {
           console.log(`[ExtraHours] Extra hours unchanged: ${extraHours} (already set to ${previousExtraHours})`);
@@ -179,10 +186,10 @@ const detectExtraHours = async (employeeNumber, date) => {
         const dateObj = new Date(date);
         const year = dateObj.getFullYear();
         const monthNumber = dateObj.getMonth() + 1;
-        
+
         const Employee = require('../../employees/model/Employee');
         const employee = await Employee.findOne({ emp_no: attendanceRecord.employeeNumber, is_active: { $ne: false } });
-        
+
         if (employee) {
           await calculateMonthlySummary(employee._id, employee.emp_no, year, monthNumber);
         }
@@ -204,7 +211,7 @@ const detectExtraHours = async (employeeNumber, date) => {
 
     // No extra hours - outTime is before or equal to shift end + grace period
     console.log(`[ExtraHours] No extra hours: OutTime (${outTimeDate.toISOString()}) <= ShiftEnd+Grace (${shiftEndWithGrace.toISOString()})`);
-    
+
     if (attendanceRecord.extraHours > 0) {
       // Clear extra hours if outTime is now before shift end + grace period
       console.log(`[ExtraHours] Clearing existing extra hours: ${attendanceRecord.extraHours}`);
@@ -215,10 +222,10 @@ const detectExtraHours = async (employeeNumber, date) => {
       const dateObj = new Date(date);
       const year = dateObj.getFullYear();
       const monthNumber = dateObj.getMonth() + 1;
-      
+
       const Employee = require('../../employees/model/Employee');
       const employee = await Employee.findOne({ emp_no: attendanceRecord.employeeNumber, is_active: { $ne: false } });
-      
+
       if (employee) {
         await calculateMonthlySummary(employee._id, employee.emp_no, year, monthNumber);
       }

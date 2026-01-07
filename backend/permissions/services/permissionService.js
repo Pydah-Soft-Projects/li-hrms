@@ -9,6 +9,7 @@ const Employee = require('../../employees/model/Employee');
 const { calculateMonthlySummary } = require('../../attendance/services/summaryCalculationService');
 const { validatePermissionRequest } = require('../../shared/services/conflictValidationService');
 const { getResolvedPermissionSettings } = require('../../departments/controllers/departmentSettingsController');
+const { checkJurisdiction } = require('../../shared/middleware/dataScopeMiddleware');
 const PermissionDeductionSettings = require('../model/PermissionDeductionSettings');
 
 /**
@@ -47,6 +48,12 @@ const createPermissionRequest = async (data, userId) => {
         message: 'Employee not found',
       };
     }
+
+    // Populate division and department for snapshotting
+    await employee.populate([
+      { path: 'division_id', select: 'name' },
+      { path: 'department_id', select: 'name' }
+    ]);
 
     // Ensure times are Date objects
     const startTime = permissionStartTime instanceof Date ? permissionStartTime : new Date(permissionStartTime);
@@ -190,6 +197,10 @@ const createPermissionRequest = async (data, userId) => {
       employeeNumber: employeeNumber.toUpperCase(),
       date: date,
       attendanceRecordId: attendanceRecord._id,
+      division_id: employee.division_id?._id || employee.division_id,
+      division_name: employee.division_id?.name || 'N/A',
+      department_id: employee.department_id?._id || employee.department_id,
+      department_name: employee.department_id?.name || 'N/A',
       permissionStartTime: startTime,
       permissionEndTime: endTime,
       permissionHours: permissionHours,
@@ -249,9 +260,22 @@ const approvePermissionRequest = async (permissionId, userId, baseUrl = '', user
       const currentStepIndex = workflow.approvalChain.findIndex(step => step.isCurrent);
       const currentStep = workflow.approvalChain[currentStepIndex];
 
-      // 1. Authorization Check
-      if (currentStep.role !== userRole && userRole !== 'super_admin') {
-        return { success: false, message: `Unauthorized. Required: ${currentStep.role.toUpperCase()}` };
+      // 1. Authorization & Scoping Check
+      const User = require('../../users/model/User');
+      const fullUser = await User.findById(userId);
+      if (!fullUser) return { success: false, message: 'User record not found' };
+
+      const myRole = String(userRole || '').toLowerCase().trim();
+      const requiredRole = String(currentStep.role || '').toLowerCase().trim();
+
+      // Basic Role Match
+      if (myRole !== requiredRole && myRole !== 'super_admin') {
+        return { success: false, message: `Unauthorized. Required: ${requiredRole.toUpperCase()}` };
+      }
+
+      // Enforce Centralized Jurisdictional Check
+      if (!checkJurisdiction(fullUser, permissionRequest)) {
+        return { success: false, message: 'Not authorized. Permission request is outside your assigned data scope.' };
       }
 
       // 2. Update Current Step

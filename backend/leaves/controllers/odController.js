@@ -5,7 +5,11 @@ const Employee = require('../../employees/model/Employee');
 const User = require('../../users/model/User');
 const Settings = require('../../settings/model/Settings');
 const { isHRMSConnected, getEmployeeByIdMSSQL } = require('../../employees/config/sqlHelper');
-const { buildWorkflowVisibilityFilter } = require('../../shared/middleware/dataScopeMiddleware');
+const {
+  buildWorkflowVisibilityFilter,
+  getEmployeeIdsInScope,
+  checkJurisdiction
+} = require('../../shared/middleware/dataScopeMiddleware');
 
 /**
  * Get employee settings from database
@@ -290,17 +294,25 @@ exports.applyOD = async (req, res) => {
       // Check if user has permission to apply for others
       // Allow hod, hr, sub_admin, super_admin to apply for anyone (Global Logic)
       // Manager is handled separately with detailed scoping
-      const isGlobalAdmin = ['hod', 'hr', 'sub_admin', 'super_admin'].includes(req.user.role);
-      const isManager = req.user.role === 'manager';
+      const isGlobalAdmin = ['hr', 'sub_admin', 'super_admin'].includes(req.user.role);
+      const isScopedAdmin = ['hod', 'manager'].includes(req.user.role);
 
       console.log(`[Apply OD] User ${req.user._id} (${req.user.role}) applying for employee ${empNo}`);
 
       // 1. GLOBAL ADMIN CHECK
       if (isGlobalAdmin) {
         console.log(`[Apply OD] ✅ Global Admin Authorization granted`);
+        // We still need the employee for data populating later
+        employee = await findEmployeeByEmpNo(empNo);
+        if (employee) {
+          await employee.populate([
+            { path: 'division_id', select: 'name' },
+            { path: 'department_id', select: 'name' }
+          ]);
+        }
       }
-      // 2. MANAGER SCOPING CHECK
-      else if (isManager) {
+      // 2. SCOPED ADMIN CHECK (HOD/Manager)
+      else if (isScopedAdmin) {
         // Find employee to check their division/department
         // We need to fetch the employee *before* authorization in this specific case to check scope
         const targetEmployee = await findEmployeeByEmpNo(empNo);
@@ -312,40 +324,60 @@ exports.applyOD = async (req, res) => {
           });
         }
 
-        // --- ENFORCE MANAGER SCOPE ---
+        // Populate division and department for scope check and snapshotting
+        await targetEmployee.populate([
+          { path: 'division_id', select: 'name' },
+          { path: 'department_id', select: 'name' }
+        ]);
+
+        employee = targetEmployee;
+
+        // --- ENFORCE SCOPE ---
         const { allowedDivisions, divisionMapping } = req.user;
 
         // A. Division Check
-        // Check if employee's division is in manager's allowedDivisions
         const employeeDivisionId = targetEmployee.division_id?.toString();
         const isDivisionScoped = allowedDivisions?.some(divId => divId.toString() === employeeDivisionId);
 
-        // B. Department Check (if division is allowed)
-        let isDepartmentScoped = true; // Default true if only division match needed
+        // B. Department Check
+        let isDepartmentScoped = false;
+        const targetDeptId = (targetEmployee.department_id || targetEmployee.department)?.toString();
 
-        if (isDivisionScoped && divisionMapping && divisionMapping.length > 0) {
-          // Find mapping for this division
-          const mapping = divisionMapping.find(m => m.division?.toString() === employeeDivisionId);
-
-          // If mapping exists and has restricted departments, check them
-          if (mapping && mapping.departments && mapping.departments.length > 0) {
-            const employeeDeptId = (targetEmployee.department_id || targetEmployee.department)?.toString();
-            isDepartmentScoped = mapping.departments.some(d => d.toString() === employeeDeptId);
+        if (isDivisionScoped) {
+          if (!divisionMapping || divisionMapping.length === 0) {
+            isDepartmentScoped = true; // All departments in this division
+          } else {
+            const mapping = divisionMapping.find(m => m.division?.toString() === employeeDivisionId);
+            if (mapping) {
+              if (!mapping.departments || mapping.departments.length === 0) {
+                isDepartmentScoped = true;
+              } else {
+                isDepartmentScoped = mapping.departments.some(d => d.toString() === targetDeptId);
+              }
+            }
           }
-          // If mapping exists but departments array is empty -> Access to ALL departments in this division (implied true)
         }
 
-        console.log(`[Apply OD] Manager Scope Check: Div(${employeeDivisionId}) Allowed? ${isDivisionScoped}. Dept Allowed? ${isDepartmentScoped}`);
+        // Direct Department Check (common for HOD or unmapped Manager)
+        if (!isDepartmentScoped) {
+          if (req.user.department && req.user.department.toString() === targetDeptId) {
+            isDepartmentScoped = true;
+          } else if (req.user.departments && req.user.departments.length > 0) {
+            isDepartmentScoped = req.user.departments.some(d => d.toString() === targetDeptId);
+          }
+        }
 
-        if (!isDivisionScoped || !isDepartmentScoped) {
-          console.log(`[Apply OD] ❌ Manager blocked from applying for employee ${empNo} outside scope.`);
+        console.log(`[Apply OD] ${req.user.role} Scope Check: Div(${employeeDivisionId}) Allowed? ${isDivisionScoped}. Dept Allowed? ${isDepartmentScoped}`);
+
+        if (!isDivisionScoped && !isDepartmentScoped) {
+          console.log(`[Apply OD] ❌ ${req.user.role} blocked from applying for employee ${empNo} outside scope.`);
           return res.status(403).json({
             success: false,
             error: 'You are not authorized to apply for employees outside your assigned data scope (Division/Department).'
           });
         }
 
-        console.log(`[Apply OD] ✅ Manager Authorization granted (Scoped)`);
+        console.log(`[Apply OD] ✅ ${req.user.role} Authorization granted (Scoped)`);
         // Store found employee to avoid re-fetching
         employee = targetEmployee;
 
@@ -597,8 +629,11 @@ exports.applyOD = async (req, res) => {
       contactNumber,
       expectedOutcome,
       travelDetails,
-      division_id: employee.division_id, // Save division at time of application
-      department: employee.department_id || employee.department, // Support both field names
+      division_id: employee.division_id?._id || employee.division_id, // Save division at time of application
+      division_name: employee.division_id?.name || 'N/A',
+      department: employee.department_id?._id || employee.department_id || employee.department, // Support both field names
+      department_id: employee.department_id?._id || employee.department_id,
+      department_name: employee.department_id?.name || 'N/A',
       designation: employee.designation_id || employee.designation, // Support both field names
       appliedBy: req.user._id,
       appliedAt: new Date(),
@@ -1000,8 +1035,36 @@ exports.getPendingApprovals = async (req, res) => {
         { 'workflow.nextApproverRole': { $in: ['hr', 'final_authority'] } }
       ];
     } else if (['sub_admin', 'super_admin'].includes(userRole)) {
+    // 1. Super Admin / Sub Admin: View all non-final ODs
+    if (['sub_admin', 'super_admin'].includes(userRole)) {
       filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
-    } else {
+    }
+    // 2, 3, 4: Scoped Roles (HOD, HR, Manager)
+    else if (['hod', 'hr', 'manager'].includes(userRole)) {
+      // Role-based turn check
+      if (userRole === 'hr') {
+        filter['$or'] = [
+          { 'workflow.nextApprover': { $in: ['hr', 'final_authority'] } },
+          { 'workflow.nextApproverRole': { $in: ['hr', 'final_authority'] } }
+        ];
+      } else {
+        filter['$or'] = [
+          { 'workflow.nextApprover': userRole },
+          { 'workflow.nextApproverRole': userRole }
+        ];
+      }
+
+      // Strict Employee-First Scope Match
+      const employeeIds = await getEmployeeIdsInScope(req.user);
+
+      if (employeeIds.length > 0) {
+        filter.employeeId = { $in: employeeIds };
+      } else {
+        console.warn(`[GetPendingApprovals] User ${req.user._id} (${userRole}) has no employees in scope.`);
+        filter.employeeId = { $in: [] };
+      }
+    }
+    else {
       return res.status(403).json({
         success: false,
         error: 'Not authorized to view pending approvals',
@@ -1072,36 +1135,25 @@ exports.processODAction = async (req, res) => {
     const currentApprover = activeStep.role;
     const requiredRole = currentApprover;
 
-    // Validate user can perform this action
+    // --- Authorization Check (Scoped) ---
+    // Use req.scopedUser if available (from middleware), otherwise fetch full User record
+    const fullUser = req.scopedUser || await User.findById(req.user.userId || req.user._id);
+
+    if (!fullUser) {
+      return res.status(401).json({ success: false, message: 'User record not found' });
+    }
+
+    // Verify user can perform the action on the record's scope using centralized helper
+    // 1. Check if the user's role matches the required role (or is a valid bypass)
     let canProcess = false;
+    const isRoleMatch = userRole === requiredRole || (requiredRole === 'final_authority' && userRole === 'hr');
+    const isGlobalAdmin = ['super_admin', 'sub_admin'].includes(userRole);
 
-    // Normalize roles for comparison
-    const approverRole = String(currentApprover || '').toLowerCase().trim();
-    const myRole = String(userRole || '').toLowerCase().trim();
-
-    // 1. Super Admin / Sub Admin / Manager Override
-    if (['super_admin', 'sub_admin', 'manager'].includes(myRole)) {
+    if (isGlobalAdmin) {
       canProcess = true;
-    }
-    // 2. HR Step
-    else if (approverRole === 'hr' && myRole === 'hr') {
-      canProcess = true;
-    }
-    // 3. Final Authority Step
-    else if (approverRole === 'final_authority') {
-      if (['hr', 'manager', 'hod', 'super_admin', 'sub_admin'].includes(myRole)) {
-        canProcess = true;
-      }
-    }
-    // 4. Manager / HOD / Reporting Manager Steps (Interchangeable for now to ensure flow)
-    else if (['manager', 'hod', 'reporting_manager'].includes(approverRole)) {
-      // Allow Manager or HOD to process these steps if they have scope
-      if (myRole === 'manager' || myRole === 'hod') {
-        // OD logic is often simpler in legacy, but we'll apply basic leniency 
-        canProcess = true;
-
-        // If needed, we can add division checks here similar to LEAVE, but for now allow to unblock 403
-      }
+    } else if (isRoleMatch) {
+      // 2. If roles match, enforce Jurisdictional Check
+      canProcess = checkJurisdiction(fullUser, od);
     }
 
     if (!canProcess) {
