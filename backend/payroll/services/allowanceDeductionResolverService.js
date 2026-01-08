@@ -7,10 +7,10 @@ const deductionService = require('./deductionService');
  * Resolve the "include missing employee components" flag.
  * Department setting overrides global. Default = true (current behavior).
  */
-async function getIncludeMissingFlag(departmentId) {
+async function getIncludeMissingFlag(departmentId, divisionId = null) {
   try {
     if (departmentId) {
-      const deptSettings = await DepartmentSettings.findOne({ department: departmentId });
+      const deptSettings = await DepartmentSettings.getByDeptAndDiv(departmentId, divisionId);
       if (
         deptSettings?.payroll &&
         (deptSettings.payroll.includeMissingEmployeeComponents === true ||
@@ -36,12 +36,12 @@ async function getIncludeMissingFlag(departmentId) {
  * Resolve absent deduction settings (enable + lopDaysPerAbsent) with department override then global fallback.
  * Defaults: enable=false, lopDaysPerAbsent=1.
  */
-async function getAbsentDeductionSettings(departmentId) {
+async function getAbsentDeductionSettings(departmentId, divisionId = null) {
   const defaults = { enableAbsentDeduction: false, lopDaysPerAbsent: 1 };
   try {
-    // Department override
+    // Department/Division override
     if (departmentId) {
-      const deptSettings = await DepartmentSettings.findOne({ department: departmentId });
+      const deptSettings = await DepartmentSettings.getByDeptAndDiv(departmentId, divisionId);
       const hasEnable =
         deptSettings?.payroll &&
         (deptSettings.payroll.enableAbsentDeduction === true ||
@@ -193,9 +193,9 @@ function mergeWithOverrides(baseList = [], overrides = [], includeMissing = true
 }
 
 /**
- * Build base (dept/global) allowances and deductions for a given salary context.
+ * Build base (dept/division/global) allowances and deductions for a given salary context.
  */
-async function buildBaseComponents(departmentId, grossSalary, attendanceData = null) {
+async function buildBaseComponents(departmentId, grossSalary, attendanceData = null, divisionId = null) {
   const basicPay = grossSalary || 0;
 
   // Allowances: two passes (basic-based and gross-based), mirroring payroll
@@ -223,7 +223,8 @@ async function buildBaseComponents(departmentId, grossSalary, attendanceData = n
     departmentId ? departmentId.toString() : null,
     basicPay,
     grossSalary,
-    attendanceData
+    attendanceData,
+    divisionId
   );
 
   return { allowances, deductions };
@@ -232,9 +233,9 @@ async function buildBaseComponents(departmentId, grossSalary, attendanceData = n
 /**
  * Resolve effective allowances/deductions for an employee (or for defaults when overrides are empty).
  */
-async function resolveForEmployee({ departmentId, grossSalary, employeeAllowances = [], employeeDeductions = [] }) {
-  const includeMissing = await getIncludeMissingFlag(departmentId);
-  const base = await buildBaseComponents(departmentId, grossSalary);
+async function resolveForEmployee({ departmentId, grossSalary, employeeAllowances = [], employeeDeductions = [], divisionId = null }) {
+  const includeMissing = await getIncludeMissingFlag(departmentId, divisionId);
+  const base = await buildBaseComponents(departmentId, grossSalary, null, divisionId);
 
   const mergedAllowances = mergeWithOverrides(base.allowances, employeeAllowances, includeMissing);
   const mergedDeductions = mergeWithOverrides(base.deductions, employeeDeductions, includeMissing);

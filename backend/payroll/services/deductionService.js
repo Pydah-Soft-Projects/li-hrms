@@ -15,9 +15,9 @@ const AllowanceDeductionMaster = require('../../allowances-deductions/model/Allo
  * @param {String} departmentId - Department ID
  * @returns {Object} Resolved rules
  */
-async function getResolvedPermissionDeductionRules(departmentId) {
+async function getResolvedPermissionDeductionRules(departmentId, divisionId = null) {
   try {
-    const deptSettings = await DepartmentSettings.findOne({ department: departmentId });
+    const deptSettings = await DepartmentSettings.getByDeptAndDiv(departmentId, divisionId);
     const globalSettings = await PermissionDeductionSettings.getActiveSettings();
 
     return {
@@ -44,9 +44,9 @@ async function getResolvedPermissionDeductionRules(departmentId) {
  * @param {String} departmentId - Department ID
  * @returns {Object} Resolved rules
  */
-async function getResolvedAttendanceDeductionRules(departmentId) {
+async function getResolvedAttendanceDeductionRules(departmentId, divisionId = null) {
   try {
-    const deptSettings = await DepartmentSettings.findOne({ department: departmentId });
+    const deptSettings = await DepartmentSettings.getByDeptAndDiv(departmentId, divisionId);
     const globalSettings = await AttendanceDeductionSettings.getActiveSettings();
 
     return {
@@ -111,9 +111,9 @@ function calculateDaysToDeduct(multiplier, remainder, deductionType, customAmoun
  * @param {Number} perDayBasicPay - Per day basic pay
  * @returns {Object} Attendance deduction result
  */
-async function calculateAttendanceDeduction(employeeId, month, departmentId, perDayBasicPay) {
+async function calculateAttendanceDeduction(employeeId, month, departmentId, perDayBasicPay, divisionId = null) {
   try {
-    const rules = await getResolvedAttendanceDeductionRules(departmentId);
+    const rules = await getResolvedAttendanceDeductionRules(departmentId, divisionId);
 
     // If no rules configured, return zero
     if (!rules.combinedCountThreshold || !rules.deductionType || !rules.calculationMode) {
@@ -213,9 +213,9 @@ async function calculateAttendanceDeduction(employeeId, month, departmentId, per
  * @param {Number} perDayBasicPay - Per day basic pay
  * @returns {Object} Permission deduction result
  */
-async function calculatePermissionDeduction(employeeId, month, departmentId, perDayBasicPay) {
+async function calculatePermissionDeduction(employeeId, month, departmentId, perDayBasicPay, divisionId = null) {
   try {
-    const rules = await getResolvedPermissionDeductionRules(departmentId);
+    const rules = await getResolvedPermissionDeductionRules(departmentId, divisionId);
 
     // If no rules configured, return zero
     if (!rules.countThreshold || !rules.deductionType || !rules.calculationMode) {
@@ -328,7 +328,7 @@ function calculateLeaveDeduction(totalLeaves, paidLeaves, totalDaysInMonth, basi
  * @param {String} departmentId - Department ID
  * @returns {Array} Array of deduction master objects with resolved rules
  */
-async function getAllActiveDeductions(departmentId) {
+async function getAllActiveDeductions(departmentId, divisionId = null) {
   try {
     const deductionMasters = await AllowanceDeductionMaster.find({
       category: 'deduction',
@@ -338,7 +338,7 @@ async function getAllActiveDeductions(departmentId) {
     const deductions = [];
 
     for (const master of deductionMasters) {
-      const rule = getResolvedDeductionRule(master, departmentId);
+      const rule = getResolvedDeductionRule(master, departmentId, divisionId);
 
       if (!rule) {
         continue;
@@ -373,10 +373,10 @@ async function getAllActiveDeductions(departmentId) {
  * @param {Number} grossSalary - Gross salary (for percentage base = 'gross')
  * @returns {Array} Array of deduction objects
  */
-async function calculateOtherDeductions(departmentId, basicPay, grossSalary = null, attendanceData = null) {
+async function calculateOtherDeductions(departmentId, basicPay, grossSalary = null, attendanceData = null, divisionId = null) {
   try {
     // Get all active deductions
-    const allDeductions = await getAllActiveDeductions(departmentId);
+    const allDeductions = await getAllActiveDeductions(departmentId, divisionId);
 
     if (allDeductions.length === 0) {
       return [];
@@ -466,10 +466,13 @@ async function calculateOtherDeductions(departmentId, basicPay, grossSalary = nu
  * @param {String} departmentId - Department ID
  * @returns {Object} Resolved rule
  */
-function getResolvedDeductionRule(deductionMaster, departmentId) {
+function getResolvedDeductionRule(deductionMaster, departmentId, divisionId = null) {
   if (!deductionMaster || !deductionMaster.isActive) {
     return null;
   }
+
+  // TODO: Add divisionRules support if needed in AllowanceDeductionMaster
+  // For now, we prioritize departmentRules as before, but this supports division context if passed
 
   // Check for department override
   if (departmentId && deductionMaster.departmentRules && deductionMaster.departmentRules.length > 0) {

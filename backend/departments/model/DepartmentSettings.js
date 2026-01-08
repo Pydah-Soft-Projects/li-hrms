@@ -12,7 +12,13 @@ const departmentSettingsSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Department',
       required: [true, 'Department is required'],
-      unique: true,
+    },
+
+    // Division reference (Optional override for a specific division within a department)
+    division: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Division',
+      default: null,
     },
 
     // Leaves Settings
@@ -355,18 +361,25 @@ const departmentSettingsSchema = new mongoose.Schema(
 );
 
 // Indexes
-departmentSettingsSchema.index({ department: 1 }, { unique: true });
+departmentSettingsSchema.index({ department: 1, division: 1 }, { unique: true });
+departmentSettingsSchema.index({ division: 1 });
 
-// Static method to get settings for a department
-departmentSettingsSchema.statics.getByDepartment = async function (departmentId) {
-  return this.findOne({ department: departmentId });
+// Static method to get settings for a department and division
+departmentSettingsSchema.statics.getByDeptAndDiv = async function (departmentId, divisionId = null) {
+  // First try specific division override
+  if (divisionId) {
+    const divisionSettings = await this.findOne({ department: departmentId, division: divisionId });
+    if (divisionSettings) return divisionSettings;
+  }
+  // Fallback to department-wide default (division: null)
+  return this.findOne({ department: departmentId, division: null });
 };
 
-// Static method to get or create settings for a department
-departmentSettingsSchema.statics.getOrCreate = async function (departmentId) {
-  let settings = await this.findOne({ department: departmentId });
+// Static method to get or create settings for a department/division combination
+departmentSettingsSchema.statics.getOrCreateCombination = async function (departmentId, divisionId = null) {
+  let settings = await this.findOne({ department: departmentId, division: divisionId || null });
   if (!settings) {
-    settings = new this({ department: departmentId });
+    settings = new this({ department: departmentId, division: divisionId || null });
     await settings.save();
   }
   return settings;

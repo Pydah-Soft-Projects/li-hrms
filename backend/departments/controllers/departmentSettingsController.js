@@ -5,16 +5,16 @@ const LoanSettings = require('../../loans/model/LoanSettings');
 
 /**
  * Helper function to get resolved leave settings
- * Returns department settings if available, otherwise global settings
+ * Returns department/division settings if available, otherwise global settings
  */
-async function getResolvedLeaveSettings(departmentId) {
+async function getResolvedLeaveSettings(departmentId, divisionId = null) {
   try {
-    // Get department settings
-    const deptSettings = await DepartmentSettings.findOne({ department: departmentId });
-    
+    // Get department/division settings
+    const deptSettings = await DepartmentSettings.getByDeptAndDiv(departmentId, divisionId);
+
     // Get global leave settings
     const globalSettings = await LeaveSettings.findOne({ type: 'leave', isActive: true });
-    
+
     // Merge: Department settings override global
     const resolved = {
       leavesPerDay: deptSettings?.leaves?.leavesPerDay ?? null,
@@ -22,11 +22,11 @@ async function getResolvedLeaveSettings(departmentId) {
       dailyLimit: deptSettings?.leaves?.dailyLimit ?? null,
       monthlyLimit: deptSettings?.leaves?.monthlyLimit ?? null,
     };
-    
+
     // If department settings are null, use global defaults
     // Note: Global settings don't have leavesPerDay/paidLeavesCount directly
     // These might need to be configured separately or use department defaults
-    
+
     return resolved;
   } catch (error) {
     console.error('Error getting resolved leave settings:', error);
@@ -36,20 +36,20 @@ async function getResolvedLeaveSettings(departmentId) {
 
 /**
  * Helper function to get resolved loan settings
- * Returns department settings if available, otherwise global settings
+ * Returns department/division settings if available, otherwise global settings
  */
-async function getResolvedLoanSettings(departmentId, type = 'loan') {
+async function getResolvedLoanSettings(departmentId, type = 'loan', divisionId = null) {
   try {
-    // Get department settings
-    const deptSettings = await DepartmentSettings.findOne({ department: departmentId });
-    
+    // Get department/division settings
+    const deptSettings = await DepartmentSettings.getByDeptAndDiv(departmentId, divisionId);
+
     // Get global loan settings
     const globalSettings = await LoanSettings.findOne({ type, isActive: true });
-    
+
     // Get the appropriate settings object (loans or salaryAdvance)
     const deptLoanSettings = type === 'loan' ? deptSettings?.loans : deptSettings?.salaryAdvance;
     const globalLoanSettings = globalSettings?.settings || {};
-    
+
     // Merge: Department settings override global
     const resolved = {
       interestRate: deptLoanSettings?.interestRate ?? globalLoanSettings.interestRate ?? 0,
@@ -62,7 +62,7 @@ async function getResolvedLoanSettings(departmentId, type = 'loan') {
       maxActivePerEmployee: deptLoanSettings?.maxActivePerEmployee ?? globalLoanSettings.maxActivePerEmployee ?? 1,
       minServicePeriod: deptLoanSettings?.minServicePeriod ?? globalLoanSettings.minServicePeriod ?? 0,
     };
-    
+
     return resolved;
   } catch (error) {
     console.error('Error getting resolved loan settings:', error);
@@ -72,20 +72,20 @@ async function getResolvedLoanSettings(departmentId, type = 'loan') {
 
 /**
  * Helper function to get resolved permission settings
- * Returns department settings if available, otherwise global settings
+ * Returns department/division settings if available, otherwise global settings
  */
-async function getResolvedPermissionSettings(departmentId) {
+async function getResolvedPermissionSettings(departmentId, divisionId = null) {
   try {
-    // Get department settings
-    const deptSettings = await DepartmentSettings.findOne({ department: departmentId });
-    
+    // Get department/division settings
+    const deptSettings = await DepartmentSettings.getByDeptAndDiv(departmentId, divisionId);
+
     // Get department model for permission policy
     const department = await Department.findById(departmentId);
-    
+
     // Get global permission deduction settings
     const PermissionDeductionSettings = require('../../permissions/model/PermissionDeductionSettings');
     const globalSettings = await PermissionDeductionSettings.getActiveSettings();
-    
+
     // Merge: Department settings override department model defaults and global settings
     const resolved = {
       perDayLimit: deptSettings?.permissions?.perDayLimit ?? department?.permissionPolicy?.dailyLimit ?? 0,
@@ -100,7 +100,7 @@ async function getResolvedPermissionSettings(departmentId) {
         calculationMode: deptSettings?.permissions?.deductionRules?.calculationMode ?? globalSettings?.deductionRules?.calculationMode ?? null,
       },
     };
-    
+
     return resolved;
   } catch (error) {
     console.error('Error getting resolved permission settings:', error);
@@ -110,24 +110,24 @@ async function getResolvedPermissionSettings(departmentId) {
 
 /**
  * Helper function to get resolved OT settings
- * Returns department settings if available, otherwise global settings
+ * Returns department/division settings if available, otherwise global settings
  */
-async function getResolvedOTSettings(departmentId) {
+async function getResolvedOTSettings(departmentId, divisionId = null) {
   try {
-    // Get department settings
-    const deptSettings = await DepartmentSettings.findOne({ department: departmentId });
-    
+    // Get department/division settings
+    const deptSettings = await DepartmentSettings.getByDeptAndDiv(departmentId, divisionId);
+
     // Get global OT settings
     const Settings = require('../../settings/model/Settings');
     const globalPayPerHour = await Settings.findOne({ key: 'ot_pay_per_hour' });
     const globalMinHours = await Settings.findOne({ key: 'ot_min_hours' });
-    
+
     // Merge: Department settings override global
     const resolved = {
       otPayPerHour: deptSettings?.ot?.otPayPerHour ?? (globalPayPerHour?.value || 0),
       minOTHours: deptSettings?.ot?.minOTHours ?? (globalMinHours?.value || 0),
     };
-    
+
     return resolved;
   } catch (error) {
     console.error('Error getting resolved OT settings:', error);
@@ -137,19 +137,19 @@ async function getResolvedOTSettings(departmentId) {
 
 /**
  * Helper function to get resolved attendance deduction settings
- * Returns department settings if available, otherwise global settings
+ * Returns department/division settings if available, otherwise global settings
  */
-async function getResolvedAttendanceSettings(departmentId) {
+async function getResolvedAttendanceSettings(departmentId, divisionId = null) {
   try {
-    // Get department settings
-    const deptSettings = await DepartmentSettings.findOne({ department: departmentId });
-    
+    // Get department/division settings
+    const deptSettings = await DepartmentSettings.getByDeptAndDiv(departmentId, divisionId);
+
     // Get global attendance deduction settings
     const AttendanceDeductionSettings = require('../../attendance/model/AttendanceDeductionSettings');
     const globalSettings = await AttendanceDeductionSettings.getActiveSettings();
     const EarlyOutSettings = require('../../attendance/model/EarlyOutSettings');
     const globalEarlyOut = await EarlyOutSettings.getActiveSettings();
-    
+
     // Merge: Department settings override global
     const resolved = {
       deductionRules: {
@@ -166,7 +166,7 @@ async function getResolvedAttendanceSettings(departmentId) {
         deductionRanges: deptSettings?.attendance?.earlyOut?.deductionRanges?.length ? deptSettings.attendance.earlyOut.deductionRanges : (globalEarlyOut?.deductionRanges || []),
       },
     };
-    
+
     return resolved;
   } catch (error) {
     console.error('Error getting resolved attendance settings:', error);
@@ -182,6 +182,7 @@ async function getResolvedAttendanceSettings(departmentId) {
 exports.getDepartmentSettings = async (req, res) => {
   try {
     const { deptId } = req.params;
+    const { divisionId } = req.query;
 
     // Verify department exists
     const department = await Department.findById(deptId);
@@ -193,18 +194,25 @@ exports.getDepartmentSettings = async (req, res) => {
     }
 
     // Get or create settings
-    let settings = await DepartmentSettings.findOne({ department: deptId });
+    let settings = await DepartmentSettings.findOne({
+      department: deptId,
+      division: divisionId || null
+    });
 
     if (!settings) {
-      // Create default settings
+      // Create default settings for this combination
       settings = new DepartmentSettings({
         department: deptId,
+        division: divisionId || null,
         createdBy: req.user?._id,
       });
       await settings.save();
     }
 
     await settings.populate('department', 'name code');
+    if (settings.division) {
+      await settings.populate('division', 'name');
+    }
     await settings.populate('createdBy', 'name email');
     await settings.populate('updatedBy', 'name email');
 
@@ -230,6 +238,7 @@ exports.getDepartmentSettings = async (req, res) => {
 exports.updateDepartmentSettings = async (req, res) => {
   try {
     const { deptId } = req.params;
+    const { divisionId } = req.query; // Read from query params, not body
     const { leaves, loans, salaryAdvance, permissions, ot, attendance, payroll } = req.body;
 
     // Verify department exists
@@ -242,14 +251,7 @@ exports.updateDepartmentSettings = async (req, res) => {
     }
 
     // Get or create settings
-    let settings = await DepartmentSettings.findOne({ department: deptId });
-
-    if (!settings) {
-      settings = new DepartmentSettings({
-        department: deptId,
-        createdBy: req.user._id,
-      });
-    }
+    let settings = await DepartmentSettings.getOrCreateCombination(deptId, divisionId);
 
     // Update settings
     if (leaves) {
@@ -284,7 +286,7 @@ exports.updateDepartmentSettings = async (req, res) => {
       if (permissions.monthlyLimit !== undefined) settings.permissions.monthlyLimit = permissions.monthlyLimit;
       if (permissions.deductFromSalary !== undefined) settings.permissions.deductFromSalary = permissions.deductFromSalary;
       if (permissions.deductionAmount !== undefined) settings.permissions.deductionAmount = permissions.deductionAmount;
-      
+
       // Update permission deduction rules
       if (permissions.deductionRules) {
         if (permissions.deductionRules.countThreshold !== undefined) {
@@ -357,6 +359,9 @@ exports.updateDepartmentSettings = async (req, res) => {
     await settings.save();
 
     await settings.populate('department', 'name code');
+    if (settings.division) {
+      await settings.populate('division', 'name');
+    }
     await settings.populate('updatedBy', 'name email');
 
     res.status(200).json({
@@ -382,7 +387,7 @@ exports.updateDepartmentSettings = async (req, res) => {
 exports.getResolvedSettings = async (req, res) => {
   try {
     const { deptId } = req.params;
-    const { type } = req.query; // 'leaves', 'loans', 'salary_advance', 'permissions', or 'all'
+    const { type, divisionId } = req.query; // 'leaves', 'loans', 'salary_advance', 'permissions', or 'all'
 
     // Verify department exists
     const department = await Department.findById(deptId);
@@ -396,40 +401,41 @@ exports.getResolvedSettings = async (req, res) => {
     const resolved = {};
 
     if (!type || type === 'all' || type === 'leaves') {
-      resolved.leaves = await getResolvedLeaveSettings(deptId);
+      resolved.leaves = await getResolvedLeaveSettings(deptId, divisionId);
     }
 
     if (!type || type === 'all' || type === 'loans') {
-      resolved.loans = await getResolvedLoanSettings(deptId, 'loan');
+      resolved.loans = await getResolvedLoanSettings(deptId, 'loan', divisionId);
     }
 
     if (!type || type === 'all' || type === 'salary_advance') {
-      resolved.salaryAdvance = await getResolvedLoanSettings(deptId, 'salary_advance');
+      resolved.salaryAdvance = await getResolvedLoanSettings(deptId, 'salary_advance', divisionId);
     }
 
     if (!type || type === 'all' || type === 'permissions') {
-      resolved.permissions = await getResolvedPermissionSettings(deptId);
+      resolved.permissions = await getResolvedPermissionSettings(deptId, divisionId);
     }
 
     if (!type || type === 'all' || type === 'ot' || type === 'overtime') {
-      resolved.ot = await getResolvedOTSettings(deptId);
+      resolved.ot = await getResolvedOTSettings(deptId, divisionId);
     }
 
-  if (!type || type === 'all' || type === 'payroll') {
-    const deptSettings = await DepartmentSettings.findOne({ department: deptId });
-    const globalIncludeMissingSetting = await Settings.findOne({ key: 'include_missing_employee_components' });
-    const includeMissingGlobal =
-      globalIncludeMissingSetting && globalIncludeMissingSetting.value !== undefined && globalIncludeMissingSetting.value !== null
-        ? !!globalIncludeMissingSetting.value
-        : true;
-    resolved.payroll = {
-      includeMissingEmployeeComponents:
-        deptSettings?.payroll?.includeMissingEmployeeComponents !== undefined &&
-        deptSettings?.payroll?.includeMissingEmployeeComponents !== null
-          ? deptSettings.payroll.includeMissingEmployeeComponents
-          : includeMissingGlobal,
-    };
-  }
+    if (!type || type === 'all' || type === 'payroll') {
+      const deptSettings = await DepartmentSettings.getByDeptAndDiv(deptId, divisionId);
+      const Settings = require('../../settings/model/Settings');
+      const globalIncludeMissingSetting = await Settings.findOne({ key: 'include_missing_employee_components' });
+      const includeMissingGlobal =
+        globalIncludeMissingSetting && globalIncludeMissingSetting.value !== undefined && globalIncludeMissingSetting.value !== null
+          ? !!globalIncludeMissingSetting.value
+          : true;
+      resolved.payroll = {
+        includeMissingEmployeeComponents:
+          deptSettings?.payroll?.includeMissingEmployeeComponents !== undefined &&
+            deptSettings?.payroll?.includeMissingEmployeeComponents !== null
+            ? deptSettings.payroll.includeMissingEmployeeComponents
+            : includeMissingGlobal,
+      };
+    }
 
     res.status(200).json({
       success: true,

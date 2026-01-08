@@ -254,7 +254,8 @@ async function calculatePayroll(employeeId, month, userId) {
     console.log(`Total OT Hours: ${attendanceSummary.totalOTHours || 0}`);
     const otPayResult = await otPayService.calculateOTPay(
       attendanceSummary.totalOTHours || 0,
-      departmentId.toString()
+      departmentId.toString(),
+      employee.division_id?.toString() || null
     );
     console.log('OT Pay Result:', JSON.stringify(otPayResult, null, 2));
 
@@ -270,7 +271,8 @@ async function calculatePayroll(employeeId, month, userId) {
       basicPayResult.basicPay,
       null,
       false,
-      attendanceDataForProration
+      attendanceDataForProration,
+      employee.division_id?.toString() || null
     );
     console.log(`Allowances (Basic Base): ${allowances.length} items`);
     allowances.forEach((allow, idx) => {
@@ -292,7 +294,8 @@ async function calculatePayroll(employeeId, month, userId) {
       basicPayResult.basicPay,
       grossSalary,
       true,
-      attendanceDataForProration
+      attendanceDataForProration,
+      employee.division_id?.toString() || null
     );
     console.log(`Allowances (Gross Base): ${allowancesWithGrossBase.length} items`);
     allowancesWithGrossBase.forEach((allow, idx) => {
@@ -301,7 +304,7 @@ async function calculatePayroll(employeeId, month, userId) {
 
     // Merge allowances and apply employee overrides
     const allAllowances = [...allowances, ...allowancesWithGrossBase];
-    const includeMissing = await getIncludeMissingFlag(departmentId);
+    const includeMissing = await getIncludeMissingFlag(departmentId, employee.division_id);
 
     // Accept employee overrides even if category was missing/old; normalize to 'allowance'
     const allowanceOverrides = normalizeOverrides(employee.employeeAllowances || [], 'allowance').filter(
@@ -348,7 +351,8 @@ async function calculatePayroll(employeeId, month, userId) {
       employeeId,
       month,
       departmentId.toString(),
-      basicPayResult.perDayBasicPay
+      basicPayResult.perDayBasicPay,
+      employee.division_id?.toString() || null
     );
     console.log('Attendance Deduction Result:', JSON.stringify(attendanceDeductionResult, null, 2));
     console.log(`Attendance Deduction Amount: ${attendanceDeductionResult.attendanceDeduction}`);
@@ -369,7 +373,8 @@ async function calculatePayroll(employeeId, month, userId) {
       employeeId,
       month,
       departmentId.toString(),
-      basicPayResult.perDayBasicPay
+      basicPayResult.perDayBasicPay,
+      employee.division_id?.toString() || null
     );
     console.log('Permission Deduction Result:', JSON.stringify(permissionDeductionResult, null, 2));
     console.log(`Permission Deduction Amount: ${permissionDeductionResult.permissionDeduction}`);
@@ -417,7 +422,8 @@ async function calculatePayroll(employeeId, month, userId) {
       departmentId.toString(),
       basicPayResult.basicPay,
       grossSalary, // Pass gross salary for percentage-gross deductions
-      attendanceDataForProration
+      attendanceDataForProration,
+      employee.division_id?.toString() || null
     );
 
     console.log(`\nTotal Other Deductions Found: ${allOtherDeductions.length} items`);
@@ -564,9 +570,9 @@ async function calculatePayroll(employeeId, month, userId) {
     console.log('========== PAYROLL CALCULATION END ==========\n');
 
     // Step 12: Get settings snapshot for audit
-    const otSettings = await otPayService.getResolvedOTSettings(departmentId.toString());
-    const permissionRules = await deductionService.getResolvedPermissionDeductionRules(departmentId.toString());
-    const attendanceRules = await deductionService.getResolvedAttendanceDeductionRules(departmentId.toString());
+    const otSettings = await otPayService.getResolvedOTSettings(departmentId.toString(), employee.division_id);
+    const permissionRules = await deductionService.getResolvedPermissionDeductionRules(departmentId.toString(), employee.division_id);
+    const attendanceRules = await deductionService.getResolvedAttendanceDeductionRules(departmentId.toString(), employee.division_id);
 
     // Step 13: Create or Update Payroll Record
     const [year, monthNum] = month.split('-').map(Number);
