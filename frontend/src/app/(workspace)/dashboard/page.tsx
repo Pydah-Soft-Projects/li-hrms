@@ -1,8 +1,7 @@
 "use client";
-
 import React, { useEffect, useState } from 'react';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
-import { auth } from '@/lib/auth';
+import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/lib/api';
 import Link from 'next/link';
 import RecentActivityFeed from '@/components/attendance/RecentActivityFeed';
@@ -25,17 +24,12 @@ interface DashboardStats {
 
 export default function DashboardPage() {
   const { activeWorkspace, hasPermission } = useWorkspace();
-  const [user, setUser] = useState<{ name: string; role: string } | null>(null);
+  const { user } = useAuth();
   const [stats, setStats] = useState<DashboardStats>({});
   const [loading, setLoading] = useState(true);
   const [attendanceData, setAttendanceData] = useState<any>(null);
 
   useEffect(() => {
-    const userData = auth.getUser();
-    if (userData) {
-      setUser({ name: userData.name, role: userData.role });
-    }
-
     // Simulate/Fetch stats
     const fetchStats = async () => {
       try {
@@ -51,12 +45,12 @@ export default function DashboardPage() {
     };
 
     const fetchAttendance = async () => {
-      const u = auth.getUser();
       // Try to get employee number from various possible fields
-      const empNo = u?.emp_no || (u as any)?.employeeNumber;
+      // If activeWorkspace.type is 'employee', user.emp_no should be reliable
+      const empNo = user?.emp_no || user?.employeeId || (user as any)?.employeeNumber;
 
-      if (!u || !empNo) {
-        console.warn('Dashboard: No employee number found for attendance fetch', u);
+      if (!empNo) {
+        console.warn('Dashboard: No employee number found for attendance fetch', user);
         return;
       }
 
@@ -80,9 +74,11 @@ export default function DashboardPage() {
       }
     };
 
-    fetchStats();
-    fetchAttendance();
-  }, []);
+    if (user) {
+      fetchStats();
+      fetchAttendance();
+    }
+  }, [user]);
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -138,8 +134,8 @@ export default function DashboardPage() {
             </div>
             <div className="flex flex-col justify-center">
               <p className="text-slate-500 font-medium text-[10px] md:text-xs uppercase tracking-wider mb-0.5">Welcome back,</p>
-              <h3 className="text-lg md:text-2xl font-black text-slate-900 tracking-tight capitalize truncate max-w-[150px] md:max-w-[180px]" title={user?.role?.replace(/_/g, ' ')}>
-                {user?.role?.replace(/_/g, ' ') || 'Employee'}
+              <h3 className="text-lg md:text-2xl font-black text-slate-900 tracking-tight capitalize truncate max-w-[150px] md:max-w-[180px]" title={userRole?.replace(/_/g, ' ')}>
+                {userRole?.replace(/_/g, ' ') || 'Employee'}
               </h3>
               <div className="flex items-center gap-2 mt-1">
                 <span className="flex h-2 w-2 relative">
@@ -240,7 +236,7 @@ function HRDashboard({ stats, hasPermission }: { stats: DashboardStats; hasPermi
           icon={<ClockIcon className="w-6 h-6" />}
           trend="Requires action"
           color="amber"
-          // highlight={true}
+        // highlight={true}
         />
         <StatCard
           title="Ready for Payroll"

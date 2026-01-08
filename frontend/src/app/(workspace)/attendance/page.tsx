@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
+import { useAuth } from '@/contexts/AuthContext';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 
 interface AttendanceRecord {
@@ -103,7 +104,10 @@ interface Designation {
 }
 
 export default function AttendancePage() {
+  const { user } = useAuth();
   const { activeWorkspace } = useWorkspace();
+
+  const isEmployee = user?.role === 'employee' || activeWorkspace?.type === 'employee';
 
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showPayslipModal, setShowPayslipModal] = useState(false);
@@ -206,8 +210,42 @@ export default function AttendancePage() {
   }, [selectedDepartment]);
 
   useEffect(() => {
-    loadMonthlyAttendance();
-  }, [year, month]);
+    if (isEmployee && user) {
+      // Auto-select current employee
+      const emp: Employee = {
+        _id: user.id || (user as any)._id || '', // Handle different ID formats
+        emp_no: user.emp_no || user.employeeId || '',
+        employee_name: user.name,
+        department: typeof user.department === 'object' ? user.department : undefined,
+      };
+      setSelectedEmployee(emp);
+      // Load their specific attendance
+      const fetchEmpAttendance = async () => {
+        if (emp.emp_no) {
+          setLoadingAttendance(true);
+          try {
+            const response = await api.getAttendanceCalendar(emp.emp_no, year, month);
+            if (response.success) {
+              // Transform to expected format if needed, or set directly
+              // The API returns { data: { "YYYY-MM-DD": Record } }
+              // But we want to confirm structure.
+              // Actually getAttendanceCalendar returns data object directly as the map.
+              setAttendanceData(prev => ({ ...prev, [emp._id]: response.data || {} }));
+              // Also set detail view data if needed, but for now just the map
+
+              // We also need to populate monthlyData for the summary view if we want to reuse that UI?
+              // Or just reuse the calendar view which relies on `availableShifts` and `attendanceData`.
+              // The Calendar view uses `attendanceData[selectedEmployee._id]`.
+            }
+          } catch (e) { console.error(e); }
+          setLoadingAttendance(false);
+        }
+      }
+      fetchEmpAttendance();
+    } else {
+      loadMonthlyAttendance();
+    }
+  }, [year, month, isEmployee, user]);
 
   useEffect(() => {
     // Apply filters to monthly data
@@ -1034,6 +1072,42 @@ export default function AttendancePage() {
                         className="w-40 h-9 pl-9 pr-3 text-xs rounded-xl border border-slate-200 bg-white focus:border-green-500 focus:ring-2 focus:ring-green-500/10 transition-all dark:border-slate-700 dark:bg-slate-800 dark:text-white shadow-sm"
                       />
                     </div>
+                    {/* Administrative Buttons - Hide for Employee */}
+                    {!isEmployee && (
+                      <>
+                        <button
+                          onClick={() => setShowUploadDialog(true)}
+                          disabled={uploading}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-lg shadow-sm shadow-indigo-500/20 transition-all duration-200"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                          </svg>
+                          Upload Excel
+                        </button>
+
+                        <button
+                          onClick={handleDownloadTemplate}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 active:bg-slate-100 rounded-lg shadow-sm transition-all duration-200 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-700"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                          </svg>
+                          Template
+                        </button>
+
+                        <button
+                          onClick={() => setSyncingShifts(true)}
+                          disabled={syncingShifts}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 active:bg-slate-100 rounded-lg shadow-sm transition-all duration-200 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-700 disabled:opacity-50"
+                        >
+                          <svg className={`w-3.5 h-3.5 ${syncingShifts ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                          {syncingShifts ? 'Syncing...' : 'Sync Shifts'}
+                        </button>
+                      </>
+                    )}
                     <button
                       onClick={() => { setShowSearch(false); setSearchQuery(''); }}
                       className="h-9 w-9 flex items-center justify-center rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 transition-all"
@@ -1057,66 +1131,120 @@ export default function AttendancePage() {
               </div>
             </div>
 
-            {/* Filters Group */}
-            <div className="flex flex-nowrap items-center gap-1.5 p-1 bg-slate-100/50 dark:bg-slate-800/40 rounded-xl border border-slate-200/60 dark:border-slate-700/60 backdrop-blur-sm">
-              <select
-                value={selectedDivision}
-                onChange={(e) => {
-                  setSelectedDivision(e.target.value);
-                  setSelectedDepartment('');
-                  setSelectedDesignation('');
-                  loadDepartments(e.target.value);
-                }}
-                className="h-8 pl-2 pr-6 text-[11px] font-semibold bg-white dark:bg-slate-800 border-0 rounded-lg focus:ring-2 focus:ring-green-500/20 text-slate-700 dark:text-slate-300 shadow-sm min-w-[100px] max-w-[140px]"
-              >
-                <option value="">All Divisions</option>
-                {divisions.map((div) => (
-                  <option key={div._id} value={div._id}>{div.name}</option>
-                ))}
-              </select>
+            {/* Filters - Hide for Employee */}
+            {!isEmployee && (
+              <div className="mb-6 grid grid-cols-1 gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800 md:grid-cols-4">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Division
+                  </label>
+                  <select
+                    value={selectedDivision}
+                    onChange={(e) => {
+                      setSelectedDivision(e.target.value);
+                      setSelectedDepartment('');
+                      setSelectedDesignation('');
+                      loadDepartments(e.target.value);
+                    }}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  >
+                    <option value="">All Divisions</option>
+                    {divisions.map((div) => (
+                      <option key={div._id} value={div._id}>
+                        {div.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-              <select
-                value={selectedDepartment}
-                onChange={(e) => {
-                  setSelectedDepartment(e.target.value);
-                  setSelectedDesignation('');
-                }}
-                className="h-8 pl-2 pr-6 text-[11px] font-semibold bg-white dark:bg-slate-800 border-0 rounded-lg focus:ring-2 focus:ring-green-500/20 text-slate-700 dark:text-slate-300 shadow-sm min-w-[100px] max-w-[140px]"
-              >
-                <option value="">All Departments</option>
-                {departments.map((dept) => (
-                  <option key={dept._id} value={dept._id}>{dept.name}</option>
-                ))}
-              </select>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Department
+                  </label>
+                  <select
+                    value={selectedDepartment}
+                    onChange={(e) => {
+                      setSelectedDepartment(e.target.value);
+                      setSelectedDesignation('');
+                    }}
+                    disabled={!selectedDivision && divisions.length > 0}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-slate-100 disabled:text-slate-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  >
+                    <option value="">All Departments</option>
+                    {departments.map((dept) => (
+                      <option key={dept._id} value={dept._id}>
+                        {dept.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-              {selectedDepartment && (
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Designation
+                  </label>
+                  <select
+                    value={selectedDesignation}
+                    onChange={(e) => setSelectedDesignation(e.target.value)}
+                    disabled={!selectedDepartment}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-slate-100 disabled:text-slate-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  >
+                    <option value="">All Designations</option>
+                    {designations.map((desig) => (
+                      <option key={desig._id} value={desig._id}>
+                        {desig.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-end">
+                  <button
+                    onClick={() => {
+                      setSelectedDivision('');
+                      setSelectedDepartment('');
+                      setSelectedDesignation('');
+                      setSearchQuery('');
+                    }}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600"
+                  >
+                    Clear Filters
+                  </button>
+                </div>
+              </div>
+            )}
+            {/* Only show Table Type and Search if NOT employee */}
+            {!isEmployee && (
+              <div className="flex flex-nowrap items-center gap-1.5 p-1 bg-slate-100/50 dark:bg-slate-800/40 rounded-xl border border-slate-200/60 dark:border-slate-700/60 backdrop-blur-sm">
                 <select
-                  value={selectedDesignation}
-                  onChange={(e) => setSelectedDesignation(e.target.value)}
-                  className="h-8 pl-2 pr-6 text-[11px] font-semibold bg-white dark:bg-slate-800 border-0 rounded-lg focus:ring-2 focus:ring-green-500/20 text-slate-700 dark:text-slate-300 shadow-sm min-w-[100px] max-w-[140px] animate-in slide-in-from-left-2"
+                  value={tableType}
+                  onChange={(e) => setTableType(e.target.value as any)}
+                  className="h-8 pl-2 pr-6 text-[11px] font-semibold bg-white dark:bg-slate-800 border-0 rounded-lg focus:ring-2 focus:ring-green-500/20 text-slate-700 dark:text-slate-300 shadow-sm min-w-[120px]"
                 >
-                  <option value="">All Designations</option>
-                  {designations.map((desig) => (
-                    <option key={desig._id} value={desig._id}>{desig.name}</option>
-                  ))}
+                  <option value="complete">Complete View</option>
+                  <option value="present_absent">Present/Absent</option>
+                  <option value="in_out">In/Out Time</option>
+                  <option value="leaves">Leaves</option>
+                  <option value="od">On Duty</option>
+                  <option value="ot">Overtime</option>
                 </select>
-              )}
 
-              <div className="h-5 w-px bg-slate-300 dark:bg-slate-600 mx-1" />
+                <div className="h-5 w-px bg-slate-300 dark:bg-slate-600 mx-1" />
 
-              <select
-                value={tableType}
-                onChange={(e) => setTableType(e.target.value as any)}
-                className="h-8 pl-2 pr-6 text-[11px] font-bold bg-green-50 dark:bg-green-900/20 border-0 rounded-lg focus:ring-2 focus:ring-green-500/20 text-green-700 dark:text-green-400 shadow-sm cursor-pointer"
-              >
-                <option value="complete">Complete</option>
-                <option value="present_absent">Pres/Abs</option>
-                <option value="in_out">In/Out</option>
-                <option value="leaves">Leaves</option>
-                <option value="od">OD</option>
-                <option value="ot">OT</option>
-              </select>
-            </div>
+                <div className="relative group/search">
+                  <input
+                    type="text"
+                    placeholder="Search employee..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="h-8 pl-9 pr-4 w-[160px] text-[11px] bg-white dark:bg-slate-800 border-0 rounded-lg focus:ring-2 focus:ring-green-500/20 focus:w-[220px] transition-all duration-300 shadow-sm"
+                  />
+                  <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within/search:text-green-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex flex-nowrap items-center gap-3 shrink-0">

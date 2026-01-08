@@ -8,7 +8,7 @@ import { api } from '@/lib/api';
 import { QRCodeSVG } from 'qrcode.react';
 import LocationPhotoCapture from '@/components/LocationPhotoCapture';
 import Spinner from '@/components/Spinner';
-import { useWorkspace } from '@/contexts/WorkspaceContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { CheckIcon, XIcon, CalendarIcon, BriefcaseIcon, ClockIcon, PlusIcon } from 'lucide-react';
 import { getEmployeeInitials } from '@/lib/utils';
 
@@ -187,8 +187,8 @@ interface PermissionRequest {
 }
 
 export default function OTAndPermissionsPage() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { currentUser } = useWorkspace() as any;
+
+  const { user: currentUser } = useAuth();
   const [activeTab, setActiveTab] = useState<'ot' | 'permissions' | 'pending'>('ot');
   const [loading, setLoading] = useState(false);
   const [otRequests, setOTRequests] = useState<OTRequest[]>([]);
@@ -256,10 +256,14 @@ export default function OTAndPermissionsPage() {
   const pendingPermissions = permissions.filter(req => req.status === 'pending');
   const totalPending = pendingOTs.length + pendingPermissions.length;
 
+  const isEmployee = currentUser?.role === 'employee';
+
   // Dynamic Column Logic
-  const { showDivision, showDepartment } = useMemo(() => {
+  const { showDivision, showDepartment, showEmployeeCol } = useMemo(() => {
+    if (isEmployee) return { showDivision: false, showDepartment: false, showEmployeeCol: false };
+
     const isHOD = currentUser?.role === 'hod';
-    if (isHOD) return { showDivision: false, showDepartment: false };
+    if (isHOD) return { showDivision: false, showDepartment: false, showEmployeeCol: true };
 
     let dataToCheck: any[] = [];
     if (activeTab === 'ot') dataToCheck = otRequests;
@@ -270,16 +274,19 @@ export default function OTAndPermissionsPage() {
 
     return {
       showDivision: uniqueDivisions.size > 1,
-      showDepartment: true
+      showDepartment: true,
+      showEmployeeCol: true
     };
-  }, [otRequests, permissions, activeTab, currentUser]);
+  }, [otRequests, permissions, activeTab, currentUser, isEmployee]);
 
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
   const [locationData, setLocationData] = useState<any | null>(null);
 
   useEffect(() => {
-    loadData();
-  }, [activeTab, otFilters, permissionFilters]);
+    if (currentUser) {
+      loadData();
+    }
+  }, [activeTab, otFilters, permissionFilters, isEmployee, currentUser]);
 
   const canPerformAction = (item: any) => {
     if (!item || !currentUser) return false;
@@ -312,8 +319,42 @@ export default function OTAndPermissionsPage() {
     if (showOTDialog && otFormData.employeeId && otFormData.employeeNumber && otFormData.date && !attendanceData && !attendanceLoading) {
       handleEmployeeSelect(otFormData.employeeId, otFormData.employeeNumber, otFormData.date);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showOTDialog]);
+
+  // Auto-fill for Employee Role
+  useEffect(() => {
+    if (isEmployee && currentUser) {
+      // Robustly get ID and Emp No
+      const empId = (currentUser as any)._id || currentUser.id;
+      const empNo = currentUser.emp_no || currentUser.employeeId;
+
+      if (empId && empNo) {
+        if (showOTDialog) {
+          setOTFormData(prev => ({ ...prev, employeeId: empId, employeeNumber: empNo }));
+          // Only fetch if date is set (it is default initialized)
+          if (otFormData.date) {
+            handleEmployeeSelect(empId, empNo, otFormData.date);
+          }
+        }
+
+        if (showPermissionDialog) {
+          setPermissionFormData(prev => ({ ...prev, employeeId: empId, employeeNumber: empNo }));
+          // Check attendance for permission
+          if (permissionFormData.date) {
+            api.getAttendanceDetail(empNo, permissionFormData.date).then(attendanceRes => {
+              if (!attendanceRes.success || !attendanceRes.data || !attendanceRes.data.inTime) {
+                setPermissionValidationError('No attendance record found or employee has no in-time for this date. Permission cannot be created without attendance.');
+              } else {
+                setPermissionValidationError('');
+              }
+            }).catch(console.error);
+          }
+        }
+      } else {
+        console.warn('Current user missing employee details:', currentUser);
+      }
+    }
+  }, [showOTDialog, showPermissionDialog, isEmployee, currentUser]);
 
   const loadData = async () => {
     setLoading(true);
@@ -353,11 +394,11 @@ export default function OTAndPermissionsPage() {
 
       // Load employees and shifts
       const [employeesRes, shiftsRes] = await Promise.all([
-        api.getEmployees({ is_active: true }),
+        !isEmployee ? api.getEmployees({ is_active: true }) : Promise.resolve({ success: true, data: [] }),
         api.getShifts(),
       ]);
 
-      if (employeesRes && employeesRes.success) {
+      if (!isEmployee && employeesRes && employeesRes.success) {
         if (Array.isArray(employeesRes.data)) {
           const employeesList = employeesRes.data;
           console.log('Loaded employees:', employeesList.length);
@@ -366,7 +407,7 @@ export default function OTAndPermissionsPage() {
           console.error('Expected array for employees but got:', typeof employeesRes.data);
           setEmployees([]);
         }
-      } else {
+      } else if (!isEmployee) {
         console.error('Failed to load employees. Response:', JSON.stringify(employeesRes));
         // Only show toast if there's a meaningful message
         if (employeesRes && (employeesRes as any).message) {
@@ -472,9 +513,16 @@ export default function OTAndPermissionsPage() {
   };
 
   const handleCreateOT = async () => {
-    if (!otFormData.employeeId || !otFormData.employeeNumber || !otFormData.date || !otFormData.otOutTime) {
-      setValidationError('Please fill all required fields');
-      showToast('Please fill all required fields', 'error');
+    const missingFields = [];
+    if (!otFormData.employeeId) missingFields.push('Employee');
+    if (!otFormData.employeeNumber) missingFields.push('Employee Number');
+    if (!otFormData.date) missingFields.push('Date');
+    if (!otFormData.otOutTime) missingFields.push('OT Out Time');
+
+    if (missingFields.length > 0) {
+      const msg = `Please fill all required fields: ${missingFields.join(', ')}`;
+      setValidationError(msg);
+      showToast(msg, 'error');
       return;
     }
 
@@ -552,11 +600,18 @@ export default function OTAndPermissionsPage() {
   };
 
   const handleCreatePermission = async () => {
-    if (!permissionFormData.employeeId || !permissionFormData.employeeNumber || !permissionFormData.date ||
-      !permissionFormData.permissionStartTime || !permissionFormData.permissionEndTime || !permissionFormData.purpose) {
-      const errorMsg = 'Please fill all required fields';
-      setPermissionValidationError(errorMsg);
-      showToast(errorMsg, 'error');
+    const missingFields = [];
+    if (!permissionFormData.employeeId) missingFields.push('Employee');
+    if (!permissionFormData.employeeNumber) missingFields.push('Employee Number');
+    if (!permissionFormData.date) missingFields.push('Date');
+    if (!permissionFormData.permissionStartTime) missingFields.push('Start Time');
+    if (!permissionFormData.permissionEndTime) missingFields.push('End Time');
+    if (!permissionFormData.purpose) missingFields.push('Purpose');
+
+    if (missingFields.length > 0) {
+      const msg = `Please fill all required fields: ${missingFields.join(', ')}`;
+      setPermissionValidationError(msg);
+      showToast(msg, 'error');
       return;
     }
 
@@ -866,22 +921,24 @@ export default function OTAndPermissionsPage() {
         {/* Filters */}
         <div className="mb-4 rounded-lg border border-slate-200 bg-white/80 backdrop-blur-sm p-3 dark:border-slate-700 dark:bg-slate-900/80">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-            <div>
-              <label className="mb-1 block text-[10px] font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">Employee Number</label>
-              <input
-                type="text"
-                value={activeTab === 'ot' ? otFilters.employeeNumber : permissionFilters.employeeNumber}
-                onChange={(e) => {
-                  if (activeTab === 'ot') {
-                    setOTFilters(prev => ({ ...prev, employeeNumber: e.target.value }));
-                  } else {
-                    setPermissionFilters(prev => ({ ...prev, employeeNumber: e.target.value }));
-                  }
-                }}
-                placeholder="Filter by employee"
-                className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-              />
-            </div>
+            {!isEmployee && (
+              <div>
+                <label className="mb-1 block text-[10px] font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">Employee Number</label>
+                <input
+                  type="text"
+                  value={activeTab === 'ot' ? otFilters.employeeNumber : permissionFilters.employeeNumber}
+                  onChange={(e) => {
+                    if (activeTab === 'ot') {
+                      setOTFilters(prev => ({ ...prev, employeeNumber: e.target.value }));
+                    } else {
+                      setPermissionFilters(prev => ({ ...prev, employeeNumber: e.target.value }));
+                    }
+                  }}
+                  placeholder="Filter by employee"
+                  className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                />
+              </div>
+            )}
             <div>
               <label className="mb-1 block text-[10px] font-medium text-slate-500 uppercase tracking-wider dark:text-slate-400">Status</label>
               <select
@@ -1152,7 +1209,7 @@ export default function OTAndPermissionsPage() {
               <table className="w-full text-left border-collapse">
                 <thead className="bg-slate-100/75 border-b border-slate-200 dark:bg-slate-700/50 dark:border-slate-700">
                   <tr>
-                    <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Employee</th>
+                    {showEmployeeCol && <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Employee</th>}
                     {showDivision && <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Division</th>}
                     {showDepartment && <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Department</th>}
                     <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Date</th>
@@ -1174,21 +1231,23 @@ export default function OTAndPermissionsPage() {
                   ) : (
                     otRequests.map((ot) => (
                       <tr key={ot._id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
-                        <td className="px-6 py-3.5">
-                          <div className="flex items-center gap-3">
-                            <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-700 dark:text-blue-400 font-bold text-xs shrink-0">
-                              {getEmployeeInitials({ employee_name: ot.employeeId?.employee_name || '', first_name: '', last_name: '', emp_no: '' } as any)}
-                            </div>
-                            <div className="min-w-0">
-                              <div className="font-medium text-slate-900 dark:text-white text-sm truncate max-w-[150px]">
-                                {ot.employeeId?.employee_name || ot.employeeNumber}
+                        {showEmployeeCol && (
+                          <td className="px-6 py-3.5">
+                            <div className="flex items-center gap-3">
+                              <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-700 dark:text-blue-400 font-bold text-xs shrink-0">
+                                {getEmployeeInitials({ employee_name: ot.employeeId?.employee_name || '', first_name: '', last_name: '', emp_no: '' } as any)}
                               </div>
-                              <div className="text-xs text-slate-500">
-                                {ot.employeeNumber}
+                              <div className="min-w-0">
+                                <div className="font-medium text-slate-900 dark:text-white text-sm truncate max-w-[150px]">
+                                  {ot.employeeId?.employee_name || ot.employeeNumber}
+                                </div>
+                                <div className="text-xs text-slate-500">
+                                  {ot.employeeNumber}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        </td>
+                          </td>
+                        )}
                         {showDivision && <td className="px-6 py-3.5 text-sm text-slate-700 dark:text-slate-300">{ot.employeeId?.department?.division?.name || '-'}</td>}
                         {showDepartment && <td className="px-6 py-3.5 text-sm text-slate-700 dark:text-slate-300">{ot.employeeId?.department?.name || '-'}</td>}
                         <td className="px-6 py-3.5 whitespace-nowrap text-sm font-medium text-slate-900 dark:text-white">{formatDate(ot.date)}</td>
@@ -1240,7 +1299,7 @@ export default function OTAndPermissionsPage() {
               <table className="w-full text-left border-collapse">
                 <thead className="bg-slate-100/75 border-b border-slate-200 dark:bg-slate-700/50 dark:border-slate-700">
                   <tr>
-                    <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Employee</th>
+                    {showEmployeeCol && <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Employee</th>}
                     {showDivision && <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Division</th>}
                     {showDepartment && <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Department</th>}
                     <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Date</th>
@@ -1261,21 +1320,23 @@ export default function OTAndPermissionsPage() {
                   ) : (
                     permissions.map((perm) => (
                       <tr key={perm._id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
-                        <td className="px-6 py-3.5">
-                          <div className="flex items-center gap-3">
-                            <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-700 dark:text-blue-400 font-bold text-xs shrink-0">
-                              {getEmployeeInitials({ employee_name: perm.employeeId?.employee_name || '', first_name: '', last_name: '', emp_no: '' } as any)}
-                            </div>
-                            <div className="min-w-0">
-                              <div className="font-medium text-slate-900 dark:text-white text-sm truncate max-w-[150px]">
-                                {perm.employeeId?.employee_name || perm.employeeNumber}
+                        {showEmployeeCol && (
+                          <td className="px-6 py-3.5">
+                            <div className="flex items-center gap-3">
+                              <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-700 dark:text-blue-400 font-bold text-xs shrink-0">
+                                {getEmployeeInitials({ employee_name: perm.employeeId?.employee_name || '', first_name: '', last_name: '', emp_no: '' } as any)}
                               </div>
-                              <div className="text-xs text-slate-500">
-                                {perm.employeeNumber}
+                              <div className="min-w-0">
+                                <div className="font-medium text-slate-900 dark:text-white text-sm truncate max-w-[150px]">
+                                  {perm.employeeId?.employee_name || perm.employeeNumber}
+                                </div>
+                                <div className="text-xs text-slate-500">
+                                  {perm.employeeNumber}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        </td>
+                          </td>
+                        )}
                         {showDivision && <td className="px-6 py-3.5 text-sm text-slate-700 dark:text-slate-300">{perm.employeeId?.department?.division?.name || '-'}</td>}
                         {showDepartment && <td className="px-6 py-3.5 text-sm text-slate-700 dark:text-slate-300">{perm.employeeId?.department?.name || '-'}</td>}
                         <td className="px-6 py-3.5 whitespace-nowrap text-sm font-medium text-slate-900 dark:text-white">{formatDate(perm.date)}</td>
@@ -1367,40 +1428,48 @@ export default function OTAndPermissionsPage() {
                     </div>
                   )}
 
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Employee *</label>
-                    <select
-                      value={otFormData.employeeId}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        if (!value) return;
+                  {!isEmployee && (
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Employee *</label>
+                      <select
+                        value={otFormData.employeeId}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          if (!value) return;
 
-                        // Find employee by _id or emp_no
-                        const employee = employees.find(emp => (emp._id === value) || (emp.emp_no === value));
-                        if (employee && employee.emp_no) {
-                          const employeeId = employee._id || employee.emp_no;
-                          handleEmployeeSelect(employeeId, employee.emp_no, otFormData.date);
-                        }
-                      }}
-                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                    >
-                      <option value="">Select Employee</option>
-                      {employees && employees.length > 0 ? (
-                        employees
-                          .filter(emp => emp.emp_no) // Only require emp_no, not _id
-                          .map((emp, index) => {
-                            const identifier = emp._id || emp.emp_no;
-                            return (
-                              <option key={`ot-employee-${identifier}-${index}`} value={identifier}>
-                                {emp.emp_no} - {emp.employee_name || 'Unknown'}
-                              </option>
-                            );
-                          })
-                      ) : (
-                        <option value="" disabled>No employees available</option>
-                      )}
-                    </select>
-                  </div>
+                          // Find employee by _id or emp_no
+                          const employee = employees.find(emp => (emp._id === value) || (emp.emp_no === value));
+                          if (employee && employee.emp_no) {
+                            const employeeId = employee._id || employee.emp_no;
+                            // Update form data immediately
+                            setOTFormData(prev => ({
+                              ...prev,
+                              employeeId,
+                              employeeNumber: employee.emp_no
+                            }));
+                            handleEmployeeSelect(employeeId, employee.emp_no, otFormData.date);
+                          }
+                        }}
+                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                      >
+                        <option value="">Select Employee</option>
+                        {employees && employees.length > 0 ? (
+                          employees
+                            .filter(emp => emp.emp_no) // Only require emp_no, not _id
+                            .map((emp, index) => {
+                              const identifier = emp._id || emp.emp_no;
+                              return (
+                                <option key={`ot-employee-${identifier}-${index}`} value={identifier}>
+                                  {emp.emp_no} - {emp.employee_name || 'Unknown'}
+                                </option>
+                              );
+                            })
+                        ) : (
+                          <option value="" disabled>No employees available</option>
+                        )}
+                      </select>
+                    </div>
+                  )}
 
                   <div>
                     <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Date *</label>
@@ -1461,7 +1530,7 @@ export default function OTAndPermissionsPage() {
                     <div className="rounded-lg border-2 border-orange-200 bg-orange-50 p-4 dark:border-orange-700 dark:bg-orange-900/20">
                       <div className="flex items-center gap-2">
                         <svg className="h-5 w-5 text-orange-600 dark:text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                         <p className="text-sm font-medium text-orange-800 dark:text-orange-300">No attendance record found for this date</p>
                       </div>
@@ -1656,74 +1725,76 @@ export default function OTAndPermissionsPage() {
                       </div>
                     </div>
                   )}
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Employee *</label>
-                    <select
-                      value={permissionFormData.employeeId}
-                      onChange={async (e) => {
-                        const value = e.target.value;
-                        if (!value) {
-                          setPermissionFormData(prev => ({
-                            ...prev,
-                            employeeId: '',
-                            employeeNumber: '',
-                          }));
-                          setPermissionValidationError('');
-                          return;
-                        }
-
-                        // Find employee by _id or emp_no
-                        const employee = employees.find(emp => (emp._id === value) || (emp.emp_no === value));
-                        if (employee && employee.emp_no) {
-                          const employeeId = employee._id || employee.emp_no;
-                          setPermissionFormData(prev => ({
-                            ...prev,
-                            employeeId: employeeId,
-                            employeeNumber: employee.emp_no,
-                          }));
-                          setPermissionValidationError('');
-
-                          // Check attendance when employee is selected
-                          if (permissionFormData.date) {
-                            try {
-                              const attendanceRes = await api.getAttendanceDetail(employee.emp_no, permissionFormData.date);
-                              if (!attendanceRes.success || !attendanceRes.data || !attendanceRes.data.inTime) {
-                                setPermissionValidationError('No attendance record found or employee has no in-time for this date. Permission cannot be created without attendance.');
-                              } else {
-                                setPermissionValidationError('');
-                              }
-                            } catch (error) {
-                              console.error('Error checking attendance:', error);
-                            }
+                  {!isEmployee && (
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Employee *</label>
+                      <select
+                        value={permissionFormData.employeeId}
+                        onChange={async (e) => {
+                          const value = e.target.value;
+                          if (!value) {
+                            setPermissionFormData(prev => ({
+                              ...prev,
+                              employeeId: '',
+                              employeeNumber: '',
+                            }));
+                            setPermissionValidationError('');
+                            return;
                           }
-                        } else {
-                          setPermissionFormData(prev => ({
-                            ...prev,
-                            employeeId: '',
-                            employeeNumber: '',
-                          }));
-                          setPermissionValidationError('');
-                        }
-                      }}
-                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                    >
-                      <option value="">Select Employee</option>
-                      {employees && employees.length > 0 ? (
-                        employees
-                          .filter(emp => emp.emp_no) // Only require emp_no, not _id
-                          .map((emp, index) => {
-                            const identifier = emp._id || emp.emp_no;
-                            return (
-                              <option key={`perm-employee-${identifier}-${index}`} value={identifier}>
-                                {emp.emp_no} - {emp.employee_name || 'Unknown'}
-                              </option>
-                            );
-                          })
-                      ) : (
-                        <option value="" disabled>No employees available</option>
-                      )}
-                    </select>
-                  </div>
+
+                          // Find employee by _id or emp_no
+                          const employee = employees.find(emp => (emp._id === value) || (emp.emp_no === value));
+                          if (employee && employee.emp_no) {
+                            const employeeId = employee._id || employee.emp_no;
+                            setPermissionFormData(prev => ({
+                              ...prev,
+                              employeeId: employeeId,
+                              employeeNumber: employee.emp_no,
+                            }));
+                            setPermissionValidationError('');
+
+                            // Check attendance when employee is selected
+                            if (permissionFormData.date) {
+                              try {
+                                const attendanceRes = await api.getAttendanceDetail(employee.emp_no, permissionFormData.date);
+                                if (!attendanceRes.success || !attendanceRes.data || !attendanceRes.data.inTime) {
+                                  setPermissionValidationError('No attendance record found or employee has no in-time for this date. Permission cannot be created without attendance.');
+                                } else {
+                                  setPermissionValidationError('');
+                                }
+                              } catch (error) {
+                                console.error('Error checking attendance:', error);
+                              }
+                            }
+                          } else {
+                            setPermissionFormData(prev => ({
+                              ...prev,
+                              employeeId: '',
+                              employeeNumber: '',
+                            }));
+                            setPermissionValidationError('');
+                          }
+                        }}
+                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                      >
+                        <option value="">Select Employee</option>
+                        {employees && employees.length > 0 ? (
+                          employees
+                            .filter(emp => emp.emp_no) // Only require emp_no, not _id
+                            .map((emp, index) => {
+                              const identifier = emp._id || emp.emp_no;
+                              return (
+                                <option key={`perm-employee-${identifier}-${index}`} value={identifier}>
+                                  {emp.emp_no} - {emp.employee_name || 'Unknown'}
+                                </option>
+                              );
+                            })
+                        ) : (
+                          <option value="" disabled>No employees available</option>
+                        )}
+                      </select>
+                    </div>
+                  )}
 
                   <div>
                     <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Date *</label>

@@ -10,48 +10,73 @@ import ArrearsDetailDialog from '@/components/Arrears/ArrearsDetailDialog';
 import ArrearsForm from '@/components/Arrears/ArrearsForm';
 import Spinner from '@/components/Spinner';
 
-// Icons
-const PlusIcon = () => (
-  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-  </svg>
-);
+import {
+  Plus,
+  Search,
+  Eye,
+  CheckCircle,
+  Clock,
+  TrendingUp,
+  XCircle,
+  AlertCircle,
+  Filter,
+  ArrowRight,
+  IndianRupee,
+  LayoutDashboard,
+  Calendar,
+  History,
+  FileText,
+  ShieldCheck
+} from 'lucide-react';
 
-const EyeIcon = () => (
-  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-    <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-  </svg>
-);
-
-const CheckIcon = () => (
-  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-  </svg>
-);
-
-const ClockIcon = () => (
-  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-  </svg>
+// Custom Stat Card for Arrears
+const StatCard = ({ title, value, icon: Icon, bgClass, iconClass, dekorClass, trend }: { title: string, value: number | string, icon: any, bgClass: string, iconClass: string, dekorClass: string, trend?: { value: string, positive: boolean } }) => (
+  <div className="relative overflow-hidden rounded-3xl border border-slate-300 bg-slate-50/90 p-6 transition-all hover:shadow-xl dark:border-slate-800 dark:bg-slate-900 shadow-sm">
+    <div className="relative z-10 flex items-center justify-between gap-4">
+      <div className="flex-1">
+        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-400">{title}</p>
+        <div className="mt-2 flex items-baseline gap-2">
+          <h3 className="text-3xl font-bold tracking-tight text-slate-950 dark:text-white">{value}</h3>
+          {trend && (
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${trend.positive ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-700 dark:text-rose-400'}`}>
+              {trend.value}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className={`flex h-14 w-14 items-center justify-center rounded-2xl ${bgClass} ${iconClass} shadow-inner`}>
+        <Icon className="h-7 w-7" />
+      </div>
+    </div>
+    <div className={`absolute -right-4 -bottom-4 h-24 w-24 rounded-full opacity-30 ${dekorClass} blur-2xl`} />
+  </div>
 );
 
 const getStatusColor = (status: string) => {
   switch (status) {
     case 'approved':
-      return 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800';
+      return 'bg-emerald-100 border-emerald-300 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400';
     case 'pending_hod':
     case 'pending_hr':
     case 'pending_admin':
-      return 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800';
+      return 'bg-amber-100 border-amber-300 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400';
     case 'rejected':
-      return 'bg-red-50 text-red-700 border border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800';
+      return 'bg-rose-100 border-rose-300 text-rose-800 dark:bg-rose-900/30 dark:text-rose-400';
     case 'partially_settled':
-      return 'bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800';
+      return 'bg-blue-100 border-blue-300 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400';
     case 'settled':
-      return 'bg-green-50 text-green-700 border border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800';
+      return 'bg-violet-100 border-violet-300 text-violet-800 dark:bg-violet-900/30 dark:text-violet-400';
     default:
-      return 'bg-slate-50 text-slate-700 border border-slate-200 dark:bg-slate-900/20 dark:text-slate-400 dark:border-slate-800';
+      return 'bg-slate-100 border-slate-300 text-slate-800 dark:bg-slate-900/30 dark:text-slate-400';
+  }
+};
+
+const getStatusIcon = (status: string) => {
+  switch (status) {
+    case 'approved': return <CheckCircle className="h-3.5 w-3.5" />;
+    case 'rejected': return <XCircle className="h-3.5 w-3.5" />;
+    case 'settled': return <TrendingUp className="h-3.5 w-3.5" />;
+    default: return <Clock className="h-3.5 w-3.5" />;
   }
 };
 
@@ -170,139 +195,207 @@ export default function ArrearsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 p-6">
-      <ToastContainer position="top-right" autoClose={3000} />
+    <div className="min-h-screen bg-slate-200/60 dark:bg-slate-950 p-4 md:p-8">
+      <ToastContainer
+        position="top-right"
+        autoClose={3000}
+        toastClassName="rounded-2xl border-none shadow-2xl dark:bg-slate-900 dark:text-white"
+      />
 
-      {/* Header */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-2">Arrears Management</h1>
-            <p className="text-slate-600 dark:text-slate-400">Manage employee arrears requests and approvals</p>
-          </div>
-          <button
-            onClick={() => setFormOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white rounded-lg font-medium transition-all duration-200 shadow-lg hover:shadow-xl"
-          >
-            <PlusIcon />
-            Create Arrears
-          </button>
-        </div>
-      </div>
+      {/* Refined Professional Header */}
+      <div className="relative mb-10 overflow-hidden rounded-[2rem] border border-slate-300 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/50 shadow-sm">
+        <div className="absolute right-0 top-0 h-48 w-48 -translate-y-12 translate-x-12 rounded-full bg-blue-500/[0.05] blur-3xl" />
 
-      {/* Statistics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        {[
-          { label: 'Pending Approval', value: stats.pending, color: 'from-amber-500 to-orange-600', icon: '⏳' },
-          { label: 'Approved', value: stats.approved, color: 'from-emerald-500 to-green-600', icon: '✓' },
-          { label: 'Settled', value: stats.settled, color: 'from-green-500 to-emerald-600', icon: '✓✓' },
-          { label: 'Rejected', value: stats.rejected, color: 'from-red-500 to-rose-600', icon: '✕' }
-        ].map((stat, idx) => (
-          <div
-            key={idx}
-            className="bg-white dark:bg-slate-800 rounded-xl shadow-md hover:shadow-lg transition-all duration-200 p-6 border border-slate-200 dark:border-slate-700"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-slate-600 dark:text-slate-400 text-sm font-medium mb-1">{stat.label}</p>
-                <p className="text-3xl font-bold text-slate-900 dark:text-white">{stat.value}</p>
+        <div className="relative z-10 flex flex-col gap-6 px-8 py-8">
+          <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-center gap-5">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100/50 text-blue-700 shadow-sm dark:bg-white/10 dark:text-blue-400 border border-blue-200">
+                <History className="h-6 w-6" />
               </div>
-              <div className={`w-12 h-12 rounded-lg bg-gradient-to-br ${stat.color} flex items-center justify-center text-white text-xl`}>
-                {stat.icon}
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-2xl font-bold tracking-tight text-slate-950 dark:text-white">Arrears</h1>
+                  <span className="rounded-full bg-blue-600/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-blue-700 dark:text-blue-400 border border-blue-200/50">
+                    System Hub
+                  </span>
+                </div>
+                <p className="text-sm font-medium text-slate-600">Payroll Calculation & Arrearage Protocols</p>
               </div>
             </div>
+
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => setFormOpen(true)}
+                className="group relative flex items-center justify-center gap-3 overflow-hidden rounded-xl bg-slate-950 px-6 py-3 text-xs font-bold uppercase tracking-widest text-white transition-all hover:bg-blue-700 active:scale-[0.98] dark:bg-white dark:text-slate-900 shadow-lg"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Provision Arrear</span>
+              </button>
+            </div>
           </div>
-        ))}
+        </div>
       </div>
 
-      {/* Tabs */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md border border-slate-200 dark:border-slate-700 overflow-hidden mb-6">
-        <div className="flex border-b border-slate-200 dark:border-slate-700">
-          {['pending', 'approved', 'settled', 'rejected', 'all'].map(tab => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`flex-1 px-4 py-4 font-medium transition-all duration-200 ${activeTab === tab
-                  ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400 bg-blue-50 dark:bg-blue-900/20'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                }`}
-            >
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
-            </button>
-          ))}
+      {/* Premium Statistics Cards */}
+      <div className="mb-10 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          title="Pending Review"
+          value={stats.pending}
+          icon={Clock}
+          bgClass="bg-amber-500/10"
+          iconClass="text-amber-700 dark:text-amber-400"
+          dekorClass="bg-amber-500/10"
+        />
+        <StatCard
+          title="Approved Arrears"
+          value={stats.approved}
+          icon={CheckCircle}
+          bgClass="bg-emerald-500/10"
+          iconClass="text-emerald-700 dark:text-emerald-400"
+          dekorClass="bg-emerald-500/10"
+          trend={{ value: "+8%", positive: true }}
+        />
+        <StatCard
+          title="Total Settled"
+          value={stats.settled}
+          icon={TrendingUp}
+          bgClass="bg-violet-500/10"
+          iconClass="text-violet-700 dark:text-violet-400"
+          dekorClass="bg-violet-500/10"
+        />
+        <StatCard
+          title="Rejected / Void"
+          value={stats.rejected}
+          icon={XCircle}
+          bgClass="bg-rose-500/10"
+          iconClass="text-rose-700 dark:text-rose-400"
+          dekorClass="bg-rose-500/10"
+        />
+      </div>
+
+      {/* Main Content Area */}
+      <div className="rounded-[2.5rem] border border-slate-300 bg-slate-50 shadow-xl dark:border-slate-800 dark:bg-slate-900/50 overflow-hidden">
+        {/* Navigation & Search Bar */}
+        <div className="border-b border-slate-200 bg-slate-100/50 p-6 dark:border-slate-800 dark:bg-slate-900/80">
+          <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-center gap-1.5 rounded-2xl bg-slate-200/80 p-1.5 dark:bg-slate-800/50 backdrop-blur-sm shadow-inner">
+              {['all', 'pending', 'approved', 'settled', 'rejected'].map(tab => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`rounded-xl px-5 py-2.5 text-xs font-bold uppercase tracking-widest transition-all duration-300 ${activeTab === tab
+                    ? 'bg-white text-slate-950 shadow-md dark:bg-slate-700 dark:text-white'
+                    : 'text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'
+                    }`}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+
+            <div className="relative group min-w-[320px]">
+              <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-600 transition-colors group-hover:text-blue-600" />
+              <input
+                type="text"
+                placeholder="Search by employee or ID..."
+                className="w-full rounded-2xl border border-slate-300 bg-white py-3 pl-11 pr-4 text-sm font-semibold text-slate-950 transition-all focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+              />
+            </div>
+          </div>
         </div>
 
-        {/* Table */}
+        {/* Table Content */}
         <div className="overflow-x-auto">
           {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <Spinner />
+            <div className="flex h-96 flex-col items-center justify-center gap-4">
+              <div className="h-12 w-12 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600 dark:border-slate-800 dark:border-t-blue-400" />
+              <p className="text-xs font-bold uppercase tracking-widest text-slate-600">Synchronizing Data...</p>
             </div>
           ) : filteredArrears.length === 0 ? (
-            <div className="text-center py-12">
-              <p className="text-slate-500 dark:text-slate-400">No arrears found</p>
+            <div className="flex h-96 flex-col items-center justify-center text-center">
+              <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-3xl bg-slate-100 dark:bg-slate-800 border border-slate-200">
+                <AlertCircle className="h-10 w-10 text-slate-500" />
+              </div>
+              <h3 className="text-xl font-bold text-slate-950 dark:text-white">No Records Found</h3>
+              <p className="mt-2 text-sm font-semibold text-slate-600">There are no arrears matching the selected filter criteria.</p>
             </div>
           ) : (
-            <table className="w-full">
+            <table className="w-full border-collapse">
               <thead>
-                <tr className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700">
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Employee</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Period</th>
-                  <th className="px-6 py-4 text-right text-sm font-semibold text-slate-900 dark:text-white">Amount</th>
-                  <th className="px-6 py-4 text-right text-sm font-semibold text-slate-900 dark:text-white">Remaining</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Status</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Created</th>
-                  <th className="px-6 py-4 text-center text-sm font-semibold text-slate-900 dark:text-white">Action</th>
+                <tr className="bg-slate-100 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-700 dark:bg-slate-900/50 border-b border-slate-200">
+                  <th className="px-8 py-6 text-left">Employee Entity</th>
+                  <th className="px-8 py-6 text-left">Fiscal Period</th>
+                  <th className="px-8 py-6 text-right">Agreed Value</th>
+                  <th className="px-8 py-6 text-right">Outstanding</th>
+                  <th className="px-8 py-6 text-left">Processing State</th>
+                  <th className="px-8 py-6 text-center">Operations</th>
                 </tr>
               </thead>
-              <tbody>
-                {filteredArrears.map((ar, idx) => (
+              <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                {filteredArrears.map((ar) => (
                   <tr
                     key={ar._id}
-                    className={`border-b border-slate-200 dark:border-slate-700 transition-colors duration-200 ${idx % 2 === 0
-                        ? 'bg-white dark:bg-slate-800'
-                        : 'bg-slate-50 dark:bg-slate-900/50'
-                      } hover:bg-blue-50 dark:hover:bg-blue-900/20`}
+                    className="group transition-colors hover:bg-slate-100/60 dark:hover:bg-slate-800/50"
                   >
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-semibold text-sm">
+                    <td className="px-8 py-6">
+                      <div className="flex items-center gap-4">
+                        <div className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-slate-700 to-slate-900 font-bold text-white shadow-lg transition-transform group-hover:scale-110">
                           {getEmployeeName(ar.employee).charAt(0).toUpperCase()}
+                          <div className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full border-2 border-white bg-emerald-500 dark:border-slate-900" />
                         </div>
                         <div>
-                          <p className="font-medium text-slate-900 dark:text-white">{getEmployeeName(ar.employee)}</p>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">{ar.employee.emp_no}</p>
+                          <p className="text-sm font-bold text-slate-950 dark:text-white">{getEmployeeName(ar.employee)}</p>
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600">{ar.employee.emp_no}</p>
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-slate-700 dark:text-slate-300">{ar.startMonth} to {ar.endMonth}</td>
-                    <td className="px-6 py-4 text-right font-semibold text-slate-900 dark:text-white">
-                      ₹{ar.totalAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                    <td className="px-8 py-6">
+                      <div className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300">
+                        <Calendar className="h-3.5 w-3.5 text-slate-600" />
+                        <span>{ar.startMonth}</span>
+                        <ArrowRight className="h-3 w-3 text-slate-500" />
+                        <span>{ar.endMonth}</span>
+                      </div>
                     </td>
-                    <td className="px-6 py-4 text-right">
-                      <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${ar.remainingAmount > 0
-                          ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                          : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                    <td className="px-8 py-6 text-right">
+                      <div className="flex flex-col items-end">
+                        <span className="text-sm font-bold text-slate-950 dark:text-white">
+                          ₹{ar.totalAmount.toLocaleString('en-IN')}
+                        </span>
+                        <span className="text-[10px] font-bold tracking-widest text-slate-600 uppercase">Total Commitment</span>
+                      </div>
+                    </td>
+                    <td className="px-8 py-6 text-right">
+                      <div className={`inline-flex flex-col items-end rounded-xl px-3 py-1.5 border shadow-sm ${ar.remainingAmount > 0
+                        ? 'bg-amber-100 border-amber-300 text-amber-800 dark:text-amber-400'
+                        : 'bg-emerald-100 border-emerald-300 text-emerald-800 dark:text-emerald-400'
                         }`}>
-                        ₹{ar.remainingAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                      </span>
+                        <span className="text-sm font-bold">
+                          ₹{ar.remainingAmount.toLocaleString('en-IN')}
+                        </span>
+                        <span className="text-[9px] font-bold uppercase tracking-tighter opacity-80">
+                          {ar.remainingAmount > 0 ? 'Residual Balance' : 'Fully Liquidated'}
+                        </span>
+                      </div>
                     </td>
-                    <td className="px-6 py-4">
-                      <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold border ${getStatusColor(ar.status)}`}>
+                    <td className="px-8 py-6">
+                      <span className={`inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider border shadow-sm ${getStatusColor(ar.status)}`}>
+                        {getStatusIcon(ar.status)}
                         {getStatusLabel(ar.status)}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
-                      {format(new Date(ar.createdAt), 'dd MMM yyyy')}
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <button
-                        onClick={() => handleViewDetails(ar._id)}
-                        className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors duration-200"
-                      >
-                        <EyeIcon />
-                        View
-                      </button>
+                    <td className="px-8 py-6">
+                      <div className="flex items-center justify-center">
+                        <button
+                          onClick={() => handleViewDetails(ar._id)}
+                          className="group/btn relative flex h-10 w-10 items-center justify-center rounded-xl border border-slate-300 bg-white shadow-sm transition-all hover:border-blue-600 hover:bg-blue-50 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-blue-400 dark:hover:bg-blue-400/10"
+                        >
+                          <Eye className="h-4 w-4 text-slate-700 transition-colors group-hover/btn:text-blue-600 dark:text-slate-400 dark:group-hover/btn:text-blue-400" />
+                          <div className="absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-lg bg-slate-950 px-2 py-1 text-[10px] font-bold text-white opacity-0 transition-opacity group-hover/btn:opacity-100">
+                            View Details
+                          </div>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
