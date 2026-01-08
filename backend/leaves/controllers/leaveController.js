@@ -516,7 +516,7 @@ exports.applyLeave = async (req, res) => {
     // Get resolved leave settings (department + global fallback)
     let resolvedLeaveSettings = null;
     if (employee.department_id) {
-      resolvedLeaveSettings = await getResolvedLeaveSettings(employee.department_id);
+      resolvedLeaveSettings = await getResolvedLeaveSettings(employee.department_id, employee.division_id);
     }
 
     // Calculate number of days

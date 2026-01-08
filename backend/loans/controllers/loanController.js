@@ -601,7 +601,7 @@ exports.applyLoan = async (req, res) => {
     // Get resolved settings (department + global fallback)
     let settings = workflowSettings.settings || {};
     if (employee.department_id) {
-      const resolvedSettings = await getResolvedLoanSettings(employee.department_id, requestType);
+      const resolvedSettings = await getResolvedLoanSettings(employee.department_id, employee.division_id, requestType);
       if (resolvedSettings) {
         // Merge resolved settings with workflow settings
         // Map resolved settings (minTenure/maxTenure) to settings format (minDuration/maxDuration)

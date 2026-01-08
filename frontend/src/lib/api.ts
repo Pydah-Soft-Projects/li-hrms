@@ -793,8 +793,11 @@ export const api = {
   },
 
   // Department Settings
-  getDepartmentSettings: async (deptId: string) => {
-    return apiRequest<any>(`/departments/${deptId}/settings`, { method: 'GET' });
+  getDepartmentSettings: async (deptId: string, divisionId?: string) => {
+    const params = new URLSearchParams();
+    if (divisionId) params.append('divisionId', divisionId);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return apiRequest<any>(`/departments/${deptId}/settings${query}`, { method: 'GET' });
   },
 
   updateDepartmentSettings: async (deptId: string, data: {
@@ -832,8 +835,11 @@ export const api = {
       deductFromSalary?: boolean | null;
       deductionAmount?: number | null;
     };
-  }) => {
-    return apiRequest<any>(`/departments/${deptId}/settings`, {
+  }, divisionId?: string) => {
+    const params = new URLSearchParams();
+    if (divisionId) params.append('divisionId', divisionId);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return apiRequest<any>(`/departments/${deptId}/settings${query}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     });

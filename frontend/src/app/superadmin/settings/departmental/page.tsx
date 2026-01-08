@@ -209,7 +209,7 @@ export default function DepartmentalSettingsPage() {
       setSettings(null);
       resetForm();
     }
-  }, [selectedDepartmentId]);
+  }, [selectedDepartmentId, selectedDivisionId]);
 
   /* 
    * Load departments based on user role and division scope.
@@ -272,7 +272,7 @@ export default function DepartmentalSettingsPage() {
   const loadDepartmentSettings = async (deptId: string) => {
     try {
       setLoadingSettings(true);
-      const response = await api.getDepartmentSettings(deptId);
+      const response = await api.getDepartmentSettings(deptId, selectedDivisionId || undefined);
       if (response.success && response.data) {
         setSettings(response.data);
         // Populate form with existing settings
@@ -479,7 +479,7 @@ export default function DepartmentalSettingsPage() {
         payroll: formData.payroll,
       };
 
-      const response = await api.updateDepartmentSettings(selectedDepartmentId, updateData);
+      const response = await api.updateDepartmentSettings(selectedDepartmentId, updateData, selectedDivisionId || undefined);
 
       if (response.success) {
         toast.success('Department settings saved successfully!');
@@ -575,7 +575,22 @@ export default function DepartmentalSettingsPage() {
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <span>Configuring settings for <span className="font-semibold">{selectedDepartment.name}</span></span>
+            <span>
+              Configuring settings for <span className="font-semibold">{selectedDepartment.name}</span>
+              {selectedDivisionId && (
+                <>
+                  {' '} in <span className="font-semibold">{divisions.find(d => d._id === selectedDivisionId)?.name}</span> division
+                  <span className="ml-2 rounded-full bg-blue-200 px-2 py-0.5 text-[10px] font-bold text-blue-800 dark:bg-blue-800 dark:text-blue-200">
+                    DIVISION-SPECIFIC
+                  </span>
+                </>
+              )}
+              {!selectedDivisionId && (
+                <span className="ml-2 rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+                  DEPARTMENT DEFAULT
+                </span>
+              )}
+            </span>
           </div>
         )}
       </div>
