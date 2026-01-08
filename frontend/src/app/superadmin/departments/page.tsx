@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { api, Department, Designation, Division, Shift, User } from '@/lib/api';
 import Swal from 'sweetalert2';
 import BulkUpload from '@/components/BulkUpload';
@@ -13,6 +13,89 @@ import {
   validateDesignationRow,
 } from '@/lib/bulkUpload';
 import Spinner from '@/components/Spinner';
+
+// Helper Components
+function StatCard({ title, value, icon, trend, color }: {
+  title: string;
+  value: number;
+  icon: React.ReactNode;
+  trend: string;
+  color: 'emerald' | 'amber' | 'blue' | 'indigo';
+}) {
+  const gradients = {
+    emerald: 'from-emerald-500 to-emerald-600 shadow-emerald-500/20',
+    amber: 'from-amber-500 to-amber-600 shadow-amber-500/20',
+    blue: 'from-blue-500 to-blue-600 shadow-blue-500/20',
+    indigo: 'from-indigo-500 to-indigo-600 shadow-indigo-500/20',
+  };
+
+  const bgColors = {
+    emerald: 'bg-emerald-50 border-emerald-100',
+    amber: 'bg-amber-50 border-amber-100',
+    blue: 'bg-blue-50 border-blue-100',
+    indigo: 'bg-indigo-50 border-indigo-100',
+  };
+
+  return (
+    <div className="relative p-3 md:p-5 rounded-2xl md:rounded-2xl transition-all duration-300 hover:shadow-xl hover:-translate-y-1 group bg-white border border-slate-100 shadow-sm h-40 flex flex-col justify-between">
+      <div className="flex items-start justify-between mb-2 md:mb-4">
+        <div className={`w-10 h-10 md:w-8 md:h-8 rounded-xl md:rounded-xl bg-gradient-to-br ${gradients[color]} flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform duration-300`}>
+          {React.isValidElement(icon) ? React.cloneElement(icon as React.ReactElement<any>, { className: 'w-5 h-5 md:w-6 md:h-6' }) : icon}
+        </div>
+      </div>
+      <div>
+        <p className="text-slate-500 font-semibold text-[9px] md:text-xs mb-0.5 md:mb-1 uppercase tracking-wider truncate">{title}</p>
+        <h3 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight">{value}</h3>
+        <div className={`mt-1 md:mt-1 inline-flex items-center gap-1 md:gap-2 px-1.5 py-0.5 md:px-3 md:py-1 rounded-full text-[8px] md:text-xs font-bold ${bgColors[color]} text-${color}-700`}>
+          {trend}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Icons
+const EditIcon = () => (
+  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+  </svg>
+);
+
+const TrashIcon = () => (
+  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+  </svg>
+);
+
+const UserIcon = ({ className = "w-4 h-4" }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+  </svg>
+);
+
+const BuildingIcon = ({ className = "w-6 h-6" }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+  </svg>
+);
+
+const UsersIcon = ({ className = "w-6 h-6" }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+  </svg>
+);
+
+const ArrowPathIcon = ({ className = "w-6 h-6" }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+  </svg>
+);
+
+const CheckBadgeIcon = ({ className = "w-6 h-6" }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138z" />
+  </svg>
+);
 
 
 
@@ -525,95 +608,93 @@ export default function DepartmentsPage() {
       <div className="pointer-events-none fixed inset-0 bg-gradient-to-br from-blue-50/40 via-indigo-50/35 to-transparent dark:from-slate-900/60 dark:via-slate-900/65 dark:to-slate-900/80" />
 
       <div className="relative z-10 p-6 sm:p-8 lg:p-10">
-        {/* Header Section */}
-        <div className="mb-8 flex flex-wrap items-center justify-between gap-4 rounded-3xl border border-slate-200/80 bg-white/95 px-6 py-5 shadow-[0_8px_26px_rgba(30,64,175,0.08)] backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/90 sm:px-8">
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100 sm:text-3xl">
-              Department Management
-            </h1>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Organize and manage your departments with ease
-            </p>
-          </div>
+        {/* Header Section - Dashboard Style */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 md:gap-6 mb-8">
+          {/* Page Role Card */}
+          <div className="md:col-span-1 bg-white p-3 md:p-6 rounded-xl md:rounded-3xl shadow-sm border border-slate-100 relative overflow-hidden group hover:shadow-md transition-shadow">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-50 to-white rounded-full -mr-10 -mt-10 blur-2xl transition-all duration-500 group-hover:bg-blue-100/60" />
 
-          {/* Division Filter */}
-          <div className="flex-1 min-w-[200px] max-w-xs">
-            <div className="relative group">
-              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                <svg className="h-4 w-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 8.293A1 1 0 013 7.586V4z" />
-                </svg>
+            <div className="relative z-10 flex items-center h-full gap-3 md:gap-5">
+              <div className="w-12 h-12 md:w-16 md:h-16 md:ml-4 rounded-xl md:rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/20 ring-2 md:ring-4 ring-blue-50 shrink-0">
+                <BuildingIcon className="w-6 h-6 md:w-8 md:h-8" />
               </div>
-              <select
-                value={selectedDivisionId}
-                onChange={(e) => setSelectedDivisionId(e.target.value)}
-                className="w-full pl-11 pr-10 py-3 rounded-2xl border border-slate-200 bg-white/50 text-sm font-medium text-slate-700 outline-none transition-all hover:bg-white hover:border-blue-300 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 dark:bg-slate-900/50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-900 dark:focus:border-blue-500/50 appearance-none shadow-sm cursor-pointer"
-              >
-                <option value="all">All Divisions (Full View)</option>
-                {divisions.map((div) => (
-                  <option key={div._id} value={div._id}>
-                    {div.name} ({div.code})
-                  </option>
-                ))}
-              </select>
-              <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
-                <svg className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
+              <div className="flex flex-col justify-center">
+                <p className="text-slate-500 font-medium text-[10px] md:text-xs uppercase tracking-wider mb-0.5">Organization</p>
+                <h3 className="text-lg md:text-2xl font-black text-slate-900 tracking-tight capitalize">
+                  Departments
+                </h3>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-xs font-semibold text-slate-400">Functional Units</span>
+                </div>
               </div>
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-3">
-            <button
-              onClick={() => setShowBulkUploadDept(true)}
-              className="inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-white px-4 py-3 text-sm font-semibold text-blue-700 transition-all hover:bg-blue-50 hover:shadow-md dark:border-blue-800 dark:bg-slate-900 dark:text-blue-400 dark:hover:bg-blue-900/20"
-            >
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-              </svg>
-              Bulk Depts
-            </button>
-            <button
-              onClick={() => setShowBulkUploadDesig(true)}
-              className="inline-flex items-center gap-2 rounded-2xl border border-indigo-200 bg-white px-4 py-3 text-sm font-semibold text-indigo-700 transition-all hover:bg-indigo-50 hover:shadow-md dark:border-indigo-800 dark:bg-slate-900 dark:text-indigo-400 dark:hover:bg-indigo-900/20"
-            >
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-              </svg>
-              Bulk Designations
-            </button>
-            <button
-              onClick={() => {
-                setShowDesignationDialog('global');
-                loadDesignations('global');
-                resetDesignationForm();
-              }}
-              className="inline-flex items-center gap-2 rounded-2xl border border-green-200 bg-white px-4 py-3 text-sm font-semibold text-green-700 transition-all hover:bg-green-50 hover:shadow-md dark:border-green-800 dark:bg-slate-900 dark:text-green-400 dark:hover:bg-green-900/20"
-            >
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Create Designation
-            </button>
-            <button
-              onClick={() => {
-                resetDepartmentForm();
-                setShowCreateDialog(true);
-              }}
-              className="group relative inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 hover:shadow-xl hover:shadow-blue-500/40 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
-            >
-              <span className="text-lg">+</span>
-              <span>Create Department</span>
-            </button>
+          {/* Action Card */}
+          <div className="md:col-span-2 bg-gradient-to-br from-blue-500 to-indigo-600 p-3 md:p-8 rounded-xl md:rounded-3xl shadow-lg shadow-blue-500/20 border border-blue-400/20 relative overflow-hidden group">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-10 -mt-10 blur-3xl transition-all duration-500 group-hover:bg-white/20" />
+
+            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between h-full gap-4">
+              <div>
+                <h3 className="text-xl md:text-2xl font-bold text-white mb-1">Manage Workforce Structure</h3>
+                <p className="text-blue-100 text-sm md:text-base opacity-90">Organize your employees into functional departments and assign roles.</p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowBulkUploadDept(true)}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold text-white backdrop-blur-sm transition-all hover:bg-white/20 whitespace-nowrap"
+                >
+                  <span>Bulk Import</span>
+                </button>
+                <button
+                  onClick={() => { resetDepartmentForm(); setShowCreateDialog(true); }}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-6 py-4 text-sm font-bold text-blue-600 shadow-xl transition-all hover:scale-105 active:scale-95 whitespace-nowrap"
+                >
+                  <span className="text-xl">+</span>
+                  <span>Create Department</span>
+                </button>
+              </div>
+            </div>
           </div>
+        </div>
+
+        {/* Stats Grid */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-6 mb-8">
+          <StatCard
+            title="Total Depts"
+            value={departments.length}
+            icon={<BuildingIcon />}
+            trend="Active Departments"
+            color="blue"
+          />
+          <StatCard
+            title="Linked Roles"
+            value={departments.reduce((acc, d) => acc + (d.designations?.length || 0), 0)}
+            icon={<UsersIcon />}
+            trend="Total Designations"
+            color="emerald"
+          />
+          <StatCard
+            title="Avg. Roles"
+            value={departments.length ? Math.round(departments.reduce((acc, d) => acc + (d.designations?.length || 0), 0) / departments.length) : 0}
+            icon={<ArrowPathIcon />}
+            trend="Per Department"
+            color="amber"
+          />
+          <StatCard
+            title="Leadership"
+            value={departments.filter(d => d.hod || (d.divisionHODs && d.divisionHODs.length > 0)).length}
+            icon={<CheckBadgeIcon />}
+            trend="Depts with HOD"
+            color="indigo"
+          />
         </div>
 
         {/* Create Department Dialog */}
         {showCreateDialog && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <div
-              className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
+              className="fixed inset-0 bg-slate-900/75 backdrop-blur-md transition-opacity"
               onClick={() => {
                 setShowCreateDialog(false);
                 resetDepartmentForm();
@@ -748,9 +829,9 @@ export default function DepartmentsPage() {
         {/* Edit Department Dialog */}
         {
           showEditDialog && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
               <div
-                className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
+                className="fixed inset-0 bg-slate-900/75 backdrop-blur-md transition-opacity"
                 onClick={() => {
                   setShowEditDialog(null);
                   resetDepartmentForm();
@@ -880,9 +961,9 @@ export default function DepartmentsPage() {
         {/* Link Designation Dialog */}
         {
           showLinkDesignationDialog && (
-            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
               <div
-                className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
+                className="fixed inset-0 bg-slate-900/75 backdrop-blur-md transition-opacity"
                 onClick={() => setShowLinkDesignationDialog(null)}
               />
               <div className="relative z-[60] w-full max-w-md rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl shadow-blue-500/10 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/95">
@@ -931,9 +1012,9 @@ export default function DepartmentsPage() {
         {/* Existing Shift Dialog */}
         {
           showShiftDialog && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
               <div
-                className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
+                className="fixed inset-0 bg-slate-900/75 backdrop-blur-md transition-opacity"
                 onClick={() => {
                   setShowShiftDialog(null);
                   setSelectedShiftIds([]);
@@ -1135,9 +1216,9 @@ export default function DepartmentsPage() {
         {/* Designation Dialog */}
         {
           showDesignationDialog && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
               <div
-                className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
+                className="fixed inset-0 bg-slate-900/75 backdrop-blur-md transition-opacity"
                 onClick={() => {
                   setShowDesignationDialog(null);
                   resetDesignationForm();
@@ -1457,9 +1538,9 @@ export default function DepartmentsPage() {
         {/* Assign Shifts to Designation Dialog */}
         {
           showDesignationShiftDialog && (
-            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
               <div
-                className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
+                className="fixed inset-0 bg-slate-900/75 backdrop-blur-md transition-opacity"
                 onClick={() => {
                   setShowDesignationShiftDialog(null);
                   setSelectedDesignationShiftIds([]);
@@ -1584,9 +1665,9 @@ export default function DepartmentsPage() {
         {/* Shift Breakdown Dialog */}
         {
           showShiftBreakdownDialog && (
-            <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+            <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
               <div
-                className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
+                className="fixed inset-0 bg-slate-900/75 backdrop-blur-md transition-opacity"
                 onClick={() => setShowShiftBreakdownDialog(null)}
               />
               <div className="relative z-[70] w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl shadow-blue-500/10 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/95">
@@ -1689,26 +1770,69 @@ export default function DepartmentsPage() {
         }
 
 
-        {/* Departments Grid (Card-based) */}
-        {
-          loading ? (
-            <div className="flex flex-col items-center justify-center rounded-3xl border border-slate-200 bg-white/95 py-16 shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
-              <Spinner />
-              <p className="mt-4 text-sm font-medium text-slate-600 dark:text-slate-400">Loading departments...</p>
-            </div>
-          ) : departments.length === 0 ? (
-            <div className="rounded-3xl border border-slate-200 bg-white/95 p-12 text-center shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
-              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-900/30 dark:to-indigo-900/30">
-                <svg className="h-8 w-8 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                </svg>
+        {/* Main Content Area */}
+        <div className="bg-white rounded-3xl border border-slate-100 p-4 md:p-8 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between mb-8 gap-4">
+            <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+              <span className="w-1.5 h-6 bg-blue-500 rounded-full" />
+              Organizational Units
+            </h2>
+
+            {/* Division Filter */}
+            <div className="flex-1 min-w-[200px] max-w-xs">
+              <div className="relative group">
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                  <svg className="h-4 w-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 8.293A1 1 0 013 7.586V4z" />
+                  </svg>
+                </div>
+                <select
+                  value={selectedDivisionId}
+                  onChange={(e) => setSelectedDivisionId(e.target.value)}
+                  className="w-full pl-11 pr-10 py-3 rounded-2xl border border-slate-200 bg-slate-50 text-sm font-medium text-slate-700 outline-none transition-all hover:bg-slate-100 hover:border-blue-300 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 dark:bg-slate-900/50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-900 dark:focus:border-blue-500/50 appearance-none shadow-sm cursor-pointer"
+                >
+                  <option value="all">All Divisions (Full View)</option>
+                  {divisions.map((div) => (
+                    <option key={div._id} value={div._id}>
+                      {div.name} ({div.code})
+                    </option>
+                  ))}
+                </select>
+                <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
+                  <svg className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
               </div>
-              <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">No departments found</p>
-              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Create your first department to get started</p>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {departments.map((dept) => {
+
+            {/* Secondary Actions */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowDesignationDialog('global')}
+                className="px-4 py-2 text-sm font-medium text-slate-600 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors"
+              >
+                Global Designations
+              </button>
+            </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {loading ? (
+              <div className="col-span-full flex flex-col items-center justify-center py-20">
+                <Spinner />
+                <p className="mt-4 text-sm font-medium text-slate-500">Loading departments...</p>
+              </div>
+            ) : departments.length === 0 ? (
+              <div className="col-span-full py-20 text-center">
+                <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
+                  <BuildingIcon className="w-10 h-10" />
+                </div>
+                <h3 className="text-xl font-bold text-slate-900">No departments yet</h3>
+                <p className="text-slate-500 mt-2">Start by creating your first department.</p>
+              </div>
+            ) : (
+              departments.map((dept) => {
                 const isLinked = selectedDivisionId === 'all' || dept.divisions?.some(divId =>
                   (typeof divId === 'string' ? divId : (divId as any)._id) === selectedDivisionId
                 );
@@ -1717,143 +1841,75 @@ export default function DepartmentsPage() {
                   <div
                     key={dept._id}
                     onClick={() => handleCardClick(dept)}
-                    className={`group relative overflow-hidden rounded-3xl border bg-white/95 p-6 shadow-lg transition-all 
-                      ${isLinked
-                        ? 'border-slate-200 shadow-blue-100/40 hover:border-blue-300 hover:shadow-xl hover:shadow-blue-200/50'
-                        : 'border-slate-100 opacity-40 grayscale-[0.5] hover:opacity-60 cursor-pointer scale-[0.98]'
+                    className={`group relative flex flex-col p-4 rounded-2xl bg-white border-3 transition-all duration-300 hover:-translate-y-1
+                         ${isLinked
+                        ? 'border-slate-100 hover:border-blue-200 hover:shadow-lg'
+                        : 'border-slate-100 opacity-60 grayscale-[0.8] hover:opacity-80 hover:scale-[0.98] cursor-pointer'
                       }
-                      dark:bg-slate-950/95 dark:shadow-none 
-                      ${isLinked ? 'dark:border-slate-800 dark:hover:border-slate-700' : 'dark:border-slate-900'}
-                    `}
+                      `}
                   >
-                    {/* Gradient accent */}
-                    {isLinked && (
-                      <div className="absolute top-0 left-0 h-1 w-full bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500"></div>
-                    )}
-                    {!isLinked && (
-                      <div className="absolute inset-0 bg-slate-50/10 backdrop-blur-[1px] pointer-events-none"></div>
-                    )}
-
-                    {!isLinked && (
-                      <div className="absolute top-3 right-3 z-20">
-                        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-slate-500 dark:bg-slate-800 dark:text-slate-400 shadow-sm">
-                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                          </svg>
-                        </span>
-                      </div>
-                    )}
-
-                    <div className="mb-4 flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300">
-                            {dept.name}
-                          </h3>
-                          {dept.code && (
-                            <span className="rounded-xl bg-blue-100/80 px-2.5 py-1 text-[10px] font-bold text-blue-700 backdrop-blur-sm dark:bg-blue-900/40 dark:text-blue-400">
-                              {dept.code}
-                            </span>
-                          )}
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center text-sm font-black shadow-inner border border-blue-100 group-hover:scale-110 transition-transform">
+                          {(dept.code || dept.name.substring(0, 2)).substring(0, 2).toUpperCase()}
                         </div>
-                        <div className="flex gap-2 items-center">
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${dept.isActive
-                              ? 'bg-green-100 text-green-700 shadow-sm dark:bg-green-900/30 dark:text-green-400'
-                              : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                              }`}
-                          >
-                            {dept.isActive ? 'Active' : 'Inactive'}
-                          </span>
+                        <div className="min-w-0">
+                          <h3 className="text-base font-bold text-slate-900 tracking-tight group-hover:text-blue-600 transition-colors truncate">{dept.name}</h3>
+                          {dept.code && <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{dept.code}</span>}
                         </div>
                       </div>
-                      <div className="flex gap-1">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleOpenEditDialog(dept); }}
-                          className="rounded-xl p-2 text-slate-400 hover:bg-white/50 hover:text-blue-600 dark:hover:bg-slate-800 transition-colors"
-                          title="Edit Department"
-                        >
-                          <EditIcon />
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleDeleteDepartment(dept._id); }}
-                          className="rounded-xl p-2 text-slate-400 hover:bg-white/50 hover:text-red-600 dark:hover:bg-slate-800 transition-colors"
-                          title="Delete Department"
-                        >
-                          <TrashIcon />
-                        </button>
+                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={(e) => { e.stopPropagation(); handleOpenEditDialog(dept); }} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"><EditIcon /></button>
+                        <button onClick={(e) => { e.stopPropagation(); handleDeleteDepartment(dept._id); }} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"><TrashIcon /></button>
                       </div>
                     </div>
+
                     {dept.description && (
-                      <p className="mb-4 line-clamp-2 text-sm text-slate-600 dark:text-slate-400">{dept.description}</p>
+                      <p className="text-xs text-slate-500 line-clamp-2 mb-4 min-h-[32px]">
+                        {dept.description}
+                      </p>
                     )}
 
-                    <div className="mb-4 space-y-3">
-                      {/* Division Specific HODs */}
-                      {dept.divisionHODs && dept.divisionHODs.length > 0 ? (
-                        <div className="space-y-2">
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Division HODs</p>
-                          {dept.divisionHODs.map((dh: any, idx: number) => (
-                            <div key={idx} className="flex items-center justify-between p-2 rounded-xl bg-white/40 border border-slate-100/50 dark:bg-slate-800/40 dark:border-slate-700/50 backdrop-blur-[2px]">
-                              <div className="flex items-center gap-2">
-                                <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/40 px-1.5 py-0.5 rounded" title={dh.division?.name}>
-                                  {dh.division?.code || dh.division?.name || 'Div'}
-                                </span>
-                                <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
-                                  {dh.hod?.name || dh.hod?.email || 'N/A'}
-                                </span>
-                              </div>
-                            </div>
-                          ))}
+                    <div className="mt-auto space-y-3">
+                      {/* HOD Info */}
+                      <div className="flex items-center gap-2 p-2 rounded-xl bg-slate-50 border border-slate-100/50">
+                        <div className="w-6 h-6 rounded-lg bg-white flex items-center justify-center text-slate-400 shadow-sm">
+                          <UserIcon className="w-3 h-3" />
                         </div>
-                      ) : (
-                        dept.hod && (
-                          <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 bg-slate-50/50 dark:bg-slate-800/30 p-2 rounded-xl">
-                            <span className="text-blue-500"><UserIcon /></span>
-                            <span className="font-medium">HOD:</span> {dept.hod.name || dept.hod.email}
-                          </div>
-                        )
-                      )}
-                    </div>
-
-                    {dept.shifts && dept.shifts.length > 0 && (
-                      <div className="mb-4">
-                        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                          Assigned Shifts
-                        </p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {dept.shifts.map((shift: any) => (
-                            <span
-                              key={typeof shift === 'string' ? shift : shift._id}
-                              className="inline-flex items-center gap-1 rounded-lg bg-white/60 px-2 py-1 text-[10px] font-bold text-purple-700 border border-purple-100/50 dark:bg-purple-900/20 dark:text-purple-300 dark:border-purple-800/50 shadow-sm"
-                            >
-                              {typeof shift === 'string' ? 'Shift' : `${shift.name} (${shift.startTime})`}
-                            </span>
-                          ))}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Head of Dept</p>
+                          <p className="text-xs font-bold text-slate-700 truncate">
+                            {dept.divisionHODs && dept.divisionHODs.length > 0
+                              ? `${dept.divisionHODs.length} Div HODs`
+                              : (dept.hod?.name || 'Vacant')
+                            }
+                          </p>
                         </div>
                       </div>
-                    )}
 
-                    <div className="flex gap-2 border-t border-slate-100/50 pt-4 dark:border-slate-800/50">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleOpenShiftDialog(dept); }}
-                        className="flex-1 rounded-2xl bg-amber-50 px-4 py-2.5 text-xs font-bold text-amber-700 hover:bg-amber-100 transition-all dark:bg-amber-900/30 dark:text-amber-400 dark:hover:bg-amber-900/40 shadow-sm hover:shadow"
-                      >
-                        Shifts
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleOpenDesignationDialog(dept._id); }}
-                        className="flex-1 rounded-2xl bg-blue-500 px-4 py-2.5 text-xs font-bold text-white hover:bg-blue-600 transition-all shadow-md shadow-blue-500/20 hover:shadow-lg hover:shadow-blue-500/30"
-                      >
-                        Designations
-                      </button>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleOpenDesignationDialog(dept._id); }}
+                          className="flex flex-col items-center justify-center p-2 rounded-xl bg-indigo-50/50 border border-indigo-100/50 hover:bg-indigo-50 hover:border-indigo-200 transition-all group/btn"
+                        >
+                          <span className="text-base font-black text-indigo-600">{dept.designations?.length || 0}</span>
+                          <span className="text-[9px] font-bold text-indigo-400 uppercase tracking-widest">Roles</span>
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleOpenShiftDialog(dept); }}
+                          className="flex flex-col items-center justify-center p-2 rounded-xl bg-amber-50/50 border border-amber-100/50 hover:bg-amber-50 hover:border-amber-200 transition-all group/btn"
+                        >
+                          <span className="text-base font-black text-amber-600 tracking-tighter">Assign</span>
+                          <span className="text-[9px] font-bold text-amber-400 uppercase tracking-widest">Shifts</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
-              })}
-            </div>
-          )
-        }
+              })
+            )}
+          </div>
+        </div>
 
         {/* Bulk Upload Departments Dialog */}
         {
@@ -1971,21 +2027,4 @@ export default function DepartmentsPage() {
   );
 }
 
-// Re-using icons from Divisions page
-const EditIcon = () => (
-  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-  </svg>
-);
-
-const TrashIcon = () => (
-  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-  </svg>
-);
-
-const UserIcon = () => (
-  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-  </svg>
-);
+// End of file

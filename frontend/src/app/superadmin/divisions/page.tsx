@@ -33,16 +33,16 @@ function StatCard({ title, value, icon, trend, color }: {
     };
 
     return (
-        <div className="relative p-3 md:p-6 rounded-2xl md:rounded-3xl transition-all duration-300 hover:shadow-xl hover:-translate-y-1 group bg-white border border-slate-100 shadow-sm">
-            <div className="flex items-start justify-between mb-2 md:mb-6">
-                <div className={`w-10 h-10 md:w-14 md:h-14 rounded-xl md:rounded-2xl bg-gradient-to-br ${gradients[color]} flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform duration-300`}>
-                    {React.isValidElement(icon) ? React.cloneElement(icon as React.ReactElement<any>, { className: 'w-5 h-5 md:w-7 md:h-7' }) : icon}
+        <div className="relative p-3 md:p-5 rounded-2xl md:rounded-3xl transition-all duration-300 hover:shadow-xl hover:-translate-y-1 group bg-white border border-slate-100 shadow-sm h-40 flex flex-col justify-between">
+            <div className="flex items-start justify-between mb-2 md:mb-4">
+                <div className={`w-10 h-10 md:w-8 md:h-8 rounded-xl md:rounded-2xl bg-gradient-to-br ${gradients[color]} flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform duration-300`}>
+                    {React.isValidElement(icon) ? React.cloneElement(icon as React.ReactElement<any>, { className: 'w-5 h-5 md:w-5 md:h-5' }) : icon}
                 </div>
             </div>
             <div>
-                <p className="text-slate-500 font-semibold text-[9px] md:text-sm mb-0.5 md:mb-1 uppercase tracking-wider truncate">{title}</p>
-                <h3 className="text-xl md:text-4xl font-black text-slate-900 tracking-tight">{value}</h3>
-                <div className={`mt-1.5 md:mt-4 inline-flex items-center gap-1 md:gap-2 px-1.5 py-0.5 md:px-3 md:py-1 rounded-full text-[8px] md:text-xs font-bold ${bgColors[color]} text-${color}-700`}>
+                <p className="text-slate-500 font-semibold text-[9px] md:text-xs mb-0.5 md:mb-1 uppercase tracking-wider truncate">{title}</p>
+                <h3 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight">{value}</h3>
+                <div className={`mt-1.5 md:mt-1 inline-flex items-center gap-1 md:gap-2 px-1.5 py-0.5 md:px-3 md:py-1 rounded-full text-[8px] md:text-xs font-bold ${bgColors[color]} text-${color}-700`}>
                     {trend}
                 </div>
             </div>
@@ -354,16 +354,16 @@ export default function DivisionsPage() {
         setSelectedShiftIds(div.shifts?.map(s => typeof s === 'string' ? s : s._id) || []);
     };
 
-    if (loading && divisions.length === 0) return <div className="p-8"><Spinner /></div>;
+    if (loading && divisions.length === 0) return <div className="flex items-center justify-center h-screen"><Spinner /></div>;
 
     return (
         <div className="relative min-h-screen">
             {/* Background Pattern */}
             <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(to_right,#e2e8f01f_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f01f_1px,transparent_1px)] bg-[size:28px_28px] dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.12)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.12)_1px,transparent_1px)]" />
 
-            <div className="relative z-10 space-y-3 md:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 bg-green-50 p-2 md:p-6 rounded-xl md:rounded-[2rem] mx-4 my-4 md:mx-8 md:my-8 border border-slate-200/50">
+            <div className="relative z-10 p-6 sm:p-8 lg:p-10">
                 {/* Header Section - Dashboard Style */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-2 md:gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2 md:gap-6 mb-8">
                     {/* Page Role Card */}
                     <div className="md:col-span-1 bg-white p-3 md:p-6 rounded-xl md:rounded-3xl shadow-sm border border-slate-100 relative overflow-hidden group hover:shadow-md transition-shadow">
                         <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-50 to-white rounded-full -mr-10 -mt-10 blur-2xl transition-all duration-500 group-hover:bg-blue-100/60" />
@@ -405,7 +405,7 @@ export default function DivisionsPage() {
                 </div>
 
                 {/* Stats Grid */}
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-6">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-6 mb-8">
                     <StatCard
                         title="Total Units"
                         value={divisions.length}
@@ -448,7 +448,7 @@ export default function DivisionsPage() {
 
                     <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3">
                         {divisions.map((div) => (
-                            <div key={div._id} className="group relative flex flex-col p-5 md:p-6 rounded-2xl md:rounded-3xl bg-white border border-slate-100 hover:border-blue-200 hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
+                            <div key={div._id} className="group relative flex flex-col p-5 md:p-6 rounded-2xl md:rounded-3xl bg-white border border-slate-300 hover:border-blue-200 hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
                                 <div className="flex items-start justify-between mb-6">
                                     <div className="flex items-center gap-4">
                                         <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center font-black shadow-inner border border-blue-100 group-hover:scale-110 transition-transform">

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { api, Department, Shift, Designation } from '@/lib/api';
 import BulkUpload from '@/components/BulkUpload';
 import {
@@ -13,6 +13,89 @@ import {
   ParsedRow,
 } from '@/lib/bulkUpload';
 import Spinner from '@/components/Spinner';
+
+// Helper Components
+function StatCard({ title, value, icon, trend, color }: {
+  title: string;
+  value: number;
+  icon: React.ReactNode;
+  trend: string;
+  color: 'emerald' | 'amber' | 'blue' | 'indigo';
+}) {
+  const gradients = {
+    emerald: 'from-emerald-500 to-emerald-600 shadow-emerald-500/20',
+    amber: 'from-amber-500 to-amber-600 shadow-amber-500/20',
+    blue: 'from-blue-500 to-blue-600 shadow-blue-500/20',
+    indigo: 'from-indigo-500 to-indigo-600 shadow-indigo-500/20',
+  };
+
+  const bgColors = {
+    emerald: 'bg-emerald-50 border-emerald-100',
+    amber: 'bg-amber-50 border-amber-100',
+    blue: 'bg-blue-50 border-blue-100',
+    indigo: 'bg-indigo-50 border-indigo-100',
+  };
+
+  return (
+    <div className="relative p-3 md:p-5 rounded-2xl md:rounded-2xl transition-all duration-300 hover:shadow-xl hover:-translate-y-1 group bg-white border border-slate-100 shadow-sm h-40 flex flex-col justify-between">
+      <div className="flex items-start justify-between mb-2 md:mb-4">
+        <div className={`w-10 h-10 md:w-8 md:h-8 rounded-xl md:rounded-xl bg-gradient-to-br ${gradients[color]} flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform duration-300`}>
+          {React.isValidElement(icon) ? React.cloneElement(icon as React.ReactElement<any>, { className: 'w-5 h-5 md:w-6 md:h-6' }) : icon}
+        </div>
+      </div>
+      <div>
+        <p className="text-slate-500 font-semibold text-[9px] md:text-xs mb-0.5 md:mb-1 uppercase tracking-wider truncate">{title}</p>
+        <h3 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight">{value}</h3>
+        <div className={`mt-1 md:mt-1 inline-flex items-center gap-1 md:gap-2 px-1.5 py-0.5 md:px-3 md:py-1 rounded-full text-[8px] md:text-xs font-bold ${bgColors[color]} text-${color}-700`}>
+          {trend}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Icons
+const EditIcon = () => (
+  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+  </svg>
+);
+
+const TrashIcon = () => (
+  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+  </svg>
+);
+
+const UserIcon = ({ className = "w-4 h-4" }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+  </svg>
+);
+
+const BuildingIcon = ({ className = "w-6 h-6" }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+  </svg>
+);
+
+const UsersIcon = ({ className = "w-6 h-6" }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+  </svg>
+);
+
+const ArrowPathIcon = ({ className = "w-6 h-6" }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+  </svg>
+);
+
+const CheckBadgeIcon = ({ className = "w-6 h-6" }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138z" />
+  </svg>
+);
 
 export default function DepartmentsPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -76,7 +159,7 @@ export default function DepartmentsPage() {
   const loadDepartments = async () => {
     try {
       setLoading(true);
-      const response = await api.getDepartments();
+      const response = await api.getDepartments(true);
       if (response.success && response.data) {
         setDepartments(response.data);
       }
@@ -411,63 +494,117 @@ export default function DepartmentsPage() {
       <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(to_right,#e2e8f01f_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f01f_1px,transparent_1px)] bg-[size:28px_28px] dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.12)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.12)_1px,transparent_1px)]" />
       <div className="pointer-events-none fixed inset-0 bg-gradient-to-br from-blue-50/40 via-indigo-50/35 to-transparent dark:from-slate-900/60 dark:via-slate-900/65 dark:to-slate-900/80" />
 
-      <div className="relative z-10 p-6 sm:p-8 lg:p-10">
-        {/* Header Section */}
-        <div className="mb-8 flex flex-wrap items-center justify-between gap-4 rounded-3xl border border-slate-200/80 bg-white/95 px-6 py-5 shadow-[0_8px_26px_rgba(30,64,175,0.08)] backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/90 sm:px-8">
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100 sm:text-3xl">
-              Department Management
-            </h1>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Organize and manage your departments with ease
-            </p>
+      <div className="relative z-20 p-6 sm:p-8 lg:p-10">
+        {/* Header Section - Dashboard Style */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 md:gap-6 mb-8">
+          {/* Page Role Card */}
+          <div className="md:col-span-1 bg-white p-3 md:p-6 rounded-xl md:rounded-3xl shadow-sm border border-slate-100 relative overflow-hidden group hover:shadow-md transition-shadow">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-50 to-white rounded-full -mr-10 -mt-10 blur-2xl transition-all duration-500 group-hover:bg-blue-100/60" />
+
+            <div className="relative z-20 flex items-center h-full gap-3 md:gap-5">
+              <div className="w-12 h-12 md:w-16 md:h-16 md:ml-4 rounded-xl md:rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/20 ring-2 md:ring-4 ring-blue-50 shrink-0">
+                <BuildingIcon className="w-6 h-6 md:w-8 md:h-8" />
+              </div>
+              <div className="flex flex-col justify-center">
+                <p className="text-slate-500 font-medium text-[10px] md:text-xs uppercase tracking-wider mb-0.5">Organization</p>
+                <h3 className="text-lg md:text-2xl font-black text-slate-900 tracking-tight capitalize">
+                  Departments
+                </h3>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-xs font-semibold text-slate-400">Functional Units</span>
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="flex flex-wrap gap-3">
-            <button
-              onClick={() => setShowBulkUploadDept(true)}
-              className="inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-white px-4 py-3 text-sm font-semibold text-blue-700 transition-all hover:bg-blue-50 hover:shadow-md dark:border-blue-800 dark:bg-slate-900 dark:text-blue-400 dark:hover:bg-blue-900/20"
-            >
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-              </svg>
-              Bulk Depts
-            </button>
-            <button
-              onClick={() => setShowBulkUploadDesig(true)}
-              className="inline-flex items-center gap-2 rounded-2xl border border-indigo-200 bg-white px-4 py-3 text-sm font-semibold text-indigo-700 transition-all hover:bg-indigo-50 hover:shadow-md dark:border-indigo-800 dark:bg-slate-900 dark:text-indigo-400 dark:hover:bg-indigo-900/20"
-            >
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-              </svg>
-              Bulk Designations
-            </button>
-            <button
-              onClick={() => {
-                resetDesignationForm();
-                setShowDesignationDialog('global');
-                loadDesignations('global');
-              }}
-              className="inline-flex items-center gap-2 rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm font-semibold text-emerald-700 transition-all hover:bg-emerald-50 hover:shadow-md dark:border-emerald-800 dark:bg-slate-900 dark:text-emerald-400 dark:hover:bg-emerald-900/20"
-            >
-              <span className="text-lg">+</span>
-              Create Designation
-            </button>
-            <button
-              onClick={() => {
-                resetDepartmentForm();
-                setShowCreateDialog(true);
-              }}
-              className="group relative inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 hover:shadow-xl hover:shadow-blue-500/40 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
-            >
-              <span className="text-lg">+</span>
-              <span>Create Department</span>
-            </button>
+
+          {/* Action Card */}
+          <div className="md:col-span-2 bg-gradient-to-br from-blue-500 to-indigo-600 p-3 md:p-8 rounded-xl md:rounded-3xl shadow-lg shadow-blue-500/20 border border-blue-400/20 relative overflow-hidden group">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-10 -mt-10 blur-3xl transition-all duration-500 group-hover:bg-white/20" />
+
+            <div className="relative z-20 flex flex-col md:flex-row md:items-center justify-between h-full gap-4">
+              <div>
+                <h3 className="text-xl md:text-2xl font-bold text-white mb-1">Manage Workforce Structure</h3>
+                <p className="text-blue-100 text-sm md:text-base opacity-90">Organize your employees into functional departments and assign roles.</p>
+              </div>
+              <div className="flex flex-wrap gap-2 justify-end">
+                <button
+                  onClick={() => setShowBulkUploadDept(true)}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white/10 px-4 py-2 text-xs md:text-sm font-bold text-white backdrop-blur-sm transition-all hover:bg-white/20 whitespace-nowrap"
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  </svg>
+                  <span>Bulk Depts</span>
+                </button>
+                <button
+                  onClick={() => setShowBulkUploadDesig(true)}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white/10 px-4 py-2 text-xs md:text-sm font-bold text-white backdrop-blur-sm transition-all hover:bg-white/20 whitespace-nowrap"
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  </svg>
+                  <span>Bulk Rol</span>
+                </button>
+                <button
+                  onClick={() => {
+                    resetDesignationForm();
+                    setShowDesignationDialog('global');
+                    loadDesignations('global');
+                  }}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white/10 px-4 py-2 text-xs md:text-sm font-bold text-white backdrop-blur-sm transition-all hover:bg-white/20 whitespace-nowrap"
+                >
+                  <span>+ Role</span>
+                </button>
+                <button
+                  onClick={() => {
+                    resetDepartmentForm();
+                    setShowCreateDialog(true);
+                  }}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-4 py-2 text-xs md:text-sm font-bold text-blue-600 shadow-xl transition-all hover:scale-105 active:scale-95 whitespace-nowrap"
+                >
+                  <span className="text-xl">+</span>
+                  <span>Create Dept</span>
+                </button>
+              </div>
+            </div>
           </div>
+        </div>
+
+        {/* Stats Grid */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-6 mb-8">
+          <StatCard
+            title="Total Depts"
+            value={departments.length}
+            icon={<BuildingIcon />}
+            trend="Active Departments"
+            color="blue"
+          />
+          <StatCard
+            title="Linked Roles"
+            value={departments.reduce((acc, d) => acc + (d.designations?.length || 0), 0)}
+            icon={<UsersIcon />}
+            trend="Total Designations"
+            color="emerald"
+          />
+          <StatCard
+            title="Avg. Roles"
+            value={departments.length ? Math.round(departments.reduce((acc, d) => acc + (d.designations?.length || 0), 0) / departments.length) : 0}
+            icon={<ArrowPathIcon />}
+            trend="Per Department"
+            color="amber"
+          />
+          <StatCard
+            title="Leadership"
+            value={departments.filter(d => d.hod || (d.divisionHODs && d.divisionHODs.length > 0)).length}
+            icon={<CheckBadgeIcon />}
+            trend="Depts with HOD"
+            color="indigo"
+          />
         </div>
 
         {/* Create Department Dialog */}
         {showCreateDialog && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-20 flex items-center justify-center p-4">
             <div
               className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
               onClick={() => {
