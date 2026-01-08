@@ -227,7 +227,7 @@ exports.getLoans = async (req, res) => {
 
     const [loans, total] = await Promise.all([
       Loan.find(filter)
-        .populate('employeeId', 'employee_name emp_no')
+        .populate('employeeId', 'employee_name emp_no gross_salary')
         .populate('department', 'name')
         .populate('designation', 'name')
         .populate('appliedBy', 'name email')
@@ -269,6 +269,7 @@ exports.getMyLoans = async (req, res) => {
     if (requestType) filter.requestType = requestType;
 
     const loans = await Loan.find(filter)
+      .populate('employeeId', 'employee_name emp_no gross_salary')
       .populate('department', 'name')
       .populate('designation', 'name')
       .sort({ createdAt: -1 });
@@ -287,13 +288,161 @@ exports.getMyLoans = async (req, res) => {
   }
 };
 
+// @desc    Calculate salary advance eligibility
+// @route   GET /api/loans/calculate-eligibility
+// @access  Private
+exports.calculateEligibility = async (req, res) => {
+  try {
+    const { empNo } = req.query;
+
+    // Get employee - either from query or from logged-in user
+    let employee;
+    if (empNo) {
+      // Check if user has permission to check for others
+      const hasPermission = ['hr', 'hod', 'manager', 'sub_admin', 'super_admin'].includes(req.user.role);
+      if (!hasPermission) {
+        return res.status(403).json({
+          success: false,
+          message: 'Not authorized to check eligibility for others'
+        });
+      }
+      employee = await findEmployeeByEmpNo(empNo);
+    } else {
+      // Get for self
+      if (req.user.employeeRef) {
+        employee = await findEmployeeByIdOrEmpNo(req.user.employeeRef);
+      } else if (req.user.employeeId) {
+        employee = await findEmployeeByEmpNo(req.user.employeeId);
+      }
+    }
+
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: 'Employee not found'
+      });
+    }
+
+    // Get salary advance settings
+    const settings = await LoanSettings.findOne({
+      type: 'salary_advance',
+      isActive: true
+    });
+
+    if (!settings) {
+      return res.status(404).json({
+        success: false,
+        message: 'Salary advance settings not configured'
+      });
+    }
+
+    // Get current month attendance
+    const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const firstDayOfMonth = `${currentMonth}-01`;
+    const today = now.toISOString().split('T')[0];
+
+    const attendance = await AttendanceDaily.find({
+      employeeNumber: employee.emp_no,
+      date: {
+        $gte: firstDayOfMonth,
+        $lte: today
+      }
+    });
+
+    // Calculate days
+    const applicationDate = now.getDate();
+    const totalDaysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const daysElapsed = applicationDate;
+
+    // Calculate days worked (Present + Half Day)
+    const daysWorked = attendance.filter(a =>
+      a.status === 'Present' || a.status === 'Half Day'
+    ).length;
+
+    // Calculate half days
+    const halfDays = attendance.filter(a => a.status === 'Half Day').length;
+    const effectiveDaysWorked = daysWorked - (halfDays * 0.5);
+
+    // Attendance percentage
+    const attendancePercentage = daysElapsed > 0
+      ? (effectiveDaysWorked / daysElapsed) * 100
+      : 0;
+
+    // Get salary (use gross_salary as basic pay as per user's instruction)
+    const basicSalary = employee.gross_salary || 0;
+
+    if (!basicSalary || basicSalary === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Salary information not available. Please contact HR.'
+      });
+    }
+
+    // Calculate eligible amount (prorated for days elapsed)
+    const eligibleAmount = (daysElapsed / totalDaysInMonth) * basicSalary;
+
+    // Calculate prorated amount (based on attendance)
+    const considerAttendance = settings.settings?.salaryBasedLimits?.considerAttendance !== false;
+    const proratedAmount = considerAttendance
+      ? eligibleAmount * (attendancePercentage / 100)
+      : eligibleAmount;
+
+    // Calculate max limit (% of basic salary from settings)
+    const maxPercentage = settings.settings?.salaryBasedLimits?.advancePercentage || 50;
+    const maxLimitAmount = (maxPercentage / 100) * basicSalary;
+
+    // Final max allowed = MIN(eligible amount, max limit)
+    const finalMaxAllowed = Math.min(eligibleAmount, maxLimitAmount);
+
+    res.json({
+      success: true,
+      data: {
+        // Date info
+        applicationDate,
+        daysElapsedInMonth: daysElapsed,
+        totalDaysInMonth,
+
+        // Attendance info
+        daysWorked: effectiveDaysWorked,
+        attendancePercentage: Math.round(attendancePercentage * 100) / 100,
+        attendanceRecords: attendance.length,
+
+        // Salary info
+        basicSalary,
+
+        // Calculated amounts
+        eligibleAmount: Math.round(eligibleAmount),
+        proratedAmount: Math.round(proratedAmount),
+        maxLimitAmount: Math.round(maxLimitAmount),
+        finalMaxAllowed: Math.round(finalMaxAllowed),
+
+        // Settings
+        maxPercentage,
+        considerAttendance,
+
+        // Employee info
+        employeeName: employee.employee_name,
+        empNo: employee.emp_no
+      }
+    });
+  } catch (error) {
+    console.error('Error calculating eligibility:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to calculate eligibility'
+    });
+  }
+};
+
 // @desc    Get single loan
 // @route   GET /api/loans/:id
 // @access  Private
 exports.getLoan = async (req, res) => {
   try {
     const loan = await Loan.findById(req.params.id)
-      .populate('employeeId', 'employee_name emp_no email phone_number')
+      .populate('employeeId', 'employee_name emp_no gross_salary email phone_number')
       .populate('department', 'name code')
       .populate('designation', 'name')
       .populate('appliedBy', 'name email')
@@ -547,6 +696,7 @@ exports.applyLoan = async (req, res) => {
       emp_no: employee.emp_no,
       requestType,
       amount,
+      originalAmount: amount,
       reason,
       duration,
       remarks,
@@ -586,7 +736,7 @@ exports.applyLoan = async (req, res) => {
 
     // Populate for response
     await loan.populate([
-      { path: 'employeeId', select: 'employee_name emp_no' },
+      { path: 'employeeId', select: 'employee_name emp_no gross_salary' },
       { path: 'department', select: 'name' },
       { path: 'designation', select: 'name' },
     ]);
@@ -776,7 +926,7 @@ exports.updateLoan = async (req, res) => {
 
     // Populate for response
     await loan.populate([
-      { path: 'employeeId', select: 'employee_name emp_no' },
+      { path: 'employeeId', select: 'employee_name emp_no gross_salary' },
       { path: 'department', select: 'name' },
       { path: 'designation', select: 'name' },
       { path: 'changeHistory.modifiedBy', select: 'name email role' },
@@ -811,6 +961,21 @@ exports.getPendingApprovals = async (req, res) => {
       if (req.user.department) {
         filter.department = req.user.department;
       }
+    } else if (userRole === 'manager') {
+      // Find division where user is manager
+      const Division = require('../../departments/model/Division');
+      const division = await Division.findOne({ manager: req.user._id });
+
+      if (!division) {
+        return res.status(200).json({
+          success: true,
+          count: 0,
+          data: [],
+        });
+      }
+
+      filter['workflow.nextApprover'] = 'manager';
+      filter.division_id = division._id;
     } else if (userRole === 'hr') {
       filter['workflow.nextApprover'] = { $in: ['hr', 'final_authority'] };
     } else if (['sub_admin', 'super_admin'].includes(userRole)) {
@@ -823,7 +988,7 @@ exports.getPendingApprovals = async (req, res) => {
     }
 
     const loans = await Loan.find(filter)
-      .populate('employeeId', 'employee_name emp_no')
+      .populate('employeeId', 'employee_name emp_no gross_salary')
       .populate('department', 'name')
       .populate('designation', 'name')
       .sort({ appliedAt: -1 });
@@ -844,11 +1009,13 @@ exports.getPendingApprovals = async (req, res) => {
 
 // @desc    Process loan action (approve/reject/forward)
 // @route   PUT /api/loans/:id/action
-// @access  Private (HOD, HR, Admin)
+// @access  Private (HOD, Manager, HR, Admin)
 exports.processLoanAction = async (req, res) => {
   try {
-    const { action, comments } = req.body;
-    const loan = await Loan.findById(req.params.id);
+    const { action, comments, approvalAmount, approvalInterestRate } = req.body;
+    const loan = await Loan.findById(req.params.id)
+      .populate('division_id')
+      .populate('employeeId', 'employee_name emp_no gross_salary');
 
     if (!loan) {
       return res.status(404).json({
@@ -858,26 +1025,95 @@ exports.processLoanAction = async (req, res) => {
     }
 
     const userRole = req.user.role;
-    const currentApprover = loan.workflow.nextApprover;
+    const currentApprover = loan.workflow.nextApprover || 'hod'; // Default to hod if not set
+    const isSuperAdmin = userRole === 'super_admin';
 
     // Validate user can perform this action
     let canProcess = false;
-    if (currentApprover === 'hod' && userRole === 'hod') {
+    if (isSuperAdmin) {
+      canProcess = true;
+    } else if (currentApprover === 'hod' && userRole === 'hod') {
       canProcess = !req.user.department ||
         loan.department?.toString() === req.user.department?.toString();
-    } else if (currentApprover === 'hr' && userRole === 'hr') {
-      canProcess = true;
-    } else if (currentApprover === 'final_authority' && userRole === 'hr') {
-      canProcess = true;
-    } else if (['sub_admin', 'super_admin'].includes(userRole)) {
+    } else if (currentApprover === 'manager' && userRole === 'manager') {
+      // Verify user is the manager for this division
+      const Division = require('../../departments/model/Division');
+      const division = await Division.findById(loan.division_id);
+      canProcess = division && division.manager?.toString() === req.user._id.toString();
+    } else if (['hr', 'final_authority'].includes(currentApprover) && userRole === 'hr') {
       canProcess = true;
     }
 
     if (!canProcess) {
       return res.status(403).json({
         success: false,
-        error: 'Not authorized to process this loan application',
+        error: `Not authorized to process this application (Current Approver: ${currentApprover})`,
       });
+    }
+
+    // Handle Updates if provided during approval (Amount or Interest Rate)
+    const isAuthorizedForEdits = ['super_admin', 'hr', 'sub_admin'].includes(userRole);
+    let configChanged = false;
+
+    if (action === 'approve' && isAuthorizedForEdits) {
+      // 1. Handle Interest Rate Update (only for loans)
+      if (loan.requestType === 'loan' && approvalInterestRate !== undefined && !isNaN(parseFloat(approvalInterestRate))) {
+        const newRate = parseFloat(approvalInterestRate);
+        if (newRate !== loan.loanConfig.interestRate) {
+          const oldRate = loan.loanConfig.interestRate || 0;
+          loan.loanConfig.interestRate = newRate;
+          configChanged = true;
+
+          loan.changeHistory.push({
+            field: 'interestRate',
+            originalValue: oldRate,
+            newValue: newRate,
+            modifiedBy: req.user._id,
+            modifiedByName: req.user.name,
+            modifiedByRole: userRole,
+            modifiedAt: new Date(),
+            reason: comments || `Interest rate adjusted to ${newRate}% during ${currentApprover} approval`,
+          });
+        }
+      }
+
+      // 2. Handle Amount Update
+      if (approvalAmount !== undefined && !isNaN(parseFloat(approvalAmount)) && parseFloat(approvalAmount) !== loan.amount) {
+        const oldAmount = loan.amount;
+        const newAmount = parseFloat(approvalAmount);
+        loan.amount = newAmount;
+        configChanged = true;
+
+        loan.changeHistory.push({
+          field: 'amount',
+          originalValue: oldAmount,
+          newValue: newAmount,
+          modifiedBy: req.user._id,
+          modifiedByName: req.user.name,
+          modifiedByRole: userRole,
+          modifiedAt: new Date(),
+          reason: comments || `Amount adjusted to ₹${newAmount.toLocaleString()} during ${currentApprover} approval`,
+        });
+      }
+
+      // 3. Recalculate configurations if anything changed
+      if (configChanged) {
+        if (loan.requestType === 'loan') {
+          const currentAmount = loan.amount;
+          const currentRate = loan.loanConfig.interestRate || 0;
+          const duration = loan.duration;
+          const emiAmount = calculateEMI(currentAmount, currentRate, duration);
+
+          loan.loanConfig.emiAmount = emiAmount;
+          // Re-calculate total amount based on new EMI
+          loan.loanConfig.totalAmount = currentRate > 0 ? (emiAmount * duration) : currentAmount;
+          loan.repayment.totalInstallments = duration;
+        } else {
+          // Salary advance - recalculate per cycle deduction
+          loan.advanceConfig.deductionPerCycle = Math.round(loan.amount / loan.duration);
+          loan.repayment.totalInstallments = loan.duration;
+        }
+      }
     }
 
     // Process based on action
@@ -892,6 +1128,26 @@ exports.processLoanAction = async (req, res) => {
 
     switch (action) {
       case 'approve':
+        historyEntry.action = 'approved';
+
+        // Super Admin Bypass Feature: Can approve at any stage
+        if (isSuperAdmin) {
+          loan.status = 'approved';
+          loan.workflow.currentStep = 'completed';
+          loan.workflow.nextApprover = null;
+
+          // Legacy status support
+          loan.approvals.final = {
+            status: 'approved',
+            approvedBy: req.user._id,
+            approvedAt: new Date(),
+            comments: comments || 'Final approval by Super Admin',
+          };
+
+          historyEntry.comments = `${comments || ''} (Ultimate Approval by Super Admin)`;
+          break;
+        }
+
         if (currentApprover === 'hod') {
           loan.status = 'hod_approved';
           loan.approvals.hod = {
@@ -900,27 +1156,90 @@ exports.processLoanAction = async (req, res) => {
             approvedAt: new Date(),
             comments,
           };
+
+          // Check if division has manager
+          const Division = require('../../departments/model/Division');
+          const division = await Division.findById(loan.division_id).populate('manager');
+
+          if (division && division.manager) {
+            loan.workflow.currentStep = 'manager';
+            loan.workflow.nextApprover = 'manager';
+          } else {
+            loan.workflow.currentStep = 'hr';
+            loan.workflow.nextApprover = 'hr';
+          }
+        } else if (currentApprover === 'manager') {
+          loan.status = 'manager_approved';
+          loan.approvals.manager = {
+            status: 'approved',
+            approvedBy: req.user._id,
+            approvedAt: new Date(),
+            comments,
+          };
           loan.workflow.currentStep = 'hr';
           loan.workflow.nextApprover = 'hr';
-          historyEntry.action = 'approved';
         } else if (currentApprover === 'hr' || currentApprover === 'final_authority') {
-          loan.status = 'approved';
+          // HR Approval - Check if this user/role is the final authority
+          const settings = await LoanSettings.findOne({ type: loan.requestType, isActive: true });
+          const finalAuth = settings?.workflow?.finalAuthority;
+
+          let isFinalStep = true;
+
+          if (finalAuth) {
+            if (finalAuth.role === 'admin' || finalAuth.role === 'specific_user') {
+              isFinalStep = false; // Move to next step if final authority is someone else
+            } else if (finalAuth.role === 'hr') {
+              // If restricted to specific HR users
+              if (!finalAuth.anyHRCanApprove && finalAuth.authorizedHRUsers && finalAuth.authorizedHRUsers.length > 0) {
+                if (!finalAuth.authorizedHRUsers.includes(req.user._id.toString())) {
+                  isFinalStep = false;
+                }
+              }
+            }
+          }
+
+          if (isFinalStep) {
+            loan.status = 'approved';
+            loan.workflow.currentStep = 'completed';
+            loan.workflow.nextApprover = null;
+
+            loan.approvals.final = {
+              status: 'approved',
+              approvedBy: req.user._id,
+              approvedAt: new Date(),
+              comments,
+            };
+          } else {
+            loan.status = 'hr_approved';
+            loan.workflow.currentStep = 'final';
+            loan.workflow.nextApprover = 'final_authority';
+          }
+
           loan.approvals.hr = {
             status: 'approved',
             approvedBy: req.user._id,
             approvedAt: new Date(),
             comments,
           };
-          loan.workflow.currentStep = 'completed';
-          loan.workflow.nextApprover = null;
-          historyEntry.action = 'approved';
         }
         break;
 
       case 'reject':
+        loan.workflow.currentStep = 'completed';
+        loan.workflow.nextApprover = null;
+        historyEntry.action = 'rejected';
+
         if (currentApprover === 'hod') {
           loan.status = 'hod_rejected';
           loan.approvals.hod = {
+            status: 'rejected',
+            approvedBy: req.user._id,
+            approvedAt: new Date(),
+            comments,
+          };
+        } else if (currentApprover === 'manager') {
+          loan.status = 'manager_rejected';
+          loan.approvals.manager = {
             status: 'rejected',
             approvedBy: req.user._id,
             approvedAt: new Date(),
@@ -935,48 +1254,35 @@ exports.processLoanAction = async (req, res) => {
             comments,
           };
         }
-        loan.workflow.currentStep = 'completed';
-        loan.workflow.nextApprover = null;
-        historyEntry.action = 'rejected';
         break;
 
       case 'forward':
-        if (currentApprover !== 'hod') {
-          return res.status(400).json({
-            success: false,
-            error: 'Only HOD can forward loan applications',
-          });
-        }
-        loan.status = 'hod_approved';
-        loan.approvals.hod = {
-          status: 'forwarded',
-          approvedBy: req.user._id,
-          approvedAt: new Date(),
-          comments,
-        };
-        loan.workflow.currentStep = 'hr';
-        loan.workflow.nextApprover = 'hr';
         historyEntry.action = 'forwarded';
+        if (currentApprover === 'hod') {
+          loan.status = 'hod_approved';
+          loan.approvals.hod = {
+            status: 'forwarded',
+            approvedBy: req.user._id,
+            approvedAt: new Date(),
+            comments,
+          };
+
+          // Logic for manual forward would go here
+          loan.workflow.currentStep = 'hr';
+          loan.workflow.nextApprover = 'hr';
+        }
         break;
 
       default:
-        return res.status(400).json({
-          success: false,
-          error: 'Invalid action',
-        });
+        return res.status(400).json({ success: false, error: 'Invalid action' });
     }
 
     loan.workflow.history.push(historyEntry);
     await loan.save();
 
-    await loan.populate([
-      { path: 'employeeId', select: 'employee_name emp_no' },
-      { path: 'department', select: 'name' },
-    ]);
-
     res.status(200).json({
       success: true,
-      message: `Loan ${action}ed successfully`,
+      message: `Loan application ${action}d successfully`,
       data: loan,
     });
   } catch (error) {
@@ -1125,7 +1431,7 @@ exports.disburseLoan = async (req, res) => {
     await loan.save();
 
     await loan.populate([
-      { path: 'employeeId', select: 'employee_name emp_no' },
+      { path: 'employeeId', select: 'employee_name emp_no gross_salary' },
       { path: 'disbursement.disbursedBy', select: 'name email' },
     ]);
 
@@ -1151,7 +1457,7 @@ exports.payEMI = async (req, res) => {
     const { id } = req.params;
     const { amount, paymentDate, remarks, payrollCycle, isEarlySettlement } = req.body;
 
-    const loan = await Loan.findById(id).populate('employeeId', 'employee_name emp_no');
+    const loan = await Loan.findById(id).populate('employeeId', 'employee_name emp_no gross_salary');
 
     if (!loan) {
       return res.status(404).json({
@@ -1256,7 +1562,7 @@ exports.payEMI = async (req, res) => {
     await loan.save();
 
     await loan.populate([
-      { path: 'employeeId', select: 'employee_name emp_no' },
+      { path: 'employeeId', select: 'employee_name emp_no gross_salary' },
       { path: 'transactions.processedBy', select: 'name email' },
     ]);
 
@@ -1290,7 +1596,7 @@ exports.payAdvance = async (req, res) => {
       });
     }
 
-    const loan = await Loan.findById(id).populate('employeeId', 'employee_name emp_no');
+    const loan = await Loan.findById(id).populate('employeeId', 'employee_name emp_no gross_salary');
 
     if (!loan) {
       return res.status(404).json({
@@ -1351,7 +1657,7 @@ exports.payAdvance = async (req, res) => {
     await loan.save();
 
     await loan.populate([
-      { path: 'employeeId', select: 'employee_name emp_no' },
+      { path: 'employeeId', select: 'employee_name emp_no gross_salary' },
       { path: 'transactions.processedBy', select: 'name email' },
     ]);
 
@@ -1378,7 +1684,7 @@ exports.getSettlementPreview = async (req, res) => {
     const { settlementDate } = req.query; // Optional: settlement date (default: now)
 
     const loan = await Loan.findById(id)
-      .populate('employeeId', 'employee_name emp_no')
+      .populate('employeeId', 'employee_name emp_no gross_salary')
       .select('requestType amount duration loanConfig repayment disbursement appliedAt createdAt status');
 
     if (!loan) {
@@ -1449,7 +1755,7 @@ exports.getTransactions = async (req, res) => {
     const { id } = req.params;
 
     const loan = await Loan.findById(id)
-      .populate('employeeId', 'employee_name emp_no')
+      .populate('employeeId', 'employee_name emp_no gross_salary')
       .populate('transactions.processedBy', 'name email')
       .select('transactions requestType amount loanConfig advanceConfig repayment');
 

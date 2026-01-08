@@ -1768,10 +1768,10 @@ export const api = {
   },
 
   // Process loan action (approve/reject/forward)
-  processLoanAction: async (id: string, action: string, comments?: string) => {
+  processLoanAction: async (id: string, payload: any) => {
     return apiRequest<any>(`/loans/${id}/action`, {
       method: 'PUT',
-      body: JSON.stringify({ action, comments }),
+      body: JSON.stringify(payload),
     });
   },
 

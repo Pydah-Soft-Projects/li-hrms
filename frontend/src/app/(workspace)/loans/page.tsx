@@ -111,7 +111,7 @@ export default function LoansPage() {
   const [actionComment, setActionComment] = useState('');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  
+
   // Edit dialog state
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [editFormData, setEditFormData] = useState({
@@ -121,10 +121,10 @@ export default function LoansPage() {
     remarks: '',
     status: '',
   });
-  
+
   // Apply dialog state
   const [showApplyDialog, setShowApplyDialog] = useState(false);
-  
+
   // Payment form state (inline in detail dialog)
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [paymentData, setPaymentData] = useState({
@@ -142,7 +142,7 @@ export default function LoansPage() {
   });
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loadingTransactions, setLoadingTransactions] = useState(false);
-  
+
   // Settlement preview state
   const [settlementPreview, setSettlementPreview] = useState<any>(null);
   const [loadingSettlement, setLoadingSettlement] = useState(false);
@@ -161,20 +161,45 @@ export default function LoansPage() {
     totalInterest: number;
     totalAmount: number;
   } | null>(null);
-  
+
   // Form state
   const [formData, setFormData] = useState({
     amount: '',
     reason: '',
     duration: '',
     remarks: '',
+    needAmount: '', // Optional higher amount request
   });
+
+  // User detection and role-based UI
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [isEmployee, setIsEmployee] = useState(false);
+
+  // Eligibility calculator state (from backend)
+  const [eligibilityData, setEligibilityData] = useState<any>(null);
+  const [loadingEligibility, setLoadingEligibility] = useState(false);
+  const [eligibilityError, setEligibilityError] = useState<string | null>(null);
+
+  // Approval state (for final authority)
+  const [approvalAmount, setApprovalAmount] = useState<string>('');
+  const [approvalInterestRate, setApprovalInterestRate] = useState<string>('');
+  const [approvalValidation, setApprovalValidation] = useState<{ level: 'warning' | 'error'; message: string } | null>(null);
+
+
+  // User detection on mount
+  useEffect(() => {
+    const user = auth.getUser();
+    if (user) {
+      setCurrentUser(user);
+      setIsEmployee(user.role === 'employee');
+    }
+  }, []);
 
   useEffect(() => {
     loadData();
     loadEmployees();
     loadLoanSettings();
-  }, [activeTab]);
+  }, [activeTab, currentUser]);
 
   useEffect(() => {
     if (showDetailDialog && selectedLoan) {
@@ -183,8 +208,45 @@ export default function LoansPage() {
       if (selectedLoan.requestType === 'loan' && ['disbursed', 'active'].includes(selectedLoan.status)) {
         loadSettlementPreview(selectedLoan._id);
       }
+
+      // Pre-fill approval amount/rate (final authority)
+      if (selectedLoan.amount) {
+        setApprovalAmount(selectedLoan.amount.toString());
+      }
+      if (selectedLoan.requestType === 'loan' && selectedLoan.loanConfig?.interestRate !== undefined) {
+        setApprovalInterestRate(selectedLoan.loanConfig.interestRate.toString());
+      }
     }
   }, [showDetailDialog, selectedLoan?._id]);
+
+  // Fetch eligibility when viewing/editing a salary advance
+  useEffect(() => {
+    if ((showDetailDialog || showEditDialog) && selectedLoan && selectedLoan.requestType === 'salary_advance') {
+      const empNo = selectedLoan.employeeId?.emp_no;
+      if (empNo) {
+        fetchEligibility(empNo);
+      }
+    }
+  }, [showDetailDialog, showEditDialog, selectedLoan?._id]);
+
+  // Validate approval amount
+  useEffect(() => {
+    if (selectedLoan?.requestType === 'salary_advance' && approvalAmount && eligibilityData) {
+      const amount = parseFloat(approvalAmount);
+      const basicPay = selectedLoan.employeeId?.gross_salary || 0;
+      const maxLimit = eligibilityData.finalMaxAllowed || 0;
+
+      if (amount > basicPay) {
+        setApprovalValidation({ level: 'error', message: `Amount (₹${amount.toLocaleString()}) exceeds basic pay (₹${basicPay.toLocaleString()})!` });
+      } else if (amount > maxLimit) {
+        setApprovalValidation({ level: 'warning', message: `Amount (₹${amount.toLocaleString()}) exceeds the calculated eligibility limit (₹${maxLimit.toLocaleString()}).` });
+      } else {
+        setApprovalValidation(null);
+      }
+    } else {
+      setApprovalValidation(null);
+    }
+  }, [approvalAmount, eligibilityData, selectedLoan]);
 
   useEffect(() => {
     if (applyType === 'loan' && formData.amount && formData.duration && loanSettings) {
@@ -194,11 +256,21 @@ export default function LoansPage() {
     }
   }, [formData.amount, formData.duration, applyType, loanSettings]);
 
+  // Fetch eligibility when employee selected for salary advance
+  useEffect(() => {
+    if (applyType === 'salary_advance' && selectedEmployee?.emp_no) {
+      fetchEligibility(selectedEmployee.emp_no);
+    } else {
+      setEligibilityData(null);
+      setEligibilityError(null);
+    }
+  }, [selectedEmployee, applyType]);
+
   const loadData = async () => {
     try {
       setLoading(true);
       console.log('[Superadmin Loans] Loading data...');
-      
+
       // Load all loans - show ALL loans in loans tab (like leaves page)
       const loansRes = await api.getLoans({ requestType: 'loan', limit: 100 });
       console.log('[Superadmin Loans] Loans response:', loansRes);
@@ -209,7 +281,7 @@ export default function LoansPage() {
       } else {
         setLoans([]);
       }
-      
+
       // Load all advances - show ALL advances in advances tab (like leaves page)
       const advancesRes = await api.getLoans({ requestType: 'salary_advance', limit: 100 });
       console.log('[Superadmin Loans] Advances response:', advancesRes);
@@ -220,7 +292,7 @@ export default function LoansPage() {
       } else {
         setAdvances([]);
       }
-      
+
       // Load pending approvals - only for pending tab
       const pendingRes = await api.getPendingLoanApprovals();
       console.log('[Superadmin Loans] Pending response:', pendingRes);
@@ -242,9 +314,28 @@ export default function LoansPage() {
   };
 
   const handleAction = async (loanId: string, action: 'approve' | 'reject' | 'forward') => {
+    if (action === 'approve' && approvalValidation?.level === 'error') {
+      Swal.fire({
+        icon: 'error',
+        title: 'Validation Error',
+        text: approvalValidation.message,
+      });
+      return;
+    }
+
     try {
       setSaving(true);
-      const response = await api.processLoanAction(loanId, action, actionComment);
+      const payload: any = {
+        action,
+        comments: actionComment,
+      };
+
+      if (action === 'approve') {
+        if (approvalAmount) payload.approvalAmount = parseFloat(approvalAmount);
+        if (approvalInterestRate) payload.approvalInterestRate = parseFloat(approvalInterestRate);
+      }
+
+      const response = await api.processLoanAction(loanId, payload);
       if (response.success) {
         setMessage({ type: 'success', text: `Loan ${action}d successfully` });
         setShowDetailDialog(false);
@@ -278,7 +369,7 @@ export default function LoansPage() {
         setMessage({ type: 'success', text: 'Funds released successfully. Transaction recorded.' });
         setShowDisbursementDialog(false);
         setDisbursementData({ disbursementMethod: 'bank_transfer', transactionReference: '', remarks: '' });
-        
+
         // Reload loan data and transactions
         const loanRes = await api.getLoan(selectedLoan._id);
         if (loanRes.success) {
@@ -327,7 +418,7 @@ export default function LoansPage() {
 
   const handleEdit = () => {
     if (!selectedLoan) return;
-    
+
     setEditFormData({
       amount: selectedLoan.amount.toString(),
       reason: selectedLoan.reason || '',
@@ -346,7 +437,7 @@ export default function LoansPage() {
       setSaving(true);
       const user = auth.getUser();
       const isSuperAdmin = user?.role === 'super_admin';
-      
+
       const updateData: any = {
         amount: parseFloat(editFormData.amount),
         reason: editFormData.reason,
@@ -395,15 +486,15 @@ export default function LoansPage() {
 
   const togglePaymentForm = () => {
     if (!selectedLoan) return;
-    
+
     if (!showPaymentForm) {
       // Pre-fill EMI amount for loans
       const emiAmount = selectedLoan.requestType === 'loan' && selectedLoan.loanConfig?.emiAmount
         ? selectedLoan.loanConfig.emiAmount
         : selectedLoan.requestType === 'salary_advance' && selectedLoan.advanceConfig?.deductionPerCycle
-        ? selectedLoan.advanceConfig.deductionPerCycle
-        : '';
-      
+          ? selectedLoan.advanceConfig.deductionPerCycle
+          : '';
+
       setPaymentData({
         amount: emiAmount.toString(),
         paymentDate: new Date().toISOString().split('T')[0],
@@ -451,7 +542,7 @@ export default function LoansPage() {
         });
         setShowPaymentForm(false);
         setPaymentData({ amount: '', paymentDate: new Date().toISOString().split('T')[0], remarks: '', payrollCycle: '' });
-        
+
         // Reload loan data and transactions
         const loanRes = await api.getLoan(selectedLoan._id);
         if (loanRes.success) {
@@ -538,11 +629,62 @@ export default function LoansPage() {
     });
   };
 
+  // Fetch eligibility from backend
+  const fetchEligibility = async (empNo: string) => {
+    try {
+      setLoadingEligibility(true);
+      setEligibilityError(null);
+
+      const token = auth.getToken();
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'}/loans/calculate-eligibility?empNo=${empNo}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const data = await response.json();
+
+      if (data.success && data.data) {
+        setEligibilityData(data.data);
+      } else {
+        setEligibilityError(data.message || 'Failed to calculate eligibility');
+        setEligibilityData(null);
+      }
+    } catch (error: any) {
+      console.error('Error fetching eligibility:', error);
+      setEligibilityError(error.message || 'Error calculating eligibility');
+      setEligibilityData(null);
+    } finally {
+      setLoadingEligibility(false);
+    }
+  };
+
   const loadEmployees = async () => {
     try {
-      const response = await api.getEmployees({ is_active: true });
-      if (response.success && response.data) {
-        setEmployees(response.data || []);
+      if (!currentUser) return;
+
+      // For employees: Load only self
+      if (isEmployee) {
+        const identifier = (currentUser as any).emp_no || currentUser.employeeId;
+        if (identifier) {
+          try {
+            const response = await api.getEmployee(identifier);
+            if (response.success && response.data) {
+              setEmployees([response.data]);
+              // Auto-select for employee
+              setSelectedEmployee(response.data);
+            }
+          } catch (err) {
+            console.error('Error loading employee details:', err);
+          }
+        }
+      } else {
+        // For HOD/HR/Admin: Load all employees
+        const response = await api.getEmployees({ is_active: true });
+        if (response.success && response.data) {
+          setEmployees(response.data || []);
+        }
       }
     } catch (err) {
       console.error('Error loading employees:', err);
@@ -613,7 +755,7 @@ export default function LoansPage() {
 
   const openApplyDialog = (type: 'loan' | 'salary_advance') => {
     setApplyType(type);
-    setFormData({ amount: '', reason: '', duration: '', remarks: '' });
+    setFormData({ amount: '', reason: '', duration: '', remarks: '', needAmount: '' });
     setSelectedEmployee(null);
     setEmployeeSearch('');
     setInterestCalculation(null);
@@ -646,6 +788,7 @@ export default function LoansPage() {
         amount: parseFloat(formData.amount),
         reason: formData.reason,
         remarks: formData.remarks,
+        needAmount: formData.needAmount ? parseFloat(formData.needAmount) : undefined,
         empNo: selectedEmployee.emp_no,
       };
 
@@ -689,7 +832,11 @@ export default function LoansPage() {
       approved: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
       rejected: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
       hod_approved: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+      hod_rejected: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
+      manager_approved: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400',
+      manager_rejected: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
       hr_approved: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+      hr_rejected: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
       disbursed: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
       active: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400',
       completed: 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400',
@@ -721,12 +868,12 @@ export default function LoansPage() {
       {/* Header */}
       <div className="mb-5">
         <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Loan & Salary Advance Management</h1>
-          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-            Manage loan and salary advance applications
-          </p>
-        </div>
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Loan & Salary Advance Management</h1>
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+              Manage loan and salary advance applications
+            </p>
+          </div>
           <button
             onClick={() => openApplyDialog('loan')}
             className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-green-500 to-green-600 text-white text-xs font-semibold shadow-sm hover:shadow-md transition-all"
@@ -792,11 +939,10 @@ export default function LoansPage() {
         <div className="flex gap-2 border-b border-slate-200 dark:border-slate-700">
           <button
             onClick={() => setActiveTab('loans')}
-            className={`px-4 py-2.5 font-medium text-sm transition-all border-b-2 -mb-px ${
-              activeTab === 'loans'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-slate-500 hover:text-slate-700'
-            }`}
+            className={`px-4 py-2.5 font-medium text-sm transition-all border-b-2 -mb-px ${activeTab === 'loans'
+              ? 'border-blue-500 text-blue-600'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
           >
             <span className="flex items-center gap-2">
               <LoanIcon />
@@ -805,11 +951,10 @@ export default function LoansPage() {
           </button>
           <button
             onClick={() => setActiveTab('advances')}
-            className={`px-4 py-2.5 font-medium text-sm transition-all border-b-2 -mb-px ${
-              activeTab === 'advances'
-                ? 'border-purple-500 text-purple-600'
-                : 'border-transparent text-slate-500 hover:text-slate-700'
-            }`}
+            className={`px-4 py-2.5 font-medium text-sm transition-all border-b-2 -mb-px ${activeTab === 'advances'
+              ? 'border-purple-500 text-purple-600'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
           >
             <span className="flex items-center gap-2">
               <AdvanceIcon />
@@ -818,11 +963,10 @@ export default function LoansPage() {
           </button>
           <button
             onClick={() => setActiveTab('pending')}
-            className={`px-4 py-2.5 font-medium text-sm transition-all border-b-2 -mb-px ${
-              activeTab === 'pending'
-                ? 'border-yellow-500 text-yellow-600'
-                : 'border-transparent text-slate-500 hover:text-slate-700'
-            }`}
+            className={`px-4 py-2.5 font-medium text-sm transition-all border-b-2 -mb-px ${activeTab === 'pending'
+              ? 'border-yellow-500 text-yellow-600'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
           >
             <span className="flex items-center gap-2">
               <ClockIcon />
@@ -834,11 +978,10 @@ export default function LoansPage() {
 
       {/* Messages */}
       {message && (
-        <div className={`mb-6 rounded-xl border px-4 py-3 flex items-center justify-between ${
-          message.type === 'success'
-            ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400'
-            : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'
-        }`}>
+        <div className={`mb-6 rounded-xl border px-4 py-3 flex items-center justify-between ${message.type === 'success'
+          ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400'
+          : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'
+          }`}>
           <span>{message.text}</span>
           <button onClick={() => setMessage(null)} className="text-current hover:opacity-70">×</button>
         </div>
@@ -915,8 +1058,8 @@ export default function LoansPage() {
                     }
                     return true;
                   }).map((loan) => (
-                    <tr 
-                      key={loan._id} 
+                    <tr
+                      key={loan._id}
                       className="hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer transition-colors"
                       onClick={() => {
                         setSelectedLoan(loan);
@@ -1005,8 +1148,8 @@ export default function LoansPage() {
                     }
                     return true;
                   }).map((advance) => (
-                    <tr 
-                      key={advance._id} 
+                    <tr
+                      key={advance._id}
                       className="hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer transition-colors"
                       onClick={() => {
                         setSelectedLoan(advance);
@@ -1176,11 +1319,10 @@ export default function LoansPage() {
           }} />
           <div className="relative z-50 w-full max-w-2xl rounded-2xl bg-white shadow-2xl dark:bg-slate-900 max-h-[90vh] overflow-hidden flex flex-col">
             {/* Header */}
-            <div className={`p-6 bg-gradient-to-r ${
-              selectedLoan.requestType === 'loan'
-                ? 'from-blue-500 to-indigo-600'
-                : 'from-purple-500 to-red-600'
-            } text-white`}>
+            <div className={`p-6 bg-gradient-to-r ${selectedLoan.requestType === 'loan'
+              ? 'from-blue-500 to-indigo-600'
+              : 'from-purple-500 to-red-600'
+              } text-white`}>
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold">
                   {selectedLoan.requestType === 'loan' ? 'Loan' : 'Salary Advance'} Details
@@ -1219,9 +1361,8 @@ export default function LoansPage() {
               <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50">
                 <h3 className="text-sm font-semibold text-slate-500 dark:text-slate-400 mb-3 uppercase tracking-wide">Employee Details</h3>
                 <div className="flex items-start gap-4">
-                  <div className={`w-14 h-14 rounded-full flex items-center justify-center text-white font-bold text-lg flex-shrink-0 ${
-                    selectedLoan.requestType === 'loan' ? 'bg-blue-500' : 'bg-purple-500'
-                  }`}>
+                  <div className={`w-14 h-14 rounded-full flex items-center justify-center text-white font-bold text-lg flex-shrink-0 ${selectedLoan.requestType === 'loan' ? 'bg-blue-500' : 'bg-purple-500'
+                    }`}>
                     {(selectedLoan.employeeId?.employee_name || selectedLoan.emp_no || 'E')[0].toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -1252,6 +1393,44 @@ export default function LoansPage() {
                   </div>
                 </div>
               </div>
+
+              {/* Eligibility Information - For Salary Advance (View Only) */}
+              {selectedLoan.requestType === 'salary_advance' && eligibilityData && (
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-800">
+                  <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-3 uppercase tracking-wide flex items-center gap-2">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                    </svg>
+                    Eligibility Information
+                  </h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-white/70 dark:bg-slate-800/70 p-3 rounded-xl">
+                      <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Attendance</div>
+                      <div className="font-bold text-lg text-green-600 dark:text-green-400">{eligibilityData.attendancePercentage}%</div>
+                    </div>
+                    <div className="bg-white/70 dark:bg-slate-800/70 p-3 rounded-xl">
+                      <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Days Worked</div>
+                      <div className="font-bold text-lg text-slate-900 dark:text-white">{eligibilityData.daysWorked} / {eligibilityData.daysElapsedInMonth}</div>
+                    </div>
+                    <div className="bg-white/70 dark:bg-slate-800/70 p-3 rounded-xl">
+                      <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Prorated Amount</div>
+                      <div className="font-bold text-lg text-blue-600 dark:text-blue-400">₹{eligibilityData.proratedAmount.toLocaleString()}</div>
+                    </div>
+                    <div className="bg-white/70 dark:bg-slate-800/70 p-3 rounded-xl">
+                      <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Eligible Amount</div>
+                      <div className="font-bold text-lg text-green-600 dark:text-green-400">₹{eligibilityData.eligibleAmount.toLocaleString()}</div>
+                    </div>
+                    <div className="bg-white/70 dark:bg-slate-800/70 p-3 rounded-xl">
+                      <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Max Limit</div>
+                      <div className="font-bold text-lg text-purple-600 dark:text-purple-400">₹{eligibilityData.maxLimitAmount.toLocaleString()}</div>
+                    </div>
+                    <div className="bg-white/70 dark:bg-slate-800/70 p-3 rounded-xl">
+                      <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Final Max Allowed</div>
+                      <div className="font-bold text-lg text-indigo-600 dark:text-indigo-400">₹{eligibilityData.finalMaxAllowed.toLocaleString()}</div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Details Grid */}
               <div className="grid grid-cols-2 gap-4">
@@ -1308,16 +1487,16 @@ export default function LoansPage() {
                         </div>
                         <div className="text-sm">
                           <span className="text-slate-400 dark:text-slate-500 line-through">
-                            {typeof change.originalValue === 'number' 
-                              ? change.field === 'amount' 
-                                ? `₹${change.originalValue.toLocaleString()}` 
+                            {typeof change.originalValue === 'number'
+                              ? change.field === 'amount'
+                                ? `₹${change.originalValue.toLocaleString()}`
                                 : change.originalValue
                               : change.originalValue || 'N/A'}
                           </span>
                           <span className="font-semibold text-green-600 dark:text-green-400 ml-2">
-                            → {typeof change.newValue === 'number' 
-                              ? change.field === 'amount' 
-                                ? `₹${change.newValue.toLocaleString()}` 
+                            → {typeof change.newValue === 'number'
+                              ? change.field === 'amount'
+                                ? `₹${change.newValue.toLocaleString()}`
                                 : change.newValue
                               : change.newValue || 'N/A'}
                           </span>
@@ -1451,11 +1630,10 @@ export default function LoansPage() {
                   {['disbursed', 'active', 'approved'].includes(selectedLoan.status) && (
                     <button
                       onClick={togglePaymentForm}
-                      className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all shadow-md hover:shadow-lg flex items-center gap-2 ${
-                        showPaymentForm
-                          ? 'text-slate-700 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-300'
-                          : 'text-white bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700'
-                      }`}
+                      className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all shadow-md hover:shadow-lg flex items-center gap-2 ${showPaymentForm
+                        ? 'text-slate-700 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-300'
+                        : 'text-white bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700'
+                        }`}
                     >
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -1508,7 +1686,7 @@ export default function LoansPage() {
                 ) : (
                   <div className="text-center py-4">
                     <p className="text-sm text-slate-500 dark:text-slate-400">
-                      {selectedLoan.requestType === 'loan' 
+                      {selectedLoan.requestType === 'loan'
                         ? `Total Amount: ₹${(selectedLoan.loanConfig?.totalAmount || selectedLoan.amount).toLocaleString()}`
                         : `Total Amount: ₹${selectedLoan.amount.toLocaleString()}`
                       }
@@ -1527,7 +1705,7 @@ export default function LoansPage() {
                     </svg>
                     {selectedLoan.requestType === 'loan' ? 'Record EMI Payment' : 'Record Advance Payment'}
                   </h3>
-                  
+
                   <form onSubmit={handlePayment} className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
                       <div>
@@ -1651,13 +1829,12 @@ export default function LoansPage() {
                         <div key={idx} className="flex items-center justify-between p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
                           <div className="flex-1">
                             <div className="flex items-center gap-2 mb-1">
-                              <span className={`px-2 py-0.5 text-xs font-semibold rounded capitalize ${
-                                txn.transactionType === 'disbursement' 
-                                  ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                                  : txn.transactionType === 'emi_payment'
+                              <span className={`px-2 py-0.5 text-xs font-semibold rounded capitalize ${txn.transactionType === 'disbursement'
+                                ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                : txn.transactionType === 'emi_payment'
                                   ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
                                   : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                              }`}>
+                                }`}>
                                 {txn.transactionType?.replace('_', ' ')}
                               </span>
                             </div>
@@ -1678,9 +1855,8 @@ export default function LoansPage() {
                             )}
                           </div>
                           <div className="text-right ml-4">
-                            <p className={`text-base font-bold ${
-                              txn.transactionType === 'disbursement' ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'
-                            }`}>
+                            <p className={`text-base font-bold ${txn.transactionType === 'disbursement' ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'
+                              }`}>
                               {txn.transactionType === 'disbursement' ? '-' : '+'}₹{txn.amount?.toLocaleString()}
                             </p>
                           </div>
@@ -1732,7 +1908,7 @@ export default function LoansPage() {
                 const isSuperAdmin = user?.role === 'super_admin';
                 const isHR = user?.role === 'hr';
                 const canEdit = isSuperAdmin || (isHR && !['approved', 'disbursed', 'active', 'completed'].includes(selectedLoan.status));
-                
+
                 return canEdit && (
                   <button
                     onClick={handleEdit}
@@ -1746,8 +1922,89 @@ export default function LoansPage() {
               {/* Action Section */}
               {!['approved', 'rejected', 'cancelled', 'disbursed', 'active', 'completed'].includes(selectedLoan.status) && (
                 <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-4">
+                  {/* Approval Amount Modification */}
+                  {(selectedLoan.requestType === 'salary_advance' || (selectedLoan.requestType === 'loan' && ['super_admin', 'hr', 'sub_admin'].includes(currentUser?.role))) && (
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                        Approval Amount (₹)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={approvalAmount}
+                        onChange={(e) => setApprovalAmount(e.target.value)}
+                        className={`w-full rounded-xl border px-4 py-2.5 text-sm dark:bg-slate-900 dark:text-white ${approvalValidation?.level === 'error'
+                          ? 'border-red-500 ring-2 ring-red-200 dark:ring-red-900'
+                          : approvalValidation?.level === 'warning'
+                            ? 'border-yellow-500 ring-2 ring-yellow-200 dark:ring-yellow-900'
+                            : 'border-slate-200 dark:border-slate-700'
+                          }`}
+                      />
+                      {approvalValidation && (
+                        <p className={`text-xs mt-1.5 font-medium flex items-center gap-1 ${approvalValidation.level === 'error' ? 'text-red-500' : 'text-yellow-600'
+                          }`}>
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          </svg>
+                          {approvalValidation.message}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Interest Rate Modification (Loans only) */}
+                  {selectedLoan.requestType === 'loan' && ['super_admin', 'hr', 'sub_admin'].includes(currentUser?.role) && (
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                        Approval Interest Rate (%)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={approvalInterestRate}
+                        onChange={(e) => setApprovalInterestRate(e.target.value)}
+                        className="w-full rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-2.5 text-sm dark:bg-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 transition-all"
+                      />
+                    </div>
+                  )}
+
+                  {/* Dynamic Recalculation for Loan Approvals */}
+                  {selectedLoan.requestType === 'loan' && approvalAmount && (
+                    (() => {
+                      const principal = parseFloat(approvalAmount);
+                      const rate = parseFloat(approvalInterestRate) || 0;
+                      const duration = selectedLoan.duration || 1;
+
+                      let emi = principal / duration;
+                      let totalAmt = principal;
+
+                      if (rate > 0) {
+                        const monthlyRate = rate / 100 / 12;
+                        emi = (principal * monthlyRate * Math.pow(1 + monthlyRate, duration)) / (Math.pow(1 + monthlyRate, duration) - 1);
+                        totalAmt = emi * duration;
+                      }
+
+                      return (
+                        <div className="p-3 bg-blue-50 dark:bg-blue-900/10 rounded-xl space-y-2 border border-blue-100 dark:border-blue-800/50 mb-4 animate-in fade-in duration-300">
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="text-slate-500 dark:text-slate-400">Monthly EMI (approx)</span>
+                            <span className="font-bold text-blue-700 dark:text-blue-300">₹{Math.round(emi).toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="text-slate-500 dark:text-slate-400">Total Interest</span>
+                            <span className="font-semibold text-slate-700 dark:text-slate-300">₹{Math.round(totalAmt - principal).toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-xs pt-1 border-t border-blue-100 dark:border-blue-800/50 mt-1">
+                            <span className="text-slate-600 dark:text-slate-300 font-medium">Total Repayment</span>
+                            <span className="font-bold text-slate-900 dark:text-white">₹{Math.round(totalAmt).toLocaleString()}</span>
+                          </div>
+                        </div>
+                      );
+                    })()
+                  )}
+
                   <p className="text-xs text-slate-500 uppercase font-semibold">Take Action</p>
-                  
+
                   {/* Comment */}
                   <textarea
                     value={actionComment}
@@ -1756,7 +2013,7 @@ export default function LoansPage() {
                     rows={2}
                     className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                   />
-                  
+
                   {/* Action Buttons */}
                   <div className="flex flex-wrap gap-2">
                     <button
@@ -1862,11 +2119,10 @@ export default function LoansPage() {
               </div>
 
               {message && (
-                <div className={`rounded-lg px-4 py-2 text-sm ${
-                  message.type === 'success'
-                    ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400'
-                    : 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400'
-                }`}>
+                <div className={`rounded-lg px-4 py-2 text-sm ${message.type === 'success'
+                  ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400'
+                  : 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400'
+                  }`}>
                   {message.text}
                 </div>
               )}
@@ -1914,6 +2170,39 @@ export default function LoansPage() {
             </h2>
 
             <form onSubmit={handleUpdate} className="space-y-4">
+              {/* Eligibility Information - For Salary Advance */}
+              {selectedLoan.requestType === 'salary_advance' && eligibilityData && (
+                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 p-4 rounded-xl border border-blue-200 dark:border-blue-800 mb-4">
+                  <h5 className="font-semibold text-sm mb-3 text-blue-900 dark:text-blue-100">Eligibility Information</h5>
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div className="bg-white/70 dark:bg-slate-800/70 p-2 rounded">
+                      <div className="text-gray-600 dark:text-gray-400">Attendance</div>
+                      <div className="font-bold text-green-600 dark:text-green-400">{eligibilityData.attendancePercentage}%</div>
+                    </div>
+                    <div className="bg-white/70 dark:bg-slate-800/70 p-2 rounded">
+                      <div className="text-gray-600 dark:text-gray-400">Days Worked</div>
+                      <div className="font-bold text-slate-900 dark:text-white">{eligibilityData.daysWorked} / {eligibilityData.daysElapsedInMonth}</div>
+                    </div>
+                    <div className="bg-white/70 dark:bg-slate-800/70 p-2 rounded">
+                      <div className="text-gray-600 dark:text-gray-400">Prorated</div>
+                      <div className="font-bold text-blue-600 dark:text-blue-400">₹{eligibilityData.proratedAmount.toLocaleString()}</div>
+                    </div>
+                    <div className="bg-white/70 dark:bg-slate-800/70 p-2 rounded">
+                      <div className="text-gray-600 dark:text-gray-400">Eligible</div>
+                      <div className="font-bold text-green-600 dark:text-green-400">₹{eligibilityData.eligibleAmount.toLocaleString()}</div>
+                    </div>
+                    <div className="bg-white/70 dark:bg-slate-800/70 p-2 rounded">
+                      <div className="text-gray-600 dark:text-gray-400">Max Limit</div>
+                      <div className="font-bold text-purple-600 dark:text-purple-400">₹{eligibilityData.finalMaxAllowed.toLocaleString()}</div>
+                    </div>
+                    <div className="bg-white/70 dark:bg-slate-800/70 p-2 rounded">
+                      <div className="text-gray-600 dark:text-gray-400">Basic Pay</div>
+                      <div className="font-bold text-indigo-600 dark:text-indigo-400">₹{selectedLoan.employeeId?.gross_salary?.toLocaleString() || 'N/A'}</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Amount */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
@@ -1923,11 +2212,35 @@ export default function LoansPage() {
                   type="number"
                   step="0.01"
                   min="0"
+                  max={selectedLoan.requestType === 'salary_advance' && selectedLoan.employeeId?.gross_salary ? selectedLoan.employeeId.gross_salary : undefined}
                   value={editFormData.amount}
-                  onChange={(e) => setEditFormData({ ...editFormData, amount: e.target.value })}
+                  onChange={(e) => {
+                    setEditFormData({ ...editFormData, amount: e.target.value });
+                    console.log('[Edit] Amount:', e.target.value, 'Basic Pay:', selectedLoan.employeeId?.gross_salary);
+                  }}
                   required
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  className={`w-full rounded-xl border px-4 py-2.5 text-sm dark:bg-slate-800 dark:text-white ${selectedLoan.requestType === 'salary_advance' &&
+                    selectedLoan.employeeId?.gross_salary &&
+                    parseFloat(editFormData.amount) > selectedLoan.employeeId.gross_salary
+                    ? 'border-red-500 ring-2 ring-red-200 dark:ring-red-900'
+                    : 'border-slate-200 dark:border-slate-700'
+                    }`}
                 />
+                {selectedLoan.requestType === 'salary_advance' &&
+                  selectedLoan.employeeId?.gross_salary &&
+                  parseFloat(editFormData.amount) > selectedLoan.employeeId.gross_salary && (
+                    <div className="mt-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                      <p className="text-sm text-red-600 dark:text-red-400 font-semibold flex items-center gap-2">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        Amount exceeds basic pay!
+                      </p>
+                      <p className="text-xs text-red-500 dark:text-red-400 mt-1">
+                        Maximum allowed: ₹{selectedLoan.employeeId.gross_salary.toLocaleString()}
+                      </p>
+                    </div>
+                  )}
               </div>
 
               {/* Duration */}
@@ -2150,11 +2463,10 @@ export default function LoansPage() {
                   setApplyType('loan');
                   setInterestCalculation(null);
                 }}
-                className={`flex-1 py-3 rounded-xl font-medium text-sm transition-all ${
-                  applyType === 'loan'
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
-                }`}
+                className={`flex-1 py-3 rounded-xl font-medium text-sm transition-all ${applyType === 'loan'
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                  }`}
               >
                 <span className="flex items-center justify-center gap-2">
                   <LoanIcon />
@@ -2167,11 +2479,10 @@ export default function LoansPage() {
                   setApplyType('salary_advance');
                   setInterestCalculation(null);
                 }}
-                className={`flex-1 py-3 rounded-xl font-medium text-sm transition-all ${
-                  applyType === 'salary_advance'
-                    ? 'bg-purple-500 text-white'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
-                }`}
+                className={`flex-1 py-3 rounded-xl font-medium text-sm transition-all ${applyType === 'salary_advance'
+                  ? 'bg-purple-500 text-white'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                  }`}
               >
                 <span className="flex items-center justify-center gap-2">
                   <AdvanceIcon />
@@ -2245,7 +2556,7 @@ export default function LoansPage() {
                         placeholder="Search by name, emp no, or department..."
                         className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20"
                       />
-                      
+
                       {/* Employee Dropdown */}
                       {showEmployeeDropdown && (
                         <div className="absolute z-10 w-full mt-1 max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-800">
@@ -2291,6 +2602,99 @@ export default function LoansPage() {
                 </div>
               </div>
 
+              {/* Eligibility Calculator - ONLY for Salary Advance */}
+              {applyType === 'salary_advance' && selectedEmployee && (
+                <div className="mb-4">
+                  {loadingEligibility && (
+                    <div className="text-sm text-blue-600 mb-2 flex items-center gap-2">
+                      <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                      Calculating eligibility...
+                    </div>
+                  )}
+
+                  {eligibilityError && (
+                    <div className="text-sm text-red-600 bg-red-50 dark:bg-red-900/20 p-3 rounded-lg mb-2">
+                      {eligibilityError}
+                    </div>
+                  )}
+
+                  {eligibilityData && !loadingEligibility && (
+                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 p-4 rounded-xl border border-blue-200 dark:border-blue-800">
+                      <h4 className="font-semibold text-sm mb-3 text-blue-900 dark:text-blue-100 flex items-center gap-2">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                        </svg>
+                        Eligibility Calculator
+                      </h4>
+
+                      {/* Attendance Info */}
+                      <div className="grid grid-cols-2 gap-2 mb-3 text-xs bg-white/50 dark:bg-slate-800/50 p-2 rounded-lg">
+                        <div>
+                          <span className="text-gray-600 dark:text-gray-400">Days Worked:</span>
+                          <span className="ml-2 font-semibold text-slate-900 dark:text-white">{eligibilityData.daysWorked} / {eligibilityData.daysElapsedInMonth}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-600 dark:text-gray-400">Attendance:</span>
+                          <span className="ml-2 font-semibold text-green-600 dark:text-green-400">{eligibilityData.attendancePercentage}%</span>
+                        </div>
+                      </div>
+
+                      {/* Amount Options */}
+                      <div className="space-y-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFormData({ ...formData, amount: eligibilityData.proratedAmount.toString() });
+                            console.log('Selected Prorated Amount:', eligibilityData.proratedAmount);
+                          }}
+                          className="w-full text-left p-3 border-2 border-blue-200 dark:border-blue-700 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-800/50 transition-all hover:shadow-md bg-white dark:bg-slate-800"
+                        >
+                          <div className="flex justify-between items-center">
+                            <div>
+                              <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Prorated Amount (Based on Attendance)</div>
+                              <div className="font-bold text-lg text-blue-600 dark:text-blue-400">₹{eligibilityData.proratedAmount.toLocaleString()}</div>
+                            </div>
+                            <div className="text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900 px-2 py-1 rounded">Select</div>
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFormData({ ...formData, amount: eligibilityData.eligibleAmount.toString() });
+                            console.log('Selected Eligible Amount:', eligibilityData.eligibleAmount);
+                          }}
+                          className="w-full text-left p-3 border-2 border-green-200 dark:border-green-700 rounded-lg hover:bg-green-100 dark:hover:bg-green-800/50 transition-all hover:shadow-md bg-white dark:bg-slate-800"
+                        >
+                          <div className="flex justify-between items-center">
+                            <div>
+                              <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Eligible Amount (Full Prorated)</div>
+                              <div className="font-bold text-lg text-green-600 dark:text-green-400">₹{eligibilityData.eligibleAmount.toLocaleString()}</div>
+                            </div>
+                            <div className="text-xs font-semibold text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900 px-2 py-1 rounded">Select</div>
+                          </div>
+                        </button>
+
+                        <div className="p-3 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                          <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Max Limit ({eligibilityData.maxPercentage}% of Basic Pay)</div>
+                          <div className="font-bold text-lg text-gray-700 dark:text-gray-300">₹{eligibilityData.maxLimitAmount.toLocaleString()}</div>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 pt-3 border-t border-blue-200 dark:border-blue-700">
+                        <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Final Max Allowed:</div>
+                        <div className="text-xl font-bold text-blue-600 dark:text-blue-400">
+                          ₹{eligibilityData.finalMaxAllowed.toLocaleString()}
+                        </div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          You can request up to this amount
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                   Amount (₹) *
@@ -2300,10 +2704,46 @@ export default function LoansPage() {
                   required
                   min="1"
                   step="0.01"
+                  max={applyType === 'salary_advance' && eligibilityData ? eligibilityData.finalMaxAllowed : undefined}
                   value={formData.amount}
-                  onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                  onChange={(e) => {
+                    setFormData({ ...formData, amount: e.target.value });
+                    console.log('Amount entered:', e.target.value, 'Max allowed:', eligibilityData?.finalMaxAllowed);
+                  }}
+                  className={`w-full rounded-lg border px-4 py-2 text-sm dark:bg-slate-800 ${applyType === 'salary_advance' && eligibilityData && parseFloat(formData.amount) > eligibilityData.finalMaxAllowed
+                    ? 'border-red-500 ring-2 ring-red-200 dark:ring-red-900'
+                    : 'border-slate-200 dark:border-slate-700'
+                    }`}
                 />
+                {applyType === 'salary_advance' && (
+                  <div className="mt-2">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                      Need Amount (₹) <span className="text-xs font-normal text-slate-400">(Optional - for higher requests)</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="1"
+                      value={formData.needAmount}
+                      onChange={(e) => setFormData({ ...formData, needAmount: e.target.value })}
+                      placeholder="Enter amount if you need more than eligible limit"
+                      className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                    />
+                  </div>
+                )}
+                {applyType === 'salary_advance' && eligibilityData && parseFloat(formData.amount) > eligibilityData.finalMaxAllowed && (
+                  <div className="mt-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                    <p className="text-sm text-red-600 dark:text-red-400 font-semibold flex items-center gap-2">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                      Amount exceeds maximum allowed limit!
+                    </p>
+                    <p className="text-xs text-red-500 dark:text-red-400 mt-1">
+                      Maximum allowed: ₹{eligibilityData.finalMaxAllowed.toLocaleString()}
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Duration - Only for loans */}
@@ -2393,11 +2833,10 @@ export default function LoansPage() {
                 <button
                   type="submit"
                   disabled={saving}
-                  className={`flex-1 px-4 py-2.5 text-sm font-semibold text-white rounded-xl transition-all disabled:opacity-50 ${
-                    applyType === 'loan'
-                      ? 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600'
-                      : 'bg-gradient-to-r from-purple-500 to-red-500 hover:from-purple-600 hover:to-red-600'
-                  }`}
+                  className={`flex-1 px-4 py-2.5 text-sm font-semibold text-white rounded-xl transition-all disabled:opacity-50 ${applyType === 'loan'
+                    ? 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600'
+                    : 'bg-gradient-to-r from-purple-500 to-red-500 hover:from-purple-600 hover:to-red-600'
+                    }`}
                 >
                   {saving ? 'Submitting...' : `Apply ${applyType === 'loan' ? 'Loan' : 'Salary Advance'}`}
                 </button>
