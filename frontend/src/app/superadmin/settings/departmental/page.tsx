@@ -9,7 +9,15 @@ interface Department {
   _id: string;
   name: string;
   code?: string;
+  divisions?: (string | { _id: string })[];
 }
+
+interface Division {
+  _id: string;
+  name: string;
+  code: string;
+}
+
 
 interface DepartmentSettings {
   _id?: string;
@@ -88,6 +96,8 @@ interface DepartmentSettings {
 
 export default function DepartmentalSettingsPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [divisions, setDivisions] = useState<Division[]>([]);
+  const [selectedDivisionId, setSelectedDivisionId] = useState<string>('');
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -178,7 +188,19 @@ export default function DepartmentalSettingsPage() {
 
   useEffect(() => {
     loadDepartments();
+    loadDivisions();
   }, []);
+
+  const loadDivisions = async () => {
+    try {
+      const response = await api.getDivisions();
+      if (response.success && response.data) {
+        setDivisions(response.data);
+      }
+    } catch (error) {
+      console.error('Error loading divisions:', error);
+    }
+  };
 
   useEffect(() => {
     if (selectedDepartmentId) {
@@ -189,12 +211,55 @@ export default function DepartmentalSettingsPage() {
     }
   }, [selectedDepartmentId]);
 
+  /* 
+   * Load departments based on user role and division scope.
+   * - Super Admin & All Access: Fetch all departments
+   * - Division Scope: Fetch only departments belonging to the user's division
+   */
   const loadDepartments = async () => {
     try {
       setLoading(true);
+      const userResponse = await api.getCurrentUser();
+      const userData = userResponse?.data?.user;
+
+      // Determine if we need to filter by division
+      // This logic depends on how the user's scope is defined in your auth system
+      // For now, checks if user has specific allowed divisions or a single division assigned
+
       const response = await api.getDepartments(true);
+
       if (response.success && response.data) {
-        setDepartments(response.data);
+        let depts = response.data;
+
+        // FILTER LOGIC:
+        // If user is NOT super_admin, we might need to filter based on their assigned division(s).
+        // Accessing division ID from local auth helper or the API response
+        // Assuming `userData` has `allowedDivisions` or similar if not super_admin.
+
+        // This is a simplified check. Adjust property names based on your actual User object structure.
+        if (userData && userData.role !== 'super_admin') {
+          const userAny = userData as any;
+          // Example: if user has `allowedDivisions` array of IDs
+          const allowedDivs = userAny.allowedDivisions || [];
+          // Or if user has a single `division` property
+          const userDivisionId = userAny.division?._id || userAny.division;
+
+          if (allowedDivs.length > 0) {
+            depts = depts.filter(d =>
+              d.divisions?.some(div =>
+                allowedDivs.includes(typeof div === 'string' ? div : (div as any)._id)
+              )
+            );
+          } else if (userDivisionId) {
+            depts = depts.filter(d =>
+              d.divisions?.some(div =>
+                (typeof div === 'string' ? div : (div as any)._id) === userDivisionId
+              )
+            );
+          }
+        }
+
+        setDepartments(depts);
       }
     } catch (error) {
       console.error('Error loading departments:', error);
@@ -443,28 +508,75 @@ export default function DepartmentalSettingsPage() {
         </p>
       </div>
 
-      {/* Department Selection */}
-      <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-        <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
-          Select Department
-        </label>
-        <select
-          value={selectedDepartmentId}
-          onChange={(e) => setSelectedDepartmentId(e.target.value)}
-          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
-          disabled={loading}
-        >
-          <option value="">-- Select a Department --</option>
-          {departments.map((dept) => (
-            <option key={dept._id} value={dept._id}>
-              {dept.name} {dept.code ? `(${dept.code})` : ''}
-            </option>
-          ))}
-        </select>
+      {/* Division Selection */}
+      <div className="mb-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Division Selection */}
+          <div>
+            <label className="mb-2 block text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">
+              Filter by Division (Optional)
+            </label>
+            <div className="relative">
+              <select
+                value={selectedDivisionId}
+                onChange={(e) => {
+                  setSelectedDivisionId(e.target.value);
+                  setSelectedDepartmentId(''); // Reset department when division changes
+                }}
+                className="w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+              >
+                <option value="">All Divisions</option>
+                {divisions.map((div) => (
+                  <option key={div._id} value={div._id}>
+                    {div.name} ({div.code})
+                  </option>
+                ))}
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-slate-500">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          {/* Department Selection */}
+          <div>
+            <label className="mb-2 block text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">
+              Select Department
+            </label>
+            <div className="relative">
+              <select
+                value={selectedDepartmentId}
+                onChange={(e) => setSelectedDepartmentId(e.target.value)}
+                className="w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                disabled={loading}
+              >
+                <option value="">-- Select a Department --</option>
+                {departments
+                  .filter(dept => !selectedDivisionId || dept.divisions?.some(div => (typeof div === 'string' ? div : div._id) === selectedDivisionId))
+                  .map((dept) => (
+                    <option key={dept._id} value={dept._id}>
+                      {dept.name} {dept.code ? `(${dept.code})` : ''}
+                    </option>
+                  ))}
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-slate-500">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {selectedDepartment && (
-          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-            Configure settings for <span className="font-medium text-green-600 dark:text-green-400">{selectedDepartment.name}</span>
-          </p>
+          <div className="mt-4 flex items-center gap-2 rounded-lg bg-blue-50 p-2 text-xs text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>Configuring settings for <span className="font-semibold">{selectedDepartment.name}</span></span>
+          </div>
         )}
       </div>
 
@@ -476,8 +588,15 @@ export default function DepartmentalSettingsPage() {
       ) : selectedDepartmentId ? (
         <div className="space-y-4">
           {/* Leaves Settings */}
-          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-            <h2 className="mb-4 text-base font-semibold text-slate-900 dark:text-white">Leaves Settings</h2>
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+            <h2 className="mb-6 flex items-center gap-2 text-lg font-bold text-slate-900 dark:text-white">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400">
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </span>
+              Leaves Settings
+            </h2>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div>
                 <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
@@ -490,7 +609,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.leaves.leavesPerDay ?? ''}
                   onChange={(e) => handleInputChange('leaves', 'leavesPerDay', e.target.value ? parseFloat(e.target.value) : null)}
                   placeholder="e.g., 1.5, 2.0, 2.5"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 />
                 <p className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">Leave blank to use global default</p>
               </div>
@@ -504,7 +623,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.leaves.paidLeavesCount ?? ''}
                   onChange={(e) => handleInputChange('leaves', 'paidLeavesCount', e.target.value ? parseInt(e.target.value) : null)}
                   placeholder="e.g., 12, 15"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 />
                 <p className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">Total paid leaves per month</p>
               </div>
@@ -518,7 +637,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.leaves.dailyLimit ?? ''}
                   onChange={(e) => handleInputChange('leaves', 'dailyLimit', e.target.value ? parseInt(e.target.value) : null)}
                   placeholder="0 = unlimited"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 />
               </div>
               <div>
@@ -531,15 +650,22 @@ export default function DepartmentalSettingsPage() {
                   value={formData.leaves.monthlyLimit ?? ''}
                   onChange={(e) => handleInputChange('leaves', 'monthlyLimit', e.target.value ? parseInt(e.target.value) : null)}
                   placeholder="0 = unlimited"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 />
               </div>
             </div>
           </div>
 
           {/* Loans Settings */}
-          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-            <h2 className="mb-4 text-base font-semibold text-slate-900 dark:text-white">Loans Settings</h2>
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+            <h2 className="mb-6 flex items-center gap-2 text-lg font-bold text-slate-900 dark:text-white">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </span>
+              Loans Settings
+            </h2>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div>
                 <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
@@ -553,7 +679,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.loans.interestRate ?? ''}
                   onChange={(e) => handleInputChange('loans', 'interestRate', e.target.value ? parseFloat(e.target.value) : null)}
                   placeholder="e.g., 8, 10"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 />
               </div>
               <div>
@@ -563,7 +689,7 @@ export default function DepartmentalSettingsPage() {
                 <select
                   value={formData.loans.isInterestApplicable === null ? '' : formData.loans.isInterestApplicable ? 'true' : 'false'}
                   onChange={(e) => handleInputChange('loans', 'isInterestApplicable', e.target.value === '' ? null : e.target.value === 'true')}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 >
                   <option value="">Use Global Default</option>
                   <option value="true">Yes</option>
@@ -580,7 +706,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.loans.minTenure ?? ''}
                   onChange={(e) => handleInputChange('loans', 'minTenure', e.target.value ? parseInt(e.target.value) : null)}
                   placeholder="e.g., 12"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 />
               </div>
               <div>
@@ -593,7 +719,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.loans.maxTenure ?? ''}
                   onChange={(e) => handleInputChange('loans', 'maxTenure', e.target.value ? parseInt(e.target.value) : null)}
                   placeholder="e.g., 24"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 />
               </div>
               <div>
@@ -606,7 +732,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.loans.minAmount ?? ''}
                   onChange={(e) => handleInputChange('loans', 'minAmount', e.target.value ? parseFloat(e.target.value) : null)}
                   placeholder="e.g., 1000"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 />
               </div>
               <div>
@@ -619,7 +745,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.loans.maxAmount ?? ''}
                   onChange={(e) => handleInputChange('loans', 'maxAmount', e.target.value ? parseFloat(e.target.value) : null)}
                   placeholder="Leave blank for unlimited"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 />
               </div>
               <div>
@@ -632,7 +758,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.loans.maxPerEmployee ?? ''}
                   onChange={(e) => handleInputChange('loans', 'maxPerEmployee', e.target.value ? parseFloat(e.target.value) : null)}
                   placeholder="Leave blank for unlimited"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 />
               </div>
               <div>
@@ -645,7 +771,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.loans.maxActivePerEmployee ?? ''}
                   onChange={(e) => handleInputChange('loans', 'maxActivePerEmployee', e.target.value ? parseInt(e.target.value) : null)}
                   placeholder="e.g., 1"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 />
               </div>
               <div>
@@ -658,15 +784,22 @@ export default function DepartmentalSettingsPage() {
                   value={formData.loans.minServicePeriod ?? ''}
                   onChange={(e) => handleInputChange('loans', 'minServicePeriod', e.target.value ? parseInt(e.target.value) : null)}
                   placeholder="e.g., 6"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 />
               </div>
             </div>
           </div>
 
           {/* Salary Advance Settings */}
-          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-            <h2 className="mb-4 text-base font-semibold text-slate-900 dark:text-white">Salary Advance Settings</h2>
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+            <h2 className="mb-6 flex items-center gap-2 text-lg font-bold text-slate-900 dark:text-white">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400">
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+              </span>
+              Salary Advance Settings
+            </h2>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div>
                 <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
@@ -680,7 +813,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.salaryAdvance.interestRate ?? ''}
                   onChange={(e) => handleInputChange('salaryAdvance', 'interestRate', e.target.value ? parseFloat(e.target.value) : null)}
                   placeholder="e.g., 8, 10"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 />
               </div>
               <div>
@@ -690,7 +823,7 @@ export default function DepartmentalSettingsPage() {
                 <select
                   value={formData.salaryAdvance.isInterestApplicable === null ? '' : formData.salaryAdvance.isInterestApplicable ? 'true' : 'false'}
                   onChange={(e) => handleInputChange('salaryAdvance', 'isInterestApplicable', e.target.value === '' ? null : e.target.value === 'true')}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 >
                   <option value="">Use Global Default</option>
                   <option value="true">Yes</option>
@@ -707,7 +840,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.salaryAdvance.minTenure ?? ''}
                   onChange={(e) => handleInputChange('salaryAdvance', 'minTenure', e.target.value ? parseInt(e.target.value) : null)}
                   placeholder="e.g., 1"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 />
               </div>
               <div>
@@ -720,7 +853,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.salaryAdvance.maxTenure ?? ''}
                   onChange={(e) => handleInputChange('salaryAdvance', 'maxTenure', e.target.value ? parseInt(e.target.value) : null)}
                   placeholder="e.g., 3"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 />
               </div>
               <div>
@@ -733,7 +866,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.salaryAdvance.minAmount ?? ''}
                   onChange={(e) => handleInputChange('salaryAdvance', 'minAmount', e.target.value ? parseFloat(e.target.value) : null)}
                   placeholder="e.g., 1000"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 />
               </div>
               <div>
@@ -746,7 +879,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.salaryAdvance.maxAmount ?? ''}
                   onChange={(e) => handleInputChange('salaryAdvance', 'maxAmount', e.target.value ? parseFloat(e.target.value) : null)}
                   placeholder="Leave blank for unlimited"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 />
               </div>
               <div>
@@ -759,7 +892,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.salaryAdvance.maxPerEmployee ?? ''}
                   onChange={(e) => handleInputChange('salaryAdvance', 'maxPerEmployee', e.target.value ? parseFloat(e.target.value) : null)}
                   placeholder="Leave blank for unlimited"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 />
               </div>
               <div>
@@ -772,7 +905,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.salaryAdvance.maxActivePerEmployee ?? ''}
                   onChange={(e) => handleInputChange('salaryAdvance', 'maxActivePerEmployee', e.target.value ? parseInt(e.target.value) : null)}
                   placeholder="e.g., 1"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 />
               </div>
               <div>
@@ -785,15 +918,22 @@ export default function DepartmentalSettingsPage() {
                   value={formData.salaryAdvance.minServicePeriod ?? ''}
                   onChange={(e) => handleInputChange('salaryAdvance', 'minServicePeriod', e.target.value ? parseInt(e.target.value) : null)}
                   placeholder="e.g., 0"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 />
               </div>
             </div>
           </div>
 
           {/* Permissions Settings */}
-          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-            <h2 className="mb-4 text-base font-semibold text-slate-900 dark:text-white">Permissions Settings</h2>
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+            <h2 className="mb-6 flex items-center gap-2 text-lg font-bold text-slate-900 dark:text-white">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400">
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </span>
+              Permissions Settings
+            </h2>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div>
                 <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
@@ -805,7 +945,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.permissions.perDayLimit ?? ''}
                   onChange={(e) => handleInputChange('permissions', 'perDayLimit', e.target.value ? parseInt(e.target.value) : null)}
                   placeholder="0 = unlimited"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 />
               </div>
               <div>
@@ -818,7 +958,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.permissions.monthlyLimit ?? ''}
                   onChange={(e) => handleInputChange('permissions', 'monthlyLimit', e.target.value ? parseInt(e.target.value) : null)}
                   placeholder="0 = unlimited"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 />
               </div>
               <div>
@@ -828,7 +968,7 @@ export default function DepartmentalSettingsPage() {
                 <select
                   value={formData.permissions.deductFromSalary === null ? '' : formData.permissions.deductFromSalary ? 'true' : 'false'}
                   onChange={(e) => handleInputChange('permissions', 'deductFromSalary', e.target.value === '' ? null : e.target.value === 'true')}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 >
                   <option value="">Use Global Default</option>
                   <option value="true">Yes</option>
@@ -845,14 +985,14 @@ export default function DepartmentalSettingsPage() {
                   value={formData.permissions.deductionAmount ?? ''}
                   onChange={(e) => handleInputChange('permissions', 'deductionAmount', e.target.value ? parseFloat(e.target.value) : null)}
                   placeholder="Amount per permission"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 />
               </div>
             </div>
 
             {/* Permission Deduction Rules */}
-            <div className="mt-6 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
-              <h3 className="mb-3 text-sm font-semibold text-blue-900 dark:text-blue-200">Permission Deduction Rules</h3>
+            <div className="mt-6 rounded-2xl border border-blue-200 bg-blue-50/50 p-5 dark:border-blue-800 dark:bg-blue-900/10">
+              <h3 className="mb-3 text-sm font-bold text-blue-900 dark:text-blue-200">Permission Deduction Rules</h3>
               <p className="mb-4 text-xs text-blue-700 dark:text-blue-300">
                 Configure automatic salary deductions based on permission count.
               </p>
@@ -867,7 +1007,7 @@ export default function DepartmentalSettingsPage() {
                     value={formData.permissions.deductionRules?.countThreshold ?? ''}
                     onChange={(e) => handleInputChange('permissions', 'deductionRules', e.target.value ? parseInt(e.target.value) : null, 'countThreshold')}
                     placeholder="e.g., 4"
-                    className="w-full rounded-lg border border-blue-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-blue-600 dark:bg-slate-700 dark:text-white"
+                    className="w-full rounded-xl border border-blue-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-blue-700 dark:bg-slate-800 dark:text-white"
                   />
                   <p className="mt-1 text-[10px] text-blue-600 dark:text-blue-400">Number of permissions to trigger deduction</p>
                 </div>
@@ -878,7 +1018,7 @@ export default function DepartmentalSettingsPage() {
                   <select
                     value={formData.permissions.deductionRules?.deductionType ?? ''}
                     onChange={(e) => handleInputChange('permissions', 'deductionRules', e.target.value || null, 'deductionType')}
-                    className="w-full rounded-lg border border-blue-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-blue-600 dark:bg-slate-700 dark:text-white"
+                    className="w-full rounded-xl border border-blue-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-blue-700 dark:bg-slate-800 dark:text-white"
                   >
                     <option value="">Select Type</option>
                     <option value="half_day">Half Day</option>
@@ -898,7 +1038,7 @@ export default function DepartmentalSettingsPage() {
                       value={formData.permissions.deductionRules?.deductionAmount ?? ''}
                       onChange={(e) => handleInputChange('permissions', 'deductionRules', e.target.value ? parseFloat(e.target.value) : null, 'deductionAmount')}
                       placeholder="e.g., 500"
-                      className="w-full rounded-lg border border-blue-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-blue-600 dark:bg-slate-700 dark:text-white"
+                      className="w-full rounded-xl border border-blue-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-blue-700 dark:bg-slate-800 dark:text-white"
                     />
                   </div>
                 )}
@@ -912,7 +1052,7 @@ export default function DepartmentalSettingsPage() {
                     value={formData.permissions.deductionRules?.minimumDuration ?? ''}
                     onChange={(e) => handleInputChange('permissions', 'deductionRules', e.target.value ? parseInt(e.target.value) : null, 'minimumDuration')}
                     placeholder="e.g., 60 (1 hour)"
-                    className="w-full rounded-lg border border-blue-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-blue-600 dark:bg-slate-700 dark:text-white"
+                    className="w-full rounded-xl border border-blue-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-blue-700 dark:bg-slate-800 dark:text-white"
                   />
                   <p className="mt-1 text-[10px] text-blue-600 dark:text-blue-400">Only count permissions {'>='} this duration</p>
                 </div>
@@ -923,7 +1063,7 @@ export default function DepartmentalSettingsPage() {
                   <select
                     value={formData.permissions.deductionRules?.calculationMode ?? ''}
                     onChange={(e) => handleInputChange('permissions', 'deductionRules', e.target.value || null, 'calculationMode')}
-                    className="w-full rounded-lg border border-blue-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-blue-600 dark:bg-slate-700 dark:text-white"
+                    className="w-full rounded-xl border border-blue-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-blue-700 dark:bg-slate-800 dark:text-white"
                   >
                     <option value="">Select Mode</option>
                     <option value="proportional">Proportional (with partial deductions)</option>
@@ -939,9 +1079,16 @@ export default function DepartmentalSettingsPage() {
           </div>
 
           {/* Overtime (OT) Settings */}
-          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-            <h2 className="mb-4 text-base font-semibold text-slate-900 dark:text-white">Overtime (OT) Settings</h2>
-            <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+            <h2 className="mb-4 flex items-center gap-2 text-lg font-bold text-slate-900 dark:text-white">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-pink-100 text-pink-600 dark:bg-pink-900/30 dark:text-pink-400">
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </span>
+              Overtime (OT) Settings
+            </h2>
+            <p className="mb-6 text-sm text-slate-500 dark:text-slate-400">
               Configure department-specific overtime settings. Leave blank to use global defaults.
             </p>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-2">
@@ -956,7 +1103,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.ot.otPayPerHour ?? ''}
                   onChange={(e) => handleInputChange('ot', 'otPayPerHour', e.target.value ? parseFloat(e.target.value) : null)}
                   placeholder="e.g., 100, 150, 200"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 />
                 <p className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">Leave blank to use global default</p>
               </div>
@@ -971,7 +1118,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.ot.minOTHours ?? ''}
                   onChange={(e) => handleInputChange('ot', 'minOTHours', e.target.value ? parseFloat(e.target.value) : null)}
                   placeholder="e.g., 1, 2, 2.5"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 />
                 <p className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">Minimum hours required for OT pay eligibility</p>
               </div>
@@ -979,9 +1126,16 @@ export default function DepartmentalSettingsPage() {
           </div>
 
           {/* Attendance Deduction Rules (Combined Late-in + Early-out) */}
-          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-            <h2 className="mb-4 text-base font-semibold text-slate-900 dark:text-white">Attendance Deduction Rules</h2>
-            <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+            <h2 className="mb-4 flex items-center gap-2 text-lg font-bold text-slate-900 dark:text-white">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400">
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </span>
+              Attendance Deduction Rules
+            </h2>
+            <p className="mb-6 text-sm text-slate-500 dark:text-slate-400">
               Configure automatic salary deductions based on combined late-in and early-out count.
             </p>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -995,7 +1149,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.attendance?.deductionRules?.combinedCountThreshold ?? ''}
                   onChange={(e) => handleInputChange('attendance', 'deductionRules', e.target.value ? parseInt(e.target.value) : null, 'combinedCountThreshold')}
                   placeholder="e.g., 4"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 />
                 <p className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">Combined count (late-ins + early-outs)</p>
               </div>
@@ -1006,7 +1160,7 @@ export default function DepartmentalSettingsPage() {
                 <select
                   value={formData.attendance?.deductionRules?.deductionType ?? ''}
                   onChange={(e) => handleInputChange('attendance', 'deductionRules', e.target.value || null, 'deductionType')}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 >
                   <option value="">Select Type</option>
                   <option value="half_day">Half Day</option>
@@ -1026,7 +1180,7 @@ export default function DepartmentalSettingsPage() {
                     value={formData.attendance?.deductionRules?.deductionAmount ?? ''}
                     onChange={(e) => handleInputChange('attendance', 'deductionRules', e.target.value ? parseFloat(e.target.value) : null, 'deductionAmount')}
                     placeholder="e.g., 500"
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                   />
                 </div>
               )}
@@ -1040,7 +1194,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.attendance?.deductionRules?.minimumDuration ?? ''}
                   onChange={(e) => handleInputChange('attendance', 'deductionRules', e.target.value ? parseInt(e.target.value) : null, 'minimumDuration')}
                   placeholder="e.g., 60 (1 hour)"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 />
                 <p className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">Only count late-ins/early-outs {'>='} this duration</p>
               </div>
@@ -1051,7 +1205,7 @@ export default function DepartmentalSettingsPage() {
                 <select
                   value={formData.attendance?.deductionRules?.calculationMode ?? ''}
                   onChange={(e) => handleInputChange('attendance', 'deductionRules', e.target.value || null, 'calculationMode')}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 >
                   <option value="">Select Mode</option>
                   <option value="proportional">Proportional (with partial deductions)</option>
@@ -1066,11 +1220,19 @@ export default function DepartmentalSettingsPage() {
           </div>
 
           {/* Early-Out Settings */}
-          <div className="mt-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h3 className="text-base font-semibold text-slate-900 dark:text-white">Early-Out Rules</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Independent rules for early-outs. When disabled, combined rules apply.</p>
+          {/* Early-Out Settings */}
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+            <div className="mb-6 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-yellow-100 text-yellow-600 dark:bg-yellow-900/30 dark:text-yellow-400">
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </span>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">Early-Out Rules</h3>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">Independent rules for early-outs. When disabled, combined rules apply.</p>
+                </div>
               </div>
               <label className="relative inline-flex cursor-pointer items-center">
                 <input
@@ -1079,7 +1241,7 @@ export default function DepartmentalSettingsPage() {
                   checked={formData.attendance?.earlyOut?.isEnabled ?? false}
                   onChange={(e) => handleInputChange('attendance', 'earlyOut', e.target.checked, 'isEnabled')}
                 />
-                <div className="peer h-5 w-10 rounded-full bg-slate-300 after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-all peer-checked:bg-green-500 peer-checked:after:translate-x-5"></div>
+                <div className="peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-blue-600 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:border-gray-600 dark:bg-gray-700 dark:peer-focus:ring-blue-800"></div>
               </label>
             </div>
 
@@ -1093,7 +1255,7 @@ export default function DepartmentalSettingsPage() {
                   min="0"
                   value={formData.attendance?.earlyOut?.allowedDurationMinutes ?? 0}
                   onChange={(e) => handleInputChange('attendance', 'earlyOut', e.target.value ? parseInt(e.target.value) : 0, 'allowedDurationMinutes')}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 />
                 <p className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">Minutes allowed without deduction</p>
               </div>
@@ -1106,59 +1268,64 @@ export default function DepartmentalSettingsPage() {
                   min="0"
                   value={formData.attendance?.earlyOut?.minimumDuration ?? 0}
                   onChange={(e) => handleInputChange('attendance', 'earlyOut', e.target.value ? parseInt(e.target.value) : 0, 'minimumDuration')}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 />
                 <p className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">Only early-outs {'>='} this duration will count</p>
               </div>
             </div>
 
-            <div className="mt-4 space-y-3">
+            <div className="mt-6 space-y-4">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">Deduction Ranges</p>
+                <p className="font-semibold text-slate-900 dark:text-white">Deduction Ranges</p>
               </div>
               {(formData.attendance?.earlyOut?.deductionRanges || []).length === 0 && (
-                <p className="text-xs text-slate-500 dark:text-slate-400">No ranges configured.</p>
-              )}
-              {(formData.attendance?.earlyOut?.deductionRanges || []).map((range, idx) => (
-                <div key={range._id || idx} className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                  <span className="font-semibold">{range.minMinutes}–{range.maxMinutes} min</span>
-                  <span className="text-slate-500">|</span>
-                  <span className="capitalize">{range.deductionType.replace('_', ' ')}</span>
-                  {range.deductionType === 'custom_amount' && range.deductionAmount && <span className="text-slate-500">₹{range.deductionAmount}</span>}
-                  {range.description && <span className="text-slate-500">— {range.description}</span>}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const updated = [...(formData.attendance?.earlyOut?.deductionRanges || [])];
-                      updated.splice(idx, 1);
-                      setFormData((prev) => ({
-                        ...prev,
-                        attendance: {
-                          ...prev.attendance,
-                          earlyOut: {
-                            ...(prev.attendance?.earlyOut || { isEnabled: false, allowedDurationMinutes: 0, minimumDuration: 0, deductionRanges: [] }),
-                            deductionRanges: updated,
-                          },
-                        },
-                      }));
-                    }}
-                    className="ml-auto rounded border border-red-200 px-2 py-1 text-[11px] font-semibold text-red-600 hover:border-red-400 dark:border-red-700 dark:text-red-300"
-                  >
-                    Delete
-                  </button>
+                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+                  No ranges configured. Add a range below.
                 </div>
-              ))}
+              )}
+              <div className="space-y-3">
+                {(formData.attendance?.earlyOut?.deductionRanges || []).map((range, idx) => (
+                  <div key={range._id || idx} className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 shadow-sm transition-all hover:border-blue-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-blue-700">
+                    <span className="font-bold text-slate-900 dark:text-white">{range.minMinutes}–{range.maxMinutes} min</span>
+                    <span className="text-slate-300 dark:text-slate-600">|</span>
+                    <span className="capitalize font-medium text-slate-600 dark:text-slate-300">{range.deductionType.replace('_', ' ')}</span>
+                    {range.deductionType === 'custom_amount' && range.deductionAmount && <span className="font-medium text-slate-900 dark:text-white">₹{range.deductionAmount}</span>}
+                    {range.description && <span className="text-slate-500 italic">— {range.description}</span>}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const updated = [...(formData.attendance?.earlyOut?.deductionRanges || [])];
+                        updated.splice(idx, 1);
+                        setFormData((prev) => ({
+                          ...prev,
+                          attendance: {
+                            ...prev.attendance,
+                            earlyOut: {
+                              ...(prev.attendance?.earlyOut || { isEnabled: false, allowedDurationMinutes: 0, minimumDuration: 0, deductionRanges: [] }),
+                              deductionRanges: updated,
+                            },
+                          },
+                        }));
+                      }}
+                      className="ml-auto rounded-lg bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-600 transition-colors hover:bg-red-100 hover:text-red-700 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/40"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                ))}
+              </div>
 
               {/* Add Range */}
-              <div className="grid grid-cols-1 gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-xs dark:border-slate-600 dark:bg-slate-800">
-                <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50/50 p-5 mt-4 dark:border-slate-700 dark:bg-slate-900/50">
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Add New Range</p>
+                <div className="grid grid-cols-2 gap-3">
                   <input
                     type="number"
                     min="0"
                     placeholder="Min (min)"
                     value={newRange.minMinutes}
                     onChange={(e) => setNewRange(prev => ({ ...prev, minMinutes: e.target.value }))}
-                    className="rounded border border-slate-300 bg-white px-2 py-1 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   />
                   <input
                     type="number"
@@ -1166,14 +1333,14 @@ export default function DepartmentalSettingsPage() {
                     placeholder="Max (min)"
                     value={newRange.maxMinutes}
                     onChange={(e) => setNewRange(prev => ({ ...prev, maxMinutes: e.target.value }))}
-                    className="rounded border border-slate-300 bg-white px-2 py-1 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-3">
                   <select
                     value={newRange.deductionType}
                     onChange={(e) => setNewRange(prev => ({ ...prev, deductionType: e.target.value as any }))}
-                    className="rounded border border-slate-300 bg-white px-2 py-1 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   >
                     <option value="quarter_day">Quarter Day</option>
                     <option value="half_day">Half Day</option>
@@ -1188,17 +1355,17 @@ export default function DepartmentalSettingsPage() {
                     value={newRange.deductionAmount}
                     disabled={newRange.deductionType !== 'custom_amount'}
                     onChange={(e) => setNewRange(prev => ({ ...prev, deductionAmount: e.target.value }))}
-                    className="rounded border border-slate-300 bg-white px-2 py-1 disabled:cursor-not-allowed dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 transition-all disabled:opacity-50 disabled:cursor-not-allowed focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   />
                 </div>
                 <input
                   type="text"
-                  placeholder="Description"
+                  placeholder="Description (optional)"
                   value={newRange.description}
                   onChange={(e) => setNewRange(prev => ({ ...prev, description: e.target.value }))}
-                  className="rounded border border-slate-300 bg-white px-2 py-1 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                 />
-                <div className="flex justify-end">
+                <div className="flex justify-end pt-2">
                   <button
                     type="button"
                     onClick={() => {

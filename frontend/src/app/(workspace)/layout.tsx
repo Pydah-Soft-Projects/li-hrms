@@ -182,7 +182,7 @@ function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen bg-gray-50">
       {/* Sidebar */}
       <aside
-        className={`fixed top-0 left-0 h-screen bg-white border-r border-slate-200/60 transition-all duration-300 ease-in-out z-40 ${sidebarCollapsed ? 'w-[70px]' : 'w-[240px]'}`}
+        className={`fixed top-0 left-0 h-screen bg-white border-r border-slate-200/60 transition-all duration-300 ease-in-out z-10 ${sidebarCollapsed ? 'w-[70px]' : 'w-[240px]'}`}
       >
         {/* Collapse/Expand Button */}
         <button

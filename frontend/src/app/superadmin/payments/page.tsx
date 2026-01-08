@@ -201,70 +201,72 @@ export default function PaymentsPage() {
             </div>
 
             {/* Filters */}
-            <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div>
-                        <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Month</label>
-                        <input
-                            type="month"
-                            className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
-                            value={month}
-                            onChange={(e) => setMonth(e.target.value)}
-                        />
-                    </div>
+            <div className="bg-white dark:bg-slate-800 p-4 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700">
+                <div className="flex flex-col md:flex-row gap-4 items-end">
+                    <div className="flex-1 w-full md:w-auto grid grid-cols-1 sm:grid-cols-4 gap-4">
+                        <div>
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Month</label>
+                            <input
+                                type="month"
+                                className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all shadow-sm"
+                                value={month}
+                                onChange={(e) => setMonth(e.target.value)}
+                            />
+                        </div>
 
-                    <div>
-                        <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Division</label>
-                        <select
-                            className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
-                            value={selectedDivision}
-                            onChange={(e) => {
-                                setSelectedDivision(e.target.value);
-                                setSelectedDept("all");
-                            }}
-                        >
-                            <option value="">All Divisions</option>
-                            {divisions.map((div) => (
-                                <option key={div._id} value={div._id}>
-                                    {div.name}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-                    <div>
-                        <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Department</label>
-                        <select
-                            className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
-                            value={selectedDept}
-                            onChange={(e) => setSelectedDept(e.target.value)}
-                        >
-                            <option value="all">All Departments</option>
-                            {departments
-                                .filter(dept => {
-                                    if (!selectedDivision || selectedDivision === "all") return true;
-                                    const currentDiv = divisions.find(d => d._id === selectedDivision);
-                                    return currentDiv?.departments?.some((d: any) => d === dept._id || d._id === dept._id);
-                                })
-                                .map((dept) => (
-                                    <option key={dept._id} value={dept._id}>
-                                        {dept.name}
+                        <div>
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Division</label>
+                            <select
+                                className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all shadow-sm cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800"
+                                value={selectedDivision}
+                                onChange={(e) => {
+                                    setSelectedDivision(e.target.value);
+                                    setSelectedDept("all");
+                                }}
+                            >
+                                <option value="">All Divisions</option>
+                                {divisions.map((div) => (
+                                    <option key={div._id} value={div._id}>
+                                        {div.name}
                                     </option>
                                 ))}
-                        </select>
-                    </div>
-                    <div>
-                        <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Status</label>
-                        <select
-                            className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
-                            value={selectedStatus}
-                            onChange={(e) => setSelectedStatus(e.target.value)}
-                        >
-                            <option value="all">All Statuses</option>
-                            <option value="pending">Pending</option>
-                            <option value="approved">Approved</option>
-                            <option value="freeze">Frozen</option>
-                            <option value="complete">Completed</option>
-                        </select>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Department</label>
+                            <select
+                                className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all shadow-sm cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800"
+                                value={selectedDept}
+                                onChange={(e) => setSelectedDept(e.target.value)}
+                            >
+                                <option value="all">All Departments</option>
+                                {departments
+                                    .filter(dept => {
+                                        if (!selectedDivision || selectedDivision === "all") return true;
+                                        const currentDiv = divisions.find(d => d._id === selectedDivision);
+                                        return currentDiv?.departments?.some((d: any) => d === dept._id || d._id === dept._id);
+                                    })
+                                    .map((dept) => (
+                                        <option key={dept._id} value={dept._id}>
+                                            {dept.name}
+                                        </option>
+                                    ))}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Status</label>
+                            <select
+                                className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all shadow-sm cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800"
+                                value={selectedStatus}
+                                onChange={(e) => setSelectedStatus(e.target.value)}
+                            >
+                                <option value="all">All Statuses</option>
+                                <option value="pending">Pending</option>
+                                <option value="approved">Approved</option>
+                                <option value="freeze">Frozen</option>
+                                <option value="complete">Completed</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
             </div>
