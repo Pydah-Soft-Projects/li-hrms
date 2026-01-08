@@ -1006,36 +1006,8 @@ exports.getPendingApprovals = async (req, res) => {
       appliedBy: { $ne: req.user._id }
     };
 
-    if (userRole === 'hod') {
-      const nextApproverCondition = [
-        { 'workflow.nextApprover': 'hod' },
-        { 'workflow.nextApproverRole': 'hod' }
-      ];
-
-      if (req.user.department) {
-        // Robust HOD filter:
-        filter = {
-          $and: [
-            filter, // Base filter (isActive + not self)
-            { $or: nextApproverCondition }, // Waiting for HOD
-            {
-              $or: [
-                { department: req.user.department },
-                { department_id: req.user.department }
-              ]
-            }
-          ]
-        };
-      } else {
-        filter['$or'] = nextApproverCondition;
-      }
-    } else if (userRole === 'hr') {
-      filter['$or'] = [
-        { 'workflow.nextApprover': { $in: ['hr', 'final_authority'] } },
-        { 'workflow.nextApproverRole': { $in: ['hr', 'final_authority'] } }
-      ];
-    } else if (['sub_admin', 'super_admin'].includes(userRole)) {
-      // 1. Super Admin: View all non-final ODs
+    // 1. Super Admin / Sub Admin: View all non-final ODs
+    if (['sub_admin', 'super_admin'].includes(userRole)) {
       filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
     } else if (userRole === 'manager') {
       // 2. Manager: Strict Scope Check

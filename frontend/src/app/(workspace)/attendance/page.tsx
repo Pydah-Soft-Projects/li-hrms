@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
+import { useWorkspace } from '@/contexts/WorkspaceContext';
 
 interface AttendanceRecord {
   date: string;
@@ -64,6 +65,7 @@ interface Employee {
   employee_name: string;
   department?: { _id: string; name: string };
   designation?: { _id: string; name: string };
+  division?: { _id: string; name: string };
 }
 
 interface MonthlyAttendanceData {
@@ -101,6 +103,7 @@ interface Designation {
 }
 
 export default function AttendancePage() {
+  const { activeWorkspace } = useWorkspace();
 
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showPayslipModal, setShowPayslipModal] = useState(false);
@@ -176,9 +179,11 @@ export default function AttendancePage() {
   const month = currentDate.getMonth() + 1;
 
   useEffect(() => {
-    loadDivisions();
-    loadDepartments();
-  }, []);
+    if (activeWorkspace) {
+      loadDivisions();
+      loadDepartments();
+    }
+  }, [activeWorkspace]);
 
   useEffect(() => {
     if (selectedDivision) {
@@ -218,9 +223,16 @@ export default function AttendancePage() {
 
     if (selectedDivision) {
       filtered = filtered.filter(item => {
+        // Prefer direct division on employee
+        if (item.employee.division) {
+          const divId = typeof item.employee.division === 'string' ? item.employee.division : (item.employee.division as any)?._id || (item.employee as any).division_id?._id || (item.employee as any).division_id;
+          if (divId === selectedDivision) return true;
+        }
+
+        // Fallback to department's division
         const dept = item.employee.department as any;
         if (!dept) return false;
-        const divId = typeof dept.division === 'string' ? dept.division : dept.division?._id;
+        const divId = typeof dept.division === 'string' ? dept.division : (dept.division?._id || dept.divisionId?._id || dept.divisionId);
         return divId === selectedDivision;
       });
     }
@@ -242,9 +254,21 @@ export default function AttendancePage() {
 
   const loadDivisions = async () => {
     try {
-      const response = await api.getDivisions();
+      const response = await api.getDivisions(true);
       if (response.success && response.data) {
-        setDivisions(response.data);
+        let divs = response.data;
+
+        // If workspace has specific divisions assigned, filter them
+        if (activeWorkspace?.scopeConfig?.divisions && activeWorkspace.scopeConfig.divisions.length > 0) {
+          const allowedIds = activeWorkspace.scopeConfig.divisions.map(id => typeof id === 'string' ? id : (id as any)._id);
+          divs = divs.filter((d: any) => allowedIds.includes(d._id));
+        } else if (activeWorkspace?.scopeConfig?.divisionMapping && activeWorkspace.scopeConfig.divisionMapping.length > 0) {
+          // If workspace uses division mapping, extract those divisions
+          const allowedIds = activeWorkspace.scopeConfig.divisionMapping.map(m => typeof m.division === 'string' ? m.division : (m.division as any)?._id);
+          divs = divs.filter((d: any) => allowedIds.includes(d._id));
+        }
+
+        setDivisions(divs);
       }
     } catch (err) {
       console.error('Error loading divisions:', err);
@@ -257,7 +281,11 @@ export default function AttendancePage() {
       if (response.success && response.data) {
         let depts = response.data;
         if (divisionId) {
-          depts = depts.filter((d: any) => d.division === divisionId || (d.division?._id === divisionId));
+          depts = depts.filter((d: any) =>
+            d.division === divisionId ||
+            (d.division?._id === divisionId) ||
+            (Array.isArray(d.divisions) && d.divisions.some((div: any) => (typeof div === 'string' ? div : div._id) === divisionId))
+          );
         }
         setDepartments(depts);
       }
@@ -977,191 +1005,198 @@ export default function AttendancePage() {
 
       <div className="relative z-10 mx-auto max-w-[1920px]">
         {/* Header */}
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex-1 flex items-center min-w-[200px]">
-            {showSearch ? (
-              <div className="flex-1 flex items-center gap-2">
-                <div className="relative flex-1 max-w-md">
-                  <input
-                    autoFocus
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search employee name or number..."
-                    className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white shadow-sm"
-                  />
-                  <svg className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                </div>
-                <button
-                  onClick={() => { setShowSearch(false); setSearchQuery(''); }}
-                  className="p-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
-                >
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+        <div className="mb-6 flex flex-nowrap items-center justify-between gap-4 overflow-x-auto pb-2 scrollbar-hide">
+          <div className="flex flex-nowrap items-center gap-4">
+            {/* Title Section */}
+            <div className="flex flex-nowrap items-center gap-3 shrink-0">
+              <div className="flex flex-col">
+                <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white whitespace-nowrap">Attendance Management </h1>
               </div>
-            ) : (
-              <div className="flex items-center gap-4">
-                <div>
-                  <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Attendance Management</h1>
-                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">View and manage employee attendance records</p>
-                </div>
-                <button
-                  onClick={() => setShowSearch(true)}
-                  className="p-2.5 rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-green-600 transition-all shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
-                  title="Search employees"
-                >
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                </button>
+
+              <div className="h-8 w-px bg-slate-200 dark:bg-slate-800 hidden md:block" />
+
+              {/* Search Toggle */}
+              <div className="flex items-center gap-2">
+                {showSearch ? (
+                  <div className="flex items-center gap-2 animate-in fade-in slide-in-from-left-2 duration-300">
+                    <div className="relative group">
+                      <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                        <svg className="h-3.5 w-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                      </div>
+                      <input
+                        autoFocus
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Search..."
+                        className="w-40 h-9 pl-9 pr-3 text-xs rounded-xl border border-slate-200 bg-white focus:border-green-500 focus:ring-2 focus:ring-green-500/10 transition-all dark:border-slate-700 dark:bg-slate-800 dark:text-white shadow-sm"
+                      />
+                    </div>
+                    <button
+                      onClick={() => { setShowSearch(false); setSearchQuery(''); }}
+                      className="h-9 w-9 flex items-center justify-center rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 transition-all"
+                    >
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setShowSearch(true)}
+                    className="h-9 w-9 flex items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:text-green-600 hover:border-green-200 hover:bg-green-50/50 transition-all shadow-sm dark:border-slate-700 dark:bg-slate-800"
+                    title="Search Records"
+                  >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  </button>
+                )}
               </div>
-            )}
-          </div>
+            </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Division Filter */}
-            <select
-              value={selectedDivision}
-              onChange={(e) => setSelectedDivision(e.target.value)}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white shadow-sm"
-            >
-              <option value="">All Divisions</option>
-              {divisions.map((div) => (
-                <option key={div._id} value={div._id}>
-                  {div.name}
-                </option>
-              ))}
-            </select>
-
-            {/* Department Filter */}
-            <select
-              value={selectedDepartment}
-              onChange={(e) => {
-                setSelectedDepartment(e.target.value);
-                setSelectedDesignation('');
-              }}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white shadow-sm"
-            >
-              <option value="">All Departments</option>
-              {departments.map((dept) => (
-                <option key={dept._id} value={dept._id}>
-                  {dept.name}
-                </option>
-              ))}
-            </select>
-
-            {/* Designation Filter */}
-            {selectedDepartment && (
+            {/* Filters Group */}
+            <div className="flex flex-nowrap items-center gap-1.5 p-1 bg-slate-100/50 dark:bg-slate-800/40 rounded-xl border border-slate-200/60 dark:border-slate-700/60 backdrop-blur-sm">
               <select
-                value={selectedDesignation}
-                onChange={(e) => setSelectedDesignation(e.target.value)}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white shadow-sm"
+                value={selectedDivision}
+                onChange={(e) => {
+                  setSelectedDivision(e.target.value);
+                  setSelectedDepartment('');
+                  setSelectedDesignation('');
+                  loadDepartments(e.target.value);
+                }}
+                className="h-8 pl-2 pr-6 text-[11px] font-semibold bg-white dark:bg-slate-800 border-0 rounded-lg focus:ring-2 focus:ring-green-500/20 text-slate-700 dark:text-slate-300 shadow-sm min-w-[100px] max-w-[140px]"
               >
-                <option value="">All Designations</option>
-                {designations.map((desig) => (
-                  <option key={desig._id} value={desig._id}>
-                    {desig.name}
-                  </option>
+                <option value="">All Divisions</option>
+                {divisions.map((div) => (
+                  <option key={div._id} value={div._id}>{div.name}</option>
                 ))}
               </select>
-            )}
 
-            {/* Table Type Dropdown */}
-            <select
-              value={tableType}
-              onChange={(e) => setTableType(e.target.value as any)}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-green-700 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-700 dark:bg-slate-800 shadow-sm"
-            >
-              <option value="complete">Complete Table</option>
-              <option value="present_absent">Present & Absent Table</option>
-              <option value="in_out">In Time & Out Time Table</option>
-              <option value="leaves">Leaves Table</option>
-              <option value="od">OD Table</option>
-              <option value="ot">OT Table</option>
-            </select>
+              <select
+                value={selectedDepartment}
+                onChange={(e) => {
+                  setSelectedDepartment(e.target.value);
+                  setSelectedDesignation('');
+                }}
+                className="h-8 pl-2 pr-6 text-[11px] font-semibold bg-white dark:bg-slate-800 border-0 rounded-lg focus:ring-2 focus:ring-green-500/20 text-slate-700 dark:text-slate-300 shadow-sm min-w-[100px] max-w-[140px]"
+              >
+                <option value="">All Departments</option>
+                {departments.map((dept) => (
+                  <option key={dept._id} value={dept._id}>{dept.name}</option>
+                ))}
+              </select>
 
-            {/* Month Selection */}
-            <div className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800 shadow-sm">
+              {selectedDepartment && (
+                <select
+                  value={selectedDesignation}
+                  onChange={(e) => setSelectedDesignation(e.target.value)}
+                  className="h-8 pl-2 pr-6 text-[11px] font-semibold bg-white dark:bg-slate-800 border-0 rounded-lg focus:ring-2 focus:ring-green-500/20 text-slate-700 dark:text-slate-300 shadow-sm min-w-[100px] max-w-[140px] animate-in slide-in-from-left-2"
+                >
+                  <option value="">All Designations</option>
+                  {designations.map((desig) => (
+                    <option key={desig._id} value={desig._id}>{desig.name}</option>
+                  ))}
+                </select>
+              )}
+
+              <div className="h-5 w-px bg-slate-300 dark:bg-slate-600 mx-1" />
+
+              <select
+                value={tableType}
+                onChange={(e) => setTableType(e.target.value as any)}
+                className="h-8 pl-2 pr-6 text-[11px] font-bold bg-green-50 dark:bg-green-900/20 border-0 rounded-lg focus:ring-2 focus:ring-green-500/20 text-green-700 dark:text-green-400 shadow-sm cursor-pointer"
+              >
+                <option value="complete">Complete</option>
+                <option value="present_absent">Pres/Abs</option>
+                <option value="in_out">In/Out</option>
+                <option value="leaves">Leaves</option>
+                <option value="od">OD</option>
+                <option value="ot">OT</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex flex-nowrap items-center gap-3 shrink-0">
+            {/* Month/Year Navigation */}
+            <div className="flex items-center gap-0.5 p-0.5 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
               <button
                 onClick={() => navigateMonth('prev')}
-                className="rounded-md p-1 text-slate-600 transition-colors hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
+                className="h-8 w-8 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
               >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                 </svg>
               </button>
-              <select
-                value={month}
-                onChange={(e) => {
-                  const newDate = new Date(currentDate);
-                  newDate.setMonth(parseInt(e.target.value) - 1);
-                  setCurrentDate(newDate);
-                }}
-                className="rounded-md border-0 bg-transparent px-1.5 py-0.5 text-xs font-bold text-slate-900 focus:outline-none focus:ring-0 dark:text-white"
-              >
-                {monthNames.map((name, idx) => (
-                  <option key={idx} value={idx + 1}>{name}</option>
-                ))}
-              </select>
-              <select
-                value={year}
-                onChange={(e) => {
-                  const newDate = new Date(currentDate);
-                  newDate.setFullYear(parseInt(e.target.value));
-                  setCurrentDate(newDate);
-                }}
-                className="rounded-md border-0 bg-transparent px-1.5 py-0.5 text-xs font-bold text-slate-900 focus:outline-none focus:ring-0 dark:text-white"
-              >
-                {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i).map((y) => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
+              <div className="flex items-center px-1 space-x-0.5">
+                <select
+                  value={month}
+                  onChange={(e) => {
+                    const newDate = new Date(currentDate);
+                    newDate.setMonth(parseInt(e.target.value) - 1);
+                    setCurrentDate(newDate);
+                  }}
+                  className="bg-transparent border-0 text-[11px] font-bold text-slate-900 dark:text-white focus:ring-0 p-0 cursor-pointer"
+                >
+                  {monthNames.map((name, idx) => (
+                    <option key={idx} value={idx + 1}>{name.substring(0, 3)}</option>
+                  ))}
+                </select>
+                <select
+                  value={year}
+                  onChange={(e) => {
+                    const newDate = new Date(currentDate);
+                    newDate.setFullYear(parseInt(e.target.value));
+                    setCurrentDate(newDate);
+                  }}
+                  className="bg-transparent border-0 text-[11px] font-bold text-slate-900 dark:text-white focus:ring-0 p-0 cursor-pointer"
+                >
+                  {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i).map((y) => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+              </div>
               <button
                 onClick={() => navigateMonth('next')}
-                className="rounded-md p-1 text-slate-600 transition-colors hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
+                className="h-8 w-8 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
               >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
               </button>
             </div>
-          </div>
 
-          {/* Sync Shifts Button */}
-          <button
-            onClick={handleSyncShifts}
-            disabled={syncingShifts}
-            className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-          >
-            {syncingShifts ? (
-              <>
-                <div className="mr-2 inline h-4 w-4 animate-spin rounded-full border-2 border-slate-600 border-t-transparent"></div>
-                Syncing...
-              </>
-            ) : (
-              <>
-                <svg className="mr-2 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleSyncShifts}
+                disabled={syncingShifts}
+                title="Sync Shifts"
+                className="h-9 w-9 flex items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-green-600 hover:border-green-200 transition-all shadow-sm active:scale-95 disabled:opacity-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 md:w-auto md:px-3"
+              >
+                {syncingShifts ? (
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" />
+                ) : (
+                  <svg className="h-4 w-4 md:mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                )}
+                <span className="hidden md:inline text-xs font-semibold">Sync</span>
+              </button>
+
+              <button
+                onClick={() => setShowUploadDialog(true)}
+                title="Upload Excel"
+                className="h-9 flex items-center px-4 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 text-xs font-bold text-white shadow-lg shadow-green-500/25 hover:shadow-green-500/40 hover:-translate-y-0.5 transition-all active:scale-95"
+              >
+                <svg className="mr-2 h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
-                Sync Shifts
-              </>
-            )}
-          </button>
-
-          {/* Upload Excel Button */}
-          <button
-            onClick={() => setShowUploadDialog(true)}
-            className="rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
-          >
-            <svg className="mr-2 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-            </svg>
-            Upload Excel
-          </button>
+                Upload
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1208,8 +1243,6 @@ export default function AttendancePage() {
                   <>
                     <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-green-50 text-green-700">Present (M)</th>
                     <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-red-50 text-red-700">Absent (M)</th>
-                    <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-green-100 text-green-800">Total P</th>
-                    <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-red-100 text-red-800">Total A</th>
                   </>
                 )}
                 {tableType === 'in_out' && (
@@ -1270,8 +1303,6 @@ export default function AttendancePage() {
                         <>
                           <td className="border-r border-slate-200 bg-green-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
                           <td className="border-r border-slate-200 bg-red-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
-                          <td className="border-r border-slate-200 bg-green-100 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
-                          <td className="border-r border-slate-200 bg-red-100 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
                         </>
                       )}
                       {tableType === 'in_out' && (
@@ -1296,7 +1327,7 @@ export default function AttendancePage() {
                 <>
                   {filteredMonthlyData.length === 0 ? (
                     <tr>
-                      <td colSpan={daysArray.length + (tableType === 'complete' ? 6 : tableType === 'present_absent' ? 5 : tableType === 'ot' ? 3 : 2)} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                      <td colSpan={daysArray.length + (tableType === 'complete' ? 6 : tableType === 'present_absent' ? 3 : tableType === 'ot' ? 3 : 2)} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
                         No employees found matching the selected filters.
                       </td>
                     </tr>
@@ -1434,8 +1465,6 @@ export default function AttendancePage() {
                             <>
                               <td onClick={() => handleViewTypeSummary(item, 'present')} className="border-r border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 cursor-pointer hover:bg-green-100">{monthPresent}</td>
                               <td onClick={() => handleViewTypeSummary(item, 'absent')} className="border-r border-slate-200 bg-red-50 px-2 py-2 text-center text-[11px] font-bold text-red-700 cursor-pointer hover:bg-red-100">{monthAbsent}</td>
-                              <td onClick={() => handleViewTypeSummary(item, 'present')} className="border-r border-slate-200 bg-green-100 px-2 py-2 text-center text-[11px] font-bold text-green-800 cursor-pointer hover:bg-green-200">{daysPresent}</td>
-                              <td onClick={() => handleViewTypeSummary(item, 'absent')} className="border-r border-slate-200 bg-red-100 px-2 py-2 text-center text-[11px] font-bold text-red-800 cursor-pointer hover:bg-red-200">{daysAbsent}</td>
                             </>
                           )}
                           {tableType === 'in_out' && (

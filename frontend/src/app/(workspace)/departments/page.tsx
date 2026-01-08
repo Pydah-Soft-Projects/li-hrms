@@ -29,6 +29,8 @@ export default function DepartmentsPage() {
   const [showShiftBreakdownDialog, setShowShiftBreakdownDialog] = useState<Designation | null>(null);
   const [showBulkUploadDept, setShowBulkUploadDept] = useState(false);
   const [showBulkUploadDesig, setShowBulkUploadDesig] = useState(false);
+  const [divisions, setDivisions] = useState<any[]>([]);
+  const [divisionId, setDivisionId] = useState('');
   const [error, setError] = useState('');
 
   // Department form state
@@ -57,7 +59,19 @@ export default function DepartmentsPage() {
     loadUsers();
     // Load shifts on page load so they're available when dialog opens
     loadShifts();
+    loadDivisions();
   }, []);
+
+  const loadDivisions = async () => {
+    try {
+      const response = await api.getDivisions(true);
+      if (response.success && response.data) {
+        setDivisions(response.data);
+      }
+    } catch (err) {
+      console.error('Error loading divisions:', err);
+    }
+  };
 
   const loadDepartments = async () => {
     try {
@@ -126,6 +140,7 @@ export default function DepartmentsPage() {
         code: code || undefined,
         description: description || undefined,
         hod: hodId || undefined,
+        divisions: divisionId ? [divisionId] : [],
       };
 
       const response = await api.createDepartment(data);
@@ -154,6 +169,7 @@ export default function DepartmentsPage() {
         code: code || undefined,
         description: description || undefined,
         hod: hodId || undefined,
+        divisions: divisionId ? [divisionId] : [],
       };
 
       const response = await api.updateDepartment(showEditDialog._id, data);
@@ -288,6 +304,7 @@ export default function DepartmentsPage() {
     setCode('');
     setDescription('');
     setHodId('');
+    setDivisionId('');
     setError('');
   };
 
@@ -311,6 +328,15 @@ export default function DepartmentsPage() {
     setCode(dept.code || '');
     setDescription(dept.description || '');
     setHodId(dept.hod?._id || '');
+
+    // Set divisionId from the first division in the list
+    const firstDiv = dept.divisions?.[0];
+    if (firstDiv) {
+      setDivisionId(typeof firstDiv === 'string' ? firstDiv : firstDiv._id);
+    } else {
+      setDivisionId('');
+    }
+
     setError('');
   };
 
@@ -515,6 +541,25 @@ export default function DepartmentsPage() {
 
                 <div>
                   <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Division *
+                  </label>
+                  <select
+                    value={divisionId}
+                    onChange={(e) => setDivisionId(e.target.value)}
+                    required
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  >
+                    <option value="">Select Division</option>
+                    {divisions.map((div) => (
+                      <option key={div._id} value={div._id}>
+                        {div.name} ({div.code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
                     Head of Department (HOD)
                   </label>
                   <select
@@ -630,6 +675,25 @@ export default function DepartmentsPage() {
                     className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     placeholder="Department description..."
                   />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Division *
+                  </label>
+                  <select
+                    value={divisionId}
+                    onChange={(e) => setDivisionId(e.target.value)}
+                    required
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  >
+                    <option value="">Select Division</option>
+                    {divisions.map((div) => (
+                      <option key={div._id} value={div._id}>
+                        {div.name} ({div.code})
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>
@@ -1378,6 +1442,19 @@ export default function DepartmentsPage() {
                   )}
 
                   <div className="mb-4 space-y-2">
+                    {dept.divisions && dept.divisions.length > 0 && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400">
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                          </svg>
+                        </span>
+                        <span className="font-medium text-slate-700 dark:text-slate-300">Division:</span>
+                        <span className="text-slate-600 dark:text-slate-400">
+                          {typeof dept.divisions[0] === 'string' ? 'Division' : (dept.divisions[0] as any).name}
+                        </span>
+                      </div>
+                    )}
                     {dept.hod && (
                       <div className="flex items-center gap-2 text-sm">
                         <span className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
