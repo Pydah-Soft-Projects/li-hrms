@@ -12,6 +12,8 @@ const { fetchAttendanceLogsSQL } = require('../config/attendanceSQLHelper');
 const { detectAndAssignShift } = require('../../shifts/services/shiftDetectionService');
 const { detectExtraHours } = require('./extraHoursService');
 
+const MAX_PAIRING_WINDOW_HOURS = 25; // Maximum allowed duration for a shift (prevents multi-day jumps)
+
 /**
  * Format date to YYYY-MM-DD
  */
@@ -140,6 +142,29 @@ const processAndAggregateLogs = async (rawLogs, previousDayLinking = false, skip
               }
 
               const candidateLog = logs[j];
+
+              // CRITICAL: Duplicate Pulse Detection
+              // If timestamps are identical, treat as the same pulse (ignore)
+              if (candidateLog.timestamp.getTime() === inTime.getTime()) {
+                continue;
+              }
+
+              // CRITICAL: Stop-at-next-IN (Strict Serial Pairing)
+              // If we encounter another IN log before finding an OUT, this means the previous IN was a partial punch (forgot to punch out)
+              // We stop searching immediately to prevent "jumping" over days
+              if (candidateLog.type === 'IN') {
+                console.log(`[SyncDebug] Found new IN at ${candidateLog.timestamp} before OUT. Closing search for ${inTime}.`);
+                break;
+              }
+
+              // CRITICAL: Max Duration Safeguard
+              // If the candidate log is beyond the max window, it's too far away to be a valid pair
+              const diffHours = (candidateLog.timestamp - inTime) / (1000 * 60 * 60);
+              if (diffHours > MAX_PAIRING_WINDOW_HOURS) {
+                console.log(`[SyncDebug] Candidate log at ${candidateLog.timestamp} is ${diffHours.toFixed(1)}h away (Max ${MAX_PAIRING_WINDOW_HOURS}h). Stopping search.`);
+                break;
+              }
+
               if (candidateLog.type === 'OUT') {
                 const candidateOutTime = candidateLog.timestamp;
                 const candidateOutDate = formatDate(candidateOutTime);

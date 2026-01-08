@@ -1009,29 +1009,18 @@ exports.getPendingApprovals = async (req, res) => {
     // 1. Super Admin / Sub Admin: View all non-final ODs
     if (['sub_admin', 'super_admin'].includes(userRole)) {
       filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
-    }
-    // 2, 3, 4: Scoped Roles (HOD, HR, Manager)
-    else if (['hod', 'hr', 'manager'].includes(userRole)) {
-      // Role-based turn check
-      if (userRole === 'hr') {
-        filter['$or'] = [
-          { 'workflow.nextApprover': { $in: ['hr', 'final_authority'] } },
-          { 'workflow.nextApproverRole': { $in: ['hr', 'final_authority'] } }
-        ];
-      } else {
-        filter['$or'] = [
-          { 'workflow.nextApprover': userRole },
-          { 'workflow.nextApproverRole': userRole }
-        ];
-      }
+    } else if (userRole === 'manager') {
+      // 2. Manager: Strict Scope Check
+      filter['$or'] = [
+        { 'workflow.nextApprover': 'manager' },
+        { 'workflow.nextApproverRole': 'manager' }
+      ];
 
-      // Strict Employee-First Scope Match
       const employeeIds = await getEmployeeIdsInScope(req.user);
-
       if (employeeIds.length > 0) {
         filter.employeeId = { $in: employeeIds };
       } else {
-        console.warn(`[GetPendingApprovals] User ${req.user._id} (${userRole}) has no employees in scope.`);
+        console.warn(`[GetPendingApprovals] Manager ${req.user._id} has no employees in scope.`);
         filter.employeeId = { $in: [] };
       }
     }

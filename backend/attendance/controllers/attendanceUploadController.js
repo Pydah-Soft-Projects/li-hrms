@@ -45,87 +45,80 @@ exports.uploadExcel = async (req, res) => {
       });
     }
 
-    // Expected columns: Employee Number, In-Time, Out-Time (optional)
-    const rawLogs = [];
-    const errors = [];
+    // 1. Template Detection (Legacy Report vs Simple List)
+    const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+    let isLegacy = false;
+    let headerIdx = -1;
 
-    for (let i = 0; i < data.length; i++) {
-      const row = data[i];
-
-      try {
-        // Try different column name variations
-        const empNo = row['Employee Number'] || row['EmployeeNumber'] || row['Emp No'] || row['EmpNo'] || row['emp_no'];
-        const inTime = row['In-Time'] || row['InTime'] || row['In Time'] || row['in_time'] || row['Check In'];
-        const outTime = row['Out-Time'] || row['OutTime'] || row['Out Time'] || row['out_time'] || row['Check Out'];
-
-        if (!empNo || !inTime) {
-          errors.push(`Row ${i + 2}: Missing required fields (Employee Number, In-Time)`);
-          continue;
-        }
-
-        // Parse dates focusing on 24-hour format and Excel serials
-        const inTimeDate = parseExcelDate(inTime);
-        if (!inTimeDate || isNaN(inTimeDate.getTime())) {
-          errors.push(`Row ${i + 2}: Invalid In-Time format. Use 24-hour format (e.g., 14:30) or standard Excel date/time.`);
-          continue;
-        }
-
-        // Insert IN log
-        const inLog = {
-          employeeNumber: String(empNo).trim().toUpperCase(),
-          timestamp: inTimeDate,
-          type: 'IN',
-          source: 'excel',
-          date: formatDate(inTimeDate),
-          rawData: row,
-        };
-
-        // Try to insert (will fail if duplicate)
-        try {
-          await AttendanceRawLog.create(inLog);
-        } catch (error) {
-          if (error.code !== 11000) {
-            throw error;
-          }
-          // Duplicate - skip
-        }
-
-        rawLogs.push(inLog);
-
-        // Insert OUT log if provided
-        if (outTime) {
-          // Use inTimeDate as fallback so OutTime on the same day works even if just time is provided
-          const outTimeDate = parseExcelDate(outTime, inTimeDate);
-
-          if (outTimeDate && !isNaN(outTimeDate.getTime())) {
-            const outLog = {
-              employeeNumber: String(empNo).trim().toUpperCase(),
-              timestamp: outTimeDate,
-              type: 'OUT',
-              source: 'excel',
-              date: formatDate(outTimeDate),
-              rawData: row,
-            };
-
-            try {
-              await AttendanceRawLog.create(outLog);
-            } catch (error) {
-              if (error.code !== 11000) {
-                throw error;
-              }
-            }
-
-            rawLogs.push(outLog);
-          }
-        }
-
-      } catch (error) {
-        errors.push(`Row ${i + 2}: ${error.message}`);
+    // Check first 10 rows for signature
+    for (let i = 0; i < 10; i++) {
+      if (rows[i] && rows[i].includes('SNO') && rows[i].includes('E .NO') && rows[i].includes('PDate')) {
+        isLegacy = true;
+        headerIdx = i;
+        break;
       }
     }
 
-    // Process and aggregate
-    const stats = await processAndAggregateLogs(rawLogs, false);
+    const rawLogs = [];
+    const errors = [];
+
+    if (isLegacy) {
+      console.log('[AttendanceUpload] Legacy Report detected at row', headerIdx + 1);
+      const legacyResult = parseLegacyRows(rows, headerIdx);
+      rawLogs.push(...legacyResult.rawLogs);
+      errors.push(...legacyResult.errors);
+    } else {
+      // 2. Original Simple List Logic
+      console.log('[AttendanceUpload] Simple List format detected');
+      const simpleResult = await parseSimpleRows(data);
+      rawLogs.push(...simpleResult.rawLogs);
+      errors.push(...simpleResult.errors);
+    }
+
+    if (rawLogs.length === 0 && errors.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Failed to parse any valid logs',
+        errors
+      });
+    }
+
+    // 3. Save Raw Logs and Process (Bulk Insertion optimization)
+    // Group by unique identity to avoid database-level collision spam
+    const uniqueLogs = [];
+    const logKeys = new Set();
+
+    for (const log of rawLogs) {
+      const key = `${log.employeeNumber}_${log.timestamp.getTime()}_${log.type}`;
+      if (!logKeys.has(key)) {
+        logKeys.add(key);
+        uniqueLogs.push(log);
+      }
+    }
+
+    const finalProcessedLogs = [];
+    let duplicateCount = 0;
+
+    for (const logData of uniqueLogs) {
+      try {
+        await AttendanceRawLog.create(logData);
+        finalProcessedLogs.push(logData);
+      } catch (err) {
+        if (err.code === 11000) {
+          duplicateCount++;
+          // Still add to finalProcessedLogs so processAndAggregateLogs knows which employees/dates to refresh
+          finalProcessedLogs.push(logData);
+        } else {
+          console.error(`[AttendanceUpload] DB Error for ${logData.employeeNumber}: ${err.message}`);
+          errors.push(`DB Error for ${logData.employeeNumber}: ${err.message}`);
+        }
+      }
+    }
+
+    console.log(`[AttendanceUpload] Unique logs found: ${uniqueLogs.length}, New: ${finalProcessedLogs.length - duplicateCount}, Duplicates: ${duplicateCount}`);
+
+    // 4. Process and aggregate
+    const stats = await processAndAggregateLogs(finalProcessedLogs, false);
 
     // IMPORTANT: After processing logs, detect extra hours for all affected records
     // This ensures extra hours are calculated for all attendance records from Excel upload
@@ -133,7 +126,7 @@ exports.uploadExcel = async (req, res) => {
       console.log('[ExcelUpload] Detecting extra hours for all processed records...');
 
       // Get unique dates from the processed logs
-      const processedDates = [...new Set(rawLogs.map(log => {
+      const processedDates = [...new Set(finalProcessedLogs.map(log => {
         const d = new Date(log.timestamp);
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       }))];
@@ -158,11 +151,12 @@ exports.uploadExcel = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: `Successfully processed ${rawLogs.length} logs from Excel`,
+      message: `Successfully processed ${finalProcessedLogs.length} logs from Excel`,
       data: {
-        totalRows: data.length,
-        logsProcessed: rawLogs.length,
-        rawLogsInserted: stats.rawLogsInserted,
+        totalRows: isLegacy ? (rows.length - headerIdx - 1) : data.length,
+        logsProcessed: finalProcessedLogs.length,
+        duplicatesSkipped: duplicateCount,
+        rawLogsInserted: finalProcessedLogs.length - duplicateCount,
         dailyRecordsCreated: stats.dailyRecordsCreated,
         dailyRecordsUpdated: stats.dailyRecordsUpdated,
         extraHoursDetected: stats.extraHoursDetected || 0,
@@ -306,3 +300,153 @@ exports.downloadTemplate = async (req, res) => {
   }
 };
 
+/**
+ * Specialized parser for "Legacy Report" (SNO, E.NO... format)
+ */
+const parseLegacyRows = (rows, headerIdx) => {
+  const rawLogs = [];
+  const errors = [];
+  console.log(`[AttendanceUpload] Beginning legacy parse of ${rows.length - headerIdx - 1} rows`);
+
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || row.length < 2) continue;
+
+    // Row usually starts with a SNO (number)
+    const snoRaw = row[0];
+    const sno = Number(snoRaw);
+
+    // Check if this is a valid data row (must have a number at col 0)
+    if (isNaN(sno) || sno === 0) {
+      // Log skip for unexpected content if it looks like it should have been data
+      if (snoRaw && String(snoRaw).trim() !== '') {
+        console.log(`[AttendanceUpload] Skipping Row ${i + 1}: Invalid SNO "${snoRaw}"`);
+      }
+      continue;
+    }
+
+    const empNo = String(row[1]).trim().toUpperCase();
+    const pDateRaw = row[5];
+
+    if (!empNo || !pDateRaw) {
+      console.log(`[AttendanceUpload] Skipping Row ${i + 1}: Missing EmpNo or Date`);
+      continue;
+    }
+
+    let baseDate;
+    if (typeof pDateRaw === 'number') {
+      const dObj = XLSX.SSF.parse_date_code(pDateRaw);
+      baseDate = new Date(dObj.y, dObj.m - 1, dObj.d);
+    } else if (pDateRaw instanceof Date) {
+      baseDate = new Date(pDateRaw.getFullYear(), pDateRaw.getMonth(), pDateRaw.getDate());
+    } else {
+      const d = dayjs(String(pDateRaw).trim(), ['DD-MMM-YY', 'DD-MMM-YYYY', 'YYYY-MM-DD', 'DD-MM-YYYY']);
+      if (!d.isValid()) continue;
+      baseDate = d.toDate();
+    }
+
+    // Helper to extract punches
+    const in1 = row[6], out1 = row[7], in2 = row[8], out2 = row[9];
+
+    let tIn1 = null, tOut1 = null;
+    if (isValidLegacyTime(in1)) {
+      tIn1 = legacyTimeToDate(baseDate, in1);
+      rawLogs.push({ employeeNumber: empNo, timestamp: tIn1, type: 'IN', source: 'excel', date: dayjs(tIn1).format('YYYY-MM-DD'), rawData: row });
+
+      if (isValidLegacyTime(out1)) {
+        tOut1 = legacyTimeToDate(baseDate, out1);
+        if (tOut1 < tIn1) tOut1 = new Date(tOut1.getTime() + 86400000);
+        rawLogs.push({ employeeNumber: empNo, timestamp: tOut1, type: 'OUT', source: 'excel', date: dayjs(tOut1).format('YYYY-MM-DD'), rawData: row });
+      }
+    }
+
+    if (isValidLegacyTime(in2)) {
+      // Check if in2 is actually TOT HRS (Duration) misaligned
+      let isDuration = false;
+      if (tIn1 && tOut1) {
+        const diffMin = (tOut1 - tIn1) / 60000;
+        const durVal = Math.floor(diffMin / 60) + (Math.round(diffMin % 60) / 100);
+        if (Math.abs(durVal - Number(in2)) < 0.01) isDuration = true;
+      }
+
+      if (!isDuration) {
+        const tIn2 = legacyTimeToDate(baseDate, in2);
+        rawLogs.push({ employeeNumber: empNo, timestamp: tIn2, type: 'IN', source: 'excel', date: dayjs(tIn2).format('YYYY-MM-DD'), rawData: row });
+
+        if (isValidLegacyTime(out2)) {
+          let tOut2 = legacyTimeToDate(baseDate, out2);
+          if (tOut2 < tIn2) tOut2 = new Date(tOut2.getTime() + 86400000);
+          rawLogs.push({ employeeNumber: empNo, timestamp: tOut2, type: 'OUT', source: 'excel', date: dayjs(tOut2).format('YYYY-MM-DD'), rawData: row });
+        }
+      }
+    }
+  }
+  return { rawLogs, errors };
+};
+
+/**
+ * Fallback parser for Simple List format
+ */
+const parseSimpleRows = async (data) => {
+  const rawLogs = [];
+  const errors = [];
+
+  for (let i = 0; i < data.length; i++) {
+    const row = data[i];
+    const empNo = row['Employee Number'] || row['EmployeeNumber'] || row['Emp No'] || row['EmpNo'] || row['emp_no'];
+    const inTime = row['In-Time'] || row['InTime'] || row['In Time'] || row['in_time'] || row['Check In'];
+    const outTime = row['Out-Time'] || row['OutTime'] || row['Out Time'] || row['out_time'] || row['Check Out'];
+
+    if (!empNo || !inTime) continue;
+
+    const inTimeDate = parseExcelDate(inTime);
+    if (!inTimeDate || isNaN(inTimeDate.getTime())) continue;
+
+    rawLogs.push({
+      employeeNumber: String(empNo).trim().toUpperCase(),
+      timestamp: inTimeDate,
+      type: 'IN',
+      source: 'excel',
+      date: dayjs(inTimeDate).format('YYYY-MM-DD'),
+      rawData: row,
+    });
+
+    if (outTime) {
+      const outTimeDate = parseExcelDate(outTime, inTimeDate);
+      if (outTimeDate && !isNaN(outTimeDate.getTime())) {
+        rawLogs.push({
+          employeeNumber: String(empNo).trim().toUpperCase(),
+          timestamp: outTimeDate,
+          type: 'OUT',
+          source: 'excel',
+          date: dayjs(outTimeDate).format('YYYY-MM-DD'),
+          rawData: row,
+        });
+      }
+    }
+  }
+  return { rawLogs, errors };
+};
+
+const isValidLegacyTime = (val) => {
+  if (val === undefined || val === null || val === '') return false;
+  const n = Number(val);
+  return !isNaN(n) && n !== 0;
+};
+
+const legacyTimeToDate = (baseDate, val) => {
+  let hh, mm;
+  if (typeof val === 'number') {
+    hh = Math.floor(val);
+    mm = Math.round((val - hh) * 100);
+  } else {
+    const s = String(val).replace(':', '.');
+    const p = s.split('.');
+    hh = parseInt(p[0]);
+    mm = parseInt(p[1] || '0');
+  }
+  if (isNaN(hh) || isNaN(mm)) return null;
+  const d = new Date(baseDate);
+  d.setHours(hh, mm, 0, 0);
+  return d;
+};
