@@ -267,10 +267,10 @@ function checkJurisdiction(user, record) {
 
     // 2. Ownership (Applicants can always access their own records)
     const isOwner =
-        record.employeeId?.toString() === user.employeeRef?.toString() ||
-        record.emp_no === user.employeeId ||
-        record.employeeNumber === user.employeeId ||
-        record.appliedBy?.toString() === user._id?.toString();
+        (record.employeeId && user.employeeRef && record.employeeId.toString() === user.employeeRef.toString()) ||
+        (record.emp_no && user.employeeId && record.emp_no === user.employeeId) ||
+        (record.employeeNumber && user.employeeId && record.employeeNumber === user.employeeId) ||
+        (record.appliedBy && user._id && record.appliedBy.toString() === user._id.toString());
 
     if (isOwner) return true;
 

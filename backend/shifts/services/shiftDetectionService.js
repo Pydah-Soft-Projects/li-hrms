@@ -160,17 +160,22 @@ const getShiftsForEmployee = async (employeeNumber, date) => {
       }
 
       // Tier 4: Backward Compatibility Fallback (Global designation shifts)
-      if (shiftIds.length === 0 && desig.shifts?.length > 0) {
+      // Only if NO division assigned. If division exists, we expect specific rules or fall through.
+      if (shiftIds.length === 0 && !division_id && desig.shifts?.length > 0) {
         shiftIds = desig.shifts;
       }
 
       if (shiftIds.length > 0) {
         const designationShifts = await Shift.find({ _id: { $in: shiftIds }, isActive: true });
-        designationShifts.forEach(s => allCandidateShifts.set(s._id.toString(), s));
+        designationShifts.forEach(s => {
+          s.sourcePriority = 2; // Designation Priority
+          allCandidateShifts.set(s._id.toString(), s);
+        });
       }
     }
 
-    // 3. Department shifts (Tier 5: Division Department Default)
+    // 3. Department shifts (Tier 3)
+    // Runs ALONGSIDE Designation (Combined Tier)
     if (department_id && employee.department_id) {
       let deptShiftIds = [];
       const dept = employee.department_id;
@@ -184,30 +189,42 @@ const getShiftsForEmployee = async (employeeNumber, date) => {
         }
       }
 
-      // Fallback to legacy department shifts if no division-specific default
-      if (deptShiftIds.length === 0 && dept.shifts?.length > 0) {
+      // Fallback to legacy department shifts ONLY if employee has NO division assigned
+      if (deptShiftIds.length === 0 && !division_id && dept.shifts?.length > 0) {
         deptShiftIds = dept.shifts;
       }
 
       if (deptShiftIds.length > 0) {
         const departmentShifts = await Shift.find({ _id: { $in: deptShiftIds }, isActive: true });
-        departmentShifts.forEach(s => allCandidateShifts.set(s._id.toString(), s));
+        departmentShifts.forEach(s => {
+          // Only add if not already present (Preserve Tier 2 priority if same shift)
+          if (!allCandidateShifts.has(s._id.toString())) {
+            s.sourcePriority = 3; // Department Priority
+            allCandidateShifts.set(s._id.toString(), s);
+          }
+        });
       }
     }
 
-    // 4. Division Baseline Shifts (Tier 6)
+    // 4. Division Baseline Shifts (Tier 4) - Fallback
     if (allCandidateShifts.size === 0 && division_id && employee.division_id) {
       const division = employee.division_id;
       if (division.shifts && division.shifts.length > 0) {
         const divisionShifts = await Shift.find({ _id: { $in: division.shifts }, isActive: true });
-        divisionShifts.forEach(s => allCandidateShifts.set(s._id.toString(), s));
+        divisionShifts.forEach(s => {
+          s.sourcePriority = 4; // Division Priority
+          allCandidateShifts.set(s._id.toString(), s);
+        });
       }
     }
 
-    // 5. Global Fallback
+    // 5. Global Fallback (Tier 5)
     if (allCandidateShifts.size === 0) {
       const generalShifts = await Shift.find({ isActive: true });
-      generalShifts.forEach(s => allCandidateShifts.set(s._id.toString(), s));
+      generalShifts.forEach(s => {
+        s.sourcePriority = 5; // Global Priority
+        allCandidateShifts.set(s._id.toString(), s);
+      });
     }
 
     return {
@@ -272,6 +289,7 @@ const findCandidateShifts = (inTime, shifts, date, toleranceHours = 3) => {
         differenceMinutes: difference,
         isStartBeforeLog: isStartBeforeLog,
         isPreferred: isPreferred,
+        sourcePriority: shift.sourcePriority || 99, // Lower is better (2=Desig, 3=Dept)
         matchReason: `In-time ${inTime.toLocaleTimeString()} is ${difference.toFixed(1)} minutes from shift ${shift.name} start (${shift.startTime})`,
       });
     }
@@ -281,6 +299,7 @@ const findCandidateShifts = (inTime, shifts, date, toleranceHours = 3) => {
   // 1. Preferred shifts first (start before log, ≤35 min difference)
   // 2. Then by isStartBeforeLog (start before log, but >35 min)
   // 3. Then by difference (closest first)
+  // 4. Then by Source Priority (Designation > Department > Division > Global)
   return candidates.sort((a, b) => {
     // Preferred shifts come first
     if (a.isPreferred && !b.isPreferred) return -1;
@@ -291,7 +310,13 @@ const findCandidateShifts = (inTime, shifts, date, toleranceHours = 3) => {
     if (!a.isStartBeforeLog && b.isStartBeforeLog) return 1;
 
     // Then by difference (closest first)
-    return a.differenceMinutes - b.differenceMinutes;
+    // If difference is essentially equal, use priority
+    if (Math.abs(a.differenceMinutes - b.differenceMinutes) > 0.1) {
+      return a.differenceMinutes - b.differenceMinutes;
+    }
+
+    // Finally by Priority
+    return (a.sourcePriority || 99) - (b.sourcePriority || 99);
   });
 };
 
@@ -1301,29 +1326,22 @@ const autoAssignNearestShift = async (employeeNumber, date, inTime, outTime = nu
       };
     }
 
-    // Convert in-time to minutes from midnight
-    const inMinutes = inTime.getHours() * 60 + inTime.getMinutes();
+    // Use the existing findCandidateShifts logic which handles:
+    // 1. Proximity matching (preferred shifts within 35 min)
+    // 2. Start-before-log preference
+    // 3. Source priority tie-breaking (Designation > Department > Division > Global)
+    const candidates = findCandidateShifts(inTime, shifts, date);
 
-    // Find shift with start time closest to in-time
-    let nearestShift = null;
-    let minDifference = Infinity;
-
-    for (const shift of shifts) {
-      const shiftStartMinutes = timeToMinutes(shift.startTime);
-
-      // Calculate difference (handle overnight shifts)
-      let difference = Math.abs(inMinutes - shiftStartMinutes);
-
-      // If difference is more than 12 hours, consider it might be next day
-      if (difference > 12 * 60) {
-        difference = 24 * 60 - difference;
-      }
-
-      if (difference < minDifference) {
-        minDifference = difference;
-        nearestShift = shift;
-      }
+    if (candidates.length === 0) {
+      return {
+        success: false,
+        message: 'No matching shifts found within tolerance',
+      };
     }
+
+    // Get the best candidate (already sorted by preference + priority)
+    const bestCandidate = candidates[0];
+    const nearestShift = shifts.find(s => s._id.toString() === bestCandidate.shiftId.toString());
 
     if (!nearestShift) {
       return {
@@ -1341,12 +1359,14 @@ const autoAssignNearestShift = async (employeeNumber, date, inTime, outTime = nu
       assignedShift: nearestShift._id,
       shiftName: nearestShift.name,
       source: 'auto_assign_nearest',
+      sourcePriority: nearestShift.sourcePriority || 99,
       lateInMinutes: lateInMinutes > 0 ? lateInMinutes : null,
       earlyOutMinutes: earlyOutMinutes && earlyOutMinutes > 0 ? earlyOutMinutes : null,
       isLateIn: lateInMinutes > 0,
       isEarlyOut: earlyOutMinutes && earlyOutMinutes > 0,
       expectedHours: nearestShift.duration,
-      differenceMinutes: minDifference,
+      differenceMinutes: bestCandidate.differenceMinutes,
+      isPreferred: bestCandidate.isPreferred,
     };
 
   } catch (error) {
