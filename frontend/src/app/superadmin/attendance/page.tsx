@@ -64,6 +64,7 @@ interface Employee {
   employee_name: string;
   department?: { _id: string; name: string };
   designation?: { _id: string; name: string };
+  division?: { _id: string; name: string };
 }
 
 interface MonthlyAttendanceData {
@@ -101,7 +102,7 @@ interface Designation {
 }
 
 export default function AttendancePage() {
-  const [viewMode, setViewMode] = useState<'calendar' | 'list'>('list'); // Default to list view
+  const [tableType, setTableType] = useState<'complete' | 'present_absent' | 'in_out' | 'leaves' | 'od' | 'ot'>('complete');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showPayslipModal, setShowPayslipModal] = useState(false);
   const [selectedEmployeeForPayslip, setSelectedEmployeeForPayslip] = useState<Employee | null>(null);
@@ -126,14 +127,20 @@ export default function AttendancePage() {
   const [selectedEmployeeForSummary, setSelectedEmployeeForSummary] = useState<Employee | null>(null);
   const [monthlySummary, setMonthlySummary] = useState<any>(null);
   const [loadingSummary, setLoadingSummary] = useState(false);
-  
+
+  // Search state
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
   // Filter states
   const [departments, setDepartments] = useState<Department[]>([]);
   const [designations, setDesignations] = useState<Designation[]>([]);
+  const [divisions, setDivisions] = useState<any[]>([]);
   const [selectedDepartment, setSelectedDepartment] = useState<string>('');
   const [selectedDesignation, setSelectedDesignation] = useState<string>('');
+  const [selectedDivision, setSelectedDivision] = useState<string>('');
   const [filteredMonthlyData, setFilteredMonthlyData] = useState<MonthlyAttendanceData[]>([]);
-  
+
   // OutTime dialog state
   const [showOutTimeDialog, setShowOutTimeDialog] = useState(false);
   const [selectedRecordForOutTime, setSelectedRecordForOutTime] = useState<{ employee: Employee; date: string } | null>(null);
@@ -164,6 +171,7 @@ export default function AttendancePage() {
   const month = currentDate.getMonth() + 1;
 
   useEffect(() => {
+    loadDivisions();
     loadDepartments();
   }, []);
 
@@ -177,37 +185,63 @@ export default function AttendancePage() {
   }, [selectedDepartment]);
 
   useEffect(() => {
-    if (viewMode === 'list') {
-      loadMonthlyAttendance();
-    } else if (viewMode === 'calendar') {
-      loadAllEmployeesAttendance();
-    }
-  }, [viewMode, year, month, selectedDepartment, selectedDesignation]);
+    loadMonthlyAttendance();
+  }, [year, month, selectedDivision, selectedDepartment, selectedDesignation, tableType]);
 
   useEffect(() => {
     // Apply filters to monthly data
     let filtered = [...monthlyData];
-    
+
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(item =>
+        item.employee.employee_name.toLowerCase().includes(query) ||
+        item.employee.emp_no.toLowerCase().includes(query)
+      );
+    }
+
+    if (selectedDivision) {
+      filtered = filtered.filter(item =>
+        item.employee.division?._id === selectedDivision
+      );
+    }
+
     if (selectedDepartment) {
-      filtered = filtered.filter(item => 
+      filtered = filtered.filter(item =>
         item.employee.department?._id === selectedDepartment
       );
     }
-    
+
     if (selectedDesignation) {
-      filtered = filtered.filter(item => 
+      filtered = filtered.filter(item =>
         item.employee.designation?._id === selectedDesignation
       );
     }
-    
-    setFilteredMonthlyData(filtered);
-  }, [monthlyData, selectedDepartment, selectedDesignation]);
 
-  const loadDepartments = async () => {
+    setFilteredMonthlyData(filtered);
+  }, [monthlyData, selectedDivision, selectedDepartment, selectedDesignation]);
+
+  const loadDivisions = async () => {
     try {
+      const response = await api.getDivisions(true);
+      if (response.success && response.data) {
+        setDivisions(response.data);
+      }
+    } catch (err) {
+      console.error('Error loading divisions:', err);
+    }
+  };
+
+  const loadDepartments = async (divisionId?: string) => {
+    try {
+      // If we want to filter departments by division, we might need a different API or filter client-side
       const response = await api.getDepartments(true);
       if (response.success && response.data) {
-        setDepartments(response.data);
+        let depts = response.data;
+        if (divisionId) {
+          depts = depts.filter((d: any) => d.division?._id === divisionId || (Array.isArray(d.divisions) && d.divisions.some((div: any) => div._id === divisionId)));
+        }
+        setDepartments(depts);
       }
     } catch (err) {
       console.error('Error loading departments:', err);
@@ -255,7 +289,7 @@ export default function AttendancePage() {
           // Apply filters
           if (selectedDepartment && item.employee.department?._id !== selectedDepartment) return;
           if (selectedDesignation && item.employee.designation?._id !== selectedDesignation) return;
-          
+
           // Store dailyAttendance for this employee
           calendarData[item.employee._id] = item.dailyAttendance;
         });
@@ -274,7 +308,7 @@ export default function AttendancePage() {
 
   const loadAttendance = async () => {
     if (!selectedEmployee) return;
-    
+
     try {
       setLoadingAttendance(true);
       const response = await api.getAttendanceCalendar(selectedEmployee.emp_no, year, month);
@@ -324,16 +358,16 @@ export default function AttendancePage() {
         setSuccess('Shift assigned successfully!');
         setEditingShift(false);
         setSelectedShiftId('');
-        
+
         // Reload attendance detail and monthly data
         await loadMonthlyAttendance();
-        
+
         // Refresh the detail view
         const updatedResponse = await api.getAttendanceDetail(selectedEmployee.emp_no, selectedDate);
         if (updatedResponse.success) {
           setAttendanceDetail(updatedResponse.data);
         }
-        
+
         setTimeout(() => {
           setSuccess('');
         }, 2000);
@@ -372,16 +406,16 @@ export default function AttendancePage() {
         setSuccess('Out-time updated successfully!');
         setEditingOutTime(false);
         setOutTimeInput('');
-        
+
         // Reload attendance detail and monthly data
         await loadMonthlyAttendance();
-        
+
         // Refresh the detail view
         const updatedResponse = await api.getAttendanceDetail(selectedEmployee.emp_no, selectedDate);
         if (updatedResponse.success) {
           setAttendanceDetail(updatedResponse.data);
         }
-        
+
         setTimeout(() => {
           setSuccess('');
         }, 2000);
@@ -502,18 +536,18 @@ export default function AttendancePage() {
     setSelectedShiftId('');
     setOutTimeInput('');
     setLeaveConflicts([]);
-    
+
     try {
       // Load available shifts for this employee/date
       await loadAvailableShifts(employee.emp_no, date);
-      
+
       // Load leave conflicts
       await loadLeaveConflicts(employee.emp_no, date);
-      
+
       // Get the daily attendance record from monthly data if available
       const employeeData = monthlyData.find(item => item.employee._id === employee._id);
       const dayRecord = employeeData?.dailyAttendance[date];
-      
+
       // Check if OT already exists for this date
       try {
         const otResponse = await api.getOTRequests({
@@ -528,7 +562,7 @@ export default function AttendancePage() {
       } catch (otErr) {
         console.error('Error checking existing OT:', otErr);
       }
-      
+
       // If we have the record with leave/OD info, use it directly
       if (dayRecord) {
         console.log('Day record from monthly data:', dayRecord);
@@ -589,7 +623,7 @@ export default function AttendancePage() {
       if (response.success) {
         setSuccess(response.message || 'Extra hours converted to OT successfully!');
         setHasExistingOT(true);
-        
+
         // Update attendance detail - clear extra hours, add OT hours
         setAttendanceDetail({
           ...attendanceDetail,
@@ -599,7 +633,7 @@ export default function AttendancePage() {
 
         // Reload monthly attendance to refresh the view
         await loadMonthlyAttendance();
-        
+
         // Close dialog after a short delay
         setTimeout(() => {
           setShowDetailDialog(false);
@@ -736,7 +770,7 @@ export default function AttendancePage() {
         setLoadingSummary(false);
         return;
       }
-      
+
       // If not in monthly data, fetch from API
       const monthStr = `${year}-${String(month).padStart(2, '0')}`;
       const response = await api.getMonthlySummary(employee._id, monthStr);
@@ -790,17 +824,17 @@ export default function AttendancePage() {
       setUpdatingOutTime(true);
       setError('');
       setSuccess('');
-      
+
       // Format datetime for API
       const outTimeDate = new Date(outTimeValue);
       const isoString = outTimeDate.toISOString();
-      
+
       const response = await api.updateAttendanceOutTime(
         selectedRecordForOutTime.employee.emp_no,
         selectedRecordForOutTime.date,
         isoString
       );
-      
+
       if (response.success) {
         setSuccess('Out time updated successfully. Shift will be automatically assigned.');
         setShowOutTimeDialog(false);
@@ -830,14 +864,14 @@ export default function AttendancePage() {
     const lastDay = new Date(year, month, 0);
     const daysInMonth = lastDay.getDate();
     const startingDayOfWeek = firstDay.getDay();
-    
+
     const days = [];
-    
+
     // Add empty cells for days before the first day of the month
     for (let i = 0; i < startingDayOfWeek; i++) {
       days.push(null);
     }
-    
+
     // Add all days of the month
     for (let day = 1; day <= daysInMonth; day++) {
       const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
@@ -846,7 +880,7 @@ export default function AttendancePage() {
         date: dateStr,
       });
     }
-    
+
     return days;
   };
 
@@ -861,7 +895,7 @@ export default function AttendancePage() {
     if (!record) {
       return 'bg-slate-100 dark:bg-slate-800';
     }
-    
+
     // Priority: Conflict (purple) > Leave (orange) > OD (blue) > Absent (gray) > Present (default)
     if (record.isConflict) {
       return 'bg-purple-100 border-purple-300 dark:bg-purple-900/30 dark:border-purple-700';
@@ -887,7 +921,7 @@ export default function AttendancePage() {
     try {
       const date = new Date(time);
       const timeStr = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
-      
+
       // If showDateIfDifferent is true and recordDate is provided, check if dates differ
       if (showDateIfDifferent && recordDate) {
         const timeDateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -897,7 +931,7 @@ export default function AttendancePage() {
           return `${dateStr}, ${timeStr}`;
         }
       }
-      
+
       return timeStr;
     } catch {
       return time;
@@ -920,158 +954,196 @@ export default function AttendancePage() {
 
       <div className="relative z-10 mx-auto max-w-[1920px]">
         {/* Header */}
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Attendance Management</h1>
-            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">View and manage employee attendance records</p>
-        </div>
+        <div className="mb-6 flex flex-nowrap items-center justify-between gap-4 overflow-x-auto pb-2 scrollbar-hide">
+          <div className="flex flex-nowrap items-center gap-4">
+            {/* Title Section */}
+            <div className="flex flex-nowrap items-center gap-3 shrink-0">
+              <div className="flex flex-col">
+                <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white whitespace-nowrap">Attendance Management</h1>
+              </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Department Filter */}
-            <select
-              value={selectedDepartment}
-              onChange={(e) => {
-                setSelectedDepartment(e.target.value);
-                setSelectedDesignation('');
-              }}
-              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-            >
-              <option value="">All Departments</option>
-              {departments.map((dept) => (
-                <option key={dept._id} value={dept._id}>
-                  {dept.name}
-                </option>
-              ))}
-            </select>
-          
-            {/* Designation Filter */}
-          {selectedDepartment && (
-              <select
-                value={selectedDesignation}
-                onChange={(e) => setSelectedDesignation(e.target.value)}
-                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-              >
-                <option value="">All Designations</option>
-                {designations.map((desig) => (
-                  <option key={desig._id} value={desig._id}>
-                    {desig.name}
-                  </option>
-                ))}
-              </select>
-          )}
+              <div className="h-8 w-px bg-slate-200 dark:bg-slate-800 hidden md:block" />
 
-          {/* View Toggle */}
-            <div className="flex rounded-lg border border-slate-200 bg-white p-0.5 dark:border-slate-700 dark:bg-slate-800">
-              <button
-                onClick={() => setViewMode('list')}
-                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-all ${
-                  viewMode === 'list'
-                    ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-sm'
-                    : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-700'
-                }`}
-              >
-                <svg className="mr-1.5 inline h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
-                </svg>
-                List View
-              </button>
-              <button
-                onClick={() => {
-                  setViewMode('calendar');
-                  if (!selectedEmployee && monthlyData.length > 0) {
-                    setSelectedEmployee(monthlyData[0].employee);
-                  }
-                }}
-                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-all ${
-                  viewMode === 'calendar'
-                    ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-sm'
-                    : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-700'
-                }`}
-              >
-                <svg className="mr-1.5 inline h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-                Calendar View
-              </button>
+              {/* Search Toggle */}
+              <div className="flex items-center gap-2">
+                {showSearch ? (
+                  <div className="flex items-center gap-2 animate-in fade-in slide-in-from-left-2 duration-300">
+                    <div className="relative group">
+                      <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                        <svg className="h-3.5 w-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                      </div>
+                      <input
+                        autoFocus
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Search..."
+                        className="w-40 h-9 pl-9 pr-3 text-xs rounded-xl border border-slate-200 bg-white focus:border-green-500 focus:ring-2 focus:ring-green-500/10 transition-all dark:border-slate-700 dark:bg-slate-800 dark:text-white shadow-sm"
+                      />
+                    </div>
+                    <button
+                      onClick={() => { setShowSearch(false); setSearchQuery(''); }}
+                      className="h-9 w-9 flex items-center justify-center rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 transition-all"
+                    >
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setShowSearch(true)}
+                    className="h-9 w-9 flex items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:text-green-600 hover:border-green-200 hover:bg-green-50/50 transition-all shadow-sm dark:border-slate-700 dark:bg-slate-800"
+                    title="Search Records"
+                  >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  </button>
+                )}
+              </div>
             </div>
 
-            {/* Month Selection */}
-            <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800">
+            {/* Filters Group */}
+            <div className="flex flex-nowrap items-center gap-1.5 p-1 bg-slate-100/50 dark:bg-slate-800/40 rounded-xl border border-slate-200/60 dark:border-slate-700/60 backdrop-blur-sm">
+              <select
+                value={selectedDivision}
+                onChange={(e) => {
+                  setSelectedDivision(e.target.value);
+                  setSelectedDepartment('');
+                  setSelectedDesignation('');
+                  loadDepartments(e.target.value);
+                }}
+                className="h-8 pl-2 pr-6 text-[11px] font-semibold bg-white dark:bg-slate-800 border-0 rounded-lg focus:ring-2 focus:ring-green-500/20 text-slate-700 dark:text-slate-300 shadow-sm min-w-[100px] max-w-[140px]"
+              >
+                <option value="">All Divisions</option>
+                {divisions.map((div) => (
+                  <option key={div._id} value={div._id}>{div.name}</option>
+                ))}
+              </select>
+
+              <select
+                value={selectedDepartment}
+                onChange={(e) => {
+                  setSelectedDepartment(e.target.value);
+                  setSelectedDesignation('');
+                }}
+                className="h-8 pl-2 pr-6 text-[11px] font-semibold bg-white dark:bg-slate-800 border-0 rounded-lg focus:ring-2 focus:ring-green-500/20 text-slate-700 dark:text-slate-300 shadow-sm min-w-[100px] max-w-[140px]"
+              >
+                <option value="">All Departments</option>
+                {departments.map((dept) => (
+                  <option key={dept._id} value={dept._id}>{dept.name}</option>
+                ))}
+              </select>
+
+              {selectedDepartment && (
+                <select
+                  value={selectedDesignation}
+                  onChange={(e) => setSelectedDesignation(e.target.value)}
+                  className="h-8 pl-2 pr-6 text-[11px] font-semibold bg-white dark:bg-slate-800 border-0 rounded-lg focus:ring-2 focus:ring-green-500/20 text-slate-700 dark:text-slate-300 shadow-sm min-w-[100px] max-w-[140px] animate-in slide-in-from-left-2"
+                >
+                  <option value="">All Designations</option>
+                  {designations.map((desig) => (
+                    <option key={desig._id} value={desig._id}>{desig.name}</option>
+                  ))}
+                </select>
+              )}
+
+              {/* Table Type Dropdown */}
+              <select
+                value={tableType}
+                onChange={(e) => setTableType(e.target.value as any)}
+                className="h-8 pl-2 pr-6 text-[11px] font-bold bg-green-50 dark:bg-green-900/20 border-0 rounded-lg focus:ring-2 focus:ring-green-500/20 text-green-700 dark:text-green-400 shadow-sm cursor-pointer"
+              >
+                <option value="complete">Complete</option>
+                <option value="present_absent">Pres/Abs</option>
+                <option value="in_out">In/Out</option>
+                <option value="leaves">Leaves</option>
+                <option value="od">OD</option>
+                <option value="ot">OT</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex flex-nowrap items-center gap-3 shrink-0">
+            {/* Month/Year Navigation */}
+            <div className="flex items-center gap-0.5 p-0.5 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
               <button
                 onClick={() => navigateMonth('prev')}
-                className="rounded-md p-1 text-slate-600 transition-colors hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
+                className="h-8 w-8 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
               >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                 </svg>
               </button>
-              <select
-                value={month}
-                onChange={(e) => {
-                  const newDate = new Date(currentDate);
-                  newDate.setMonth(parseInt(e.target.value) - 1);
-                  setCurrentDate(newDate);
-                }}
-                className="rounded-md border-0 bg-transparent px-1.5 py-0.5 text-xs font-medium text-slate-900 focus:outline-none focus:ring-0 dark:text-white"
-              >
-                {monthNames.map((name, idx) => (
-                  <option key={idx} value={idx + 1}>{name}</option>
-                ))}
-              </select>
-              <select
-                value={year}
-                onChange={(e) => {
-                  const newDate = new Date(currentDate);
-                  newDate.setFullYear(parseInt(e.target.value));
-                  setCurrentDate(newDate);
-                }}
-                className="rounded-md border-0 bg-transparent px-1.5 py-0.5 text-xs font-medium text-slate-900 focus:outline-none focus:ring-0 dark:text-white"
-              >
-                {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i).map((y) => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
+              <div className="flex items-center px-1 space-x-0.5">
+                <select
+                  value={month}
+                  onChange={(e) => {
+                    const newDate = new Date(currentDate);
+                    newDate.setMonth(parseInt(e.target.value) - 1);
+                    setCurrentDate(newDate);
+                  }}
+                  className="bg-transparent border-0 text-[11px] font-bold text-slate-900 dark:text-white focus:ring-0 p-0 cursor-pointer"
+                >
+                  {monthNames.map((name, idx) => (
+                    <option key={idx} value={idx + 1}>{name.substring(0, 3)}</option>
+                  ))}
+                </select>
+                <select
+                  value={year}
+                  onChange={(e) => {
+                    const newDate = new Date(currentDate);
+                    newDate.setFullYear(parseInt(e.target.value));
+                    setCurrentDate(newDate);
+                  }}
+                  className="bg-transparent border-0 text-[11px] font-bold text-slate-900 dark:text-white focus:ring-0 p-0 cursor-pointer"
+                >
+                  {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i).map((y) => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+              </div>
               <button
                 onClick={() => navigateMonth('next')}
-                className="rounded-md p-1 text-slate-600 transition-colors hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
+                className="h-8 w-8 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
               >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
               </button>
             </div>
 
-            {/* Sync Shifts Button */}
-            <button
-              onClick={handleSyncShifts}
-              disabled={syncingShifts}
-              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-            >
-              {syncingShifts ? (
-                <>
-                  <div className="mr-2 inline h-4 w-4 animate-spin rounded-full border-2 border-slate-600 border-t-transparent"></div>
-                  Syncing...
-                </>
-              ) : (
-                <>
-                  <svg className="mr-2 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleSyncShifts}
+                disabled={syncingShifts}
+                title="Sync Shifts"
+                className="h-9 w-9 flex items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-green-600 hover:border-green-200 transition-all shadow-sm active:scale-95 disabled:opacity-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 md:w-auto md:px-3"
+              >
+                {syncingShifts ? (
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" />
+                ) : (
+                  <svg className="h-4 w-4 md:mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                   </svg>
-                  Sync Shifts
-                </>
-              )}
-            </button>
+                )}
+                <span className="hidden md:inline text-xs font-semibold">Sync</span>
+              </button>
 
-            {/* Upload Excel Button */}
-            <button
-              onClick={() => setShowUploadDialog(true)}
-              className="rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
-            >
-              <svg className="mr-2 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-              </svg>
-              Upload Excel
-            </button>
+              <button
+                onClick={() => setShowUploadDialog(true)}
+                title="Upload Excel"
+                className="h-9 flex items-center px-4 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 text-xs font-bold text-white shadow-lg shadow-green-500/25 hover:shadow-green-500/40 hover:-translate-y-0.5 transition-all active:scale-95"
+              >
+                <svg className="mr-2 h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                Upload
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1088,107 +1160,149 @@ export default function AttendancePage() {
         )}
 
 
-        {/* List View */}
-        {viewMode === 'list' && (
-          <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
-                      <th className="sticky left-0 z-10 w-[180px] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                        Employee
-                      </th>
-                      {daysArray.map((day) => (
-                        <th
-                          key={day}
-                          className="w-[calc((100%-180px-80px)/31)] border-r border-slate-200 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300"
-                        >
-                          {day}
-                        </th>
-                      ))}
-                      <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-blue-50 dark:bg-blue-900/20">
-                        Days Present
-                      </th>
-                    <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-orange-50 dark:bg-orange-900/20">
-                      OT Hours
+        {/* Attendance Table */}
+        <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-xs">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
+                  <th className="sticky left-0 z-10 w-[180px] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                    Employee
+                  </th>
+                  {daysArray.map((day) => (
+                    <th
+                      key={day}
+                      className="w-[calc((100%-180px-80px)/31)] border-r border-slate-200 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300"
+                    >
+                      {day}
                     </th>
-                    <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-purple-50 dark:bg-purple-900/20">
-                      Extra Hours
-                    </th>
-                    <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-cyan-50 dark:bg-cyan-900/20">
-                      Permissions
-                    </th>
-                      <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-green-50 dark:bg-green-900/20">
-                        Payable Shifts
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                  {loading ? (
+                  ))}
+                  {tableType === 'complete' && (
                     <>
-                      {/* Skeleton Loading - only tbody cells */}
-                      {[1, 2, 3, 4, 5].map((i) => (
-                        <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                          <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
-                            <div className="h-4 w-32 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                            <div className="mt-1 h-3 w-24 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                          </td>
-                          {daysArray.map((day) => (
-                            <td
-                              key={day}
-                              className="border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700"
-                            >
-                              <div className="h-8 w-full animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                            </td>
-                          ))}
-                          <td className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-blue-900/20">
-                            <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                          </td>
-                          <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-orange-900/20">
-                            <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                          </td>
-                          <td className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-purple-900/20">
-                            <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                          </td>
-                          <td className="border-r border-slate-200 bg-cyan-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-cyan-900/20">
-                            <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                          </td>
-                          <td className="border-r-0 border-slate-200 bg-green-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-green-900/20">
-                            <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                          </td>
-                        </tr>
-                      ))}
+                      <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-blue-50 dark:bg-blue-900/20">Days Present</th>
+                      <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-orange-50 dark:bg-orange-900/20">OT Hours</th>
+                      <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-purple-50 dark:bg-purple-900/20">Extra Hours</th>
+                      <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-cyan-50 dark:bg-cyan-900/20">Permissions</th>
+                      <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-green-900/20 bg-green-50">Payable Shifts</th>
                     </>
-                  ) : (
+                  )}
+                  {tableType === 'present_absent' && (
                     <>
+                      <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-green-50 text-green-700">Present (M)</th>
+                      <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-red-50 text-red-700">Absent (M)</th>
+                    </>
+                  )}
+                  {tableType === 'in_out' && (
+                    <th className="w-[100px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-blue-50 text-blue-700">Total Days Present</th>
+                  )}
+                  {tableType === 'leaves' && (
+                    <th className="w-[100px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-orange-50 text-orange-700">Total Leaves</th>
+                  )}
+                  {tableType === 'od' && (
+                    <th className="w-[100px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-indigo-50 text-indigo-700">Total ODs</th>
+                  )}
+                  {tableType === 'ot' && (
+                    <>
+                      <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-orange-50 text-orange-700">OT Hours</th>
+                      <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-purple-50 text-purple-700">Extra Hours</th>
+                    </>
+                  )}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                {loading ? (
+                  <>
+                    {/* Skeleton Loading - only tbody cells */}
+                    {[1, 2, 3, 4, 5].map((i) => (
+                      <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                        <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+                          <div className="h-4 w-32 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                          <div className="mt-1 h-3 w-24 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                        </td>
+                        {daysArray.map((day) => (
+                          <td
+                            key={day}
+                            className="border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700"
+                          >
+                            <div className="h-8 w-full animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                          </td>
+                        ))}
+                        {tableType === 'complete' && (
+                          <>
+                            <td className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-blue-900/20">
+                              <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                            </td>
+                            <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-orange-900/20">
+                              <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                            </td>
+                            <td className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-purple-900/20">
+                              <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                            </td>
+                            <td className="border-r border-slate-200 bg-cyan-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-cyan-900/20">
+                              <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                            </td>
+                            <td className="border-r-0 border-slate-200 bg-green-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-green-900/20">
+                              <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                            </td>
+                          </>
+                        )}
+                        {tableType === 'present_absent' && (
+                          <>
+                            <td className="border-r border-slate-200 bg-green-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
+                            <td className="border-r border-slate-200 bg-red-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
+                          </>
+                        )}
+                        {tableType === 'in_out' && (
+                          <td className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
+                        )}
+                        {tableType === 'leaves' && (
+                          <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
+                        )}
+                        {tableType === 'od' && (
+                          <td className="border-r border-slate-200 bg-indigo-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
+                        )}
+                        {tableType === 'ot' && (
+                          <>
+                            <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
+                            <td className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
+                          </>
+                        )}
+                      </tr>
+                    ))}
+                  </>
+                ) : (
+                  <>
                     {filteredMonthlyData.length === 0 ? (
                       <tr>
-                          <td colSpan={daysArray.length + 5} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                        <td colSpan={daysArray.length + (tableType === 'complete' ? 6 : 2)} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
                           No employees found matching the selected filters.
                         </td>
                       </tr>
                     ) : (
                       filteredMonthlyData.map((item) => {
-                        // Use presentDays from API if available, otherwise calculate
-                        const daysPresent = item.presentDays !== undefined 
-                          ? item.presentDays 
+                        const daysPresent = item.presentDays !== undefined
+                          ? item.presentDays
                           : Object.values(item.dailyAttendance).filter(
-                              (record) => record && (record.status === 'PRESENT' || record.status === 'PARTIAL')
-                            ).length;
+                            (record) => record && (record.status === 'PRESENT' || record.status === 'PARTIAL')
+                          ).length;
                         const payableShifts = item.payableShifts !== undefined ? item.payableShifts : 0;
-                        
+                        const monthPresent = Object.values(item.dailyAttendance).filter(r => r?.status === 'PRESENT').length;
+                        const monthAbsent = Object.values(item.dailyAttendance).filter(r => r?.status === 'ABSENT').length;
+                        const totalLeaves = Object.values(item.dailyAttendance).filter(r => r?.status === 'LEAVE' || r?.hasLeave).length;
+                        const totalODs = Object.values(item.dailyAttendance).filter(r => r?.status === 'OD' || r?.hasOD).length;
+
                         return (
                           <tr key={item.employee._id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
                             <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 text-[11px] font-medium text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white">
                               <div>
                                 <div className="flex items-center gap-2">
-                                <div 
+                                  <div
                                     className="font-semibold truncate cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex-1"
-                                  onClick={() => handleEmployeeClick(item.employee)}
-                                  title="Click to view monthly summary"
-                                >
-                                  {item.employee.employee_name}
-                                </div>
+                                    onClick={() => handleEmployeeClick(item.employee)}
+                                    title="Click to view monthly summary"
+                                  >
+                                    {item.employee.employee_name}
+                                  </div>
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
@@ -1210,8 +1324,7 @@ export default function AttendancePage() {
                               const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
                               const record = item.dailyAttendance[dateStr] || null;
                               const shiftName = record?.shiftId && typeof record.shiftId === 'object' ? record.shiftId.name : '-';
-                              
-                              // Determine display status - check for leave/OD even if no attendance record
+
                               let displayStatus = 'A';
                               if (record) {
                                 if (record.status === 'PRESENT') displayStatus = 'P';
@@ -1220,26 +1333,49 @@ export default function AttendancePage() {
                                 else if (record.status === 'OD' || record.hasOD) displayStatus = 'OD';
                                 else displayStatus = 'A';
                               }
-                              
-                              // Check if there's any data to display (attendance, leave, or OD)
+
                               const hasData = record && (record.status || record.hasLeave || record.hasOD);
-                              
+
                               return (
                                 <td
                                   key={day}
                                   onClick={() => hasData && handleDateClick(item.employee, dateStr)}
-                                  className={`border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700 ${
-                                    hasData ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : ''
-                                  } ${getStatusColor(record)} ${getCellBackgroundColor(record)}`}
+                                  className={`border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700 ${hasData ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : ''
+                                    } ${getStatusColor(record)} ${getCellBackgroundColor(record)}`}
                                 >
                                   {hasData ? (
                                     <div className="space-y-0.5">
-                                      <div className="font-semibold text-[9px]">{displayStatus}</div>
-                                      {shiftName !== '-' && record?.shiftId && (
-                                        <div className="text-[8px] opacity-75 truncate" title={shiftName}>{shiftName.substring(0, 3)}</div>
+                                      {tableType === 'complete' && (
+                                        <>
+                                          <div className="font-semibold text-[9px]">{displayStatus}</div>
+                                          {shiftName !== '-' && record?.shiftId && (
+                                            <div className="text-[8px] opacity-75 truncate" title={shiftName}>{shiftName.substring(0, 3)}</div>
+                                          )}
+                                          {record && record.totalHours !== null && (
+                                            <div className="text-[8px] font-semibold">{formatHours(record.totalHours)}</div>
+                                          )}
+                                        </>
                                       )}
-                                      {record && record.totalHours !== null && (
-                                        <div className="text-[8px] font-semibold">{formatHours(record.totalHours)}</div>
+                                      {tableType === 'present_absent' && (
+                                        <div className="font-bold text-[10px]">{displayStatus}</div>
+                                      )}
+                                      {tableType === 'in_out' && (
+                                        <div className="text-[8px] font-medium leading-tight">
+                                          <div className="text-green-600 dark:text-green-400">{record?.inTime ? formatTime(record.inTime) : '-'}</div>
+                                          <div className="text-red-600 dark:text-red-400">{record?.outTime ? formatTime(record.outTime) : '-'}</div>
+                                        </div>
+                                      )}
+                                      {tableType === 'leaves' && (
+                                        <div className="font-bold text-[10px] text-orange-600">{displayStatus === 'L' ? 'L' : '-'}</div>
+                                      )}
+                                      {tableType === 'od' && (
+                                        <div className="font-bold text-[10px] text-indigo-600">{displayStatus === 'OD' ? 'OD' : '-'}</div>
+                                      )}
+                                      {tableType === 'ot' && (
+                                        <div className="text-[8px] font-medium leading-tight">
+                                          <div className="text-orange-600">{record?.otHours ? record.otHours.toFixed(1) : '-'}</div>
+                                          <div className="text-purple-600">{record?.extraHours ? record.extraHours.toFixed(1) : '-'}</div>
+                                        </div>
                                       )}
                                     </div>
                                   ) : (
@@ -1248,123 +1384,60 @@ export default function AttendancePage() {
                                 </td>
                               );
                             })}
-                            <td className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center text-[11px] font-bold text-blue-700 dark:border-slate-700 dark:bg-blue-900/20 dark:text-blue-300">
-                              {daysPresent}
-                            </td>
-                            <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300">
-                              {Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.otHours || 0), 0).toFixed(1)}
-                            </td>
-                            <td className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700 dark:border-slate-700 dark:bg-purple-900/20 dark:text-purple-300">
-                              {Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.extraHours || 0), 0).toFixed(1)}
-                            </td>
-                            <td className="border-r border-slate-200 bg-cyan-50 px-2 py-2 text-center text-[11px] font-bold text-cyan-700 dark:border-slate-700 dark:bg-cyan-900/20 dark:text-cyan-300">
-                              {Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.permissionCount || 0), 0)}
-                            </td>
-                            <td className="border-r-0 border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:border-slate-700 dark:bg-green-900/20 dark:text-green-300">
-                              {payableShifts.toFixed(2)}
-                            </td>
+                            {tableType === 'complete' && (
+                              <>
+                                <td className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center text-[11px] font-bold text-blue-700 dark:border-slate-700 dark:bg-blue-900/20 dark:text-blue-300">
+                                  {daysPresent}
+                                </td>
+                                <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300">
+                                  {Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.otHours || 0), 0).toFixed(1)}
+                                </td>
+                                <td className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700 dark:border-slate-700 dark:bg-purple-900/20 dark:text-purple-300">
+                                  {Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.extraHours || 0), 0).toFixed(1)}
+                                </td>
+                                <td className="border-r border-slate-200 bg-cyan-50 px-2 py-2 text-center text-[11px] font-bold text-cyan-700 dark:border-slate-700 dark:bg-cyan-900/20 dark:text-cyan-300">
+                                  {Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.permissionCount || 0), 0)}
+                                </td>
+                                <td className="border-r-0 border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:border-slate-700 dark:bg-green-900/20 dark:text-green-300">
+                                  {payableShifts.toFixed(2)}
+                                </td>
+                              </>
+                            )}
+                            {tableType === 'present_absent' && (
+                              <>
+                                <td className="border-r border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700">{monthPresent}</td>
+                                <td className="border-r border-slate-200 bg-red-50 px-2 py-2 text-center text-[11px] font-bold text-red-700">{monthAbsent}</td>
+                              </>
+                            )}
+                            {tableType === 'in_out' && (
+                              <td className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center text-[11px] font-bold text-blue-700">{daysPresent}</td>
+                            )}
+                            {tableType === 'leaves' && (
+                              <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700">{totalLeaves}</td>
+                            )}
+                            {tableType === 'od' && (
+                              <td className="border-r border-slate-200 bg-indigo-50 px-2 py-2 text-center text-[11px] font-bold text-indigo-700">{totalODs}</td>
+                            )}
+                            {tableType === 'ot' && (
+                              <>
+                                <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700">
+                                  {Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.otHours || 0), 0).toFixed(1)}
+                                </td>
+                                <td className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700">
+                                  {Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.extraHours || 0), 0).toFixed(1)}
+                                </td>
+                              </>
+                            )}
                           </tr>
                         );
                       })
-                      )}
-                    </>
                     )}
-                  </tbody>
-                </table>
-              </div>
+                  </>
+                )}
+              </tbody>
+            </table>
           </div>
-        )}
-
-        {/* Calendar View */}
-        {viewMode === 'calendar' && (
-          <div className="space-y-6">
-            {loadingAttendance ? (
-              <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm p-6 shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
-                <div className="space-y-4">
-                  {[1, 2, 3].map((i) => (
-                    <div key={i} className="space-y-2">
-                      <div className="h-6 w-48 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                      <div className="grid grid-cols-7 gap-1">
-                        {Array.from({ length: 35 }).map((_, j) => (
-                          <div key={j} className="h-12 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              filteredMonthlyData.map((item) => (
-                <div key={item.employee._id} className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm p-3 shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
-                  <div className="mb-3">
-                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                      {item.employee.employee_name}
-                    </h3>
-                    <p className="text-xs text-slate-600 dark:text-slate-400">
-                      {item.employee.emp_no}
-                      {item.employee.department && ` • ${(item.employee.department as any)?.name || ''}`}
-                    </p>
-                  </div>
-                  <div className="grid grid-cols-7 gap-1">
-                    {dayNames.map((day) => (
-                      <div key={day} className="p-1 text-center text-[9px] font-semibold text-slate-600 dark:text-slate-400">
-                        {day}
-                      </div>
-                    ))}
-                    {getCalendarDays().map((dayInfo) => {
-                      if (!dayInfo) {
-                        return <div key={`empty-${Math.random()}`} className="aspect-square"></div>;
-                      }
-                      const record = item.dailyAttendance[dayInfo.date] || null;
-                      return (
-                        <div
-                          key={dayInfo.date}
-                          onClick={() => record && handleDateClick(item.employee, dayInfo.date)}
-                          className={`aspect-square cursor-pointer rounded border p-0.5 transition-all hover:scale-105 ${
-                            record ? 'cursor-pointer' : ''
-                          } ${getStatusColor(record)} ${getCellBackgroundColor(record)}`}
-                        >
-                          <div className="flex h-full flex-col items-center justify-center text-center">
-                            <div className="text-[10px] font-bold">{dayInfo.day}</div>
-                            {record && (
-                              <>
-                                {record.hasLeave && (
-                                  <div className="mt-0.5 text-[7px] font-semibold text-orange-700 dark:text-orange-300">
-                                    L
-                                  </div>
-                                )}
-                                {record.hasOD && (
-                                  <div className="mt-0.5 text-[7px] font-semibold text-blue-700 dark:text-blue-300">
-                                    OD
-                                  </div>
-                                )}
-                                {record.shiftId && typeof record.shiftId === 'object' && (
-                                  <div className="mt-0.5 text-[7px] font-medium opacity-75 truncate w-full" title={record.shiftId.name}>
-                                    {record.shiftId.name.substring(0, 3)}
-                                  </div>
-                                )}
-                                {record.totalHours !== null && (
-                                  <div className="mt-0.5 text-[7px] font-semibold">
-                                    {formatHours(record.totalHours)}
-                                  </div>
-                                )}
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))
-            )}
-            {!loadingAttendance && filteredMonthlyData.length === 0 && (
-              <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm p-12 text-center shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
-                <p className="text-slate-500 dark:text-slate-400">No employees found matching the selected filters.</p>
-              </div>
-            )}
-          </div>
-        )}
+        </div>
       </div>
       {showUploadDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
@@ -1553,9 +1626,9 @@ export default function AttendancePage() {
                     {!editingShift ? (
                       <>
                         <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                    {attendanceDetail.shiftId && typeof attendanceDetail.shiftId === 'object'
-                      ? attendanceDetail.shiftId.name
-                      : '-'}
+                          {attendanceDetail.shiftId && typeof attendanceDetail.shiftId === 'object'
+                            ? attendanceDetail.shiftId.name
+                            : '-'}
                         </div>
                         <button
                           onClick={() => {
@@ -1714,7 +1787,7 @@ export default function AttendancePage() {
                     <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Extra Hours</label>
                     <div className="mt-1 flex items-center justify-between">
                       <div className="text-sm font-semibold text-purple-600 dark:text-purple-400">
-                      {attendanceDetail.extraHours.toFixed(2)} hrs
+                        {attendanceDetail.extraHours.toFixed(2)} hrs
                       </div>
                       {!hasExistingOT && attendanceDetail.shiftId && (
                         <button
@@ -1761,7 +1834,7 @@ export default function AttendancePage() {
                         {conflict.leaveType} - {conflict.numberOfDays} day(s)
                       </div>
                       <div className="mb-2 text-xs text-red-700 dark:text-red-300">
-                        {new Date(conflict.fromDate).toLocaleDateString()} 
+                        {new Date(conflict.fromDate).toLocaleDateString()}
                         {conflict.fromDate !== conflict.toDate && ` - ${new Date(conflict.toDate).toLocaleDateString()}`}
                         {conflict.isHalfDay && ` (${conflict.halfDayType === 'first_half' ? 'First Half' : 'Second Half'})`}
                       </div>
@@ -1793,7 +1866,7 @@ export default function AttendancePage() {
               {attendanceDetail.hasLeave && attendanceDetail.leaveInfo && (
                 <div className="mt-4 rounded-lg border border-orange-200 bg-orange-50 p-4 dark:border-orange-800 dark:bg-orange-900/20">
                   <h4 className="mb-3 text-base font-semibold text-orange-900 dark:text-orange-200">Leave Information</h4>
-                  
+
                   {/* Purpose/Reason */}
                   {attendanceDetail.leaveInfo.purpose ? (
                     <div className="mb-3">
@@ -1837,8 +1910,8 @@ export default function AttendancePage() {
                     <div>
                       <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Total Days</label>
                       <div className="mt-1 font-semibold text-orange-900 dark:text-orange-100">
-                        {attendanceDetail.leaveInfo.numberOfDays !== undefined && attendanceDetail.leaveInfo.numberOfDays !== null 
-                          ? `${attendanceDetail.leaveInfo.numberOfDays} ${attendanceDetail.leaveInfo.numberOfDays === 1 ? 'day' : 'days'}` 
+                        {attendanceDetail.leaveInfo.numberOfDays !== undefined && attendanceDetail.leaveInfo.numberOfDays !== null
+                          ? `${attendanceDetail.leaveInfo.numberOfDays} ${attendanceDetail.leaveInfo.numberOfDays === 1 ? 'day' : 'days'}`
                           : 'N/A'}
                       </div>
                     </div>
@@ -1894,7 +1967,7 @@ export default function AttendancePage() {
               {attendanceDetail.hasOD && attendanceDetail.odInfo && (
                 <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
                   <h4 className="mb-3 text-base font-semibold text-blue-900 dark:text-blue-200">On Duty (OD) Information</h4>
-                  
+
                   {/* Early-Out Info */}
                   {attendanceDetail.earlyOutMinutes !== undefined && attendanceDetail.earlyOutMinutes !== null && (
                     <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-900/20">
@@ -2019,14 +2092,14 @@ export default function AttendancePage() {
                         </div>
                       </div>
                       {attendanceDetail.odInfo.dayInOD && (
-                      <div>
-                        <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Day in OD</label>
-                        <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
-                          {attendanceDetail.odInfo.dayInOD === 1 ? '1st day' : attendanceDetail.odInfo.dayInOD === 2 ? '2nd day' : attendanceDetail.odInfo.dayInOD === 3 ? '3rd day' : `${attendanceDetail.odInfo.dayInOD}th day`}
+                        <div>
+                          <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Day in OD</label>
+                          <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
+                            {attendanceDetail.odInfo.dayInOD === 1 ? '1st day' : attendanceDetail.odInfo.dayInOD === 2 ? '2nd day' : attendanceDetail.odInfo.dayInOD === 3 ? '3rd day' : `${attendanceDetail.odInfo.dayInOD}th day`}
+                          </div>
                         </div>
-                      </div>
-                    )}
-                  </div>
+                      )}
+                    </div>
                   )}
 
                   {/* Applied Date */}
@@ -2060,14 +2133,14 @@ export default function AttendancePage() {
                   )}
 
                   {/* Only show conflict for full-day OD (not for half-day or hour-based OD) */}
-                  {attendanceDetail.isConflict && 
-                   attendanceDetail.odInfo && 
-                   attendanceDetail.odInfo.odType_extended !== 'half_day' && 
-                   attendanceDetail.odInfo.odType_extended !== 'hours' && (
-                    <div className="mt-2 rounded border border-red-300 bg-red-50 p-2 text-xs font-semibold text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
-                      ⚠️ Conflict: OD approved but attendance logged for this date
-                    </div>
-                  )}
+                  {attendanceDetail.isConflict &&
+                    attendanceDetail.odInfo &&
+                    attendanceDetail.odInfo.odType_extended !== 'half_day' &&
+                    attendanceDetail.odInfo.odType_extended !== 'hours' && (
+                      <div className="mt-2 rounded border border-red-300 bg-red-50 p-2 text-xs font-semibold text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
+                        ⚠️ Conflict: OD approved but attendance logged for this date
+                      </div>
+                    )}
                 </div>
               )}
             </div>
@@ -2341,57 +2414,57 @@ export default function AttendancePage() {
 
                   {/* Deductions Section - Right Side */}
                   <div className="border border-slate-300 dark:border-slate-600">
-                  <h3 className="border-b border-slate-300 bg-slate-100 px-4 py-2 text-left font-bold text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white">
-                    DEDUCTIONS
-                  </h3>
-                  <div className="divide-y divide-slate-200 dark:divide-slate-700">
-                    {/* Other deductions first (PF, ESIC, TDS, etc.) */}
-                    {payslipData.deductions?.otherDeductions && payslipData.deductions.otherDeductions.length > 0 && payslipData.deductions.otherDeductions.map((deduction: any, idx: number) => (
-                      <div key={idx} className="flex justify-between px-4 py-2">
-                        <span className="text-slate-700 dark:text-slate-300">{deduction.name || 'Deduction'}:</span>
-                        <span className="font-semibold text-red-600 dark:text-red-400">{deduction.amount?.toFixed(2) || '0.00'}</span>
+                    <h3 className="border-b border-slate-300 bg-slate-100 px-4 py-2 text-left font-bold text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white">
+                      DEDUCTIONS
+                    </h3>
+                    <div className="divide-y divide-slate-200 dark:divide-slate-700">
+                      {/* Other deductions first (PF, ESIC, TDS, etc.) */}
+                      {payslipData.deductions?.otherDeductions && payslipData.deductions.otherDeductions.length > 0 && payslipData.deductions.otherDeductions.map((deduction: any, idx: number) => (
+                        <div key={idx} className="flex justify-between px-4 py-2">
+                          <span className="text-slate-700 dark:text-slate-300">{deduction.name || 'Deduction'}:</span>
+                          <span className="font-semibold text-red-600 dark:text-red-400">{deduction.amount?.toFixed(2) || '0.00'}</span>
+                        </div>
+                      ))}
+                      {/* TDS - if exists in other deductions, otherwise show if configured */}
+                      {payslipData.deductions?.attendanceDeduction > 0 && (
+                        <div className="flex justify-between px-4 py-2">
+                          <span className="text-slate-700 dark:text-slate-300">Attendance Deduction:</span>
+                          <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.deductions.attendanceDeduction.toFixed(2)}</span>
+                        </div>
+                      )}
+                      {payslipData.deductions?.permissionDeduction > 0 && (
+                        <div className="flex justify-between px-4 py-2">
+                          <span className="text-slate-700 dark:text-slate-300">Permission Deduction:</span>
+                          <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.deductions.permissionDeduction.toFixed(2)}</span>
+                        </div>
+                      )}
+                      {payslipData.deductions?.leaveDeduction > 0 && (
+                        <div className="flex justify-between px-4 py-2">
+                          <span className="text-slate-700 dark:text-slate-300">Leave Deduction:</span>
+                          <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.deductions.leaveDeduction.toFixed(2)}</span>
+                        </div>
+                      )}
+                      {payslipData.loanAdvance?.advanceDeduction > 0 && (
+                        <div className="flex justify-between px-4 py-2">
+                          <span className="text-slate-700 dark:text-slate-300">AdV:</span>
+                          <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.loanAdvance.advanceDeduction.toFixed(2)}</span>
+                        </div>
+                      )}
+                      {payslipData.loanAdvance?.totalEMI > 0 && (
+                        <div className="flex justify-between px-4 py-2">
+                          <span className="text-slate-700 dark:text-slate-300">Loan EMI:</span>
+                          <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.loanAdvance.totalEMI.toFixed(2)}</span>
+                        </div>
+                      )}
+                      {/* BANK PAY and CASH PAY - these would be calculated from net salary */}
+                      <div className="flex justify-between border-t-2 border-slate-300 bg-slate-100 px-4 py-2 font-bold dark:border-slate-600 dark:bg-slate-800">
+                        <span className="text-slate-900 dark:text-white">Total Deductions:</span>
+                        <span className="text-red-600 dark:text-red-400">
+                          {((payslipData.deductions?.totalDeductions || 0) + (payslipData.loanAdvance?.totalEMI || 0) + (payslipData.loanAdvance?.advanceDeduction || 0)).toFixed(2)}
+                        </span>
                       </div>
-                    ))}
-                    {/* TDS - if exists in other deductions, otherwise show if configured */}
-                    {payslipData.deductions?.attendanceDeduction > 0 && (
-                      <div className="flex justify-between px-4 py-2">
-                        <span className="text-slate-700 dark:text-slate-300">Attendance Deduction:</span>
-                        <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.deductions.attendanceDeduction.toFixed(2)}</span>
-                      </div>
-                    )}
-                    {payslipData.deductions?.permissionDeduction > 0 && (
-                      <div className="flex justify-between px-4 py-2">
-                        <span className="text-slate-700 dark:text-slate-300">Permission Deduction:</span>
-                        <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.deductions.permissionDeduction.toFixed(2)}</span>
-                      </div>
-                    )}
-                    {payslipData.deductions?.leaveDeduction > 0 && (
-                      <div className="flex justify-between px-4 py-2">
-                        <span className="text-slate-700 dark:text-slate-300">Leave Deduction:</span>
-                        <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.deductions.leaveDeduction.toFixed(2)}</span>
-                      </div>
-                    )}
-                    {payslipData.loanAdvance?.advanceDeduction > 0 && (
-                      <div className="flex justify-between px-4 py-2">
-                        <span className="text-slate-700 dark:text-slate-300">AdV:</span>
-                        <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.loanAdvance.advanceDeduction.toFixed(2)}</span>
-                      </div>
-                    )}
-                    {payslipData.loanAdvance?.totalEMI > 0 && (
-                      <div className="flex justify-between px-4 py-2">
-                        <span className="text-slate-700 dark:text-slate-300">Loan EMI:</span>
-                        <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.loanAdvance.totalEMI.toFixed(2)}</span>
-                      </div>
-                    )}
-                    {/* BANK PAY and CASH PAY - these would be calculated from net salary */}
-                    <div className="flex justify-between border-t-2 border-slate-300 bg-slate-100 px-4 py-2 font-bold dark:border-slate-600 dark:bg-slate-800">
-                      <span className="text-slate-900 dark:text-white">Total Deductions:</span>
-                      <span className="text-red-600 dark:text-red-400">
-                        {((payslipData.deductions?.totalDeductions || 0) + (payslipData.loanAdvance?.totalEMI || 0) + (payslipData.loanAdvance?.advanceDeduction || 0)).toFixed(2)}
-                      </span>
                     </div>
                   </div>
-                </div>
                 </div>
 
                 {/* Net Salary and Payment Details */}
@@ -2403,7 +2476,7 @@ export default function AttendancePage() {
                       <span className="text-2xl font-bold text-green-900 dark:text-green-200">{payslipData.netSalary?.toFixed(2) || '0.00'}</span>
                     </div>
                   </div>
-                  
+
                   {/* Rupees In Words */}
                   <div className="border border-slate-300 bg-slate-50 px-4 py-2 dark:border-slate-600 dark:bg-slate-800">
                     <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Rupees In Words:</span>

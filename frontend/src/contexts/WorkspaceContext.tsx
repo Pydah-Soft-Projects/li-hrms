@@ -54,6 +54,11 @@ export interface Workspace {
   scopeConfig?: {
     departments?: string[];
     allDepartments?: boolean;
+    divisions?: string[];
+    divisionMapping?: {
+      division: string;
+      departments: string[];
+    }[];
   };
 }
 

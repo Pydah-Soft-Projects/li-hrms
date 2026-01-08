@@ -21,6 +21,28 @@ function getDefaultScope(role) {
     return scopeMap[role] || 'own';
 }
 
+// Helper to create department filter that works for both schemas
+const createDepartmentFilter = (deptIds) => {
+    if (!deptIds || deptIds.length === 0) return { _id: null };
+    return {
+        $or: [
+            { department_id: { $in: deptIds } },
+            { department: { $in: deptIds } }
+        ]
+    };
+};
+
+// Helper to create division filter that works for both schemas
+const createDivisionFilter = (divIds) => {
+    if (!divIds || divIds.length === 0) return { _id: null };
+    return {
+        $or: [
+            { division_id: { $in: divIds } },
+            { division: { $in: divIds } } // Just in case some models use 'division'
+        ]
+    };
+};
+
 /**
  * Build scope filter for MongoDB queries
  * @param {Object} user - User object from req.user
@@ -74,28 +96,6 @@ function buildScopeFilter(user) {
 
     // 2. Administrative Scope Filter
     let administrativeFilter = { _id: null };
-
-    // Helper to create department filter that works for both schemas
-    const createDepartmentFilter = (deptIds) => {
-        if (!deptIds || deptIds.length === 0) return { _id: null };
-        return {
-            $or: [
-                { department_id: { $in: deptIds } },
-                { department: { $in: deptIds } }
-            ]
-        };
-    };
-
-    // Helper to create division filter that works for both schemas
-    const createDivisionFilter = (divIds) => {
-        if (!divIds || divIds.length === 0) return { _id: null };
-        return {
-            $or: [
-                { division_id: { $in: divIds } },
-                { division: { $in: divIds } } // Just in case some models use 'division'
-            ]
-        };
-    };
 
     switch (scope) {
         case 'division':
@@ -364,10 +364,11 @@ async function getEmployeeIdsInScope(user) {
     }
 
     // 3. Direct Departments
-    const allDepts = Array.isArray(departments) ? [...departments] : [];
-    if (department) allDepts.push(department);
-    if (allDepts.length > 0) {
-        orConditions.push({ department_id: { $in: allDepts } });
+    if (departments && Array.isArray(departments) && departments.length > 0) {
+        orConditions.push(createDepartmentFilter(departments));
+    }
+    if (department) {
+        orConditions.push(createDepartmentFilter([department]));
     }
 
     if (orConditions.length === 0) return [];
