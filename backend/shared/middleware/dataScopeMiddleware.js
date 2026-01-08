@@ -226,8 +226,28 @@ function buildWorkflowVisibilityFilter(user) {
 const applyScopeFilter = async (req, res, next) => {
     try {
         // req.user from protect middleware already has basic info
-        // We might need to fetch full User record to get complex divisionMapping
-        const user = await User.findById(req.user.userId || req.user._id);
+        const userId = req.user.userId || req.user._id;
+
+        // 1. Try to find in User collection first
+        let user = await User.findById(userId);
+
+        // 2. If not found, check if it's an employee loggin in directly
+        if (!user) {
+            const employee = await Employee.findById(userId);
+            if (employee) {
+                // Normalize employee to look like a User for scoping purposes
+                user = employee.toObject ? employee.toObject() : employee;
+                user.role = 'employee';
+                user.dataScope = 'own';
+                user.employeeRef = employee._id;
+                user.employeeId = employee.emp_no;
+                user._id = employee._id;
+                // Initialize empty admin scopes
+                user.divisionMapping = [];
+                user.allowedDivisions = [];
+                user.departments = [];
+            }
+        }
 
         if (!user) {
             return res.status(401).json({
