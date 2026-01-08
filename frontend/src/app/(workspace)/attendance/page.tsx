@@ -1249,7 +1249,11 @@ export default function AttendancePage() {
                   <th className="w-[100px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-blue-50 text-blue-700">Total Days Present</th>
                 )}
                 {tableType === 'leaves' && (
-                  <th className="w-[100px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-orange-50 text-orange-700">Total Leaves</th>
+                  <>
+                    <th className="w-[100px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-orange-50 text-orange-700">Total Leaves</th>
+                    <th className="w-[100px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-yellow-50 text-yellow-700">Paid Leaves</th>
+                    <th className="w-[100px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-rose-50 text-rose-700">LOPs</th>
+                  </>
                 )}
                 {tableType === 'od' && (
                   <th className="w-[100px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-indigo-50 text-indigo-700">Total ODs</th>
@@ -1309,7 +1313,11 @@ export default function AttendancePage() {
                         <td className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
                       )}
                       {tableType === 'leaves' && (
-                        <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
+                        <>
+                          <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
+                          <td className="border-r border-slate-200 bg-yellow-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
+                          <td className="border-r border-slate-200 bg-rose-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
+                        </>
                       )}
                       {tableType === 'od' && (
                         <td className="border-r border-slate-200 bg-indigo-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
@@ -1344,7 +1352,15 @@ export default function AttendancePage() {
                       const monthPresent = Object.values(item.dailyAttendance).filter(r => r?.status === 'PRESENT').length;
                       const monthAbsent = Object.values(item.dailyAttendance).filter(r => r?.status === 'ABSENT').length;
                       const daysAbsent = daysInMonth - daysPresent;
-                      const totalLeaves = Object.values(item.dailyAttendance).filter(r => r?.status === 'LEAVE' || r?.hasLeave).length;
+                      const leaveRecords = Object.values(item.dailyAttendance).filter(r => r?.status === 'LEAVE' || r?.hasLeave);
+                      const totalLeaves = leaveRecords.length;
+                      const lopCount = leaveRecords.filter(r => {
+                        return (r as any)?.leaveNature === 'lop' ||
+                          (r as any)?.leaveInfo?.leaveType?.toLowerCase().includes('lop') ||
+                          (r as any)?.leaveInfo?.leaveType?.toLowerCase().includes('loss of pay');
+                      }).length;
+                      const paidLeaves = totalLeaves - lopCount;
+
                       const totalODs = Object.values(item.dailyAttendance).filter(r => r?.status === 'OD' || r?.hasOD).length;
 
                       return (
@@ -1359,16 +1375,7 @@ export default function AttendancePage() {
                                 >
                                   {item.employee.employee_name}
                                 </div>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleViewPayslip(item.employee);
-                                  }}
-                                  className="rounded-md bg-gradient-to-r from-green-500 to-green-600 px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:from-green-600 hover:to-green-700 hover:shadow-md"
-                                  title="View Payslip"
-                                >
-                                  Payslip
-                                </button>
+
                               </div>
                               <div className="text-[9px] text-slate-500 dark:text-slate-400 truncate mt-1">
                                 {item.employee.emp_no}
@@ -1471,7 +1478,11 @@ export default function AttendancePage() {
                             <td onClick={() => handleViewTypeSummary(item, 'in_out')} className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center text-[11px] font-bold text-blue-700 cursor-pointer hover:bg-blue-100">{daysPresent}</td>
                           )}
                           {tableType === 'leaves' && (
-                            <td onClick={() => handleViewTypeSummary(item, 'leaves')} className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 cursor-pointer hover:bg-orange-100">{totalLeaves}</td>
+                            <>
+                              <td onClick={() => handleViewTypeSummary(item, 'leaves')} className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 cursor-pointer hover:bg-orange-100">{totalLeaves}</td>
+                              <td className="border-r border-slate-200 bg-yellow-50 px-2 py-2 text-center text-[11px] font-bold text-yellow-700">{paidLeaves}</td>
+                              <td className="border-r border-slate-200 bg-rose-50 px-2 py-2 text-center text-[11px] font-bold text-rose-700">{lopCount}</td>
+                            </>
                           )}
                           {tableType === 'od' && (
                             <td onClick={() => handleViewTypeSummary(item, 'od')} className="border-r border-slate-200 bg-indigo-50 px-2 py-2 text-center text-[11px] font-bold text-indigo-700 cursor-pointer hover:bg-indigo-100">{totalODs}</td>
