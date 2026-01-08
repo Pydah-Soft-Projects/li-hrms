@@ -1,24 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { format, addMonths } from 'date-fns';
+import { format } from 'date-fns';
 import { api } from '@/lib/api';
-
-const PlusIcon = () => (
-  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-  </svg>
-);
-
-const XIcon = () => (
-  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-  </svg>
-);
-
-const CheckIcon = () => (
-  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-  </svg>
-);
+import {
+  X,
+  Check,
+  User,
+  Calendar,
+  IndianRupee,
+  AlertCircle,
+  FileText,
+  Clock,
+  TrendingUp,
+  Info,
+  ShieldCheck,
+  Zap,
+  ChevronDown
+} from 'lucide-react';
 
 const ArrearsForm = ({ open, onClose, onSubmit, employees = [] }) => {
   const [formData, setFormData] = useState({
@@ -129,17 +126,6 @@ const ArrearsForm = ({ open, onClose, onSubmit, employees = [] }) => {
     return emp.emp_no;
   };
 
-  const calculateTotal = (start, end, monthly) => {
-    if (!start || !end || !monthly) return 0;
-
-    const [startYear, startMonthNum] = start.split('-').map(Number);
-    const [endYear, endMonthNum] = end.split('-').map(Number);
-
-    const months = (endYear - startYear) * 12 + (endMonthNum - startMonthNum) + 1;
-
-    return months * parseFloat(monthly);
-  };
-
   const handleMonthlyAmountChange = (e) => {
     setFormData(prev => ({
       ...prev,
@@ -157,14 +143,14 @@ const ArrearsForm = ({ open, onClose, onSubmit, employees = [] }) => {
   const validateForm = () => {
     const newErrors = {};
 
-    if (!formData.employee) newErrors.employee = 'Employee is required';
-    if (!formData.startMonth) newErrors.startMonth = 'Start month is required';
-    if (!formData.endMonth) newErrors.endMonth = 'End month is required';
-    if (!formData.monthlyAmount) newErrors.monthlyAmount = 'Monthly amount is required';
-    if (!formData.reason) newErrors.reason = 'Reason is required';
+    if (!formData.employee) newErrors.employee = 'Required';
+    if (!formData.startMonth) newErrors.startMonth = 'Required';
+    if (!formData.endMonth) newErrors.endMonth = 'Required';
+    if (!formData.monthlyAmount) newErrors.monthlyAmount = 'Required';
+    if (!formData.reason) newErrors.reason = 'Required';
 
     if (formData.startMonth && formData.endMonth && formData.startMonth > formData.endMonth) {
-      newErrors.endMonth = 'End month must be after start month';
+      newErrors.endMonth = 'Must be after start';
     }
 
     setErrors(newErrors);
@@ -173,9 +159,7 @@ const ArrearsForm = ({ open, onClose, onSubmit, employees = [] }) => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-
     if (!validateForm()) return;
-
     setLoading(true);
 
     const submitData = {
@@ -207,248 +191,201 @@ const ArrearsForm = ({ open, onClose, onSubmit, employees = [] }) => {
         setCalculationBreakdown([]);
         setErrors({});
       })
-      .catch((err) => {
-        console.error('Error submitting form:', err);
-      })
-      .finally(() => {
-        setLoading(false);
-      });
+      .catch((err) => console.error('Error submitting form:', err))
+      .finally(() => setLoading(false));
   };
 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-blue-700 dark:from-blue-900 dark:to-blue-800 px-6 py-6 flex items-center justify-between border-b border-blue-700 dark:border-blue-900">
-          <div>
-            <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-              <PlusIcon />
-              Create Arrears Request
-            </h2>
-            <p className="text-blue-100 text-sm mt-1">Fill in the details to create a new arrears request</p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
+
+      <div className="relative z-50 flex w-full max-w-xl max-h-[90vh] flex-col overflow-hidden rounded-3xl bg-slate-50 shadow-[0_32px_128px_-16px_rgba(0,0,0,0.3)] dark:bg-slate-950 border border-slate-300 dark:border-slate-800">
+
+        {/* Compact Professional Header */}
+        <div className="flex items-center justify-between border-b border-slate-200 bg-slate-100 px-6 py-4 dark:border-slate-800 dark:bg-slate-950">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100 text-blue-700 shadow-inner dark:bg-blue-900/20 border border-blue-200">
+              <TrendingUp className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold tracking-tight text-slate-950 dark:text-white leading-tight">Create Arrears</h2>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Payroll Request Protocol</p>
+            </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-blue-700 dark:hover:bg-blue-800 rounded-lg transition-colors duration-200"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-200 hover:text-slate-950 dark:hover:bg-slate-800 transition-colors"
           >
-            <XIcon className="w-6 h-6 text-white" />
+            <X className="h-4 w-4" />
           </button>
         </div>
 
-        {/* Form Content */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          {/* Employee Selection */}
-          <div>
-            <label className="block text-sm font-semibold text-slate-900 dark:text-white mb-2">
-              Employee <span className="text-red-500">*</span>
-            </label>
-            <select
-              value={formData.employee}
-              onChange={(e) => setFormData(prev => ({ ...prev, employee: e.target.value }))}
-              className={`w-full px-4 py-3 rounded-lg border-2 transition-all duration-200 bg-white dark:bg-slate-700 text-slate-900 dark:text-white ${errors.employee
-                  ? 'border-red-500 dark:border-red-500'
-                  : 'border-slate-300 dark:border-slate-600 focus:border-blue-500 dark:focus:border-blue-400'
-                } focus:outline-none`}
-            >
-              <option value="">
-                {localEmployees.length === 0 ? 'Loading employees...' : 'Select an employee'}
-              </option>
-              {localEmployees.map(emp => (
-                <option key={emp._id} value={emp._id}>
-                  {getEmployeeName(emp)} ({emp.emp_no})
-                </option>
-              ))}
-            </select>
-            {errors.employee && <p className="text-red-500 text-sm mt-1">{errors.employee}</p>}
-          </div>
+        {/* Scrollable Form Content */}
+        <div className="flex-1 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-slate-300 text-slate-950">
+          <form id="arrears-form" onSubmit={handleSubmit} className="space-y-6">
 
-          {/* Month Range */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-semibold text-slate-900 dark:text-white mb-2">
-                Start Month <span className="text-red-500">*</span>
+            {/* Row 1: Employee */}
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-slate-700 flex items-center gap-2">
+                <User className="h-3 w-3" />
+                Employee Information
               </label>
-              <input
-                type="month"
-                value={formData.startMonth}
-                onChange={(e) => handleMonthChange('startMonth', e.target.value)}
-                className={`w-full px-4 py-3 rounded-lg border-2 transition-all duration-200 bg-white dark:bg-slate-700 text-slate-900 dark:text-white ${errors.startMonth
-                    ? 'border-red-500 dark:border-red-500'
-                    : 'border-slate-300 dark:border-slate-600 focus:border-blue-500 dark:focus:border-blue-400'
-                  } focus:outline-none`}
-              />
-              {errors.startMonth && <p className="text-red-500 text-sm mt-1">{errors.startMonth}</p>}
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-slate-900 dark:text-white mb-2">
-                End Month <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="month"
-                value={formData.endMonth}
-                onChange={(e) => handleMonthChange('endMonth', e.target.value)}
-                className={`w-full px-4 py-3 rounded-lg border-2 transition-all duration-200 bg-white dark:bg-slate-700 text-slate-900 dark:text-white ${errors.endMonth
-                    ? 'border-red-500 dark:border-red-500'
-                    : 'border-slate-300 dark:border-slate-600 focus:border-blue-500 dark:focus:border-blue-400'
-                  } focus:outline-none`}
-              />
-              {errors.endMonth && <p className="text-red-500 text-sm mt-1">{errors.endMonth}</p>}
-            </div>
-          </div>
-
-          {/* Amount Fields */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-semibold text-slate-900 dark:text-white mb-2">
-                Monthly Amount (₹) <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={formData.monthlyAmount}
-                onChange={handleMonthlyAmountChange}
-                placeholder="0.00"
-                className={`w-full px-4 py-3 rounded-lg border-2 transition-all duration-200 bg-white dark:bg-slate-700 text-slate-900 dark:text-white ${errors.monthlyAmount
-                    ? 'border-red-500 dark:border-red-500'
-                    : 'border-slate-300 dark:border-slate-600 focus:border-blue-500 dark:focus:border-blue-400'
-                  } focus:outline-none`}
-              />
-              {errors.monthlyAmount && <p className="text-red-500 text-sm mt-1">{errors.monthlyAmount}</p>}
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-slate-900 dark:text-white mb-2">
-                Total Amount (₹)
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={formData.totalAmount}
-                readOnly
-                placeholder="0.00"
-                className="w-full px-4 py-3 rounded-lg border-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none cursor-not-allowed"
-              />
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Auto-calculated</p>
-            </div>
-          </div>
-
-          {/* Reason */}
-          <div>
-            <label className="block text-sm font-semibold text-slate-900 dark:text-white mb-2">
-              Reason <span className="text-red-500">*</span>
-            </label>
-            <textarea
-              value={formData.reason}
-              onChange={(e) => setFormData(prev => ({ ...prev, reason: e.target.value }))}
-              placeholder="Enter the reason for arrears..."
-              rows="4"
-              className={`w-full px-4 py-3 rounded-lg border-2 transition-all duration-200 bg-white dark:bg-slate-700 text-slate-900 dark:text-white resize-none ${errors.reason
-                  ? 'border-red-500 dark:border-red-500'
-                  : 'border-slate-300 dark:border-slate-600 focus:border-blue-500 dark:focus:border-blue-400'
-                } focus:outline-none`}
-            />
-            {errors.reason && <p className="text-red-500 text-sm mt-1">{errors.reason}</p>}
-          </div>
-
-          {/* Breakdown Table (Replacement for Summary Card) */}
-          {(formData.startMonth && formData.endMonth && formData.monthlyAmount) && (
-            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm">
-              <div className="bg-slate-50 dark:bg-slate-800 px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
-                <h3 className="font-semibold text-slate-900 dark:text-white">Calculation Breakdown</h3>
-                {fetchingAttendance && (
-                  <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400 text-xs font-medium">
-                    <div className="w-3 h-3 border-2 border-blue-600/30 border-t-blue-600 rounded-full animate-spin"></div>
-                    Updating attendance...
-                  </div>
-                )}
+              <div className="relative group">
+                <select
+                  value={formData.employee}
+                  onChange={(e) => setFormData(prev => ({ ...prev, employee: e.target.value }))}
+                  className={`w-full appearance-none rounded-xl border bg-white py-2.5 pl-4 pr-10 text-xs font-semibold text-slate-950 transition-all focus:ring-4 dark:bg-slate-900 dark:text-white ${errors.employee
+                      ? 'border-rose-500 focus:ring-rose-500/20'
+                      : 'border-slate-300 focus:border-blue-500 focus:ring-blue-500/10 dark:border-slate-700'
+                    }`}
+                >
+                  <option value="">Search internal registry...</option>
+                  {localEmployees.map(emp => (
+                    <option key={emp._id} value={emp._id}>
+                      {getEmployeeName(emp)} ({emp.emp_no})
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-600 pointer-events-none" />
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
-                      <th className="px-4 py-3 font-semibold">Month</th>
-                      <th className="px-4 py-3 font-semibold text-right">Amount</th>
-                      <th className="px-4 py-3 font-semibold text-center">Paid/Total</th>
-                      <th className="px-4 py-3 font-semibold text-right">Prorated</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {calculationBreakdown.map((item, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                        <td className="px-4 py-2 text-slate-700 dark:text-slate-300 font-medium">
-                          {format(new Date(item.month), 'MMM yyyy')}
-                        </td>
-                        <td className="px-4 py-2 text-right text-slate-600 dark:text-slate-400">
-                          ₹{item.monthlyAmount.toLocaleString('en-IN')}
-                        </td>
-                        <td className="px-4 py-2 text-center">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${item.hasRecord
-                              ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                              : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-500'
-                            }`}>
-                            {item.paidDays}/{item.totalDays}
-                          </span>
-                        </td>
-                        <td className="px-4 py-2 text-right font-semibold text-slate-900 dark:text-white">
-                          ₹{item.proratedAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="bg-blue-50/50 dark:bg-blue-900/10 border-t-2 border-blue-100 dark:border-blue-900/30">
-                      <td colSpan="3" className="px-4 py-3 font-bold text-slate-900 dark:text-white">Total Arrears Amount</td>
-                      <td className="px-4 py-3 text-right font-bold text-blue-600 dark:text-blue-400 text-base">
-                        ₹{parseFloat(formData.totalAmount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
+              {errors.employee && <p className="text-[9px] font-bold text-rose-700 uppercase tracking-widest ml-1">{errors.employee}</p>}
+            </div>
+
+            {/* Row 2: Period & Amount Matrix */}
+            <div className="grid grid-cols-2 gap-x-4 gap-y-4 pt-2">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-700 flex items-center gap-2">
+                  <Calendar className="h-3 w-3" />
+                  Start Period
+                </label>
+                <input
+                  type="month"
+                  value={formData.startMonth}
+                  onChange={(e) => handleMonthChange('startMonth', e.target.value)}
+                  className={`w-full rounded-xl border bg-white py-2.5 px-4 text-xs font-semibold text-slate-950 focus:ring-4 dark:bg-slate-900 dark:text-white ${errors.startMonth
+                      ? 'border-rose-500 focus:ring-rose-500/20'
+                      : 'border-slate-300 focus:border-blue-500 focus:ring-blue-500/10 dark:border-slate-700'
+                    }`}
+                />
+                {errors.startMonth && <p className="text-[9px] font-bold text-rose-700 uppercase tracking-widest ml-1">{errors.startMonth}</p>}
               </div>
-              {!calculationBreakdown.some(b => b.hasRecord) && !fetchingAttendance && (
-                <div className="p-3 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-xs flex gap-2 items-start border-t border-amber-100 dark:border-amber-900/30">
-                  <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                  </svg>
-                  <span>No payroll records found for selected period. Arrears will be 0 for months without attendance.</span>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-700 flex items-center gap-2">
+                  <Calendar className="h-3 w-3" />
+                  End Period
+                </label>
+                <input
+                  type="month"
+                  value={formData.endMonth}
+                  onChange={(e) => handleMonthChange('endMonth', e.target.value)}
+                  className={`w-full rounded-xl border bg-white py-2.5 px-4 text-xs font-semibold text-slate-950 focus:ring-4 dark:bg-slate-900 dark:text-white ${errors.endMonth
+                      ? 'border-rose-500 focus:ring-rose-500/20'
+                      : 'border-slate-300 focus:border-blue-500 focus:ring-blue-500/10 dark:border-slate-700'
+                    }`}
+                />
+                {errors.endMonth && <p className="text-[9px] font-bold text-rose-700 uppercase tracking-widest ml-1">{errors.endMonth}</p>}
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-700 flex items-center gap-2">
+                  <IndianRupee className="h-3 w-3" />
+                  Monthly Val.
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={formData.monthlyAmount}
+                  onChange={handleMonthlyAmountChange}
+                  placeholder="0.00"
+                  className={`w-full rounded-xl border bg-white py-2.5 px-4 text-xs font-semibold text-slate-950 focus:ring-4 dark:bg-slate-900 dark:text-white placeholder:text-slate-300 ${errors.monthlyAmount
+                      ? 'border-rose-500 focus:ring-rose-500/20'
+                      : 'border-slate-300 focus:border-blue-500 focus:ring-blue-500/10 dark:border-slate-700'
+                    }`}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-700 flex items-center gap-2">
+                  <Zap className="h-3 w-3" />
+                  Total Commitment
+                </label>
+                <div className="flex h-[38px] items-center rounded-xl bg-slate-200/50 px-4 text-xs font-bold text-slate-950 dark:bg-slate-900/50 dark:text-white border border-slate-300 dark:border-slate-800 shadow-inner">
+                  ₹{parseFloat(formData.totalAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </div>
-              )}
+              </div>
             </div>
-          )}
 
-          {/* Buttons */}
-          <div className="flex gap-3 pt-6 border-t border-slate-200 dark:border-slate-700">
+            {/* Justification */}
+            <div className="space-y-1.5 pt-2">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-slate-700 flex items-center gap-2">
+                <FileText className="h-3 w-3" />
+                Reason for Adjustment
+              </label>
+              <textarea
+                value={formData.reason}
+                onChange={(e) => setFormData(prev => ({ ...prev, reason: e.target.value }))}
+                placeholder="Retroactive rationale..."
+                rows="2"
+                className={`w-full resize-none rounded-xl border bg-white p-4 text-xs font-semibold text-slate-950 transition-all focus:ring-4 dark:bg-slate-900 dark:text-white placeholder:text-slate-300 ${errors.reason
+                    ? 'border-rose-500 focus:ring-rose-500/20'
+                    : 'border-slate-300 focus:border-blue-500 focus:ring-blue-500/10 dark:border-slate-700'
+                  }`}
+              />
+            </div>
+
+            {/* Calculation Logs - Very Compact */}
+            {(formData.startMonth && formData.endMonth && formData.monthlyAmount) && (
+              <div className="rounded-2xl border border-slate-300 bg-slate-100 overflow-hidden dark:border-slate-800 dark:bg-slate-900/20 shadow-sm">
+                <div className="flex items-center justify-between px-4 py-2 bg-slate-200 dark:bg-slate-900 border-b border-slate-300 dark:border-slate-800">
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-700">Compute Log</span>
+                  {fetchingAttendance && <span className="text-[9px] font-bold text-blue-700 animate-pulse uppercase tracking-widest">Syncing Registry...</span>}
+                </div>
+                <div className="max-h-32 overflow-y-auto scrollbar-thin">
+                  <table className="w-full text-left">
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                      {calculationBreakdown.map((item, idx) => (
+                        <tr key={idx} className="text-[10px] hover:bg-white dark:hover:bg-slate-900/50 transition-colors">
+                          <td className="px-4 py-2 font-bold text-slate-800 dark:text-slate-400">{format(new Date(item.month), 'MMM yy')}</td>
+                          <td className="px-4 py-2 text-center">
+                            <span className={`px-2 py-0.5 rounded-md font-bold text-[8px] uppercase border ${item.hasRecord ? 'bg-emerald-100 border-emerald-300 text-emerald-800' : 'bg-slate-200 border-slate-300 text-slate-700'}`}>
+                              {item.paidDays}/{item.totalDays} Days
+                            </span>
+                          </td>
+                          <td className="px-4 py-2 text-right font-bold text-slate-950 dark:text-white">₹{item.proratedAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </form>
+        </div>
+
+        {/* Minimalist Footer */}
+        <div className="border-t border-slate-300 bg-slate-100 p-4 dark:border-slate-800 dark:bg-slate-950">
+          <div className="flex gap-3">
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-3 rounded-lg border-2 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 font-semibold hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors duration-200"
+              className="flex-1 rounded-xl py-2.5 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-600 hover:text-slate-950 transition-colors"
             >
-              Cancel
+              Discard
             </button>
             <button
+              form="arrears-form"
               type="submit"
               disabled={loading}
-              className="flex-1 px-4 py-3 rounded-lg bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-[2] rounded-xl bg-slate-950 py-2.5 text-[10px] font-bold uppercase tracking-[0.2em] text-white shadow-xl transition-all hover:bg-blue-700 active:scale-[0.98] disabled:opacity-50 dark:bg-white dark:text-slate-900 border border-slate-800"
             >
-              {loading ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                  Creating...
-                </>
-              ) : (
-                <>
-                  <CheckIcon />
-                  Create Arrears
-                </>
-              )}
+              {loading ? 'Processing...' : 'Provision Arrear'}
             </button>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );
