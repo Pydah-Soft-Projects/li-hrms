@@ -33,6 +33,17 @@ const LoanSchema = new mongoose.Schema(
       min: [1, 'Amount must be greater than 0'],
     },
 
+    // Original amount requested (never changes after submission)
+    originalAmount: {
+      type: Number,
+      required: [true, 'Original amount is required'],
+    },
+
+    // Optional amount requested if higher than eligibility
+    needAmount: {
+      type: Number,
+    },
+
     // Reason/Purpose for loan/advance
     reason: {
       type: String,
@@ -58,7 +69,7 @@ const LoanSchema = new mongoose.Schema(
     // Current status
     status: {
       type: String,
-      enum: ['draft', 'pending', 'hod_approved', 'hod_rejected', 'hr_approved', 'hr_rejected', 'approved', 'rejected', 'cancelled', 'disbursed', 'active', 'completed'],
+      enum: ['draft', 'pending', 'hod_approved', 'hod_rejected', 'manager_approved', 'manager_rejected', 'hr_approved', 'hr_rejected', 'approved', 'rejected', 'cancelled', 'disbursed', 'active', 'completed'],
       default: 'draft',
     },
 
@@ -67,14 +78,14 @@ const LoanSchema = new mongoose.Schema(
       // Current step in workflow
       currentStep: {
         type: String,
-        enum: ['employee', 'hod', 'hr', 'final', 'completed'],
+        enum: ['employee', 'hod', 'manager', 'hr', 'final', 'completed'],
         default: 'employee',
       },
 
       // Next approver role
       nextApprover: {
         type: String,
-        enum: ['hod', 'hr', 'final_authority', null],
+        enum: ['hod', 'manager', 'hr', 'final_authority', null],
         default: null,
       },
 
@@ -104,6 +115,19 @@ const LoanSchema = new mongoose.Schema(
     // Approvals record
     approvals: {
       hod: {
+        status: {
+          type: String,
+          enum: ['pending', 'approved', 'rejected', 'forwarded', null],
+          default: null,
+        },
+        approvedBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+        },
+        approvedAt: Date,
+        comments: String,
+      },
+      manager: {
         status: {
           type: String,
           enum: ['pending', 'approved', 'rejected', 'forwarded', null],
@@ -353,8 +377,13 @@ LoanSchema.index({ status: 1, 'workflow.nextApprover': 1 });
 LoanSchema.index({ appliedAt: -1 });
 LoanSchema.index({ 'repayment.nextPaymentDate': 1 });
 
-// Pre-save hook to calculate remaining balance
+// Pre-save hook to calculate remaining balance and migrations
 LoanSchema.pre('save', function () {
+  // Migration: Fill originalAmount for older records
+  if (this.amount && !this.originalAmount) {
+    this.originalAmount = this.amount;
+  }
+
   if (this.requestType === 'loan' && this.loanConfig.totalAmount) {
     this.repayment.remainingBalance = this.loanConfig.totalAmount - (this.repayment.totalPaid || 0);
   } else if (this.requestType === 'salary_advance') {
@@ -369,6 +398,8 @@ LoanSchema.virtual('statusDisplay').get(function () {
     pending: 'Pending',
     hod_approved: 'HOD Approved',
     hod_rejected: 'HOD Rejected',
+    manager_approved: 'Manager Approved',
+    manager_rejected: 'Manager Rejected',
     hr_approved: 'HR Approved',
     hr_rejected: 'HR Rejected',
     approved: 'Approved',
@@ -403,7 +434,7 @@ LoanSchema.statics.getPendingForRole = async function (role, departmentIds = [])
   }
 
   return this.find(query)
-    .populate('employeeId', 'employee_name emp_no')
+    .populate('employeeId', 'employee_name emp_no gross_salary')
     .populate('department', 'name')
     .populate('designation', 'name')
     .sort({ appliedAt: -1 });

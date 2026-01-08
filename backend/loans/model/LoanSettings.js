@@ -95,6 +95,25 @@ const LoanSettingsSchema = new mongoose.Schema(
         type: mongoose.Schema.Types.Mixed,
         default: {},
       },
+      // Salary-based limits (for salary advances)
+      salaryBasedLimits: {
+        enabled: {
+          type: Boolean,
+          default: false,
+        },
+        // Max advance as percentage of basic salary
+        advancePercentage: {
+          type: Number,
+          default: 50,
+          min: 0,
+          max: 100,
+        },
+        // Consider attendance in calculation
+        considerAttendance: {
+          type: Boolean,
+          default: true,
+        },
+      },
     },
 
     // Workflow configuration

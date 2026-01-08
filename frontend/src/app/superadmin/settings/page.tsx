@@ -203,6 +203,8 @@ export default function SettingsPage() {
     isInterestApplicable: false,
     maxActivePerEmployee: 1,
     minServicePeriod: 0,
+    advancePercentage: 50,
+    considerAttendance: true,
   });
 
   // Overtime (OT) settings state
@@ -447,7 +449,16 @@ export default function SettingsPage() {
     if (activeTab === 'leaves' && leaveSubTab === 'workspacePermissions') {
       loadWorkspaces();
     }
-  }, [leaveSubTab]);
+  }, [activeTab, leaveSubTab]);
+
+  useEffect(() => {
+    if ((activeTab === 'loan' || activeTab === 'salary_advance') && loanSubTab === 'workflow') {
+      loadWorkflowUsers();
+    }
+    if ((activeTab === 'loan' || activeTab === 'salary_advance') && loanSubTab === 'workspacePermissions') {
+      loadWorkspaces();
+    }
+  }, [activeTab, loanSubTab]);
 
   const loadShiftDurations = async () => {
     try {
@@ -1049,6 +1060,25 @@ export default function SettingsPage() {
     }
   };
 
+  const loadWorkflowUsers = async () => {
+    try {
+      const response = await api.getUsers({ limit: 1000 });
+      if (response.success && response.data?.users) {
+        const users = response.data.users;
+        setWorkflowUsers(users);
+
+        const byRole: Record<string, any[]> = {};
+        users.forEach((user: any) => {
+          if (!byRole[user.role]) byRole[user.role] = [];
+          byRole[user.role].push(user);
+        });
+        setWorkflowUsersByRole(byRole);
+      }
+    } catch (err) {
+      console.error('Error loading workflow users:', err);
+    }
+  };
+
   const loadLoanSettings = async (type: 'loan' | 'salary_advance') => {
     try {
       setLoanSettingsLoading(true);
@@ -1067,6 +1097,8 @@ export default function SettingsPage() {
           isInterestApplicable: settings.isInterestApplicable || false,
           maxActivePerEmployee: settings.maxActivePerEmployee || 1,
           minServicePeriod: settings.minServicePeriod || 0,
+          advancePercentage: settings.salaryBasedLimits?.advancePercentage || 50,
+          considerAttendance: settings.salaryBasedLimits?.considerAttendance ?? true,
         });
 
         // Load workspace permissions
@@ -1080,7 +1112,7 @@ export default function SettingsPage() {
 
         // Load users for workflow if on workflow tab
         if (loanSubTab === 'workflow') {
-
+          await loadWorkflowUsers();
         }
       } else {
         setLoanSettings(null);
@@ -3439,6 +3471,39 @@ export default function SettingsPage() {
                       </div>
                     </div>
 
+                    {activeTab === 'salary_advance' && (
+                      <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-6 dark:border-slate-700 dark:bg-slate-800/50">
+                        <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Salary Advance Limits</h3>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <div>
+                            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                              Max Advance Percentage (%)
+                            </label>
+                            <input
+                              type="number"
+                              min="1"
+                              max="100"
+                              value={loanGeneralSettings.advancePercentage}
+                              onChange={(e) => setLoanGeneralSettings({ ...loanGeneralSettings, advancePercentage: Number(e.target.value) })}
+                              className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                            />
+                            <p className="mt-1 text-xs text-slate-500">Percentage of basic salary allowed for advance</p>
+                          </div>
+                          <div className="flex items-center pt-6">
+                            <label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+                              <input
+                                type="checkbox"
+                                checked={loanGeneralSettings.considerAttendance}
+                                onChange={(e) => setLoanGeneralSettings({ ...loanGeneralSettings, considerAttendance: e.target.checked })}
+                                className="rounded border-slate-300"
+                              />
+                              Consider Attendance for Prorating
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     <button
                       onClick={async () => {
                         setSaving(true);
@@ -3456,6 +3521,11 @@ export default function SettingsPage() {
                               isInterestApplicable: activeTab === 'loan' ? loanGeneralSettings.isInterestApplicable : (loanSettings.settings?.isInterestApplicable || false),
                               maxActivePerEmployee: loanGeneralSettings.maxActivePerEmployee,
                               minServicePeriod: loanGeneralSettings.minServicePeriod,
+                              salaryBasedLimits: {
+                                enabled: true,
+                                advancePercentage: loanGeneralSettings.advancePercentage,
+                                considerAttendance: loanGeneralSettings.considerAttendance,
+                              },
                               workspacePermissions: loanSettings.settings?.workspacePermissions || {},
                             },
                           });
@@ -3479,7 +3549,6 @@ export default function SettingsPage() {
                   </div>
                 )}
 
-                {/* Workflow Sub-tab */}
                 {loanSubTab === 'workflow' && (
                   <div className="space-y-6">
                     <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-6 dark:border-slate-700 dark:bg-slate-800/50">
@@ -3488,17 +3557,177 @@ export default function SettingsPage() {
                         <label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
                           <input
                             type="checkbox"
-                            defaultChecked={loanSettings?.workflow?.useDynamicWorkflow || false}
+                            checked={loanSettings?.workflow?.useDynamicWorkflow || false}
+                            onChange={(e) => setLoanSettings({
+                              ...loanSettings,
+                              workflow: {
+                                ...(loanSettings.workflow || {}),
+                                useDynamicWorkflow: e.target.checked
+                              }
+                            })}
                             className="rounded border-slate-300"
                           />
                           Enable Dynamic Workflow
                         </label>
                       </div>
-                      <p className="mb-4 text-sm text-slate-600 dark:text-slate-400">
-                        Configure the approval workflow steps. Enable dynamic workflow to assign specific users to each step.
+                      <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">
+                        Configure the approval workflow steps and final authority.
                       </p>
-                      {/* Workflow steps UI will go here */}
-                      <div className="text-sm text-slate-500">Workflow configuration UI coming soon...</div>
+
+                      <div className="space-y-6">
+                        {/* Final Authority Section */}
+                        <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+                          <h4 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500">Final Authority Configuration</h4>
+                          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                            <div>
+                              <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Final Approver Role</label>
+                              <select
+                                value={loanSettings?.workflow?.finalAuthority?.role || 'hr'}
+                                onChange={(e) => {
+                                  const newRole = e.target.value;
+                                  setLoanSettings((prev: any) => ({
+                                    ...prev,
+                                    workflow: {
+                                      ...(prev.workflow || {}),
+                                      finalAuthority: {
+                                        ...(prev.workflow?.finalAuthority || {}),
+                                        role: newRole,
+                                        userId: undefined,
+                                      }
+                                    }
+                                  }));
+                                }}
+                                className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                              >
+                                <option value="hr">HR</option>
+                                <option value="admin">Admin</option>
+                                <option value="specific_user">Specific User</option>
+                              </select>
+                              <p className="mt-1 text-xs text-slate-500">Who gives the absolute final approval</p>
+                            </div>
+
+                            {loanSettings?.workflow?.finalAuthority?.role === 'hr' && (
+                              <div className="flex items-center pt-2 md:pt-6">
+                                <label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={loanSettings?.workflow?.finalAuthority?.anyHRCanApprove || false}
+                                    onChange={(e) => {
+                                      setLoanSettings((prev: any) => ({
+                                        ...prev,
+                                        workflow: {
+                                          ...(prev.workflow || {}),
+                                          finalAuthority: {
+                                            ...(prev.workflow?.finalAuthority || {}),
+                                            anyHRCanApprove: e.target.checked
+                                          }
+                                        }
+                                      }));
+                                    }}
+                                    className="rounded border-slate-300"
+                                  />
+                                  Any HR user can approve
+                                </label>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Specific User Selection */}
+                          {loanSettings?.workflow?.finalAuthority?.role === 'specific_user' && (
+                            <div className="mt-6 border-t border-slate-100 pt-6 dark:border-slate-700">
+                              <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Select Specific User</label>
+                              <select
+                                value={loanSettings?.workflow?.finalAuthority?.userId || ''}
+                                onChange={(e) => {
+                                  setLoanSettings((prev: any) => ({
+                                    ...prev,
+                                    workflow: {
+                                      ...(prev.workflow || {}),
+                                      finalAuthority: {
+                                        ...(prev.workflow?.finalAuthority || {}),
+                                        userId: e.target.value
+                                      }
+                                    }
+                                  }));
+                                }}
+                                className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                              >
+                                <option value="">Select a user...</option>
+                                {workflowUsers.map((user: any) => (
+                                  <option key={user._id} value={user._id}>{user.name} ({user.role})</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+
+                          {/* Authorized HR Users */}
+                          {loanSettings?.workflow?.finalAuthority?.role === 'hr' && !loanSettings?.workflow?.finalAuthority?.anyHRCanApprove && (
+                            <div className="mt-6 border-t border-slate-100 pt-6 dark:border-slate-700">
+                              <label className="mb-3 block text-sm font-medium text-slate-700 dark:text-slate-300">Authorized HR Users</label>
+                              <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-900/50">
+                                {workflowUsersByRole['hr']?.length > 0 ? (
+                                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                    {workflowUsersByRole['hr'].map((user: any) => (
+                                      <label key={user._id} className="flex items-center gap-2 rounded-lg bg-white p-2.5 text-sm shadow-sm transition-all hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-700 cursor-pointer">
+                                        <input
+                                          type="checkbox"
+                                          checked={(loanSettings?.workflow?.finalAuthority?.authorizedHRUsers || []).includes(user._id)}
+                                          onChange={(e) => {
+                                            const currentUsers = loanSettings?.workflow?.finalAuthority?.authorizedHRUsers || [];
+                                            const newUsers = e.target.checked
+                                              ? [...currentUsers, user._id]
+                                              : currentUsers.filter((id: string) => id !== user._id);
+
+                                            setLoanSettings((prev: any) => ({
+                                              ...prev,
+                                              workflow: {
+                                                ...(prev.workflow || {}),
+                                                finalAuthority: {
+                                                  ...(prev.workflow?.finalAuthority || {}),
+                                                  authorizedHRUsers: newUsers
+                                                }
+                                              }
+                                            }));
+                                          }}
+                                          className="rounded border-slate-300 text-blue-500 focus:ring-blue-500"
+                                        />
+                                        <span className="truncate">{user.name}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <div className="py-4 text-center text-sm text-slate-500 italic">No HR users found</div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Save Button */}
+                        <button
+                          onClick={async () => {
+                            setSaving(true);
+                            try {
+                              const currentType = activeTab === 'loan' ? 'loan' : 'salary_advance';
+                              const response = await api.saveLoanSettings(currentType, loanSettings);
+                              if (response.success) {
+                                setMessage({ type: 'success', text: 'Workflow settings saved successfully' });
+                                loadLoanSettings(currentType);
+                              } else {
+                                setMessage({ type: 'error', text: response.error || 'Failed to save workflow settings' });
+                              }
+                            } catch (err) {
+                              setMessage({ type: 'error', text: 'Failed to save workflow settings' });
+                            } finally {
+                              setSaving(false);
+                            }
+                          }}
+                          disabled={saving}
+                          className="w-full rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-6 py-3 text-sm font-semibold text-white shadow-lg transition-all hover:from-blue-600 hover:to-indigo-600 disabled:opacity-50"
+                        >
+                          {saving ? 'Saving...' : 'Save Workflow Configuration'}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}

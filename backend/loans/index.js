@@ -45,7 +45,10 @@ router.get('/', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), l
 // Apply for loan/advance
 router.post('/', loanController.applyLoan);
 
-// Get single loan - MUST be after all specific routes like /my, /pending-approvals
+// Calculate salary advance eligibility
+router.get('/calculate-eligibility', loanController.calculateEligibility);
+
+// Get single loan - MUST be after all specific routes like /my, /pending-approvals, /calculate-eligibility
 router.get('/:id', loanController.getLoan);
 
 // Update loan/advance
