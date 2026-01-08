@@ -51,7 +51,8 @@ export default function BonusCalculatorPage() {
     try {
       setCalculating(true);
       const response = await api.createBonusBatch({
-        month: form.month,
+        startMonth: form.month,
+        endMonth: form.month,
         policyId: form.policyId,
         departmentId: form.departmentId || undefined,
         divisionId: form.divisionId || undefined,

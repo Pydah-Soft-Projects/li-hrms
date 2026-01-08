@@ -38,6 +38,7 @@ interface LoanApplication {
     _id: string;
     employee_name?: string;
     emp_no: string;
+    gross_salary?: number;
   };
   emp_no?: string;
   requestType: 'loan' | 'salary_advance';
@@ -803,7 +804,7 @@ export default function LoansPage() {
       if (response.success) {
         setMessage({ type: 'success', text: `${applyType === 'loan' ? 'Loan' : 'Salary advance'} applied successfully for ${getEmployeeName(selectedEmployee)}` });
         setShowApplyDialog(false);
-        setFormData({ amount: '', reason: '', duration: '', remarks: '' });
+        setFormData({ amount: '', reason: '', duration: '', remarks: '', needAmount: '' });
         setSelectedEmployee(null);
         setEmployeeSearch('');
         loadData();

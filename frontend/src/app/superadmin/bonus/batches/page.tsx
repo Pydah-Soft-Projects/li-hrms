@@ -64,9 +64,9 @@ export default function BonusBatchesPage() {
         api.getDivisions(),
         api.getDepartments()
       ]);
-      if (policiesRes.success) setPolicies(policiesRes.data);
-      if (divsRes.success) setDivisions(divsRes.data);
-      if (deptsRes.success) setDepartments(deptsRes.data);
+      if (policiesRes.success) setPolicies(policiesRes.data || []);
+      if (divsRes.success) setDivisions(divsRes.data || []);
+      if (deptsRes.success) setDepartments(deptsRes.data || []);
     } catch (error) {
       console.error(error);
     }
