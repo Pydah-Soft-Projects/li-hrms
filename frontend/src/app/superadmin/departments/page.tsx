@@ -1810,9 +1810,9 @@ export default function DepartmentsPage() {
             <div className="flex gap-2">
               <button
                 onClick={() => setShowDesignationDialog('global')}
-                className="px-4 py-2 text-sm font-medium text-slate-600 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors"
+                className="px-4 py-2 text-sm font-medium text-slate-100 bg-blue-600 rounded-xl hover:bg-blue-700 transition-colors"
               >
-                Global Designations
+               + Global Designations
               </button>
             </div>
           </div>
