@@ -789,14 +789,6 @@ export default function LoansPage() {
     const interestRate = resolvedLoanSettings?.interestRate ?? loanSettings?.settings?.interestRate ?? 0;
     const isInterestApplicable = resolvedLoanSettings?.isInterestApplicable ?? loanSettings?.settings?.isInterestApplicable ?? false;
 
-    console.log('[Interest Calculation] Using:', {
-      interestRate,
-      isInterestApplicable,
-      source: resolvedLoanSettings ? 'Division-Specific' : 'Global',
-      resolvedSettings: resolvedLoanSettings,
-      globalSettings: loanSettings?.settings
-    });
-
     if (!isInterestApplicable || interestRate === 0) {
       const emiAmount = principal / duration;
       setInterestCalculation({
@@ -808,10 +800,10 @@ export default function LoansPage() {
         totalAmount: principal,
       });
     } else {
-      const monthlyRate = interestRate / 100 / 12;
-      const emiAmount = (principal * monthlyRate * Math.pow(1 + monthlyRate, duration)) / (Math.pow(1 + monthlyRate, duration) - 1);
-      const totalAmount = emiAmount * duration;
-      const totalInterest = totalAmount - principal;
+      // Simple Interest Calculation: SI = (P * R * T) / 100
+      const totalInterest = (principal * interestRate * (duration / 12)) / 100;
+      const totalAmount = principal + totalInterest;
+      const emiAmount = totalAmount / duration;
 
       setInterestCalculation({
         principal,
@@ -2157,9 +2149,10 @@ export default function LoansPage() {
                         let totalAmt = principal;
 
                         if (rate > 0) {
-                          const monthlyRate = rate / 100 / 12;
-                          emi = (principal * monthlyRate * Math.pow(1 + monthlyRate, duration)) / (Math.pow(1 + monthlyRate, duration) - 1);
-                          totalAmt = emi * duration;
+                          // Simple Interest Calculation: SI = (P * R * T) / 100
+                          const totalInterest = (principal * rate * (duration / 12)) / 100;
+                          totalAmt = principal + totalInterest;
+                          emi = totalAmt / duration;
                         }
 
                         return (
@@ -2494,6 +2487,56 @@ export default function LoansPage() {
                     </div>
                   );
                 })()}
+
+                {/* Dynamic Interest Preview for Loans */}
+                {selectedLoan.requestType === 'loan' && editFormData.amount && editFormData.duration && (
+                  (() => {
+                    const principal = parseFloat(editFormData.amount);
+                    const duration = parseInt(editFormData.duration);
+                    if (!principal || !duration) return null;
+
+                    const interestRate = resolvedLoanSettings?.interestRate ?? loanSettings?.settings?.interestRate ?? 0;
+                    const isInterestApplicable = resolvedLoanSettings?.isInterestApplicable ?? loanSettings?.settings?.isInterestApplicable ?? false;
+
+                    if (!isInterestApplicable || interestRate === 0) {
+                      const emiAmount = principal / duration;
+                      return (
+                        <div className="p-3 bg-blue-50 dark:bg-blue-900/10 rounded-xl space-y-2 border border-blue-100 dark:border-blue-800/50 mb-4 animate-in fade-in duration-300">
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="text-slate-500 dark:text-slate-400">Monthly EMI (est)</span>
+                            <span className="font-bold text-blue-700 dark:text-blue-300">₹{Math.round(emiAmount).toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-xs pt-1 border-t border-blue-100 dark:border-blue-800/50 mt-1">
+                            <span className="text-slate-600 dark:text-slate-300 font-medium">Total Repayment</span>
+                            <span className="font-bold text-slate-900 dark:text-white">₹{Math.round(principal).toLocaleString()}</span>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // Simple Interest Calculation: SI = (P * R * T) / 100
+                    const totalInterest = (principal * interestRate * (duration / 12)) / 100;
+                    const totalAmount = principal + totalInterest;
+                    const emiAmount = totalAmount / duration;
+
+                    return (
+                      <div className="p-3 bg-blue-50 dark:bg-blue-900/10 rounded-xl space-y-2 border border-blue-100 dark:border-blue-800/50 mb-4 animate-in fade-in duration-300">
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-slate-500 dark:text-slate-400">Monthly EMI (est)</span>
+                          <span className="font-bold text-blue-700 dark:text-blue-300">₹{Math.round(emiAmount).toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-slate-500 dark:text-slate-400">Total Interest ({interestRate}%)</span>
+                          <span className="font-semibold text-slate-700 dark:text-slate-300">₹{Math.round(totalInterest).toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs pt-1 border-t border-blue-100 dark:border-blue-800/50 mt-1">
+                          <span className="text-slate-600 dark:text-slate-300 font-medium">Total Repayment</span>
+                          <span className="font-bold text-slate-900 dark:text-white">₹{Math.round(totalAmount).toLocaleString()}</span>
+                        </div>
+                      </div>
+                    );
+                  })()
+                )}
 
                 {/* Buttons */}
                 <div className="flex gap-3 pt-4">

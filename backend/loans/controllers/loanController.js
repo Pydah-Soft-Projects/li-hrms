@@ -142,14 +142,14 @@ const calculateEMI = (principal, interestRate, duration) => {
     };
   }
 
-  // Reducing balance method (standard EMI calculation)
-  const monthlyRate = interestRate / 100 / 12;
-  const emi = (principal * monthlyRate * Math.pow(1 + monthlyRate, duration)) / (Math.pow(1 + monthlyRate, duration) - 1);
-  const totalAmount = emi * duration;
-  const totalInterest = totalAmount - principal;
+  // Simple Interest Calculation: SI = (P * R * T) / 100
+  // Time (T) is in years, so duration / 12
+  const totalInterest = (principal * interestRate * (duration / 12)) / 100;
+  const totalAmount = principal + totalInterest;
+  const emiAmount = totalAmount / duration;
 
   return {
-    emiAmount: Math.round(emi),
+    emiAmount: Math.round(emiAmount),
     totalInterest: Math.round(totalInterest),
     totalAmount: Math.round(totalAmount),
   };
