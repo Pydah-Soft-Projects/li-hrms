@@ -93,7 +93,10 @@ interface Employee {
   employee_name: string;
   emp_no: string;
   department?: { _id: string; name: string };
+  department_id?: string;
   designation?: { _id: string; name: string };
+  division?: { _id: string; name: string };
+  division_id?: string;
   first_name?: string;
   last_name?: string;
 }
@@ -154,6 +157,8 @@ export default function LoansPage() {
   const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [loanSettings, setLoanSettings] = useState<any>(null);
+  const [resolvedLoanSettings, setResolvedLoanSettings] = useState<any>(null);
+  const [loadingResolvedSettings, setLoadingResolvedSettings] = useState(false);
   const [interestCalculation, setInterestCalculation] = useState<{
     principal: number;
     interestRate: number;
@@ -265,6 +270,74 @@ export default function LoansPage() {
       setEligibilityData(null);
       setEligibilityError(null);
     }
+  }, [selectedEmployee, applyType]);
+
+  // Fetch resolved loan settings when employee is selected
+  useEffect(() => {
+    const fetchResolvedSettings = async () => {
+      if (!selectedEmployee) {
+        console.log('[Loan Settings] No employee selected');
+        setResolvedLoanSettings(null);
+        return;
+      }
+
+      // Extract department_id - handle both object and string formats
+      const deptId = typeof selectedEmployee.department === 'object'
+        ? selectedEmployee.department?._id
+        : selectedEmployee.department_id;
+
+      // Extract division_id - handle both object and string formats
+      const divId = typeof selectedEmployee.division === 'object'
+        ? selectedEmployee.division?._id
+        : selectedEmployee.division_id;
+
+      console.log('[Loan Settings] Selected employee:', {
+        name: selectedEmployee.employee_name,
+        emp_no: selectedEmployee.emp_no,
+        department: selectedEmployee.department,
+        department_id: selectedEmployee.department_id,
+        division: selectedEmployee.division,
+        division_id: selectedEmployee.division_id,
+        extractedDeptId: deptId,
+        extractedDivId: divId
+      });
+
+      if (deptId) {
+        try {
+          setLoadingResolvedSettings(true);
+          const settingsType = applyType === 'loan' ? 'loans' : 'salary_advance';
+
+          console.log('[Loan Settings] Fetching resolved settings:', {
+            deptId,
+            divId,
+            settingsType
+          });
+
+          const response = await api.getResolvedDepartmentSettings(
+            deptId,
+            settingsType,
+            divId || undefined
+          );
+
+          console.log('[Loan Settings] API Response:', response);
+
+          if (response.success && response.data) {
+            setResolvedLoanSettings(response.data[settingsType]);
+            console.log('[Loan Settings] Resolved settings loaded:', response.data[settingsType]);
+          }
+        } catch (error) {
+          console.error('[Loan Settings] Error fetching resolved settings:', error);
+          setResolvedLoanSettings(null);
+        } finally {
+          setLoadingResolvedSettings(false);
+        }
+      } else {
+        console.log('[Loan Settings] No department_id found, cannot fetch settings');
+        setResolvedLoanSettings(null);
+      }
+    };
+
+    fetchResolvedSettings();
   }, [selectedEmployee, applyType]);
 
   const loadData = async () => {
@@ -2603,6 +2676,65 @@ export default function LoansPage() {
                 </div>
               </div>
 
+              {/* Division-Specific Settings Display */}
+              {selectedEmployee && (
+                <div className="mb-4">
+                  {loadingResolvedSettings && (
+                    <div className="text-sm text-blue-600 mb-2 flex items-center gap-2">
+                      <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                      Loading applicable settings...
+                    </div>
+                  )}
+
+                  {resolvedLoanSettings && !loadingResolvedSettings && (
+                    <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 p-4 rounded-xl border border-green-200 dark:border-green-800">
+                      <h4 className="font-semibold text-sm mb-3 text-green-900 dark:text-green-100 flex items-center gap-2">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        Applicable Settings
+                        {selectedEmployee.division && (
+                          <span className="ml-auto text-[10px] px-2 py-0.5 bg-green-200 dark:bg-green-800 text-green-800 dark:text-green-200 rounded-full font-bold">
+                            {selectedEmployee.division.name}
+                          </span>
+                        )}
+                      </h4>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        {resolvedLoanSettings.interestRate !== undefined && (
+                          <div className="bg-white/50 dark:bg-slate-800/50 p-2 rounded-lg">
+                            <span className="text-gray-600 dark:text-gray-400">Interest Rate:</span>
+                            <span className="ml-2 font-semibold text-slate-900 dark:text-white">{resolvedLoanSettings.interestRate}%</span>
+                          </div>
+                        )}
+                        {resolvedLoanSettings.minAmount !== undefined && (
+                          <div className="bg-white/50 dark:bg-slate-800/50 p-2 rounded-lg">
+                            <span className="text-gray-600 dark:text-gray-400">Min Amount:</span>
+                            <span className="ml-2 font-semibold text-slate-900 dark:text-white">₹{resolvedLoanSettings.minAmount?.toLocaleString() || 'N/A'}</span>
+                          </div>
+                        )}
+                        {resolvedLoanSettings.maxAmount !== undefined && (
+                          <div className="bg-white/50 dark:bg-slate-800/50 p-2 rounded-lg">
+                            <span className="text-gray-600 dark:text-gray-400">Max Amount:</span>
+                            <span className="ml-2 font-semibold text-slate-900 dark:text-white">
+                              {resolvedLoanSettings.maxAmount ? `₹${resolvedLoanSettings.maxAmount.toLocaleString()}` : 'Unlimited'}
+                            </span>
+                          </div>
+                        )}
+                        {resolvedLoanSettings.minTenure !== undefined && (
+                          <div className="bg-white/50 dark:bg-slate-800/50 p-2 rounded-lg">
+                            <span className="text-gray-600 dark:text-gray-400">Duration:</span>
+                            <span className="ml-2 font-semibold text-slate-900 dark:text-white">
+                              {resolvedLoanSettings.minTenure}-{resolvedLoanSettings.maxTenure} months
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Eligibility Calculator - ONLY for Salary Advance */}
               {applyType === 'salary_advance' && selectedEmployee && (
                 <div className="mb-4">
@@ -2703,19 +2835,55 @@ export default function LoansPage() {
                 <input
                   type="number"
                   required
-                  min="1"
+                  min={resolvedLoanSettings?.minAmount || 1}
+                  max={resolvedLoanSettings?.maxAmount || (applyType === 'salary_advance' && eligibilityData ? eligibilityData.finalMaxAllowed : undefined)}
                   step="0.01"
-                  max={applyType === 'salary_advance' && eligibilityData ? eligibilityData.finalMaxAllowed : undefined}
                   value={formData.amount}
                   onChange={(e) => {
                     setFormData({ ...formData, amount: e.target.value });
-                    console.log('Amount entered:', e.target.value, 'Max allowed:', eligibilityData?.finalMaxAllowed);
+                    console.log('Amount entered:', e.target.value, 'Min:', resolvedLoanSettings?.minAmount, 'Max:', resolvedLoanSettings?.maxAmount);
                   }}
-                  className={`w-full rounded-lg border px-4 py-2 text-sm dark:bg-slate-800 ${applyType === 'salary_advance' && eligibilityData && parseFloat(formData.amount) > eligibilityData.finalMaxAllowed
+                  className={`w-full rounded-lg border px-4 py-2 text-sm dark:bg-slate-800 ${resolvedLoanSettings && parseFloat(formData.amount) && (
+                    parseFloat(formData.amount) < (resolvedLoanSettings.minAmount || 0) ||
+                    (resolvedLoanSettings.maxAmount && parseFloat(formData.amount) > resolvedLoanSettings.maxAmount)
+                  )
                     ? 'border-red-500 ring-2 ring-red-200 dark:ring-red-900'
-                    : 'border-slate-200 dark:border-slate-700'
+                    : applyType === 'salary_advance' && eligibilityData && parseFloat(formData.amount) > eligibilityData.finalMaxAllowed
+                      ? 'border-red-500 ring-2 ring-red-200 dark:ring-red-900'
+                      : 'border-slate-200 dark:border-slate-700'
                     }`}
                 />
+                {/* Validation warnings for resolved settings */}
+                {resolvedLoanSettings && parseFloat(formData.amount) && (
+                  <>
+                    {parseFloat(formData.amount) < (resolvedLoanSettings.minAmount || 0) && (
+                      <div className="mt-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                        <p className="text-sm text-red-600 dark:text-red-400 font-semibold flex items-center gap-2">
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          </svg>
+                          Amount is below minimum!
+                        </p>
+                        <p className="text-xs text-red-500 dark:text-red-400 mt-1">
+                          Minimum amount: ₹{resolvedLoanSettings.minAmount?.toLocaleString()}
+                        </p>
+                      </div>
+                    )}
+                    {resolvedLoanSettings.maxAmount && parseFloat(formData.amount) > resolvedLoanSettings.maxAmount && (
+                      <div className="mt-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                        <p className="text-sm text-red-600 dark:text-red-400 font-semibold flex items-center gap-2">
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          </svg>
+                          Amount exceeds maximum!
+                        </p>
+                        <p className="text-xs text-red-500 dark:text-red-400 mt-1">
+                          Maximum amount: ₹{resolvedLoanSettings.maxAmount.toLocaleString()}
+                        </p>
+                      </div>
+                    )}
+                  </>
+                )}
                 {applyType === 'salary_advance' && (
                   <div className="mt-2">
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
@@ -2756,11 +2924,49 @@ export default function LoansPage() {
                   <input
                     type="number"
                     required
-                    min="1"
+                    min={resolvedLoanSettings?.minTenure || 1}
+                    max={resolvedLoanSettings?.maxTenure || undefined}
                     value={formData.duration}
                     onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                    className={`w-full rounded-lg border px-4 py-2 text-sm dark:bg-slate-800 ${resolvedLoanSettings && parseFloat(formData.duration) && (
+                      parseFloat(formData.duration) < (resolvedLoanSettings.minTenure || 0) ||
+                      (resolvedLoanSettings.maxTenure && parseFloat(formData.duration) > resolvedLoanSettings.maxTenure)
+                    )
+                      ? 'border-red-500 ring-2 ring-red-200 dark:ring-red-900'
+                      : 'border-slate-200 dark:border-slate-700'
+                      }`}
                   />
+                  {/* Validation warnings for duration */}
+                  {resolvedLoanSettings && parseFloat(formData.duration) && (
+                    <>
+                      {parseFloat(formData.duration) < (resolvedLoanSettings.minTenure || 0) && (
+                        <div className="mt-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                          <p className="text-sm text-red-600 dark:text-red-400 font-semibold flex items-center gap-2">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                            Duration is below minimum!
+                          </p>
+                          <p className="text-xs text-red-500 dark:text-red-400 mt-1">
+                            Minimum duration: {resolvedLoanSettings.minTenure} months
+                          </p>
+                        </div>
+                      )}
+                      {resolvedLoanSettings.maxTenure && parseFloat(formData.duration) > resolvedLoanSettings.maxTenure && (
+                        <div className="mt-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                          <p className="text-sm text-red-600 dark:text-red-400 font-semibold flex items-center gap-2">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                            Duration exceeds maximum!
+                          </p>
+                          <p className="text-xs text-red-500 dark:text-red-400 mt-1">
+                            Maximum duration: {resolvedLoanSettings.maxTenure} months
+                          </p>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               )}
 

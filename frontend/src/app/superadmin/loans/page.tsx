@@ -93,7 +93,10 @@ interface Employee {
   employee_name: string;
   emp_no: string;
   department?: { _id: string; name: string };
+  department_id?: string;
   designation?: { _id: string; name: string };
+  division?: { _id: string; name: string };
+  division_id?: string;
   first_name?: string;
   last_name?: string;
 }
@@ -154,6 +157,8 @@ export default function LoansPage() {
   const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [loanSettings, setLoanSettings] = useState<any>(null);
+  const [resolvedLoanSettings, setResolvedLoanSettings] = useState<any>(null);
+  const [loadingResolvedSettings, setLoadingResolvedSettings] = useState(false);
   const [interestCalculation, setInterestCalculation] = useState<{
     principal: number;
     interestRate: number;
@@ -183,6 +188,7 @@ export default function LoansPage() {
 
   // Approval state (for final authority)
   const [approvalAmount, setApprovalAmount] = useState<string>('');
+  const [approvalDuration, setApprovalDuration] = useState<string>('');
   const [approvalInterestRate, setApprovalInterestRate] = useState<string>('');
   const [approvalValidation, setApprovalValidation] = useState<{ level: 'warning' | 'error'; message: string } | null>(null);
 
@@ -217,6 +223,9 @@ export default function LoansPage() {
       if (selectedLoan.requestType === 'loan' && selectedLoan.loanConfig?.interestRate !== undefined) {
         setApprovalInterestRate(selectedLoan.loanConfig.interestRate.toString());
       }
+      if (selectedLoan.duration) {
+        setApprovalDuration(selectedLoan.duration.toString());
+      }
     }
   }, [showDetailDialog, selectedLoan?._id]);
 
@@ -250,12 +259,12 @@ export default function LoansPage() {
   }, [approvalAmount, eligibilityData, selectedLoan]);
 
   useEffect(() => {
-    if (applyType === 'loan' && formData.amount && formData.duration && loanSettings) {
+    if (applyType === 'loan' && formData.amount && formData.duration) {
       calculateInterest();
     } else {
       setInterestCalculation(null);
     }
-  }, [formData.amount, formData.duration, applyType, loanSettings]);
+  }, [formData.amount, formData.duration, applyType, loanSettings, resolvedLoanSettings]);
 
   // Fetch eligibility when employee selected for salary advance
   useEffect(() => {
@@ -265,6 +274,74 @@ export default function LoansPage() {
       setEligibilityData(null);
       setEligibilityError(null);
     }
+  }, [selectedEmployee, applyType]);
+
+  // Fetch resolved loan settings when employee is selected
+  useEffect(() => {
+    const fetchResolvedSettings = async () => {
+      if (!selectedEmployee) {
+        console.log('[Superadmin Loan Settings] No employee selected');
+        setResolvedLoanSettings(null);
+        return;
+      }
+
+      // Extract department_id - handle both object and string formats
+      const deptId = typeof selectedEmployee.department === 'object'
+        ? selectedEmployee.department?._id
+        : selectedEmployee.department_id;
+
+      // Extract division_id - handle both object and string formats
+      const divId = typeof selectedEmployee.division === 'object'
+        ? selectedEmployee.division?._id
+        : selectedEmployee.division_id;
+
+      console.log('[Superadmin Loan Settings] Selected employee:', {
+        name: selectedEmployee.employee_name,
+        emp_no: selectedEmployee.emp_no,
+        department: selectedEmployee.department,
+        department_id: selectedEmployee.department_id,
+        division: selectedEmployee.division,
+        division_id: selectedEmployee.division_id,
+        extractedDeptId: deptId,
+        extractedDivId: divId
+      });
+
+      if (deptId) {
+        try {
+          setLoadingResolvedSettings(true);
+          const settingsType = applyType === 'loan' ? 'loans' : 'salary_advance';
+
+          console.log('[Superadmin Loan Settings] Fetching resolved settings:', {
+            deptId,
+            divId,
+            settingsType
+          });
+
+          const response = await api.getResolvedDepartmentSettings(
+            deptId,
+            settingsType,
+            divId || undefined
+          );
+
+          console.log('[Superadmin Loan Settings] API Response:', response);
+
+          if (response.success && response.data) {
+            setResolvedLoanSettings(response.data[settingsType]);
+            console.log('[Superadmin Loan Settings] Resolved settings loaded:', response.data[settingsType]);
+          }
+        } catch (error) {
+          console.error('[Superadmin Loan Settings] Error fetching resolved settings:', error);
+          setResolvedLoanSettings(null);
+        } finally {
+          setLoadingResolvedSettings(false);
+        }
+      } else {
+        console.log('[Superadmin Loan Settings] No department_id found, cannot fetch settings');
+        setResolvedLoanSettings(null);
+      }
+    };
+
+    fetchResolvedSettings();
   }, [selectedEmployee, applyType]);
 
   const loadData = async () => {
@@ -706,10 +783,19 @@ export default function LoansPage() {
   const calculateInterest = () => {
     const principal = parseFloat(formData.amount);
     const duration = parseInt(formData.duration);
-    if (!principal || !duration || !loanSettings) return;
+    if (!principal || !duration) return;
 
-    const interestRate = loanSettings.settings?.interestRate || 0;
-    const isInterestApplicable = loanSettings.settings?.isInterestApplicable || false;
+    // Use resolved settings (division-specific) if available, otherwise fall back to global
+    const interestRate = resolvedLoanSettings?.interestRate ?? loanSettings?.settings?.interestRate ?? 0;
+    const isInterestApplicable = resolvedLoanSettings?.isInterestApplicable ?? loanSettings?.settings?.isInterestApplicable ?? false;
+
+    console.log('[Interest Calculation] Using:', {
+      interestRate,
+      isInterestApplicable,
+      source: resolvedLoanSettings ? 'Division-Specific' : 'Global',
+      resolvedSettings: resolvedLoanSettings,
+      globalSettings: loanSettings?.settings
+    });
 
     if (!isInterestApplicable || interestRate === 0) {
       const emiAmount = principal / duration;
@@ -1514,115 +1600,183 @@ export default function LoansPage() {
                 </div>
               )}
 
-              {/* Loan Calculation */}
-              {selectedLoan.requestType === 'loan' && selectedLoan.loanConfig && (
-                <div className="p-4 rounded-xl border-2 border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20">
-                  <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-3">Loan Calculation</h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">EMI Amount</p>
-                      <p className="text-sm font-bold text-slate-900 dark:text-slate-100">₹{selectedLoan.loanConfig.emiAmount?.toLocaleString()}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">Total Amount (with interest)</p>
-                      <p className="text-sm font-bold text-slate-900 dark:text-slate-100">₹{selectedLoan.loanConfig.totalAmount?.toLocaleString()}</p>
-                    </div>
+
+              {/* Approval History */}
+              {selectedLoan.workflow?.history && selectedLoan.workflow.history.length > 0 && (
+                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <p className="text-xs text-green-500 uppercase font-semibold tracking-wide mb-3">
+                    Approval History ({selectedLoan.workflow.history.length})
+                  </p>
+                  <div className="space-y-3">
+                    {selectedLoan.workflow.history.map((entry: any, idx: number) => (
+                      <div key={idx} className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            {entry.action === 'approved' && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                                ✓ Approved
+                              </span>
+                            )}
+                            {entry.action === 'rejected' && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">
+                                ✗ Rejected
+                              </span>
+                            )}
+                            {entry.action === 'forwarded' && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+                                → Forwarded
+                              </span>
+                            )}
+                            {entry.action === 'submitted' && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400">
+                                ⊕ Submitted
+                              </span>
+                            )}
+                            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase">
+                              {entry.step?.replace(/_/g, ' ')}
+                            </span>
+                          </div>
+                          <span className="text-xs text-slate-500">
+                            {new Date(entry.timestamp).toLocaleString('en-GB', {
+                              day: '2-digit',
+                              month: 'short',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </span>
+                        </div>
+                        <div className="text-sm text-slate-600 dark:text-slate-400">
+                          <span className="font-medium">{entry.actionByName}</span>
+                          <span className="text-slate-400 dark:text-slate-500"> ({entry.actionByRole})</span>
+                        </div>
+                        {entry.comments && (
+                          <p className="text-xs text-slate-500 mt-2 italic bg-white dark:bg-slate-800 p-2 rounded border border-slate-100 dark:border-slate-700">
+                            "{entry.comments}"
+                          </p>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
 
-              {/* Early Settlement Calculator - Only for active/disbursed loans */}
-              {selectedLoan.requestType === 'loan' && ['disbursed', 'active'].includes(selectedLoan.status) && (
-                <div className="p-4 rounded-xl border-2 border-green-200 bg-gradient-to-br from-green-50 to-green-50 dark:from-green-900/20 dark:to-green-900/20 dark:border-green-800">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-sm font-semibold text-green-900 dark:text-green-100 flex items-center gap-2">
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 7h6m0 10v-5m-3 5h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                      </svg>
-                      Early Settlement Calculator
-                    </h3>
-                    {loadingSettlement && (
-                      <div className="w-4 h-4 border-2 border-green-500 border-t-transparent rounded-full animate-spin"></div>
-                    )}
-                  </div>
 
-                  {settlementPreview && settlementPreview.current ? (
-                    <div className="space-y-4">
-                      {/* Current Settlement */}
-                      <div className="p-3 rounded-lg bg-white dark:bg-slate-800 border border-green-200 dark:border-green-700">
-                        <div className="flex items-center justify-between mb-2">
-                          <p className="text-xs font-semibold text-green-700 dark:text-green-300">If Paid Now</p>
-                          <span className="px-2 py-1 text-xs font-bold text-white bg-green-600 rounded">Current</span>
-                        </div>
-                        <div className="space-y-1">
-                          <div className="flex justify-between items-center">
-                            <span className="text-xs text-slate-600 dark:text-slate-400">Settlement Amount:</span>
-                            <span className="text-lg font-bold text-green-700 dark:text-green-300">₹{settlementPreview.current.settlementAmount.toLocaleString()}</span>
-                          </div>
-                          <div className="flex justify-between items-center text-xs">
-                            <span className="text-slate-500">Principal:</span>
-                            <span className="font-medium">₹{settlementPreview.current.remainingPrincipal.toLocaleString()}</span>
-                          </div>
-                          <div className="flex justify-between items-center text-xs">
-                            <span className="text-slate-500">Interest (for {settlementPreview.current.actualMonthsUsed} months):</span>
-                            <span className="font-medium">₹{settlementPreview.current.settlementInterest.toLocaleString()}</span>
-                          </div>
-                          <div className="pt-2 border-t border-green-200 dark:border-green-700">
-                            <div className="flex justify-between items-center">
-                              <span className="text-xs font-semibold text-green-600 dark:text-green-400">Interest Saved:</span>
-                              <span className="text-sm font-bold text-green-600 dark:text-green-400">₹{settlementPreview.current.interestSavings.toLocaleString()}</span>
-                            </div>
-                          </div>
-                        </div>
+              {/* Loan Calculation */}
+              {
+                selectedLoan.requestType === 'loan' && selectedLoan.loanConfig && (
+                  <div className="p-4 rounded-xl border-2 border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20">
+                    <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-3">Loan Calculation</h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">EMI Amount</p>
+                        <p className="text-sm font-bold text-slate-900 dark:text-slate-100">₹{selectedLoan.loanConfig.emiAmount?.toLocaleString()}</p>
                       </div>
+                      <div>
+                        <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">Total Amount (with interest)</p>
+                        <p className="text-sm font-bold text-slate-900 dark:text-slate-100">₹{selectedLoan.loanConfig.totalAmount?.toLocaleString()}</p>
+                      </div>
+                    </div>
+                  </div>
+                )
+              }
 
-                      {/* Next Month Settlement */}
-                      {settlementPreview.nextMonth && (
-                        <div className="p-3 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+              {/* Early Settlement Calculator - Only for active/disbursed loans */}
+              {
+                selectedLoan.requestType === 'loan' && ['disbursed', 'active'].includes(selectedLoan.status) && (
+                  <div className="p-4 rounded-xl border-2 border-green-200 bg-gradient-to-br from-green-50 to-green-50 dark:from-green-900/20 dark:to-green-900/20 dark:border-green-800">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-sm font-semibold text-green-900 dark:text-green-100 flex items-center gap-2">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 7h6m0 10v-5m-3 5h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                        </svg>
+                        Early Settlement Calculator
+                      </h3>
+                      {loadingSettlement && (
+                        <div className="w-4 h-4 border-2 border-green-500 border-t-transparent rounded-full animate-spin"></div>
+                      )}
+                    </div>
+
+                    {settlementPreview && settlementPreview.current ? (
+                      <div className="space-y-4">
+                        {/* Current Settlement */}
+                        <div className="p-3 rounded-lg bg-white dark:bg-slate-800 border border-green-200 dark:border-green-700">
                           <div className="flex items-center justify-between mb-2">
-                            <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">If Paid Next Month</p>
-                            <span className="px-2 py-1 text-xs font-medium text-slate-600 bg-slate-100 dark:bg-slate-700 rounded">Projected</span>
+                            <p className="text-xs font-semibold text-green-700 dark:text-green-300">If Paid Now</p>
+                            <span className="px-2 py-1 text-xs font-bold text-white bg-green-600 rounded">Current</span>
                           </div>
                           <div className="space-y-1">
                             <div className="flex justify-between items-center">
                               <span className="text-xs text-slate-600 dark:text-slate-400">Settlement Amount:</span>
-                              <span className="text-base font-bold text-slate-700 dark:text-slate-300">₹{settlementPreview.nextMonth.settlementAmount.toLocaleString()}</span>
+                              <span className="text-lg font-bold text-green-700 dark:text-green-300">₹{settlementPreview.current.settlementAmount.toLocaleString()}</span>
                             </div>
                             <div className="flex justify-between items-center text-xs">
-                              <span className="text-slate-500">Interest Saved:</span>
-                              <span className="font-medium text-slate-600">₹{settlementPreview.nextMonth.interestSavings.toLocaleString()}</span>
+                              <span className="text-slate-500">Principal:</span>
+                              <span className="font-medium">₹{settlementPreview.current.remainingPrincipal.toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="text-slate-500">Interest (for {settlementPreview.current.actualMonthsUsed} months):</span>
+                              <span className="font-medium">₹{settlementPreview.current.settlementInterest.toLocaleString()}</span>
+                            </div>
+                            <div className="pt-2 border-t border-green-200 dark:border-green-700">
+                              <div className="flex justify-between items-center">
+                                <span className="text-xs font-semibold text-green-600 dark:text-green-400">Interest Saved:</span>
+                                <span className="text-sm font-bold text-green-600 dark:text-green-400">₹{settlementPreview.current.interestSavings.toLocaleString()}</span>
+                              </div>
                             </div>
                           </div>
                         </div>
-                      )}
 
-                      {/* Pay Full Amount Button */}
-                      <button
-                        onClick={() => setShowSettlementDialog(true)}
-                        disabled={saving}
-                        className="w-full px-4 py-3 text-sm font-semibold text-white bg-gradient-to-r from-green-600 to-green-600 rounded-xl hover:from-green-700 hover:to-green-700 transition-all shadow-md hover:shadow-lg disabled:opacity-50 flex items-center justify-center gap-2"
-                      >
-                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        Pay Full Amount (₹{settlementPreview.current.settlementAmount.toLocaleString()})
-                      </button>
-                    </div>
-                  ) : !loadingSettlement ? (
-                    <p className="text-xs text-slate-500 text-center py-2">Unable to calculate settlement preview</p>
-                  ) : null}
-                </div>
-              )}
+                        {/* Next Month Settlement */}
+                        {settlementPreview.nextMonth && (
+                          <div className="p-3 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                            <div className="flex items-center justify-between mb-2">
+                              <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">If Paid Next Month</p>
+                              <span className="px-2 py-1 text-xs font-medium text-slate-600 bg-slate-100 dark:bg-slate-700 rounded">Projected</span>
+                            </div>
+                            <div className="space-y-1">
+                              <div className="flex justify-between items-center">
+                                <span className="text-xs text-slate-600 dark:text-slate-400">Settlement Amount:</span>
+                                <span className="text-base font-bold text-slate-700 dark:text-slate-300">₹{settlementPreview.nextMonth.settlementAmount.toLocaleString()}</span>
+                              </div>
+                              <div className="flex justify-between items-center text-xs">
+                                <span className="text-slate-500">Interest Saved:</span>
+                                <span className="font-medium text-slate-600">₹{settlementPreview.nextMonth.interestSavings.toLocaleString()}</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Pay Full Amount Button */}
+                        <button
+                          onClick={() => setShowSettlementDialog(true)}
+                          disabled={saving}
+                          className="w-full px-4 py-3 text-sm font-semibold text-white bg-gradient-to-r from-green-600 to-green-600 rounded-xl hover:from-green-700 hover:to-green-700 transition-all shadow-md hover:shadow-lg disabled:opacity-50 flex items-center justify-center gap-2"
+                        >
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          Pay Full Amount (₹{settlementPreview.current.settlementAmount.toLocaleString()})
+                        </button>
+                      </div>
+                    ) : !loadingSettlement ? (
+                      <p className="text-xs text-slate-500 text-center py-2">Unable to calculate settlement preview</p>
+                    ) : null}
+                  </div>
+                )
+              }
 
               {/* Advance Config */}
-              {selectedLoan.requestType === 'salary_advance' && selectedLoan.advanceConfig && (
-                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-                  <p className="text-xs text-slate-500 uppercase font-semibold mb-2">Deduction Details</p>
-                  <p className="text-sm text-slate-700 dark:text-slate-300">
-                    ₹{selectedLoan.advanceConfig.deductionPerCycle?.toLocaleString()} per cycle
-                  </p>
-                </div>
-              )}
+              {
+                selectedLoan.requestType === 'salary_advance' && selectedLoan.advanceConfig && (
+                  <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                    <p className="text-xs text-slate-500 uppercase font-semibold mb-2">Deduction Details</p>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      ₹{selectedLoan.advanceConfig.deductionPerCycle?.toLocaleString()} per cycle
+                    </p>
+                  </div>
+                )
+              }
 
               {/* Repayment Status */}
               <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
@@ -1698,342 +1852,366 @@ export default function LoansPage() {
               </div>
 
               {/* Payment Form Section - Inline */}
-              {showPaymentForm && ['disbursed', 'active', 'approved'].includes(selectedLoan.status) && (
-                <div className="p-4 rounded-xl border-2 border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-900/20">
-                  <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-4 flex items-center gap-2">
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    {selectedLoan.requestType === 'loan' ? 'Record EMI Payment' : 'Record Advance Payment'}
-                  </h3>
+              {
+                showPaymentForm && ['disbursed', 'active', 'approved'].includes(selectedLoan.status) && (
+                  <div className="p-4 rounded-xl border-2 border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-900/20">
+                    <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-4 flex items-center gap-2">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      {selectedLoan.requestType === 'loan' ? 'Record EMI Payment' : 'Record Advance Payment'}
+                    </h3>
 
-                  <form onSubmit={handlePayment} className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
-                          Amount *
-                        </label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          required
-                          value={paymentData.amount}
-                          onChange={(e) => setPaymentData({ ...paymentData, amount: e.target.value })}
-                          placeholder="Enter payment amount"
-                          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        />
-                        {selectedLoan.requestType === 'loan' && selectedLoan.loanConfig?.emiAmount && (
-                          <p className="text-xs text-slate-500 mt-1">
-                            EMI Amount: ₹{selectedLoan.loanConfig.emiAmount.toLocaleString()}
-                          </p>
-                        )}
-                        {selectedLoan.requestType === 'salary_advance' && selectedLoan.advanceConfig?.deductionPerCycle && (
-                          <p className="text-xs text-slate-500 mt-1">
-                            Deduction per cycle: ₹{selectedLoan.advanceConfig.deductionPerCycle.toLocaleString()}
-                          </p>
-                        )}
+                    <form onSubmit={handlePayment} className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+                            Amount *
+                          </label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            required
+                            value={paymentData.amount}
+                            onChange={(e) => setPaymentData({ ...paymentData, amount: e.target.value })}
+                            placeholder="Enter payment amount"
+                            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                          {selectedLoan.requestType === 'loan' && selectedLoan.loanConfig?.emiAmount && (
+                            <p className="text-xs text-slate-500 mt-1">
+                              EMI Amount: ₹{selectedLoan.loanConfig.emiAmount.toLocaleString()}
+                            </p>
+                          )}
+                          {selectedLoan.requestType === 'salary_advance' && selectedLoan.advanceConfig?.deductionPerCycle && (
+                            <p className="text-xs text-slate-500 mt-1">
+                              Deduction per cycle: ₹{selectedLoan.advanceConfig.deductionPerCycle.toLocaleString()}
+                            </p>
+                          )}
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+                            Payment Date *
+                          </label>
+                          <input
+                            type="date"
+                            required
+                            value={paymentData.paymentDate}
+                            onChange={(e) => setPaymentData({ ...paymentData, paymentDate: e.target.value })}
+                            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                        </div>
                       </div>
 
                       <div>
                         <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
-                          Payment Date *
+                          Payroll Cycle (Optional)
                         </label>
                         <input
-                          type="date"
-                          required
-                          value={paymentData.paymentDate}
-                          onChange={(e) => setPaymentData({ ...paymentData, paymentDate: e.target.value })}
+                          type="text"
+                          value={paymentData.payrollCycle}
+                          onChange={(e) => setPaymentData({ ...paymentData, payrollCycle: e.target.value })}
+                          placeholder="e.g., 2024-11"
                           className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         />
                       </div>
-                    </div>
 
-                    <div>
-                      <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
-                        Payroll Cycle (Optional)
-                      </label>
-                      <input
-                        type="text"
-                        value={paymentData.payrollCycle}
-                        onChange={(e) => setPaymentData({ ...paymentData, payrollCycle: e.target.value })}
-                        placeholder="e.g., 2024-11"
-                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+                          Remarks (Optional)
+                        </label>
+                        <textarea
+                          value={paymentData.remarks}
+                          onChange={(e) => setPaymentData({ ...paymentData, remarks: e.target.value })}
+                          placeholder="Add any remarks for this transaction..."
+                          rows={3}
+                          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                        />
+                      </div>
 
-                    <div>
-                      <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
-                        Remarks (Optional)
-                      </label>
-                      <textarea
-                        value={paymentData.remarks}
-                        onChange={(e) => setPaymentData({ ...paymentData, remarks: e.target.value })}
-                        placeholder="Add any remarks for this transaction..."
-                        rows={3}
-                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
-                      />
-                    </div>
-
-                    <div className="flex gap-3 pt-2">
-                      <button
-                        type="button"
-                        onClick={togglePaymentForm}
-                        className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-200 rounded-lg hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600 transition-colors"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={saving}
-                        className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                      >
-                        {saving ? (
-                          <>
-                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                            Processing...
-                          </>
-                        ) : (
-                          <>
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                            </svg>
-                            Record Payment
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              )}
+                      <div className="flex gap-3 pt-2">
+                        <button
+                          type="button"
+                          onClick={togglePaymentForm}
+                          className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-200 rounded-lg hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={saving}
+                          className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        >
+                          {saving ? (
+                            <>
+                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                              Processing...
+                            </>
+                          ) : (
+                            <>
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                              </svg>
+                              Record Payment
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                )
+              }
 
               {/* Transaction History */}
-              {selectedLoan.status !== 'pending' && selectedLoan.status !== 'draft' && (
-                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-xs text-slate-500 uppercase font-semibold">Transaction History</p>
-                    <button
-                      onClick={() => loadTransactions(selectedLoan._id)}
-                      className="text-xs text-blue-600 hover:text-blue-700 font-medium"
-                    >
-                      Refresh
-                    </button>
-                  </div>
-                  {loadingTransactions ? (
-                    <div className="text-center py-4 text-slate-500">
-                      <div className="inline-block w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                      <span className="ml-2">Loading transactions...</span>
+              {
+                selectedLoan.status !== 'pending' && selectedLoan.status !== 'draft' && (
+                  <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-xs text-slate-500 uppercase font-semibold">Transaction History</p>
+                      <button
+                        onClick={() => loadTransactions(selectedLoan._id)}
+                        className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                      >
+                        Refresh
+                      </button>
                     </div>
-                  ) : transactions.length > 0 ? (
-                    <div className="space-y-2 max-h-60 overflow-y-auto">
-                      {transactions.map((txn, idx) => (
-                        <div key={idx} className="flex items-center justify-between p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className={`px-2 py-0.5 text-xs font-semibold rounded capitalize ${txn.transactionType === 'disbursement'
-                                ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                                : txn.transactionType === 'emi_payment'
-                                  ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                                  : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                                }`}>
-                                {txn.transactionType?.replace('_', ' ')}
-                              </span>
+                    {loadingTransactions ? (
+                      <div className="text-center py-4 text-slate-500">
+                        <div className="inline-block w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                        <span className="ml-2">Loading transactions...</span>
+                      </div>
+                    ) : transactions.length > 0 ? (
+                      <div className="space-y-2 max-h-60 overflow-y-auto">
+                        {transactions.map((txn, idx) => (
+                          <div key={idx} className="flex items-center justify-between p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className={`px-2 py-0.5 text-xs font-semibold rounded capitalize ${txn.transactionType === 'disbursement'
+                                  ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                  : txn.transactionType === 'emi_payment'
+                                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                                    : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                  }`}>
+                                  {txn.transactionType?.replace('_', ' ')}
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">
+                                {new Date(txn.transactionDate || txn.createdAt).toLocaleDateString('en-IN', {
+                                  day: '2-digit',
+                                  month: 'short',
+                                  year: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </p>
+                              {txn.remarks && (
+                                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 italic">{txn.remarks}</p>
+                              )}
+                              {txn.payrollCycle && (
+                                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Cycle: {txn.payrollCycle}</p>
+                              )}
                             </div>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">
-                              {new Date(txn.transactionDate || txn.createdAt).toLocaleDateString('en-IN', {
-                                day: '2-digit',
-                                month: 'short',
-                                year: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
-                            </p>
-                            {txn.remarks && (
-                              <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 italic">{txn.remarks}</p>
-                            )}
-                            {txn.payrollCycle && (
-                              <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Cycle: {txn.payrollCycle}</p>
-                            )}
+                            <div className="text-right ml-4">
+                              <p className={`text-base font-bold ${txn.transactionType === 'disbursement' ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'
+                                }`}>
+                                {txn.transactionType === 'disbursement' ? '-' : '+'}₹{txn.amount?.toLocaleString()}
+                              </p>
+                            </div>
                           </div>
-                          <div className="text-right ml-4">
-                            <p className={`text-base font-bold ${txn.transactionType === 'disbursement' ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'
-                              }`}>
-                              {txn.transactionType === 'disbursement' ? '-' : '+'}₹{txn.amount?.toLocaleString()}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center py-6 text-slate-500 text-sm">
-                      <svg className="w-12 h-12 mx-auto mb-2 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
-                      <p>No transactions yet</p>
-                    </div>
-                  )}
-                </div>
-              )}
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-6 text-slate-500 text-sm">
+                        <svg className="w-12 h-12 mx-auto mb-2 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        <p>No transactions yet</p>
+                      </div>
+                    )}
+                  </div>
+                )
+              }
 
               {/* Release Funds Section - For Approved Loans */}
-              {selectedLoan.status === 'approved' && (
-                <div className="p-4 rounded-xl border-2 border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-900/20">
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <h3 className="text-sm font-semibold text-green-900 dark:text-green-100 flex items-center gap-2">
+              {
+                selectedLoan.status === 'approved' && (
+                  <div className="p-4 rounded-xl border-2 border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-900/20">
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h3 className="text-sm font-semibold text-green-900 dark:text-green-100 flex items-center gap-2">
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          Release Funds
+                        </h3>
+                        <p className="text-xs text-green-700 dark:text-green-300 mt-1">
+                          Disburse ₹{selectedLoan.requestType === 'loan' ? (selectedLoan.loanConfig?.totalAmount || selectedLoan.amount) : selectedLoan.amount} to {selectedLoan.employeeId?.employee_name || selectedLoan.emp_no}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setShowDisbursementDialog(true)}
+                        className="px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-green-500 to-green-600 rounded-lg hover:from-green-600 hover:to-green-700 transition-all shadow-md hover:shadow-lg flex items-center gap-2"
+                      >
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                         Release Funds
-                      </h3>
-                      <p className="text-xs text-green-700 dark:text-green-300 mt-1">
-                        Disburse ₹{selectedLoan.requestType === 'loan' ? (selectedLoan.loanConfig?.totalAmount || selectedLoan.amount) : selectedLoan.amount} to {selectedLoan.employeeId?.employee_name || selectedLoan.emp_no}
-                      </p>
+                      </button>
                     </div>
-                    <button
-                      onClick={() => setShowDisbursementDialog(true)}
-                      className="px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-green-500 to-green-600 rounded-lg hover:from-green-600 hover:to-green-700 transition-all shadow-md hover:shadow-lg flex items-center gap-2"
-                    >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      Release Funds
-                    </button>
                   </div>
-                </div>
-              )}
+                )
+              }
 
               {/* Edit Button (for Super Admin/HR - not final approved/disbursed) */}
-              {(() => {
-                const user = auth.getUser();
-                const isSuperAdmin = user?.role === 'super_admin';
-                const isHR = user?.role === 'hr';
-                const canEdit = isSuperAdmin || (isHR && !['approved', 'disbursed', 'active', 'completed'].includes(selectedLoan.status));
+              {
+                (() => {
+                  const user = auth.getUser();
+                  const isSuperAdmin = user?.role === 'super_admin';
+                  const isHR = user?.role === 'hr';
+                  const canEdit = isSuperAdmin || (isHR && !['approved', 'disbursed', 'active', 'completed'].includes(selectedLoan.status));
 
-                return canEdit && (
-                  <button
-                    onClick={handleEdit}
-                    className="w-full px-4 py-2 text-sm font-semibold text-white bg-blue-500 rounded-xl hover:bg-blue-600 transition-colors mb-4"
-                  >
-                    Edit {selectedLoan.requestType === 'loan' ? 'Loan' : 'Advance'}
-                  </button>
-                );
-              })()}
+                  return canEdit && (
+                    <button
+                      onClick={handleEdit}
+                      className="w-full px-4 py-2 text-sm font-semibold text-white bg-blue-500 rounded-xl hover:bg-blue-600 transition-colors mb-4"
+                    >
+                      Edit {selectedLoan.requestType === 'loan' ? 'Loan' : 'Advance'}
+                    </button>
+                  );
+                })()
+              }
 
               {/* Action Section */}
-              {!['approved', 'rejected', 'cancelled', 'disbursed', 'active', 'completed'].includes(selectedLoan.status) && (
-                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-4">
-                  {/* Approval Amount Modification */}
-                  {(selectedLoan.requestType === 'salary_advance' || (selectedLoan.requestType === 'loan' && ['super_admin', 'hr', 'sub_admin'].includes(currentUser?.role))) && (
-                    <div className="mb-4">
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                        Approval Amount (₹)
-                      </label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={approvalAmount}
-                        onChange={(e) => setApprovalAmount(e.target.value)}
-                        className={`w-full rounded-xl border px-4 py-2.5 text-sm dark:bg-slate-900 dark:text-white ${approvalValidation?.level === 'error'
-                          ? 'border-red-500 ring-2 ring-red-200 dark:ring-red-900'
-                          : approvalValidation?.level === 'warning'
-                            ? 'border-yellow-500 ring-2 ring-yellow-200 dark:ring-yellow-900'
-                            : 'border-slate-200 dark:border-slate-700'
-                          }`}
-                      />
-                      {approvalValidation && (
-                        <p className={`text-xs mt-1.5 font-medium flex items-center gap-1 ${approvalValidation.level === 'error' ? 'text-red-500' : 'text-yellow-600'
-                          }`}>
-                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                          </svg>
-                          {approvalValidation.message}
-                        </p>
-                      )}
-                    </div>
-                  )}
+              {
+                !['approved', 'rejected', 'cancelled', 'disbursed', 'active', 'completed'].includes(selectedLoan.status) && (
+                  <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-4">
+                    {/* Approval Amount Modification */}
+                    {(selectedLoan.requestType === 'salary_advance' || (selectedLoan.requestType === 'loan' && ['super_admin', 'hr', 'sub_admin'].includes(currentUser?.role))) && (
+                      <div className="mb-4">
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                          Approval Amount (₹)
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={approvalAmount}
+                          onChange={(e) => setApprovalAmount(e.target.value)}
+                          className={`w-full rounded-xl border px-4 py-2.5 text-sm dark:bg-slate-900 dark:text-white ${approvalValidation?.level === 'error'
+                            ? 'border-red-500 ring-2 ring-red-200 dark:ring-red-900'
+                            : approvalValidation?.level === 'warning'
+                              ? 'border-yellow-500 ring-2 ring-yellow-200 dark:ring-yellow-900'
+                              : 'border-slate-200 dark:border-slate-700'
+                            }`}
+                        />
+                        {approvalValidation && (
+                          <p className={`text-xs mt-1.5 font-medium flex items-center gap-1 ${approvalValidation.level === 'error' ? 'text-red-500' : 'text-yellow-600'
+                            }`}>
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                            {approvalValidation.message}
+                          </p>
+                        )}
+                      </div>
+                    )}
 
-                  {/* Interest Rate Modification (Loans only) */}
-                  {selectedLoan.requestType === 'loan' && ['super_admin', 'hr', 'sub_admin'].includes(currentUser?.role) && (
-                    <div className="mb-4">
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                        Approval Interest Rate (%)
-                      </label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={approvalInterestRate}
-                        onChange={(e) => setApprovalInterestRate(e.target.value)}
-                        className="w-full rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-2.5 text-sm dark:bg-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 transition-all"
-                      />
-                    </div>
-                  )}
-
-                  {/* Dynamic Recalculation for Loan Approvals */}
-                  {selectedLoan.requestType === 'loan' && approvalAmount && (
-                    (() => {
-                      const principal = parseFloat(approvalAmount);
-                      const rate = parseFloat(approvalInterestRate) || 0;
-                      const duration = selectedLoan.duration || 1;
-
-                      let emi = principal / duration;
-                      let totalAmt = principal;
-
-                      if (rate > 0) {
-                        const monthlyRate = rate / 100 / 12;
-                        emi = (principal * monthlyRate * Math.pow(1 + monthlyRate, duration)) / (Math.pow(1 + monthlyRate, duration) - 1);
-                        totalAmt = emi * duration;
-                      }
-
-                      return (
-                        <div className="p-3 bg-blue-50 dark:bg-blue-900/10 rounded-xl space-y-2 border border-blue-100 dark:border-blue-800/50 mb-4 animate-in fade-in duration-300">
-                          <div className="flex justify-between items-center text-xs">
-                            <span className="text-slate-500 dark:text-slate-400">Monthly EMI (approx)</span>
-                            <span className="font-bold text-blue-700 dark:text-blue-300">₹{Math.round(emi).toLocaleString()}</span>
-                          </div>
-                          <div className="flex justify-between items-center text-xs">
-                            <span className="text-slate-500 dark:text-slate-400">Total Interest</span>
-                            <span className="font-semibold text-slate-700 dark:text-slate-300">₹{Math.round(totalAmt - principal).toLocaleString()}</span>
-                          </div>
-                          <div className="flex justify-between items-center text-xs pt-1 border-t border-blue-100 dark:border-blue-800/50 mt-1">
-                            <span className="text-slate-600 dark:text-slate-300 font-medium">Total Repayment</span>
-                            <span className="font-bold text-slate-900 dark:text-white">₹{Math.round(totalAmt).toLocaleString()}</span>
-                          </div>
+                    {/* Interest Rate Modification (Loans only) */}
+                    {selectedLoan.requestType === 'loan' && ['super_admin', 'hr', 'sub_admin'].includes(currentUser?.role) && (
+                      <div className="grid grid-cols-2 gap-4 mb-4">
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                            Approval Interest Rate (%)
+                          </label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={approvalInterestRate}
+                            onChange={(e) => setApprovalInterestRate(e.target.value)}
+                            className="w-full rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-2.5 text-sm dark:bg-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 transition-all"
+                          />
                         </div>
-                      );
-                    })()
-                  )}
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                            Duration (Months)
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={approvalDuration}
+                            onChange={(e) => setApprovalDuration(e.target.value)}
+                            className="w-full rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-2.5 text-sm dark:bg-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 transition-all"
+                          />
+                        </div>
+                      </div>
+                    )}
 
-                  <p className="text-xs text-slate-500 uppercase font-semibold">Take Action</p>
+                    {/* Dynamic Recalculation for Loan Approvals */}
+                    {selectedLoan.requestType === 'loan' && approvalAmount && (
+                      (() => {
+                        const principal = parseFloat(approvalAmount);
+                        const rate = parseFloat(approvalInterestRate) || 0;
+                        const duration = parseInt(approvalDuration) || selectedLoan.duration || 1;
 
-                  {/* Comment */}
-                  <textarea
-                    value={actionComment}
-                    onChange={(e) => setActionComment(e.target.value)}
-                    placeholder="Add a comment (optional)..."
-                    rows={2}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                  />
+                        let emi = principal / duration;
+                        let totalAmt = principal;
 
-                  {/* Action Buttons */}
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      onClick={() => handleAction(selectedLoan._id, 'approve')}
-                      disabled={saving}
-                      className="px-4 py-2.5 text-sm font-semibold text-white bg-green-500 rounded-xl hover:bg-green-600 transition-colors flex items-center gap-2 disabled:opacity-50"
-                    >
-                      <CheckIcon /> Approve
-                    </button>
-                    <button
-                      onClick={() => handleAction(selectedLoan._id, 'reject')}
-                      disabled={saving}
-                      className="px-4 py-2.5 text-sm font-semibold text-white bg-red-500 rounded-xl hover:bg-red-600 transition-colors flex items-center gap-2 disabled:opacity-50"
-                    >
-                      <XIcon /> Reject
-                    </button>
+                        if (rate > 0) {
+                          const monthlyRate = rate / 100 / 12;
+                          emi = (principal * monthlyRate * Math.pow(1 + monthlyRate, duration)) / (Math.pow(1 + monthlyRate, duration) - 1);
+                          totalAmt = emi * duration;
+                        }
+
+                        return (
+                          <div className="p-3 bg-blue-50 dark:bg-blue-900/10 rounded-xl space-y-2 border border-blue-100 dark:border-blue-800/50 mb-4 animate-in fade-in duration-300">
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="text-slate-500 dark:text-slate-400">Monthly EMI (approx)</span>
+                              <span className="font-bold text-blue-700 dark:text-blue-300">₹{Math.round(emi).toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="text-slate-500 dark:text-slate-400">Total Interest</span>
+                              <span className="font-semibold text-slate-700 dark:text-slate-300">₹{Math.round(totalAmt - principal).toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-xs pt-1 border-t border-blue-100 dark:border-blue-800/50 mt-1">
+                              <span className="text-slate-600 dark:text-slate-300 font-medium">Total Repayment</span>
+                              <span className="font-bold text-slate-900 dark:text-white">₹{Math.round(totalAmt).toLocaleString()}</span>
+                            </div>
+                          </div>
+                        );
+                      })()
+                    )}
+
+                    <p className="text-xs text-slate-500 uppercase font-semibold">Take Action</p>
+
+                    {/* Comment */}
+                    <textarea
+                      value={actionComment}
+                      onChange={(e) => setActionComment(e.target.value)}
+                      placeholder="Add a comment (optional)..."
+                      rows={2}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                    />
+
+                    {/* Action Buttons */}
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => handleAction(selectedLoan._id, 'approve')}
+                        disabled={saving}
+                        className="px-4 py-2.5 text-sm font-semibold text-white bg-green-500 rounded-xl hover:bg-green-600 transition-colors flex items-center gap-2 disabled:opacity-50"
+                      >
+                        <CheckIcon /> Approve
+                      </button>
+                      <button
+                        onClick={() => handleAction(selectedLoan._id, 'reject')}
+                        disabled={saving}
+                        className="px-4 py-2.5 text-sm font-semibold text-white bg-red-500 rounded-xl hover:bg-red-600 transition-colors flex items-center gap-2 disabled:opacity-50"
+                      >
+                        <XIcon /> Reject
+                      </button>
+                    </div>
                   </div>
-                </div>
-              )}
+                )
+              }
 
               {/* Close Button */}
               <button
@@ -2048,804 +2226,887 @@ export default function LoansPage() {
               >
                 Close
               </button>
-            </div>
-          </div>
-        </div>
-      )}
+            </div >
+          </div >
+        </div >
+      )
+      }
 
       {/* Disbursement Dialog */}
-      {showDisbursementDialog && selectedLoan && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowDisbursementDialog(false)} />
-          <div className="relative z-50 w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                  Release Funds
-                </h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                  Disburse ₹{selectedLoan.amount.toLocaleString()} to {selectedLoan.employeeId?.employee_name || selectedLoan.emp_no}
-                </p>
-              </div>
-              <button
-                onClick={() => setShowDisbursementDialog(false)}
-                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-              >
-                <XIcon />
-              </button>
-            </div>
-
-            <form onSubmit={handleDisburse} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  Disbursement Method *
-                </label>
-                <select
-                  required
-                  value={disbursementData.disbursementMethod}
-                  onChange={(e) => setDisbursementData({ ...disbursementData, disbursementMethod: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                >
-                  <option value="bank_transfer">Bank Transfer</option>
-                  <option value="cash">Cash</option>
-                  <option value="cheque">Cheque</option>
-                  <option value="other">Other</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  Transaction Reference
-                </label>
-                <input
-                  type="text"
-                  value={disbursementData.transactionReference}
-                  onChange={(e) => setDisbursementData({ ...disbursementData, transactionReference: e.target.value })}
-                  placeholder="e.g., TXN123456789"
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  Remarks
-                </label>
-                <textarea
-                  value={disbursementData.remarks}
-                  onChange={(e) => setDisbursementData({ ...disbursementData, remarks: e.target.value })}
-                  placeholder="Add any remarks for this disbursement..."
-                  rows={3}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white resize-none"
-                />
-              </div>
-
-              {message && (
-                <div className={`rounded-lg px-4 py-2 text-sm ${message.type === 'success'
-                  ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400'
-                  : 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400'
-                  }`}>
-                  {message.text}
+      {
+        showDisbursementDialog && selectedLoan && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowDisbursementDialog(false)} />
+            <div className="relative z-50 w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                    Release Funds
+                  </h2>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                    Disburse ₹{selectedLoan.amount.toLocaleString()} to {selectedLoan.employeeId?.employee_name || selectedLoan.emp_no}
+                  </p>
                 </div>
-              )}
-
-              <div className="flex gap-3 pt-4">
                 <button
-                  type="button"
                   onClick={() => setShowDisbursementDialog(false)}
-                  className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600 transition-colors"
+                  className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-green-500 to-green-600 rounded-xl hover:from-green-600 hover:to-green-700 transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                >
-                  {saving ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      Processing...
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      </svg>
-                      Release Funds
-                    </>
-                  )}
+                  <XIcon />
                 </button>
               </div>
-            </form>
+
+              <form onSubmit={handleDisburse} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    Disbursement Method *
+                  </label>
+                  <select
+                    required
+                    value={disbursementData.disbursementMethod}
+                    onChange={(e) => setDisbursementData({ ...disbursementData, disbursementMethod: e.target.value })}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  >
+                    <option value="bank_transfer">Bank Transfer</option>
+                    <option value="cash">Cash</option>
+                    <option value="cheque">Cheque</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    Transaction Reference
+                  </label>
+                  <input
+                    type="text"
+                    value={disbursementData.transactionReference}
+                    onChange={(e) => setDisbursementData({ ...disbursementData, transactionReference: e.target.value })}
+                    placeholder="e.g., TXN123456789"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    Remarks
+                  </label>
+                  <textarea
+                    value={disbursementData.remarks}
+                    onChange={(e) => setDisbursementData({ ...disbursementData, remarks: e.target.value })}
+                    placeholder="Add any remarks for this disbursement..."
+                    rows={3}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white resize-none"
+                  />
+                </div>
+
+                {message && (
+                  <div className={`rounded-lg px-4 py-2 text-sm ${message.type === 'success'
+                    ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400'
+                    : 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400'
+                    }`}>
+                    {message.text}
+                  </div>
+                )}
+
+                <div className="flex gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowDisbursementDialog(false)}
+                    className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-green-500 to-green-600 rounded-xl hover:from-green-600 hover:to-green-700 transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {saving ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        Processing...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                        Release Funds
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Edit Dialog */}
-      {showEditDialog && selectedLoan && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowEditDialog(false)} />
-          <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-6">
-              Edit {selectedLoan.requestType === 'loan' ? 'Loan' : 'Salary Advance'}
-            </h2>
+      {
+        showEditDialog && selectedLoan && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowEditDialog(false)} />
+            <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-6">
+                Edit {selectedLoan.requestType === 'loan' ? 'Loan' : 'Salary Advance'}
+              </h2>
 
-            <form onSubmit={handleUpdate} className="space-y-4">
-              {/* Eligibility Information - For Salary Advance */}
-              {selectedLoan.requestType === 'salary_advance' && eligibilityData && (
-                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 p-4 rounded-xl border border-blue-200 dark:border-blue-800 mb-4">
-                  <h5 className="font-semibold text-sm mb-3 text-blue-900 dark:text-blue-100">Eligibility Information</h5>
-                  <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div className="bg-white/70 dark:bg-slate-800/70 p-2 rounded">
-                      <div className="text-gray-600 dark:text-gray-400">Attendance</div>
-                      <div className="font-bold text-green-600 dark:text-green-400">{eligibilityData.attendancePercentage}%</div>
+              <form onSubmit={handleUpdate} className="space-y-4">
+                {/* Eligibility Information - For Salary Advance */}
+                {selectedLoan.requestType === 'salary_advance' && eligibilityData && (
+                  <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 p-4 rounded-xl border border-blue-200 dark:border-blue-800 mb-4">
+                    <h5 className="font-semibold text-sm mb-3 text-blue-900 dark:text-blue-100">Eligibility Information</h5>
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      <div className="bg-white/70 dark:bg-slate-800/70 p-2 rounded">
+                        <div className="text-gray-600 dark:text-gray-400">Attendance</div>
+                        <div className="font-bold text-green-600 dark:text-green-400">{eligibilityData.attendancePercentage}%</div>
+                      </div>
+                      <div className="bg-white/70 dark:bg-slate-800/70 p-2 rounded">
+                        <div className="text-gray-600 dark:text-gray-400">Days Worked</div>
+                        <div className="font-bold text-slate-900 dark:text-white">{eligibilityData.daysWorked} / {eligibilityData.daysElapsedInMonth}</div>
+                      </div>
+                      <div className="bg-white/70 dark:bg-slate-800/70 p-2 rounded">
+                        <div className="text-gray-600 dark:text-gray-400">Prorated</div>
+                        <div className="font-bold text-blue-600 dark:text-blue-400">₹{eligibilityData.proratedAmount.toLocaleString()}</div>
+                      </div>
+                      <div className="bg-white/70 dark:bg-slate-800/70 p-2 rounded">
+                        <div className="text-gray-600 dark:text-gray-400">Eligible</div>
+                        <div className="font-bold text-green-600 dark:text-green-400">₹{eligibilityData.eligibleAmount.toLocaleString()}</div>
+                      </div>
+                      <div className="bg-white/70 dark:bg-slate-800/70 p-2 rounded">
+                        <div className="text-gray-600 dark:text-gray-400">Max Limit</div>
+                        <div className="font-bold text-purple-600 dark:text-purple-400">₹{eligibilityData.finalMaxAllowed.toLocaleString()}</div>
+                      </div>
+                      <div className="bg-white/70 dark:bg-slate-800/70 p-2 rounded">
+                        <div className="text-gray-600 dark:text-gray-400">Basic Pay</div>
+                        <div className="font-bold text-indigo-600 dark:text-indigo-400">₹{selectedLoan.employeeId?.gross_salary?.toLocaleString() || 'N/A'}</div>
+                      </div>
                     </div>
-                    <div className="bg-white/70 dark:bg-slate-800/70 p-2 rounded">
-                      <div className="text-gray-600 dark:text-gray-400">Days Worked</div>
-                      <div className="font-bold text-slate-900 dark:text-white">{eligibilityData.daysWorked} / {eligibilityData.daysElapsedInMonth}</div>
+                  </div>
+                )}
+
+                {/* Amount */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    Amount (₹) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max={selectedLoan.requestType === 'salary_advance' && selectedLoan.employeeId?.gross_salary ? selectedLoan.employeeId.gross_salary : undefined}
+                    value={editFormData.amount}
+                    onChange={(e) => {
+                      setEditFormData({ ...editFormData, amount: e.target.value });
+                      console.log('[Superadmin Edit] Amount:', e.target.value, 'Basic Pay:', selectedLoan.employeeId?.gross_salary);
+                    }}
+                    required
+                    className={`w-full rounded-xl border px-4 py-2.5 text-sm dark:bg-slate-800 dark:text-white ${selectedLoan.requestType === 'salary_advance' &&
+                      selectedLoan.employeeId?.gross_salary &&
+                      parseFloat(editFormData.amount) > selectedLoan.employeeId.gross_salary
+                      ? 'border-red-500 ring-2 ring-red-200 dark:ring-red-900'
+                      : 'border-slate-200 dark:border-slate-700'
+                      }`}
+                  />
+                  {selectedLoan.requestType === 'salary_advance' &&
+                    selectedLoan.employeeId?.gross_salary &&
+                    parseFloat(editFormData.amount) > selectedLoan.employeeId.gross_salary && (
+                      <div className="mt-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                        <p className="text-sm text-red-600 dark:text-red-400 font-semibold flex items-center gap-2">
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          </svg>
+                          Amount exceeds basic pay!
+                        </p>
+                        <p className="text-xs text-red-500 dark:text-red-400 mt-1">
+                          Maximum allowed: ₹{selectedLoan.employeeId.gross_salary.toLocaleString()}
+                        </p>
+                      </div>
+                    )}
+                </div>
+
+                {/* Duration */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    Duration ({selectedLoan.requestType === 'loan' ? 'Months' : 'Cycles'}) *
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={editFormData.duration}
+                    onChange={(e) => setEditFormData({ ...editFormData, duration: e.target.value })}
+                    required
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  />
+                </div>
+
+                {/* Reason */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    Reason / Purpose *
+                  </label>
+                  <textarea
+                    value={editFormData.reason}
+                    onChange={(e) => setEditFormData({ ...editFormData, reason: e.target.value })}
+                    required
+                    rows={3}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  />
+                </div>
+
+                {/* Remarks */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    Remarks
+                  </label>
+                  <textarea
+                    value={editFormData.remarks}
+                    onChange={(e) => setEditFormData({ ...editFormData, remarks: e.target.value })}
+                    rows={2}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  />
+                </div>
+
+                {/* Status (Super Admin only) */}
+                {(() => {
+                  const user = auth.getUser();
+                  const isSuperAdmin = user?.role === 'super_admin';
+                  return isSuperAdmin && (
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                        Status (Super Admin)
+                      </label>
+                      <select
+                        value={editFormData.status || selectedLoan.status}
+                        onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      >
+                        <option value="pending">Pending</option>
+                        <option value="hod_approved">HOD Approved</option>
+                        <option value="hr_approved">HR Approved</option>
+                        <option value="approved">Approved</option>
+                        <option value="hod_rejected">HOD Rejected</option>
+                        <option value="hr_rejected">HR Rejected</option>
+                        <option value="rejected">Rejected</option>
+                        <option value="cancelled">Cancelled</option>
+                      </select>
                     </div>
-                    <div className="bg-white/70 dark:bg-slate-800/70 p-2 rounded">
-                      <div className="text-gray-600 dark:text-gray-400">Prorated</div>
-                      <div className="font-bold text-blue-600 dark:text-blue-400">₹{eligibilityData.proratedAmount.toLocaleString()}</div>
+                  );
+                })()}
+
+                {/* Buttons */}
+                <div className="flex gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowEditDialog(false)}
+                    className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="flex-1 px-4 py-2.5 text-sm font-semibold text-white rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 disabled:opacity-50"
+                  >
+                    {saving ? 'Saving...' : 'Save Changes'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )
+      }
+
+      {/* Early Settlement Confirmation Dialog */}
+      {
+        showSettlementDialog && selectedLoan && settlementPreview && settlementPreview.current && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowSettlementDialog(false)} />
+            <div className="relative z-50 w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                    Confirm Early Settlement
+                  </h2>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                    Pay full amount and save on interest
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowSettlementDialog(false)}
+                  className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                >
+                  <XIcon />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                {/* Settlement Breakdown */}
+                <div className="p-4 rounded-xl border-2 border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20">
+                  <h3 className="text-sm font-semibold text-green-900 dark:text-green-100 mb-3">Settlement Breakdown</h3>
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-slate-600 dark:text-slate-400">Remaining Principal:</span>
+                      <span className="text-sm font-semibold text-slate-900 dark:text-white">₹{settlementPreview.current.remainingPrincipal.toLocaleString()}</span>
                     </div>
-                    <div className="bg-white/70 dark:bg-slate-800/70 p-2 rounded">
-                      <div className="text-gray-600 dark:text-gray-400">Eligible</div>
-                      <div className="font-bold text-green-600 dark:text-green-400">₹{eligibilityData.eligibleAmount.toLocaleString()}</div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-slate-600 dark:text-slate-400">Interest (for {settlementPreview.current.actualMonthsUsed} months):</span>
+                      <span className="text-sm font-semibold text-slate-900 dark:text-white">₹{settlementPreview.current.settlementInterest.toLocaleString()}</span>
                     </div>
-                    <div className="bg-white/70 dark:bg-slate-800/70 p-2 rounded">
-                      <div className="text-gray-600 dark:text-gray-400">Max Limit</div>
-                      <div className="font-bold text-purple-600 dark:text-purple-400">₹{eligibilityData.finalMaxAllowed.toLocaleString()}</div>
-                    </div>
-                    <div className="bg-white/70 dark:bg-slate-800/70 p-2 rounded">
-                      <div className="text-gray-600 dark:text-gray-400">Basic Pay</div>
-                      <div className="font-bold text-indigo-600 dark:text-indigo-400">₹{selectedLoan.employeeId?.gross_salary?.toLocaleString() || 'N/A'}</div>
+                    <div className="pt-2 border-t border-green-200 dark:border-green-700">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-base font-semibold text-green-700 dark:text-green-300">Total Settlement Amount:</span>
+                        <span className="text-xl font-bold text-green-700 dark:text-green-300">₹{settlementPreview.current.settlementAmount.toLocaleString()}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
-              )}
 
-              {/* Amount */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  Amount (₹) *
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  max={selectedLoan.requestType === 'salary_advance' && selectedLoan.employeeId?.gross_salary ? selectedLoan.employeeId.gross_salary : undefined}
-                  value={editFormData.amount}
-                  onChange={(e) => {
-                    setEditFormData({ ...editFormData, amount: e.target.value });
-                    console.log('[Superadmin Edit] Amount:', e.target.value, 'Basic Pay:', selectedLoan.employeeId?.gross_salary);
+                {/* Savings Highlight */}
+                <div className="p-4 rounded-xl border border-green-200 bg-gradient-to-r from-green-50 to-green-50 dark:from-green-900/30 dark:to-green-900/30 dark:border-green-700">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-full bg-green-500 flex items-center justify-center">
+                      <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">You will save</p>
+                      <p className="text-2xl font-bold text-green-600 dark:text-green-400">₹{settlementPreview.current.interestSavings.toLocaleString()}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-500">in interest by paying early</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Loan Details */}
+                <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <p className="text-slate-500 dark:text-slate-400 mb-1">Original Duration:</p>
+                      <p className="font-semibold text-slate-900 dark:text-white">{settlementPreview.current.originalDuration} months</p>
+                    </div>
+                    <div>
+                      <p className="text-slate-500 dark:text-slate-400 mb-1">Months Used:</p>
+                      <p className="font-semibold text-slate-900 dark:text-white">{settlementPreview.current.actualMonthsUsed} months</p>
+                    </div>
+                    <div>
+                      <p className="text-slate-500 dark:text-slate-400 mb-1">Original Total:</p>
+                      <p className="font-semibold text-slate-900 dark:text-white">₹{settlementPreview.current.originalTotalAmount.toLocaleString()}</p>
+                    </div>
+                    <div>
+                      <p className="text-slate-500 dark:text-slate-400 mb-1">Remaining Months:</p>
+                      <p className="font-semibold text-slate-900 dark:text-white">{settlementPreview.current.remainingMonths} months</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowSettlementDialog(false)}
+                    className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleEarlySettlement}
+                    disabled={saving}
+                    className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-green-600 to-green-600 rounded-xl hover:from-green-700 hover:to-green-700 transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {saving ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        Processing...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                        Confirm Settlement
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      }
+
+      {/* Apply Dialog */}
+      {
+        showApplyDialog && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowApplyDialog(false)} />
+            <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+              {/* Type Toggle */}
+              <div className="flex gap-2 mb-6">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setApplyType('loan');
+                    setInterestCalculation(null);
                   }}
-                  required
-                  className={`w-full rounded-xl border px-4 py-2.5 text-sm dark:bg-slate-800 dark:text-white ${selectedLoan.requestType === 'salary_advance' &&
-                    selectedLoan.employeeId?.gross_salary &&
-                    parseFloat(editFormData.amount) > selectedLoan.employeeId.gross_salary
-                    ? 'border-red-500 ring-2 ring-red-200 dark:ring-red-900'
-                    : 'border-slate-200 dark:border-slate-700'
+                  className={`flex-1 py-3 rounded-xl font-medium text-sm transition-all ${applyType === 'loan'
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
                     }`}
-                />
-                {selectedLoan.requestType === 'salary_advance' &&
-                  selectedLoan.employeeId?.gross_salary &&
-                  parseFloat(editFormData.amount) > selectedLoan.employeeId.gross_salary && (
+                >
+                  <span className="flex items-center justify-center gap-2">
+                    <LoanIcon />
+                    Loan
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setApplyType('salary_advance');
+                    setInterestCalculation(null);
+                  }}
+                  className={`flex-1 py-3 rounded-xl font-medium text-sm transition-all ${applyType === 'salary_advance'
+                    ? 'bg-purple-500 text-white'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                    }`}
+                >
+                  <span className="flex items-center justify-center gap-2">
+                    <AdvanceIcon />
+                    Salary Advance
+                  </span>
+                </button>
+              </div>
+
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-6">
+                Apply for {applyType === 'loan' ? 'Loan' : 'Salary Advance'}
+              </h2>
+
+              <form onSubmit={handleApply} className="space-y-4">
+                {/* Employee Selection */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    Apply For Employee *
+                  </label>
+                  <div className="relative">
+                    {selectedEmployee ? (
+                      <div className="flex items-center justify-between p-3 rounded-xl border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-semibold">
+                            {getEmployeeInitials(selectedEmployee)}
+                          </div>
+                          <div>
+                            <div className="font-medium text-slate-900 dark:text-white">
+                              {getEmployeeName(selectedEmployee)}
+                            </div>
+                            <div className="text-xs text-slate-500 dark:text-slate-400">
+                              {selectedEmployee.emp_no}
+                            </div>
+                            <div className="flex flex-wrap gap-1.5 mt-1">
+                              {selectedEmployee.department?.name && (
+                                <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-800 dark:text-blue-300 rounded">
+                                  {selectedEmployee.department.name}
+                                </span>
+                              )}
+                              {selectedEmployee.designation?.name && (
+                                <span className="px-1.5 py-0.5 text-[10px] font-medium bg-green-100 text-green-700 dark:bg-green-800 dark:text-green-300 rounded">
+                                  {selectedEmployee.designation.name}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedEmployee(null);
+                            setEmployeeSearch('');
+                          }}
+                          className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                        >
+                          <XIcon />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <SearchIcon />
+                        </div>
+                        <input
+                          type="text"
+                          value={employeeSearch}
+                          onChange={(e) => {
+                            setEmployeeSearch(e.target.value);
+                            setShowEmployeeDropdown(true);
+                          }}
+                          onFocus={() => setShowEmployeeDropdown(true)}
+                          placeholder="Search by name, emp no, or department..."
+                          className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20"
+                        />
+
+                        {/* Employee Dropdown */}
+                        {showEmployeeDropdown && (
+                          <div className="absolute z-10 w-full mt-1 max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-800">
+                            {filteredEmployees.length === 0 ? (
+                              <div className="p-4 text-center text-sm text-slate-500">
+                                {employeeSearch ? 'No employees found' : 'Type to search employees'}
+                              </div>
+                            ) : (
+                              filteredEmployees.slice(0, 10).map((emp) => (
+                                <button
+                                  key={emp._id}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedEmployee(emp);
+                                    setEmployeeSearch('');
+                                    setShowEmployeeDropdown(false);
+                                  }}
+                                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700 text-left transition-colors border-b border-slate-100 dark:border-slate-700 last:border-0"
+                                >
+                                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-slate-400 to-slate-500 flex items-center justify-center text-white text-sm font-medium">
+                                    {getEmployeeInitials(emp)}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="font-medium text-slate-900 dark:text-white truncate">
+                                      {getEmployeeName(emp)}
+                                    </div>
+                                    <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                                      {emp.emp_no} • {emp.department?.name || 'No Department'} • {emp.designation?.name || 'No Designation'}
+                                    </div>
+                                  </div>
+                                </button>
+                              ))
+                            )}
+                            {filteredEmployees.length > 10 && (
+                              <div className="px-4 py-2 text-center text-xs text-slate-500 bg-slate-50 dark:bg-slate-900">
+                                Showing 10 of {filteredEmployees.length} results. Type more to filter.
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Eligibility Calculator - ONLY for Salary Advance */}
+                {applyType === 'salary_advance' && selectedEmployee && (
+                  <div className="mb-4">
+                    {loadingEligibility && (
+                      <div className="text-sm text-blue-600 mb-2 flex items-center gap-2">
+                        <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                        Calculating eligibility...
+                      </div>
+                    )}
+
+                    {eligibilityError && (
+                      <div className="text-sm text-red-600 bg-red-50 dark:bg-red-900/20 p-3 rounded-lg mb-2">
+                        {eligibilityError}
+                      </div>
+                    )}
+
+                    {eligibilityData && !loadingEligibility && (
+                      <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 p-4 rounded-xl border border-blue-200 dark:border-blue-800">
+                        <h4 className="font-semibold text-sm mb-3 text-blue-900 dark:text-blue-100 flex items-center gap-2">
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                          </svg>
+                          Eligibility Calculator
+                        </h4>
+
+                        {/* Attendance Info */}
+                        <div className="grid grid-cols-2 gap-2 mb-3 text-xs bg-white/50 dark:bg-slate-800/50 p-2 rounded-lg">
+                          <div>
+                            <span className="text-gray-600 dark:text-gray-400">Days Worked:</span>
+                            <span className="ml-2 font-semibold text-slate-900 dark:text-white">{eligibilityData.daysWorked} / {eligibilityData.daysElapsedInMonth}</span>
+                          </div>
+                          <div>
+                            <span className="text-gray-600 dark:text-gray-400">Attendance:</span>
+                            <span className="ml-2 font-semibold text-green-600 dark:text-green-400">{eligibilityData.attendancePercentage}%</span>
+                          </div>
+                        </div>
+
+                        {/* Amount Options */}
+                        <div className="space-y-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFormData({ ...formData, amount: eligibilityData.proratedAmount.toString() });
+                              console.log('[Superadmin] Selected Prorated Amount:', eligibilityData.proratedAmount);
+                            }}
+                            className="w-full text-left p-3 border-2 border-blue-200 dark:border-blue-700 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-800/50 transition-all hover:shadow-md bg-white dark:bg-slate-800"
+                          >
+                            <div className="flex justify-between items-center">
+                              <div>
+                                <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Prorated Amount (Based on Attendance)</div>
+                                <div className="font-bold text-lg text-blue-600 dark:text-blue-400">₹{eligibilityData.proratedAmount.toLocaleString()}</div>
+                              </div>
+                              <div className="text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900 px-2 py-1 rounded">Select</div>
+                            </div>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFormData({ ...formData, amount: eligibilityData.eligibleAmount.toString() });
+                              console.log('[Superadmin] Selected Eligible Amount:', eligibilityData.eligibleAmount);
+                            }}
+                            className="w-full text-left p-3 border-2 border-green-200 dark:border-green-700 rounded-lg hover:bg-green-100 dark:hover:bg-green-800/50 transition-all hover:shadow-md bg-white dark:bg-slate-800"
+                          >
+                            <div className="flex justify-between items-center">
+                              <div>
+                                <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Eligible Amount (Full Prorated)</div>
+                                <div className="font-bold text-lg text-green-600 dark:text-green-400">₹{eligibilityData.eligibleAmount.toLocaleString()}</div>
+                              </div>
+                              <div className="text-xs font-semibold text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900 px-2 py-1 rounded">Select</div>
+                            </div>
+                          </button>
+
+                          <div className="p-3 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                            <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Max Limit ({eligibilityData.maxPercentage}% of Basic Pay)</div>
+                            <div className="font-bold text-lg text-gray-700 dark:text-gray-300">₹{eligibilityData.maxLimitAmount.toLocaleString()}</div>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 pt-3 border-t border-blue-200 dark:border-blue-700">
+                          <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Final Max Allowed:</div>
+                          <div className="text-xl font-bold text-blue-600 dark:text-blue-400">
+                            ₹{eligibilityData.finalMaxAllowed.toLocaleString()}
+                          </div>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            You can request up to this amount
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                    Amount (₹) *
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min={resolvedLoanSettings?.minAmount || 1}
+                    max={resolvedLoanSettings?.maxAmount || (applyType === 'salary_advance' && eligibilityData ? eligibilityData.finalMaxAllowed : undefined)}
+                    step="0.01"
+                    value={formData.amount}
+                    onChange={(e) => {
+                      setFormData({ ...formData, amount: e.target.value });
+                      console.log('[Superadmin] Amount entered:', e.target.value, 'Min:', resolvedLoanSettings?.minAmount, 'Max:', resolvedLoanSettings?.maxAmount);
+                    }}
+                    className={`w-full rounded-lg border px-4 py-2 text-sm dark:bg-slate-800 ${resolvedLoanSettings && parseFloat(formData.amount) && (
+                      parseFloat(formData.amount) < (resolvedLoanSettings.minAmount || 0) ||
+                      (resolvedLoanSettings.maxAmount && parseFloat(formData.amount) > resolvedLoanSettings.maxAmount)
+                    )
+                      ? 'border-red-500 ring-2 ring-red-200 dark:ring-red-900'
+                      : applyType === 'salary_advance' && eligibilityData && parseFloat(formData.amount) > eligibilityData.finalMaxAllowed
+                        ? 'border-red-500 ring-2 ring-red-200 dark:ring-red-900'
+                        : 'border-slate-200 dark:border-slate-700'
+                      }`}
+                  />
+                  {/* Validation warnings for resolved settings */}
+                  {resolvedLoanSettings && parseFloat(formData.amount) && (
+                    <>
+                      {parseFloat(formData.amount) < (resolvedLoanSettings.minAmount || 0) && (
+                        <div className="mt-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                          <p className="text-sm text-red-600 dark:text-red-400 font-semibold flex items-center gap-2">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                            Amount is below minimum!
+                          </p>
+                          <p className="text-xs text-red-500 dark:text-red-400 mt-1">
+                            Minimum amount: ₹{resolvedLoanSettings.minAmount?.toLocaleString()}
+                          </p>
+                        </div>
+                      )}
+                      {resolvedLoanSettings.maxAmount && parseFloat(formData.amount) > resolvedLoanSettings.maxAmount && (
+                        <div className="mt-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                          <p className="text-sm text-red-600 dark:text-red-400 font-semibold flex items-center gap-2">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                            Amount exceeds maximum!
+                          </p>
+                          <p className="text-xs text-red-500 dark:text-red-400 mt-1">
+                            Maximum amount: ₹{resolvedLoanSettings.maxAmount.toLocaleString()}
+                          </p>
+                        </div>
+                      )}
+                    </>
+                  )}
+                  {applyType === 'salary_advance' && (
+                    <div className="mt-2">
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                        Need Amount (₹) <span className="text-xs font-normal text-slate-400">(Optional - for higher requests)</span>
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="1"
+                        value={formData.needAmount}
+                        onChange={(e) => setFormData({ ...formData, needAmount: e.target.value })}
+                        placeholder="Enter amount if you need more than eligible limit"
+                        className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                      />
+                    </div>
+                  )}
+                  {applyType === 'salary_advance' && eligibilityData && parseFloat(formData.amount) > eligibilityData.finalMaxAllowed && (
                     <div className="mt-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
                       <p className="text-sm text-red-600 dark:text-red-400 font-semibold flex items-center gap-2">
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                         </svg>
-                        Amount exceeds basic pay!
+                        Amount exceeds maximum allowed limit!
                       </p>
                       <p className="text-xs text-red-500 dark:text-red-400 mt-1">
-                        Maximum allowed: ₹{selectedLoan.employeeId.gross_salary.toLocaleString()}
+                        Maximum allowed: ₹{eligibilityData.finalMaxAllowed.toLocaleString()}
                       </p>
                     </div>
                   )}
-              </div>
-
-              {/* Duration */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  Duration ({selectedLoan.requestType === 'loan' ? 'Months' : 'Cycles'}) *
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  value={editFormData.duration}
-                  onChange={(e) => setEditFormData({ ...editFormData, duration: e.target.value })}
-                  required
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                />
-              </div>
-
-              {/* Reason */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  Reason / Purpose *
-                </label>
-                <textarea
-                  value={editFormData.reason}
-                  onChange={(e) => setEditFormData({ ...editFormData, reason: e.target.value })}
-                  required
-                  rows={3}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                />
-              </div>
-
-              {/* Remarks */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  Remarks
-                </label>
-                <textarea
-                  value={editFormData.remarks}
-                  onChange={(e) => setEditFormData({ ...editFormData, remarks: e.target.value })}
-                  rows={2}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                />
-              </div>
-
-              {/* Status (Super Admin only) */}
-              {(() => {
-                const user = auth.getUser();
-                const isSuperAdmin = user?.role === 'super_admin';
-                return isSuperAdmin && (
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Status (Super Admin)
-                    </label>
-                    <select
-                      value={editFormData.status || selectedLoan.status}
-                      onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                    >
-                      <option value="pending">Pending</option>
-                      <option value="hod_approved">HOD Approved</option>
-                      <option value="hr_approved">HR Approved</option>
-                      <option value="approved">Approved</option>
-                      <option value="hod_rejected">HOD Rejected</option>
-                      <option value="hr_rejected">HR Rejected</option>
-                      <option value="rejected">Rejected</option>
-                      <option value="cancelled">Cancelled</option>
-                    </select>
-                  </div>
-                );
-              })()}
-
-              {/* Buttons */}
-              <div className="flex gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowEditDialog(false)}
-                  className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="flex-1 px-4 py-2.5 text-sm font-semibold text-white rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 disabled:opacity-50"
-                >
-                  {saving ? 'Saving...' : 'Save Changes'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Early Settlement Confirmation Dialog */}
-      {showSettlementDialog && selectedLoan && settlementPreview && settlementPreview.current && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowSettlementDialog(false)} />
-          <div className="relative z-50 w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                  Confirm Early Settlement
-                </h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                  Pay full amount and save on interest
-                </p>
-              </div>
-              <button
-                onClick={() => setShowSettlementDialog(false)}
-                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-              >
-                <XIcon />
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              {/* Settlement Breakdown */}
-              <div className="p-4 rounded-xl border-2 border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20">
-                <h3 className="text-sm font-semibold text-green-900 dark:text-green-100 mb-3">Settlement Breakdown</h3>
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-slate-600 dark:text-slate-400">Remaining Principal:</span>
-                    <span className="text-sm font-semibold text-slate-900 dark:text-white">₹{settlementPreview.current.remainingPrincipal.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-slate-600 dark:text-slate-400">Interest (for {settlementPreview.current.actualMonthsUsed} months):</span>
-                    <span className="text-sm font-semibold text-slate-900 dark:text-white">₹{settlementPreview.current.settlementInterest.toLocaleString()}</span>
-                  </div>
-                  <div className="pt-2 border-t border-green-200 dark:border-green-700">
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="text-base font-semibold text-green-700 dark:text-green-300">Total Settlement Amount:</span>
-                      <span className="text-xl font-bold text-green-700 dark:text-green-300">₹{settlementPreview.current.settlementAmount.toLocaleString()}</span>
-                    </div>
-                  </div>
                 </div>
-              </div>
 
-              {/* Savings Highlight */}
-              <div className="p-4 rounded-xl border border-green-200 bg-gradient-to-r from-green-50 to-green-50 dark:from-green-900/30 dark:to-green-900/30 dark:border-green-700">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-green-500 flex items-center justify-center">
-                    <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">You will save</p>
-                    <p className="text-2xl font-bold text-green-600 dark:text-green-400">₹{settlementPreview.current.interestSavings.toLocaleString()}</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-500">in interest by paying early</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Loan Details */}
-              <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
-                <div className="grid grid-cols-2 gap-3 text-xs">
+                {/* Duration - Only for loans */}
+                {applyType === 'loan' && (
                   <div>
-                    <p className="text-slate-500 dark:text-slate-400 mb-1">Original Duration:</p>
-                    <p className="font-semibold text-slate-900 dark:text-white">{settlementPreview.current.originalDuration} months</p>
-                  </div>
-                  <div>
-                    <p className="text-slate-500 dark:text-slate-400 mb-1">Months Used:</p>
-                    <p className="font-semibold text-slate-900 dark:text-white">{settlementPreview.current.actualMonthsUsed} months</p>
-                  </div>
-                  <div>
-                    <p className="text-slate-500 dark:text-slate-400 mb-1">Original Total:</p>
-                    <p className="font-semibold text-slate-900 dark:text-white">₹{settlementPreview.current.originalTotalAmount.toLocaleString()}</p>
-                  </div>
-                  <div>
-                    <p className="text-slate-500 dark:text-slate-400 mb-1">Remaining Months:</p>
-                    <p className="font-semibold text-slate-900 dark:text-white">{settlementPreview.current.remainingMonths} months</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowSettlementDialog(false)}
-                  className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleEarlySettlement}
-                  disabled={saving}
-                  className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-green-600 to-green-600 rounded-xl hover:from-green-700 hover:to-green-700 transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                >
-                  {saving ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      Processing...
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      </svg>
-                      Confirm Settlement
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Apply Dialog */}
-      {showApplyDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowApplyDialog(false)} />
-          <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
-            {/* Type Toggle */}
-            <div className="flex gap-2 mb-6">
-              <button
-                type="button"
-                onClick={() => {
-                  setApplyType('loan');
-                  setInterestCalculation(null);
-                }}
-                className={`flex-1 py-3 rounded-xl font-medium text-sm transition-all ${applyType === 'loan'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
-                  }`}
-              >
-                <span className="flex items-center justify-center gap-2">
-                  <LoanIcon />
-                  Loan
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setApplyType('salary_advance');
-                  setInterestCalculation(null);
-                }}
-                className={`flex-1 py-3 rounded-xl font-medium text-sm transition-all ${applyType === 'salary_advance'
-                  ? 'bg-purple-500 text-white'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
-                  }`}
-              >
-                <span className="flex items-center justify-center gap-2">
-                  <AdvanceIcon />
-                  Salary Advance
-                </span>
-              </button>
-            </div>
-
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-6">
-              Apply for {applyType === 'loan' ? 'Loan' : 'Salary Advance'}
-            </h2>
-
-            <form onSubmit={handleApply} className="space-y-4">
-              {/* Employee Selection */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  Apply For Employee *
-                </label>
-                <div className="relative">
-                  {selectedEmployee ? (
-                    <div className="flex items-center justify-between p-3 rounded-xl border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-semibold">
-                          {getEmployeeInitials(selectedEmployee)}
-                        </div>
-                        <div>
-                          <div className="font-medium text-slate-900 dark:text-white">
-                            {getEmployeeName(selectedEmployee)}
-                          </div>
-                          <div className="text-xs text-slate-500 dark:text-slate-400">
-                            {selectedEmployee.emp_no}
-                          </div>
-                          <div className="flex flex-wrap gap-1.5 mt-1">
-                            {selectedEmployee.department?.name && (
-                              <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-800 dark:text-blue-300 rounded">
-                                {selectedEmployee.department.name}
-                              </span>
-                            )}
-                            {selectedEmployee.designation?.name && (
-                              <span className="px-1.5 py-0.5 text-[10px] font-medium bg-green-100 text-green-700 dark:bg-green-800 dark:text-green-300 rounded">
-                                {selectedEmployee.designation.name}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedEmployee(null);
-                          setEmployeeSearch('');
-                        }}
-                        className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                      >
-                        <XIcon />
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <SearchIcon />
-                      </div>
-                      <input
-                        type="text"
-                        value={employeeSearch}
-                        onChange={(e) => {
-                          setEmployeeSearch(e.target.value);
-                          setShowEmployeeDropdown(true);
-                        }}
-                        onFocus={() => setShowEmployeeDropdown(true)}
-                        placeholder="Search by name, emp no, or department..."
-                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20"
-                      />
-
-                      {/* Employee Dropdown */}
-                      {showEmployeeDropdown && (
-                        <div className="absolute z-10 w-full mt-1 max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-800">
-                          {filteredEmployees.length === 0 ? (
-                            <div className="p-4 text-center text-sm text-slate-500">
-                              {employeeSearch ? 'No employees found' : 'Type to search employees'}
-                            </div>
-                          ) : (
-                            filteredEmployees.slice(0, 10).map((emp) => (
-                              <button
-                                key={emp._id}
-                                type="button"
-                                onClick={() => {
-                                  setSelectedEmployee(emp);
-                                  setEmployeeSearch('');
-                                  setShowEmployeeDropdown(false);
-                                }}
-                                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700 text-left transition-colors border-b border-slate-100 dark:border-slate-700 last:border-0"
-                              >
-                                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-slate-400 to-slate-500 flex items-center justify-center text-white text-sm font-medium">
-                                  {getEmployeeInitials(emp)}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="font-medium text-slate-900 dark:text-white truncate">
-                                    {getEmployeeName(emp)}
-                                  </div>
-                                  <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                                    {emp.emp_no} • {emp.department?.name || 'No Department'} • {emp.designation?.name || 'No Designation'}
-                                  </div>
-                                </div>
-                              </button>
-                            ))
-                          )}
-                          {filteredEmployees.length > 10 && (
-                            <div className="px-4 py-2 text-center text-xs text-slate-500 bg-slate-50 dark:bg-slate-900">
-                              Showing 10 of {filteredEmployees.length} results. Type more to filter.
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Eligibility Calculator - ONLY for Salary Advance */}
-              {applyType === 'salary_advance' && selectedEmployee && (
-                <div className="mb-4">
-                  {loadingEligibility && (
-                    <div className="text-sm text-blue-600 mb-2 flex items-center gap-2">
-                      <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                      Calculating eligibility...
-                    </div>
-                  )}
-
-                  {eligibilityError && (
-                    <div className="text-sm text-red-600 bg-red-50 dark:bg-red-900/20 p-3 rounded-lg mb-2">
-                      {eligibilityError}
-                    </div>
-                  )}
-
-                  {eligibilityData && !loadingEligibility && (
-                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 p-4 rounded-xl border border-blue-200 dark:border-blue-800">
-                      <h4 className="font-semibold text-sm mb-3 text-blue-900 dark:text-blue-100 flex items-center gap-2">
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                        </svg>
-                        Eligibility Calculator
-                      </h4>
-
-                      {/* Attendance Info */}
-                      <div className="grid grid-cols-2 gap-2 mb-3 text-xs bg-white/50 dark:bg-slate-800/50 p-2 rounded-lg">
-                        <div>
-                          <span className="text-gray-600 dark:text-gray-400">Days Worked:</span>
-                          <span className="ml-2 font-semibold text-slate-900 dark:text-white">{eligibilityData.daysWorked} / {eligibilityData.daysElapsedInMonth}</span>
-                        </div>
-                        <div>
-                          <span className="text-gray-600 dark:text-gray-400">Attendance:</span>
-                          <span className="ml-2 font-semibold text-green-600 dark:text-green-400">{eligibilityData.attendancePercentage}%</span>
-                        </div>
-                      </div>
-
-                      {/* Amount Options */}
-                      <div className="space-y-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setFormData({ ...formData, amount: eligibilityData.proratedAmount.toString() });
-                            console.log('[Superadmin] Selected Prorated Amount:', eligibilityData.proratedAmount);
-                          }}
-                          className="w-full text-left p-3 border-2 border-blue-200 dark:border-blue-700 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-800/50 transition-all hover:shadow-md bg-white dark:bg-slate-800"
-                        >
-                          <div className="flex justify-between items-center">
-                            <div>
-                              <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Prorated Amount (Based on Attendance)</div>
-                              <div className="font-bold text-lg text-blue-600 dark:text-blue-400">₹{eligibilityData.proratedAmount.toLocaleString()}</div>
-                            </div>
-                            <div className="text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900 px-2 py-1 rounded">Select</div>
-                          </div>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setFormData({ ...formData, amount: eligibilityData.eligibleAmount.toString() });
-                            console.log('[Superadmin] Selected Eligible Amount:', eligibilityData.eligibleAmount);
-                          }}
-                          className="w-full text-left p-3 border-2 border-green-200 dark:border-green-700 rounded-lg hover:bg-green-100 dark:hover:bg-green-800/50 transition-all hover:shadow-md bg-white dark:bg-slate-800"
-                        >
-                          <div className="flex justify-between items-center">
-                            <div>
-                              <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Eligible Amount (Full Prorated)</div>
-                              <div className="font-bold text-lg text-green-600 dark:text-green-400">₹{eligibilityData.eligibleAmount.toLocaleString()}</div>
-                            </div>
-                            <div className="text-xs font-semibold text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900 px-2 py-1 rounded">Select</div>
-                          </div>
-                        </button>
-
-                        <div className="p-3 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-                          <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Max Limit ({eligibilityData.maxPercentage}% of Basic Pay)</div>
-                          <div className="font-bold text-lg text-gray-700 dark:text-gray-300">₹{eligibilityData.maxLimitAmount.toLocaleString()}</div>
-                        </div>
-                      </div>
-
-                      <div className="mt-3 pt-3 border-t border-blue-200 dark:border-blue-700">
-                        <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Final Max Allowed:</div>
-                        <div className="text-xl font-bold text-blue-600 dark:text-blue-400">
-                          ₹{eligibilityData.finalMaxAllowed.toLocaleString()}
-                        </div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                          You can request up to this amount
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  Amount (₹) *
-                </label>
-                <input
-                  type="number"
-                  required
-                  min="1"
-                  step="0.01"
-                  max={applyType === 'salary_advance' && eligibilityData ? eligibilityData.finalMaxAllowed : undefined}
-                  value={formData.amount}
-                  onChange={(e) => {
-                    setFormData({ ...formData, amount: e.target.value });
-                    console.log('[Superadmin] Amount entered:', e.target.value, 'Max allowed:', eligibilityData?.finalMaxAllowed);
-                  }}
-                  className={`w-full rounded-lg border px-4 py-2 text-sm dark:bg-slate-800 ${applyType === 'salary_advance' && eligibilityData && parseFloat(formData.amount) > eligibilityData.finalMaxAllowed
-                    ? 'border-red-500 ring-2 ring-red-200 dark:ring-red-900'
-                    : 'border-slate-200 dark:border-slate-700'
-                    }`}
-                />
-                {applyType === 'salary_advance' && (
-                  <div className="mt-2">
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                      Need Amount (₹) <span className="text-xs font-normal text-slate-400">(Optional - for higher requests)</span>
+                      Duration (months) *
                     </label>
                     <input
                       type="number"
-                      step="0.01"
-                      min="1"
-                      value={formData.needAmount}
-                      onChange={(e) => setFormData({ ...formData, needAmount: e.target.value })}
-                      placeholder="Enter amount if you need more than eligible limit"
-                      className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                      required
+                      min={resolvedLoanSettings?.minTenure || 1}
+                      max={resolvedLoanSettings?.maxTenure || undefined}
+                      value={formData.duration}
+                      onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
+                      className={`w-full rounded-lg border px-4 py-2 text-sm dark:bg-slate-800 ${resolvedLoanSettings && parseFloat(formData.duration) && (
+                        parseFloat(formData.duration) < (resolvedLoanSettings.minTenure || 0) ||
+                        (resolvedLoanSettings.maxTenure && parseFloat(formData.duration) > resolvedLoanSettings.maxTenure)
+                      )
+                        ? 'border-red-500 ring-2 ring-red-200 dark:ring-red-900'
+                        : 'border-slate-200 dark:border-slate-700'
+                        }`}
                     />
-                  </div>
-                )}
-                {applyType === 'salary_advance' && eligibilityData && parseFloat(formData.amount) > eligibilityData.finalMaxAllowed && (
-                  <div className="mt-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-                    <p className="text-sm text-red-600 dark:text-red-400 font-semibold flex items-center gap-2">
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                      </svg>
-                      Amount exceeds maximum allowed limit!
-                    </p>
-                    <p className="text-xs text-red-500 dark:text-red-400 mt-1">
-                      Maximum allowed: ₹{eligibilityData.finalMaxAllowed.toLocaleString()}
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Duration - Only for loans */}
-              {applyType === 'loan' && (
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    Duration (months) *
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    min="1"
-                    value={formData.duration}
-                    onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
-                  />
-                </div>
-              )}
-
-              {/* Interest Calculation Display - Only for loans */}
-              {applyType === 'loan' && interestCalculation && (
-                <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
-                  <h4 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-3">Loan Calculation</h4>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-slate-600 dark:text-slate-400">Principal Amount:</span>
-                      <span className="font-medium text-slate-900 dark:text-slate-100">₹{interestCalculation.principal.toLocaleString()}</span>
-                    </div>
-                    {interestCalculation.interestRate > 0 && (
+                    {/* Validation warnings for duration */}
+                    {resolvedLoanSettings && parseFloat(formData.duration) && (
                       <>
-                        <div className="flex justify-between">
-                          <span className="text-slate-600 dark:text-slate-400">Interest Rate:</span>
-                          <span className="font-medium text-slate-900 dark:text-slate-100">{interestCalculation.interestRate}% p.a.</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-600 dark:text-slate-400">Total Interest:</span>
-                          <span className="font-medium text-slate-900 dark:text-slate-100">₹{interestCalculation.totalInterest.toLocaleString()}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-600 dark:text-slate-400">Total Amount (Principal + Interest):</span>
-                          <span className="font-medium text-slate-900 dark:text-slate-100">₹{interestCalculation.totalAmount.toLocaleString()}</span>
-                        </div>
+                        {parseFloat(formData.duration) < (resolvedLoanSettings.minTenure || 0) && (
+                          <div className="mt-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                            <p className="text-sm text-red-600 dark:text-red-400 font-semibold flex items-center gap-2">
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                              </svg>
+                              Duration is below minimum!
+                            </p>
+                            <p className="text-xs text-red-500 dark:text-red-400 mt-1">
+                              Minimum duration: {resolvedLoanSettings.minTenure} months
+                            </p>
+                          </div>
+                        )}
+                        {resolvedLoanSettings.maxTenure && parseFloat(formData.duration) > resolvedLoanSettings.maxTenure && (
+                          <div className="mt-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                            <p className="text-sm text-red-600 dark:text-red-400 font-semibold flex items-center gap-2">
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                              </svg>
+                              Duration exceeds maximum!
+                            </p>
+                            <p className="text-xs text-red-500 dark:text-red-400 mt-1">
+                              Maximum duration: {resolvedLoanSettings.maxTenure} months
+                            </p>
+                          </div>
+                        )}
                       </>
                     )}
-                    <div className="flex justify-between pt-2 border-t border-blue-200 dark:border-blue-800">
-                      <span className="font-semibold text-blue-900 dark:text-blue-100">EMI per Month:</span>
-                      <span className="font-bold text-blue-900 dark:text-blue-100">₹{interestCalculation.emiAmount.toLocaleString()}</span>
+                  </div>
+                )}
+
+                {/* Interest Calculation Display - Only for loans */}
+                {applyType === 'loan' && interestCalculation && (
+                  <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
+                    <h4 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-3">Loan Calculation</h4>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-slate-600 dark:text-slate-400">Principal Amount:</span>
+                        <span className="font-medium text-slate-900 dark:text-slate-100">₹{interestCalculation.principal.toLocaleString()}</span>
+                      </div>
+                      {interestCalculation.interestRate > 0 && (
+                        <>
+                          <div className="flex justify-between">
+                            <span className="text-slate-600 dark:text-slate-400">Interest Rate:</span>
+                            <span className="font-medium text-slate-900 dark:text-slate-100">{interestCalculation.interestRate}% p.a.</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-600 dark:text-slate-400">Total Interest:</span>
+                            <span className="font-medium text-slate-900 dark:text-slate-100">₹{interestCalculation.totalInterest.toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-600 dark:text-slate-400">Total Amount (Principal + Interest):</span>
+                            <span className="font-medium text-slate-900 dark:text-slate-100">₹{interestCalculation.totalAmount.toLocaleString()}</span>
+                          </div>
+                        </>
+                      )}
+                      <div className="flex justify-between pt-2 border-t border-blue-200 dark:border-blue-800">
+                        <span className="font-semibold text-blue-900 dark:text-blue-100">EMI per Month:</span>
+                        <span className="font-bold text-blue-900 dark:text-blue-100">₹{interestCalculation.emiAmount.toLocaleString()}</span>
+                      </div>
                     </div>
                   </div>
+                )}
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                    Reason *
+                  </label>
+                  <textarea
+                    required
+                    value={formData.reason}
+                    onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                    rows={3}
+                  />
                 </div>
-              )}
 
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  Reason *
-                </label>
-                <textarea
-                  required
-                  value={formData.reason}
-                  onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
-                  rows={3}
-                />
-              </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                    Remarks
+                  </label>
+                  <textarea
+                    value={formData.remarks}
+                    onChange={(e) => setFormData({ ...formData, remarks: e.target.value })}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                    rows={2}
+                  />
+                </div>
 
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  Remarks
-                </label>
-                <textarea
-                  value={formData.remarks}
-                  onChange={(e) => setFormData({ ...formData, remarks: e.target.value })}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
-                  rows={2}
-                />
-              </div>
-
-              {/* Buttons */}
-              <div className="flex gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowApplyDialog(false)}
-                  className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className={`flex-1 px-4 py-2.5 text-sm font-semibold text-white rounded-xl transition-all disabled:opacity-50 ${applyType === 'loan'
-                    ? 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600'
-                    : 'bg-gradient-to-r from-purple-500 to-red-500 hover:from-purple-600 hover:to-red-600'
-                    }`}
-                >
-                  {saving ? 'Submitting...' : `Apply ${applyType === 'loan' ? 'Loan' : 'Salary Advance'}`}
-                </button>
-              </div>
-            </form>
+                {/* Buttons */}
+                <div className="flex gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowApplyDialog(false)}
+                    className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className={`flex-1 px-4 py-2.5 text-sm font-semibold text-white rounded-xl transition-all disabled:opacity-50 ${applyType === 'loan'
+                      ? 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600'
+                      : 'bg-gradient-to-r from-purple-500 to-red-500 hover:from-purple-600 hover:to-red-600'
+                      }`}
+                  >
+                    {saving ? 'Submitting...' : `Apply ${applyType === 'loan' ? 'Loan' : 'Salary Advance'}`}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Toast Container */}
       <ToastContainer
@@ -2860,7 +3121,7 @@ export default function LoansPage() {
         pauseOnHover
         theme="light"
       />
-    </div>
+    </div >
   );
 }
 

@@ -130,14 +130,29 @@ const getWorkflowSettings = async (type) => {
   return settings;
 };
 
-// Helper to calculate EMI for loans
+// Helper to calculate EMI for loans with complete financial breakdown
 const calculateEMI = (principal, interestRate, duration) => {
-  if (interestRate === 0) {
-    return principal / duration;
+  if (interestRate === 0 || !interestRate) {
+    // No interest - simple division
+    const emi = principal / duration;
+    return {
+      emiAmount: Math.round(emi),
+      totalInterest: 0,
+      totalAmount: principal,
+    };
   }
+
+  // Reducing balance method (standard EMI calculation)
   const monthlyRate = interestRate / 100 / 12;
   const emi = (principal * monthlyRate * Math.pow(1 + monthlyRate, duration)) / (Math.pow(1 + monthlyRate, duration) - 1);
-  return Math.round(emi);
+  const totalAmount = emi * duration;
+  const totalInterest = totalAmount - principal;
+
+  return {
+    emiAmount: Math.round(emi),
+    totalInterest: Math.round(totalInterest),
+    totalAmount: Math.round(totalAmount),
+  };
 };
 
 // Helper to calculate early settlement amount
@@ -601,7 +616,7 @@ exports.applyLoan = async (req, res) => {
     // Get resolved settings (department + global fallback)
     let settings = workflowSettings.settings || {};
     if (employee.department_id) {
-      const resolvedSettings = await getResolvedLoanSettings(employee.department_id, employee.division_id, requestType);
+      const resolvedSettings = await getResolvedLoanSettings(employee.department_id, requestType, employee.division_id);
       if (resolvedSettings) {
         // Merge resolved settings with workflow settings
         // Map resolved settings (minTenure/maxTenure) to settings format (minDuration/maxDuration)
@@ -660,11 +675,9 @@ exports.applyLoan = async (req, res) => {
 
     if (requestType === 'loan') {
       const interestRate = settings.interestRate || 0;
-      const emiAmount = calculateEMI(amount, interestRate, duration);
+      const { emiAmount, totalInterest, totalAmount: calculatedTotal } = calculateEMI(amount, interestRate, duration);
 
-      if (settings.isInterestApplicable && interestRate > 0) {
-        totalAmount = emiAmount * duration;
-      }
+      totalAmount = calculatedTotal;
 
       // Calculate start and end dates (start from next month)
       const startDate = new Date();
@@ -677,6 +690,7 @@ exports.applyLoan = async (req, res) => {
       loanConfig = {
         emiAmount,
         interestRate,
+        totalInterest,
         startDate,
         endDate,
         totalAmount,
@@ -882,12 +896,7 @@ exports.updateLoan = async (req, res) => {
       if (settings) {
         if (loan.requestType === 'loan') {
           const interestRate = settings.interestRate || 0;
-          const emiAmount = calculateEMI(amount, interestRate, duration);
-
-          let totalAmount = amount;
-          if (settings.isInterestApplicable && interestRate > 0) {
-            totalAmount = emiAmount * duration;
-          }
+          const { emiAmount, totalInterest, totalAmount } = calculateEMI(amount, interestRate, duration);
 
           const startDate = new Date();
           startDate.setMonth(startDate.getMonth() + 1);
@@ -899,6 +908,7 @@ exports.updateLoan = async (req, res) => {
           loan.loanConfig = {
             emiAmount,
             interestRate,
+            totalInterest,
             startDate,
             endDate,
             totalAmount,
@@ -1102,11 +1112,11 @@ exports.processLoanAction = async (req, res) => {
           const currentAmount = loan.amount;
           const currentRate = loan.loanConfig.interestRate || 0;
           const duration = loan.duration;
-          const emiAmount = calculateEMI(currentAmount, currentRate, duration);
+          const { emiAmount, totalInterest, totalAmount } = calculateEMI(currentAmount, currentRate, duration);
 
           loan.loanConfig.emiAmount = emiAmount;
-          // Re-calculate total amount based on new EMI
-          loan.loanConfig.totalAmount = currentRate > 0 ? (emiAmount * duration) : currentAmount;
+          loan.loanConfig.totalInterest = totalInterest;
+          loan.loanConfig.totalAmount = totalAmount;
           loan.repayment.totalInstallments = duration;
         } else {
           // Salary advance - recalculate per cycle deduction
@@ -1148,7 +1158,16 @@ exports.processLoanAction = async (req, res) => {
           break;
         }
 
+        console.log('[Loan Approval] Processing approval for:', {
+          currentApprover,
+          loanId: loan._id,
+          currentStatus: loan.status,
+          userRole,
+          action
+        });
+
         if (currentApprover === 'hod') {
+          console.log('[HOD Approval] Setting status to hod_approved');
           loan.status = 'hod_approved';
           loan.approvals.hod = {
             status: 'approved',
@@ -1162,12 +1181,20 @@ exports.processLoanAction = async (req, res) => {
           const division = await Division.findById(loan.division_id).populate('manager');
 
           if (division && division.manager) {
+            console.log('[HOD Approval] Division has manager, routing to manager');
             loan.workflow.currentStep = 'manager';
             loan.workflow.nextApprover = 'manager';
           } else {
+            console.log('[HOD Approval] No manager, routing to HR');
             loan.workflow.currentStep = 'hr';
             loan.workflow.nextApprover = 'hr';
           }
+
+          console.log('[HOD Approval] Final state:', {
+            status: loan.status,
+            currentStep: loan.workflow.currentStep,
+            nextApprover: loan.workflow.nextApprover
+          });
         } else if (currentApprover === 'manager') {
           loan.status = 'manager_approved';
           loan.approvals.manager = {
@@ -1183,22 +1210,50 @@ exports.processLoanAction = async (req, res) => {
           const settings = await LoanSettings.findOne({ type: loan.requestType, isActive: true });
           const finalAuth = settings?.workflow?.finalAuthority;
 
-          let isFinalStep = true;
+          // CRITICAL FIX: Default to FALSE - HR is NOT the final step unless explicitly configured
+          let isFinalStep = false;
 
           if (finalAuth) {
-            if (finalAuth.role === 'admin' || finalAuth.role === 'specific_user') {
-              isFinalStep = false; // Move to next step if final authority is someone else
-            } else if (finalAuth.role === 'hr') {
-              // If restricted to specific HR users
-              if (!finalAuth.anyHRCanApprove && finalAuth.authorizedHRUsers && finalAuth.authorizedHRUsers.length > 0) {
-                if (!finalAuth.authorizedHRUsers.includes(req.user._id.toString())) {
-                  isFinalStep = false;
-                }
+            // Check if current user is the final authority
+            if (finalAuth.role === 'hr') {
+              // If final authority is HR
+              if (finalAuth.anyHRCanApprove) {
+                // Any HR can give final approval
+                isFinalStep = true;
+              } else if (finalAuth.authorizedHRUsers && finalAuth.authorizedHRUsers.length > 0) {
+                // Only specific HR users can give final approval
+                isFinalStep = finalAuth.authorizedHRUsers.some(userId =>
+                  userId.toString() === req.user._id.toString()
+                );
               }
+            } else if (finalAuth.role === 'admin' && (userRole === 'super_admin' || userRole === 'sub_admin')) {
+              // Final authority is admin, and current user is admin
+              isFinalStep = true;
+            } else if (finalAuth.role === 'specific_user') {
+              // Check if current user is in the authorized list
+              if (finalAuth.authorizedHRUsers && finalAuth.authorizedHRUsers.length > 0) {
+                isFinalStep = finalAuth.authorizedHRUsers.some(userId =>
+                  userId.toString() === req.user._id.toString()
+                );
+              }
+            }
+          } else {
+            // No final authority configured - default to admin as final authority
+            if (userRole === 'super_admin' || userRole === 'sub_admin') {
+              isFinalStep = true;
             }
           }
 
+          console.log('[Loan Approval] HR/Final Authority Check:', {
+            currentApprover,
+            userRole,
+            finalAuthRole: finalAuth?.role,
+            isFinalStep,
+            userId: req.user._id.toString()
+          });
+
           if (isFinalStep) {
+            // This is the final approval
             loan.status = 'approved';
             loan.workflow.currentStep = 'completed';
             loan.workflow.nextApprover = null;
@@ -1210,6 +1265,7 @@ exports.processLoanAction = async (req, res) => {
               comments,
             };
           } else {
+            // Move to final authority (admin)
             loan.status = 'hr_approved';
             loan.workflow.currentStep = 'final';
             loan.workflow.nextApprover = 'final_authority';

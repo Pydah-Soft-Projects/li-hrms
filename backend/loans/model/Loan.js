@@ -180,6 +180,11 @@ const LoanSchema = new mongoose.Schema(
         type: Number,
         default: 0,
       },
+      // Total interest amount (calculated)
+      totalInterest: {
+        type: Number,
+        default: 0,
+      },
       // Start date for EMI deductions
       startDate: {
         type: Date,

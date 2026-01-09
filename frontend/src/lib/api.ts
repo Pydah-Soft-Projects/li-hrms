@@ -845,8 +845,11 @@ export const api = {
     });
   },
 
-  getResolvedDepartmentSettings: async (deptId: string, type?: 'leaves' | 'loans' | 'salary_advance' | 'permissions' | 'ot' | 'overtime' | 'all') => {
-    const query = type ? `?type=${type}` : '';
+  getResolvedDepartmentSettings: async (deptId: string, type?: 'leaves' | 'loans' | 'salary_advance' | 'permissions' | 'ot' | 'overtime' | 'all', divisionId?: string) => {
+    const params = new URLSearchParams();
+    if (type) params.append('type', type);
+    if (divisionId) params.append('divisionId', divisionId);
+    const query = params.toString() ? `?${params.toString()}` : '';
     return apiRequest<any>(`/departments/${deptId}/settings/resolved${query}`, { method: 'GET' });
   },
 
