@@ -86,6 +86,20 @@ interface LoanApplication {
     modifiedAt: string;
     reason?: string;
   }>;
+  workflow?: {
+    currentStep: string;
+    nextApprover: string | null;
+    history: Array<{
+      step: string;
+      action: string;
+      actionBy: string;
+      actionByName: string;
+      actionByRole: string;
+      comments?: string;
+      timestamp: string;
+    }>;
+  };
+  interestAmount?: number;
 }
 
 interface Employee {
@@ -428,6 +442,38 @@ export default function LoansPage() {
       setSaving(false);
     }
   };
+
+  const handleUpdateLoan = async (loanId: string) => {
+    try {
+      setSaving(true);
+      const payload: any = {
+        amount: parseFloat(approvalAmount),
+        duration: parseInt(approvalDuration),
+      };
+
+      if (selectedLoan?.requestType === 'loan') {
+        payload.interestRate = parseFloat(approvalInterestRate);
+      }
+
+      const response = await api.updateLoan(loanId, payload);
+      if (response.success) {
+        toast.success('Loan updated successfully! You can now approve or reject.');
+        loadData();
+        // Reload the selected loan to show updated values
+        const updatedLoan = await api.getLoan(loanId);
+        if (updatedLoan.success) {
+          setSelectedLoan(updatedLoan.data);
+        }
+      } else {
+        toast.error(response.error || 'Failed to update loan');
+      }
+    } catch (err) {
+      toast.error('An error occurred while updating loan');
+    } finally {
+      setSaving(false);
+    }
+  };
+
 
   const handleDisburse = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -800,7 +846,7 @@ export default function LoansPage() {
         totalAmount: principal,
       });
     } else {
-      // Simple Interest Calculation: SI = (P * R * T) / 100
+      // Simple Interest Method: SI = (P × R × T) / 100
       const totalInterest = (principal * interestRate * (duration / 12)) / 100;
       const totalAmount = principal + totalInterest;
       const emiAmount = totalAmount / duration;
@@ -1665,6 +1711,14 @@ export default function LoansPage() {
                         <p className="text-sm font-bold text-slate-900 dark:text-slate-100">₹{selectedLoan.loanConfig.emiAmount?.toLocaleString()}</p>
                       </div>
                       <div>
+                        <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">Interest Amount</p>
+                        <p className="text-sm font-bold text-orange-600 dark:text-orange-400">₹{selectedLoan.interestAmount?.toLocaleString() || '0'}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">Principal Amount</p>
+                        <p className="text-sm font-bold text-slate-900 dark:text-slate-100">₹{selectedLoan.amount?.toLocaleString()}</p>
+                      </div>
+                      <div>
                         <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">Total Amount (with interest)</p>
                         <p className="text-sm font-bold text-slate-900 dark:text-slate-100">₹{selectedLoan.loanConfig.totalAmount?.toLocaleString()}</p>
                       </div>
@@ -2055,25 +2109,6 @@ export default function LoansPage() {
                 )
               }
 
-              {/* Edit Button (for Super Admin/HR - not final approved/disbursed) */}
-              {
-                (() => {
-                  const user = auth.getUser();
-                  const isSuperAdmin = user?.role === 'super_admin';
-                  const isHR = user?.role === 'hr';
-                  const canEdit = isSuperAdmin || (isHR && !['approved', 'disbursed', 'active', 'completed'].includes(selectedLoan.status));
-
-                  return canEdit && (
-                    <button
-                      onClick={handleEdit}
-                      className="w-full px-4 py-2 text-sm font-semibold text-white bg-blue-500 rounded-xl hover:bg-blue-600 transition-colors mb-4"
-                    >
-                      Edit {selectedLoan.requestType === 'loan' ? 'Loan' : 'Advance'}
-                    </button>
-                  );
-                })()
-              }
-
               {/* Action Section */}
               {
                 !['approved', 'rejected', 'cancelled', 'disbursed', 'active', 'completed'].includes(selectedLoan.status) && (
@@ -2149,7 +2184,7 @@ export default function LoansPage() {
                         let totalAmt = principal;
 
                         if (rate > 0) {
-                          // Simple Interest Calculation: SI = (P * R * T) / 100
+                          // Simple Interest: SI = (P × R × T) / 100
                           const totalInterest = (principal * rate * (duration / 12)) / 100;
                           totalAmt = principal + totalInterest;
                           emi = totalAmt / duration;
@@ -2173,6 +2208,27 @@ export default function LoansPage() {
                         );
                       })()
                     )}
+
+                    {/* Update Loan Button */}
+                    {(approvalAmount !== selectedLoan.amount.toString() ||
+                      approvalInterestRate !== selectedLoan.loanConfig?.interestRate?.toString() ||
+                      approvalDuration !== selectedLoan.duration?.toString()) && (
+                        <div className="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/10 rounded-xl border border-yellow-200 dark:border-yellow-800">
+                          <p className="text-xs text-yellow-700 dark:text-yellow-400 mb-2 font-medium">
+                            ⚠️ You have modified the loan details. Update the loan first to see the changes reflected.
+                          </p>
+                          <button
+                            onClick={() => handleUpdateLoan(selectedLoan._id)}
+                            disabled={saving}
+                            className="w-full px-4 py-2.5 text-sm font-semibold text-white bg-yellow-500 rounded-xl hover:bg-yellow-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                            Update Loan with Modified Values
+                          </button>
+                        </div>
+                      )}
 
                     <p className="text-xs text-slate-500 uppercase font-semibold">Take Action</p>
 
@@ -2206,19 +2262,7 @@ export default function LoansPage() {
                 )
               }
 
-              {/* Close Button */}
-              <button
-                onClick={() => {
-                  setShowDetailDialog(false);
-                  setSelectedLoan(null);
-                  setTransactions([]);
-                  setShowPaymentForm(false);
-                  setShowDisbursementDialog(false);
-                }}
-                className="w-full px-4 py-3 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600 transition-colors"
-              >
-                Close
-              </button>
+
             </div >
           </div >
         </div >
