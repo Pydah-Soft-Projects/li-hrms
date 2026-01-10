@@ -139,7 +139,7 @@ export default function UsersPage() {
   const [formData, setFormData] = useState<UserFormData>({
     email: '',
     name: '',
-    role: 'employee',
+    role: 'super_admin',
     departmentType: 'single',
     department: '',
     departments: [],
@@ -618,7 +618,7 @@ export default function UsersPage() {
     setFormData({
       email: '',
       name: '',
-      role: 'employee',
+      role: 'super_admin',
       departmentType: 'single',
       department: '',
       departments: [],
@@ -1113,7 +1113,7 @@ export default function UsersPage() {
               icon={Users}
               bgClass="bg-blue-500/10"
               iconClass="text-blue-600 dark:text-blue-400"
-              // dekorClass="bg-blue-500/5"
+            // dekorClass="bg-blue-500/5"
             />
             <StatCard
               title="Active Users"
@@ -1130,7 +1130,7 @@ export default function UsersPage() {
               icon={Shield}
               bgClass="bg-violet-500/10"
               iconClass="text-violet-600 dark:text-violet-400"
-              // dekorClass="bg-violet-500/5"
+            // dekorClass="bg-violet-500/5"
             />
             <StatCard
               title="Managers"
@@ -1138,7 +1138,7 @@ export default function UsersPage() {
               icon={Building}
               bgClass="bg-sky-500/10"
               iconClass="text-sky-600 dark:text-sky-400"
-              // dekorClass="bg-sky-500/5"
+            // dekorClass="bg-sky-500/5"
             />
             <StatCard
               title="Inactive"
@@ -1146,7 +1146,7 @@ export default function UsersPage() {
               icon={UserX}
               bgClass="bg-rose-500/10"
               iconClass="text-rose-600 dark:text-rose-400"
-              // dekorClass="bg-rose-500/5"
+            // dekorClass="bg-rose-500/5"
             />
           </div>
         )}
@@ -1358,165 +1358,165 @@ export default function UsersPage() {
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
               <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowCreateDialog(false)} />
               <div className="relative z-50 flex w-full max-w-lg max-h-[90vh] flex-col overflow-hidden rounded-[2rem] bg-white shadow-2xl dark:bg-slate-900">
-              {/* Header */}
-              <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/50 px-6 py-4 dark:border-slate-800 dark:bg-slate-900/50">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600">
-                    <UserPlus className="h-5 w-5" />
+                {/* Header */}
+                <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/50 px-6 py-4 dark:border-slate-800 dark:bg-slate-900/50">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600">
+                      <UserPlus className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-bold text-slate-900 dark:text-white">Create New User</h2>
+                      <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">Access Provisioning</p>
+                    </div>
                   </div>
-                  <div>
-                    <h2 className="text-lg font-bold text-slate-900 dark:text-white">Create New User</h2>
-                    <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">Access Provisioning</p>
-                  </div>
+                  <button
+                    onClick={() => setShowCreateDialog(false)}
+                    className="rounded-xl p-2 text-slate-400 hover:bg-white hover:text-slate-600 dark:hover:bg-slate-800"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
                 </div>
-                <button
-                  onClick={() => setShowCreateDialog(false)}
-                  className="rounded-xl p-2 text-slate-400 hover:bg-white hover:text-slate-600 dark:hover:bg-slate-800"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
 
-              {/* Scrollable Content */}
-              <div className="flex-1 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
-                <form onSubmit={handleCreateUser} className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Full Name *</label>
-                      <input
-                        type="text"
-                        value={formData.name}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        required
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                        placeholder="e.g. John Doe"
-                      />
+                {/* Scrollable Content */}
+                <div className="flex-1 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
+                  <form onSubmit={handleCreateUser} className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Full Name *</label>
+                        <input
+                          type="text"
+                          value={formData.name}
+                          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                          required
+                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                          placeholder="e.g. John Doe"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Email Address *</label>
+                        <input
+                          type="email"
+                          value={formData.email}
+                          onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                          required
+                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                          placeholder="john@example.com"
+                        />
+                      </div>
                     </div>
 
                     <div className="space-y-1.5">
-                      <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Email Address *</label>
-                      <input
-                        type="email"
-                        value={formData.email}
-                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                        required
+                      <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500">System Role *</label>
+                      <select
+                        value={formData.role}
+                        onChange={(e) => {
+                          const role = e.target.value;
+                          setFormData({
+                            ...formData,
+                            role,
+                            dataScope: ['hr', 'sub_admin', 'super_admin'].includes(role) ? 'all' : (role === 'hod' ? 'division' : 'department'),
+                            department: '',
+                            departments: [],
+                            divisionMapping: []
+                          });
+                        }}
                         className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                        placeholder="john@example.com"
-                      />
+                      >
+                        {ROLES.filter(r => r.value !== 'employee').map((role) => (
+                          <option key={role.value} value={role.value}>
+                            {role.label}
+                          </option>
+                        ))}
+                      </select>
                     </div>
-                  </div>
 
-                  <div className="space-y-1.5">
-                    <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500">System Role *</label>
-                    <select
-                      value={formData.role}
-                      onChange={(e) => {
-                        const role = e.target.value;
-                        setFormData({
-                          ...formData,
-                          role,
-                          dataScope: ['hr', 'sub_admin'].includes(role) ? 'all' : (role === 'hod' ? 'division' : 'department'),
-                          department: '',
-                          departments: [],
-                          divisionMapping: []
-                        });
-                      }}
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                    >
-                      {ROLES.filter(r => r.value !== 'employee').map((role) => (
-                        <option key={role.value} value={role.value}>
-                          {role.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                    <div className="rounded-3xl border border-slate-100 bg-slate-50/50 p-6 dark:border-slate-800 dark:bg-slate-900/50">
+                      <ScopingSelector data={formData} setData={setFormData} />
+                    </div>
 
-                  <div className="rounded-3xl border border-slate-100 bg-slate-50/50 p-6 dark:border-slate-800 dark:bg-slate-900/50">
-                    <ScopingSelector data={formData} setData={setFormData} />
-                  </div>
-
-                  {/* Feature Control */}
-                  <div className="space-y-3">
-                    <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Module Access Control</label>
-                    <div className="max-h-64 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 space-y-4 dark:border-slate-700 dark:bg-slate-950/50">
-                      {MODULE_CATEGORIES.map((category) => (
-                        <div key={category.code}>
-                          <h4 className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase text-slate-400">
-                            {category.name}
-                          </h4>
-                          <div className="grid grid-cols-2 gap-2">
-                            {category.modules.map((module) => (
-                              <label key={module.code} className="flex items-center gap-2 rounded-xl border border-slate-100 bg-slate-50 p-2.5 transition-all hover:border-blue-100 hover:bg-white dark:border-slate-800 dark:bg-slate-900">
-                                <input
-                                  type="checkbox"
-                                  checked={(formData.featureControl || []).includes(module.code)}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      setFormData({ ...formData, featureControl: [...(formData.featureControl || []), module.code] });
-                                    } else {
-                                      setFormData({ ...formData, featureControl: (formData.featureControl || []).filter(m => m !== module.code) });
-                                    }
-                                  }}
-                                  className="h-4 w-4 rounded-md border-slate-300 text-blue-600 focus:ring-blue-500"
-                                />
-                                <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
-                                  {module.label}
-                                </span>
-                              </label>
-                            ))}
+                    {/* Feature Control */}
+                    <div className="space-y-3">
+                      <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Module Access Control</label>
+                      <div className="max-h-64 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 space-y-4 dark:border-slate-700 dark:bg-slate-950/50">
+                        {MODULE_CATEGORIES.map((category) => (
+                          <div key={category.code}>
+                            <h4 className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase text-slate-400">
+                              {category.name}
+                            </h4>
+                            <div className="grid grid-cols-2 gap-2">
+                              {category.modules.map((module) => (
+                                <label key={module.code} className="flex items-center gap-2 rounded-xl border border-slate-100 bg-slate-50 p-2.5 transition-all hover:border-blue-100 hover:bg-white dark:border-slate-800 dark:bg-slate-900">
+                                  <input
+                                    type="checkbox"
+                                    checked={(formData.featureControl || []).includes(module.code)}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setFormData({ ...formData, featureControl: [...(formData.featureControl || []), module.code] });
+                                      } else {
+                                        setFormData({ ...formData, featureControl: (formData.featureControl || []).filter(m => m !== module.code) });
+                                      }
+                                    }}
+                                    className="h-4 w-4 rounded-md border-slate-300 text-blue-600 focus:ring-blue-500"
+                                  />
+                                  <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                                    {module.label}
+                                  </span>
+                                </label>
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
-                  </div>
 
-                  {/* Password Configuration */}
-                  <div className="space-y-4 rounded-2xl border border-blue-50 bg-blue-50/30 p-5 dark:border-blue-900/10 dark:bg-blue-900/5">
-                    <label className="flex items-center gap-3 cursor-pointer group">
-                      <div className={`flex h-5 w-5 items-center justify-center rounded border transition-all ${formData.autoGeneratePassword ? 'border-blue-500 bg-blue-500 text-white' : 'border-slate-300 bg-white'}`}>
-                        {formData.autoGeneratePassword && <Check className="h-3 w-3" />}
-                        <input
-                          type="checkbox"
-                          className="sr-only"
-                          checked={formData.autoGeneratePassword}
-                          onChange={(e) => setFormData({ ...formData, autoGeneratePassword: e.target.checked })}
-                        />
-                      </div>
-                      <span className="text-sm font-bold text-slate-700 dark:text-slate-300">Sync with system password policies</span>
-                    </label>
+                    {/* Password Configuration */}
+                    <div className="space-y-4 rounded-2xl border border-blue-50 bg-blue-50/30 p-5 dark:border-blue-900/10 dark:bg-blue-900/5">
+                      <label className="flex items-center gap-3 cursor-pointer group">
+                        <div className={`flex h-5 w-5 items-center justify-center rounded border transition-all ${formData.autoGeneratePassword ? 'border-blue-500 bg-blue-500 text-white' : 'border-slate-300 bg-white'}`}>
+                          {formData.autoGeneratePassword && <Check className="h-3 w-3" />}
+                          <input
+                            type="checkbox"
+                            className="sr-only"
+                            checked={formData.autoGeneratePassword}
+                            onChange={(e) => setFormData({ ...formData, autoGeneratePassword: e.target.checked })}
+                          />
+                        </div>
+                        <span className="text-sm font-bold text-slate-700 dark:text-slate-300">Sync with system password policies</span>
+                      </label>
 
-                    {!formData.autoGeneratePassword && (
-                      <div className="relative mt-2">
-                        <Key className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                        <input
-                          type="password"
-                          value={formData.password}
-                          onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                          placeholder="Create secure password"
-                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 pl-11 pr-4 text-sm focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800"
-                        />
-                      </div>
-                    )}
-                  </div>
+                      {!formData.autoGeneratePassword && (
+                        <div className="relative mt-2">
+                          <Key className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                          <input
+                            type="password"
+                            value={formData.password}
+                            onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                            placeholder="Create secure password"
+                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 pl-11 pr-4 text-sm focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800"
+                          />
+                        </div>
+                      )}
+                    </div>
 
-                  <div className="flex gap-4 pt-2">
-                    <button
-                      type="button"
-                      onClick={() => setShowCreateDialog(false)}
-                      className="flex-1 rounded-2xl border border-slate-200 py-3.5 text-sm font-bold text-slate-600 transition-all hover:bg-slate-50 dark:border-slate-800 dark:text-slate-400"
-                    >
-                      Discard
-                    </button>
-                    <button
-                      type="submit"
-                      className="flex-1 rounded-2xl bg-blue-600 py-3.5 text-sm font-bold text-white shadow-lg shadow-blue-500/20 transition-all hover:bg-blue-700 active:scale-[0.98]"
-                    >
-                      Create Account
-                    </button>
-                  </div>
-                </form>
+                    <div className="flex gap-4 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowCreateDialog(false)}
+                        className="flex-1 rounded-2xl border border-slate-200 py-3.5 text-sm font-bold text-slate-600 transition-all hover:bg-slate-50 dark:border-slate-800 dark:text-slate-400"
+                      >
+                        Discard
+                      </button>
+                      <button
+                        type="submit"
+                        className="flex-1 rounded-2xl bg-blue-600 py-3.5 text-sm font-bold text-white shadow-lg shadow-blue-500/20 transition-all hover:bg-blue-700 active:scale-[0.98]"
+                      >
+                        Create Account
+                      </button>
+                    </div>
+                  </form>
+                </div>
               </div>
-            </div>
             </div >
           )
         }
