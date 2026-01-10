@@ -6,6 +6,12 @@ const User = require('../../users/model/User');
 const { isHRMSConnected, getEmployeeByIdMSSQL } = require('../../employees/config/sqlHelper');
 const { getResolvedLoanSettings } = require('../../departments/controllers/departmentSettingsController');
 
+// ============================================
+// TESTING FLAG - Set to false to disable Super Admin bypass
+// ============================================
+const ENABLE_SUPERADMIN_BYPASS = false; // Set to true for production, false for testing workflow
+// ============================================
+
 /**
  * Get employee settings from database
  */
@@ -130,7 +136,7 @@ const getWorkflowSettings = async (type) => {
   return settings;
 };
 
-// Helper to calculate EMI for loans with complete financial breakdown
+// Helper to calculate EMI for loans with simple interest
 const calculateEMI = (principal, interestRate, duration) => {
   if (interestRate === 0 || !interestRate) {
     // No interest - simple division
@@ -142,14 +148,14 @@ const calculateEMI = (principal, interestRate, duration) => {
     };
   }
 
-  // Simple Interest Calculation: SI = (P * R * T) / 100
-  // Time (T) is in years, so duration / 12
+  // Simple Interest Method: SI = (P × R × T) / 100
+  // T is in months, so convert to years: T/12
   const totalInterest = (principal * interestRate * (duration / 12)) / 100;
   const totalAmount = principal + totalInterest;
-  const emiAmount = totalAmount / duration;
+  const emi = totalAmount / duration;
 
   return {
-    emiAmount: Math.round(emiAmount),
+    emiAmount: Math.round(emi),
     totalInterest: Math.round(totalInterest),
     totalAmount: Math.round(totalAmount),
   };
@@ -672,12 +678,14 @@ exports.applyLoan = async (req, res) => {
     let loanConfig = {};
     let advanceConfig = {};
     let totalAmount = amount;
+    let totalInterest = 0; // Declare in outer scope
 
     if (requestType === 'loan') {
       const interestRate = settings.interestRate || 0;
-      const { emiAmount, totalInterest, totalAmount: calculatedTotal } = calculateEMI(amount, interestRate, duration);
+      const { emiAmount, totalInterest: calculatedInterest, totalAmount: calculatedTotal } = calculateEMI(amount, interestRate, duration);
 
       totalAmount = calculatedTotal;
+      totalInterest = calculatedInterest; // Assign to outer scope variable
 
       // Calculate start and end dates (start from next month)
       const startDate = new Date();
@@ -713,6 +721,7 @@ exports.applyLoan = async (req, res) => {
       originalAmount: amount,
       reason,
       duration,
+      interestAmount: requestType === 'loan' ? (totalInterest || 0) : 0,
       remarks,
       department: employee.department_id || employee.department,
       designation: employee.designation_id || employee.designation,
@@ -895,7 +904,8 @@ exports.updateLoan = async (req, res) => {
 
       if (settings) {
         if (loan.requestType === 'loan') {
-          const interestRate = settings.interestRate || 0;
+          // Use interestRate from request body if provided, otherwise use settings
+          const interestRate = req.body.interestRate !== undefined ? parseFloat(req.body.interestRate) : (settings.interestRate || 0);
           const { emiAmount, totalInterest, totalAmount } = calculateEMI(amount, interestRate, duration);
 
           const startDate = new Date();
@@ -913,6 +923,9 @@ exports.updateLoan = async (req, res) => {
             endDate,
             totalAmount,
           };
+
+          // Update interest amount
+          loan.interestAmount = totalInterest;
 
           // Update repayment remaining balance
           loan.repayment.remainingBalance = totalAmount - (loan.repayment.totalPaid || 0);
@@ -1117,6 +1130,7 @@ exports.processLoanAction = async (req, res) => {
           loan.loanConfig.emiAmount = emiAmount;
           loan.loanConfig.totalInterest = totalInterest;
           loan.loanConfig.totalAmount = totalAmount;
+          loan.interestAmount = totalInterest;
           loan.repayment.totalInstallments = duration;
         } else {
           // Salary advance - recalculate per cycle deduction
@@ -1140,8 +1154,8 @@ exports.processLoanAction = async (req, res) => {
       case 'approve':
         historyEntry.action = 'approved';
 
-        // Super Admin Bypass Feature: Can approve at any stage
-        if (isSuperAdmin) {
+        // Super Admin Bypass Feature: Can approve at any stage (if enabled)
+        if (isSuperAdmin && ENABLE_SUPERADMIN_BYPASS) {
           loan.status = 'approved';
           loan.workflow.currentStep = 'completed';
           loan.workflow.nextApprover = null;

@@ -59,6 +59,12 @@ const LoanSchema = new mongoose.Schema(
       min: [1, 'Duration must be at least 1'],
     },
 
+    // Interest amount (calculated based on principal, rate, and duration)
+    interestAmount: {
+      type: Number,
+      default: 0,
+    },
+
     // Remarks/Additional notes
     remarks: {
       type: String,
