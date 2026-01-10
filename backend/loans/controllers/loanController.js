@@ -1219,30 +1219,79 @@ exports.processLoanAction = async (req, res) => {
           };
           loan.workflow.currentStep = 'hr';
           loan.workflow.nextApprover = 'hr';
-        } else if (currentApprover === 'hr' || currentApprover === 'final_authority') {
-          // HR Approval - Check if this user/role is the final authority
+        } else if (currentApprover === 'hr') {
+          // HR Approval - Check if HR is the final authority
           const settings = await LoanSettings.findOne({ type: loan.requestType, isActive: true });
           const finalAuth = settings?.workflow?.finalAuthority;
 
-          // CRITICAL FIX: Default to FALSE - HR is NOT the final step unless explicitly configured
+          let isFinalStep = false;
+
+          if (finalAuth && finalAuth.role === 'hr') {
+            // HR is configured as final authority
+            if (finalAuth.anyHRCanApprove) {
+              isFinalStep = true;
+            } else if (finalAuth.authorizedHRUsers && finalAuth.authorizedHRUsers.length > 0) {
+              isFinalStep = finalAuth.authorizedHRUsers.some(userId =>
+                userId.toString() === req.user._id.toString()
+              );
+            }
+          }
+          // If HR is NOT final authority, isFinalStep stays false → routes to final_authority
+
+          console.log('[Loan Approval] HR Approval Check:', {
+            currentApprover,
+            userRole,
+            finalAuthRole: finalAuth?.role,
+            isFinalStep,
+            userId: req.user._id.toString()
+          });
+
+          if (isFinalStep) {
+            // HR is the final authority - fully approve
+            loan.status = 'approved';
+            loan.workflow.currentStep = 'completed';
+            loan.workflow.nextApprover = null;
+
+            loan.approvals.final = {
+              status: 'approved',
+              approvedBy: req.user._id,
+              approvedAt: new Date(),
+              comments,
+            };
+          } else {
+            // HR is NOT final authority - route to final authority (admin)
+            loan.status = 'hr_approved';
+            loan.workflow.currentStep = 'final';
+            loan.workflow.nextApprover = 'final_authority';
+          }
+
+          loan.approvals.hr = {
+            status: 'approved',
+            approvedBy: req.user._id,
+            approvedAt: new Date(),
+            comments,
+          };
+
+        } else if (currentApprover === 'final_authority') {
+          // Final Authority Approval - Check if current user is authorized
+          const settings = await LoanSettings.findOne({ type: loan.requestType, isActive: true });
+          const finalAuth = settings?.workflow?.finalAuthority;
+
           let isFinalStep = false;
 
           if (finalAuth) {
-            // Check if current user is the final authority
-            if (finalAuth.role === 'hr') {
-              // If final authority is HR
+            if (finalAuth.role === 'admin' && (userRole === 'super_admin' || userRole === 'sub_admin')) {
+              // Admin is final authority and current user is admin
+              isFinalStep = true;
+            } else if (finalAuth.role === 'hr' && userRole === 'hr') {
+              // HR can also be final authority
               if (finalAuth.anyHRCanApprove) {
-                // Any HR can give final approval
                 isFinalStep = true;
               } else if (finalAuth.authorizedHRUsers && finalAuth.authorizedHRUsers.length > 0) {
-                // Only specific HR users can give final approval
                 isFinalStep = finalAuth.authorizedHRUsers.some(userId =>
                   userId.toString() === req.user._id.toString()
                 );
               }
-            } else if (finalAuth.role === 'admin' && (userRole === 'super_admin' || userRole === 'sub_admin')) {
-              // Final authority is admin, and current user is admin
-              isFinalStep = true;
             } else if (finalAuth.role === 'specific_user') {
               // Check if current user is in the authorized list
               if (finalAuth.authorizedHRUsers && finalAuth.authorizedHRUsers.length > 0) {
@@ -1258,7 +1307,7 @@ exports.processLoanAction = async (req, res) => {
             }
           }
 
-          console.log('[Loan Approval] HR/Final Authority Check:', {
+          console.log('[Loan Approval] Final Authority Check:', {
             currentApprover,
             userRole,
             finalAuthRole: finalAuth?.role,
@@ -1279,18 +1328,12 @@ exports.processLoanAction = async (req, res) => {
               comments,
             };
           } else {
-            // Move to final authority (admin)
-            loan.status = 'hr_approved';
-            loan.workflow.currentStep = 'final';
-            loan.workflow.nextApprover = 'final_authority';
+            // User is not authorized as final authority
+            return res.status(403).json({
+              success: false,
+              error: 'You are not authorized to give final approval for this loan',
+            });
           }
-
-          loan.approvals.hr = {
-            status: 'approved',
-            approvedBy: req.user._id,
-            approvedAt: new Date(),
-            comments,
-          };
         }
         break;
 
