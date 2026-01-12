@@ -74,20 +74,36 @@ export default function SecurityGatePage() {
         return () => clearInterval(interval);
     }, []);
 
+    const lastScannedCodeRef = useRef<string | null>(null);
+    const lastScanTimeRef = useRef<number>(0);
+
     const handleVerify = async (code: string) => {
         if (!code) return;
 
+        // Debounce: Ignore if same code scanned within 3 seconds
+        const now = Date.now();
+        if (code === lastScannedCodeRef.current && (now - lastScanTimeRef.current < 3000)) {
+            return;
+        }
+
         try {
             setVerifying(true);
+            lastScannedCodeRef.current = code;
+            lastScanTimeRef.current = now;
+
             const response = await api.verifyGatePass(code);
 
             if (response.success) {
                 toast.success(response.message || 'Gate Pass Verified');
                 setScanning(false);
                 setManualCode('');
+                // Clear debounce ref on success so next scan (even if same code? No, keep it to prevent accidental double-tap)
+                // Actually, if successful, we closed the scanner, so it's fine.
+                // If we re-open scanner for same person immediately, 'already verified' will handle it backend side.
                 fetchPermissions(); // Refresh list
             } else {
                 toast.error(response.message || 'Verification Failed');
+                // Allow retrying different code immediately, but force wait for same code
             }
         } catch (error: any) {
             toast.error(error.message || 'Verification Failed');

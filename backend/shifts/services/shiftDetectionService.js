@@ -92,6 +92,40 @@ const isWithinShiftWindow = (punchTime, shiftStartTime, gracePeriodMinutes = 15)
 };
 
 /**
+ * Filter shift configurations based on employee gender
+ * Handles both new config objects and legacy ID arrays
+ * @param {Array} shiftConfigs - Array of shift configs ({shiftId, gender}) or IDs
+ * @param {String} employeeGender - Employee's gender (Male/Female/Other)
+ * @returns {Array} - Array of Shift IDs
+ */
+const filterShiftsByGender = (shiftConfigs, employeeGender) => {
+  if (!shiftConfigs || !Array.isArray(shiftConfigs) || shiftConfigs.length === 0) {
+    return [];
+  }
+
+  // Check data structure (Config Object vs Legacy ID)
+  const isConfigObject = shiftConfigs[0].shiftId !== undefined;
+
+  if (!isConfigObject) {
+    // Legacy: Array of IDs -> No gender restriction (Backward Compatibility)
+    return shiftConfigs;
+  }
+
+  // New Structure: Filter by gender
+  return shiftConfigs
+    .filter(config => {
+      if (!config || !config.shiftId) return false;
+
+      // If no gender specified or 'All', allow it
+      if (!config.gender || config.gender === 'All') return true;
+
+      // Use case-insensitive match just in case
+      return config.gender.toLowerCase() === (employeeGender || '').toLowerCase();
+    })
+    .map(config => config.shiftId);
+};
+
+/**
  * Get shifts for employee based on priority
  * Priority: Pre-Scheduled → Designation → Department → General
  */
@@ -110,6 +144,7 @@ const getShiftsForEmployee = async (employeeNumber, date) => {
     const division_id = employee.division_id?._id;
     const department_id = employee.department_id?._id;
     const designation_id = employee.designation_id?._id;
+    const employeeGender = employee.gender;
 
     if (!division_id) {
       console.warn(`[ShiftDetection] Employee ${employeeNumber} has no division_id assigned.`);
@@ -145,7 +180,7 @@ const getShiftsForEmployee = async (employeeNumber, date) => {
             ds.department?.toString() === department_id.toString()
         );
         if (contextOverride && contextOverride.shifts?.length > 0) {
-          shiftIds = contextOverride.shifts;
+          shiftIds = filterShiftsByGender(contextOverride.shifts, employeeGender);
         }
       }
 
@@ -155,14 +190,14 @@ const getShiftsForEmployee = async (employeeNumber, date) => {
           dd => dd.division?.toString() === division_id.toString()
         );
         if (divisionDefault && divisionDefault.shifts?.length > 0) {
-          shiftIds = divisionDefault.shifts;
+          shiftIds = filterShiftsByGender(divisionDefault.shifts, employeeGender);
         }
       }
 
       // Tier 4: Backward Compatibility Fallback (Global designation shifts)
       // Only if NO division assigned. If division exists, we expect specific rules or fall through.
       if (shiftIds.length === 0 && !division_id && desig.shifts?.length > 0) {
-        shiftIds = desig.shifts;
+        shiftIds = filterShiftsByGender(desig.shifts, employeeGender);
       }
 
       if (shiftIds.length > 0) {
@@ -185,13 +220,13 @@ const getShiftsForEmployee = async (employeeNumber, date) => {
           dd => dd.division?.toString() === division_id.toString()
         );
         if (divDeptDefault && divDeptDefault.shifts?.length > 0) {
-          deptShiftIds = divDeptDefault.shifts;
+          deptShiftIds = filterShiftsByGender(divDeptDefault.shifts, employeeGender);
         }
       }
 
       // Fallback to legacy department shifts ONLY if employee has NO division assigned
       if (deptShiftIds.length === 0 && !division_id && dept.shifts?.length > 0) {
-        deptShiftIds = dept.shifts;
+        deptShiftIds = filterShiftsByGender(dept.shifts, employeeGender);
       }
 
       if (deptShiftIds.length > 0) {
@@ -210,7 +245,8 @@ const getShiftsForEmployee = async (employeeNumber, date) => {
     if (allCandidateShifts.size === 0 && division_id && employee.division_id) {
       const division = employee.division_id;
       if (division.shifts && division.shifts.length > 0) {
-        const divisionShifts = await Shift.find({ _id: { $in: division.shifts }, isActive: true });
+        const filteredDivisionShifts = filterShiftsByGender(division.shifts, employeeGender);
+        const divisionShifts = await Shift.find({ _id: { $in: filteredDivisionShifts }, isActive: true });
         divisionShifts.forEach(s => {
           s.sourcePriority = 4; // Division Priority
           allCandidateShifts.set(s._id.toString(), s);

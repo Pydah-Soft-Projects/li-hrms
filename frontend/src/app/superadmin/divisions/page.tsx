@@ -112,7 +112,7 @@ export default function DivisionsPage() {
     const [description, setDescription] = useState('');
     const [managerId, setManagerId] = useState('');
     const [selectedDeptIds, setSelectedDeptIds] = useState<string[]>([]);
-    const [selectedShiftIds, setSelectedShiftIds] = useState<string[]>([]);
+    const [selectedShifts, setSelectedShifts] = useState<{ shiftId: string; gender: string }[]>([]);
 
     // Hierarchical Shift Assignment State
     const [targetScope, setTargetScope] = useState<'division' | 'department' | 'designation'>('division');
@@ -166,12 +166,27 @@ export default function DivisionsPage() {
         if (!showShiftDialog) return;
 
         const loadExistingShifts = async () => {
-            let existingShifts: string[] = [];
+            let existingShifts: { shiftId: string; gender: string }[] = [];
             const divisionId = showShiftDialog._id;
+
+            // Helper to parse Mixed backend response (string ID or Object with shiftId/gender)
+            // Backend migration ensures objects, but we handle robustly.
+            const parseShifts = (shifts: any[]) => {
+                return (shifts || []).map(s => {
+                    if (typeof s === 'string') return { shiftId: s, gender: 'All' }; // Should not happen after migration
+                    // If it's the new object structure
+                    if (s.shiftId) return {
+                        shiftId: typeof s.shiftId === 'string' ? s.shiftId : s.shiftId._id,
+                        gender: s.gender || 'All'
+                    };
+                    // Fallback for old object structure (direct Shift object)
+                    return { shiftId: s._id, gender: 'All' };
+                });
+            };
 
             if (targetScope === 'division') {
                 // Load division defaults
-                existingShifts = showShiftDialog.shifts?.map(s => typeof s === 'string' ? s : s._id) || [];
+                existingShifts = parseShifts(showShiftDialog.shifts || []);
             }
             else if (targetScope === 'department' && targetDeptId) {
                 // Load department overrides for this division
@@ -179,14 +194,14 @@ export default function DivisionsPage() {
                 if (dept && dept.divisionDefaults) {
                     const defaultForDiv = dept.divisionDefaults.find(dd => dd.division === divisionId || (dd.division as any)?._id === divisionId);
                     if (defaultForDiv && defaultForDiv.shifts) {
-                        existingShifts = defaultForDiv.shifts.map(s => typeof s === 'string' ? s : s._id);
+                        existingShifts = parseShifts(defaultForDiv.shifts);
                     }
                 }
             }
             else if (targetScope === 'designation' && targetDesigId && targetDeptId) {
                 // Load designation overrides for this department AND division
                 try {
-                    setLoading(true); // Reuse loading or use local loading? Local is better for UI responsiveness, but reusing main for simplicity
+                    setLoading(true);
                     const res = await api.getDesignation(targetDesigId);
                     if (res.success && res.data) {
                         const des = res.data as Designation;
@@ -196,8 +211,7 @@ export default function DivisionsPage() {
                                 (ds.department?.toString() === targetDeptId || (ds.department as any)?._id === targetDeptId)
                             );
                             if (shiftConfig) {
-                                // Extract IDs. If populated (unlikely from this endpoint but possible), map to ID.
-                                existingShifts = shiftConfig.shifts.map((s: any) => typeof s === 'string' ? s : s._id);
+                                existingShifts = parseShifts(shiftConfig.shifts);
                             }
                         }
                     }
@@ -208,7 +222,7 @@ export default function DivisionsPage() {
                 }
             }
 
-            setSelectedShiftIds(existingShifts);
+            setSelectedShifts(existingShifts);
         };
 
         loadExistingShifts();
@@ -274,7 +288,7 @@ export default function DivisionsPage() {
         e.preventDefault();
         if (!showShiftDialog) return;
 
-        const payload: { shifts: string[]; targetType?: string; targetId?: string | { designationId: string; departmentId: string } } = { shifts: selectedShiftIds };
+        const payload: { shifts: { shiftId: string; gender: string }[]; targetType?: string; targetId?: string | { designationId: string; departmentId: string } } = { shifts: selectedShifts };
 
         if (targetScope === 'division') {
             payload.targetType = 'division_general';
@@ -343,15 +357,14 @@ export default function DivisionsPage() {
         setTargetScope('division');
         setTargetDeptId('');
         setTargetDesigId('');
-        setSelectedShiftIds([]);
+        setSelectedShifts([]);
         setError('');
     };
 
     const openShiftDialog = (div: Division) => {
         setShowShiftDialog(div);
         resetShiftForm();
-        // Pre-select current division defaults (only for division scope initially)
-        setSelectedShiftIds(div.shifts?.map(s => typeof s === 'string' ? s : s._id) || []);
+        // Shift loading is handled by useEffect when dialog opens
     };
 
     if (loading && divisions.length === 0) return <div className="flex items-center justify-center h-screen"><Spinner /></div>;
@@ -595,7 +608,7 @@ export default function DivisionsPage() {
                                             <button
                                                 key={scope}
                                                 type="button"
-                                                onClick={() => { setTargetScope(scope); setSelectedShiftIds([]); }}
+                                                onClick={() => { setTargetScope(scope); setSelectedShifts([]); }}
                                                 className={`flex-1 rounded-lg py-2 text-xs font-semibold capitalize transition-all ${targetScope === scope
                                                     ? 'bg-white text-blue-600 shadow-sm dark:bg-slate-700 dark:text-blue-400'
                                                     : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
@@ -653,20 +666,55 @@ export default function DivisionsPage() {
 
                                 <div className="max-h-60 overflow-y-auto rounded-2xl border border-slate-100 p-2 dark:border-slate-800">
                                     <label className="mb-2 block px-2 text-xs font-semibold uppercase text-slate-500">Select Shifts</label>
-                                    {shifts.map(shift => (
-                                        <label key={shift._id} className="flex items-center gap-3 rounded-xl p-3 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors">
-                                            <input
-                                                type="checkbox"
-                                                checked={selectedShiftIds.includes(shift._id)}
-                                                onChange={() => setSelectedShiftIds(prev => prev.includes(shift._id) ? prev.filter(id => id !== shift._id) : [...prev, shift._id])}
-                                                className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 h-4 w-4"
-                                            />
-                                            <div className="flex-1">
-                                                <div className="text-sm text-slate-700 dark:text-slate-300 font-semibold">{shift.name}</div>
-                                                <div className="text-[10px] text-slate-500">{shift.startTime} - {shift.endTime} ({shift.duration} mins)</div>
+                                    {shifts.map(shift => {
+                                        const isSelected = selectedShifts.some(s => s.shiftId === shift._id);
+                                        const selectedConfig = selectedShifts.find(s => s.shiftId === shift._id);
+
+                                        return (
+                                            <div key={shift._id} className="flex items-center gap-3 rounded-xl p-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isSelected}
+                                                    onChange={() => {
+                                                        if (isSelected) {
+                                                            setSelectedShifts(prev => prev.filter(s => s.shiftId !== shift._id));
+                                                        } else {
+                                                            setSelectedShifts(prev => [...prev, { shiftId: shift._id, gender: 'All' }]);
+                                                        }
+                                                    }}
+                                                    className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 h-4 w-4 cursor-pointer"
+                                                />
+                                                <div className="flex-1 cursor-pointer" onClick={() => {
+                                                    if (!isSelected) {
+                                                        setSelectedShifts(prev => [...prev, { shiftId: shift._id, gender: 'All' }]);
+                                                    }
+                                                }}>
+                                                    <div className="text-sm text-slate-700 dark:text-slate-300 font-semibold">{shift.name}</div>
+                                                    <div className="text-[10px] text-slate-500">{shift.startTime} - {shift.endTime} ({shift.duration} mins)</div>
+                                                </div>
+
+                                                {/* Gender Selector - Only visible if checked */}
+                                                {isSelected && (
+                                                    <select
+                                                        value={selectedConfig?.gender || 'All'}
+                                                        onChange={(e) => {
+                                                            const newGender = e.target.value;
+                                                            setSelectedShifts(prev => prev.map(s =>
+                                                                s.shiftId === shift._id ? { ...s, gender: newGender } : s
+                                                            ));
+                                                        }}
+                                                        className="text-xs rounded-lg border-slate-200 bg-white px-2 py-1 focus:border-amber-500 focus:outline-none dark:bg-slate-900 dark:border-slate-700"
+                                                        onClick={(e) => e.stopPropagation()}
+                                                    >
+                                                        <option value="All">All Genders</option>
+                                                        <option value="Male">Male Only</option>
+                                                        <option value="Female">Female Only</option>
+                                                        <option value="Other">Other</option>
+                                                    </select>
+                                                )}
                                             </div>
-                                        </label>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
 
                                 {error && <p className="text-sm text-red-500">{error}</p>}

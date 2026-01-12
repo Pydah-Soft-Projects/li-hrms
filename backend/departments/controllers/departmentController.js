@@ -21,7 +21,15 @@ exports.getAllDepartments = async (req, res) => {
       .populate('divisionHODs.hod', 'name email role')
       .populate('divisionHODs.division', 'name code')
       .populate('hr', 'name email role')
-      .populate('shifts', 'name startTime endTime duration isActive')
+      .populate('shifts.shiftId', 'name startTime endTime duration isActive')
+      .populate({
+        path: 'divisionDefaults.division',
+        select: 'name code',
+      })
+      .populate({
+        path: 'divisionDefaults.shifts.shiftId',
+        select: 'name startTime endTime duration isActive',
+      })
       .populate('designations', 'name code isActive')
       .populate('createdBy', 'name email')
       .sort({ name: 1 });
@@ -49,7 +57,15 @@ exports.getDepartment = async (req, res) => {
     const department = await Department.findById(req.params.id)
       .populate('hod', 'name email role')
       .populate('hr', 'name email role')
-      .populate('shifts', 'name startTime endTime duration isActive')
+      .populate('shifts.shiftId', 'name startTime endTime duration isActive')
+      .populate({
+        path: 'divisionDefaults.division',
+        select: 'name code',
+      })
+      .populate({
+        path: 'divisionDefaults.shifts.shiftId',
+        select: 'name startTime endTime duration isActive',
+      })
       .populate('createdBy', 'name email');
 
     if (!department) {
@@ -595,12 +611,12 @@ exports.assignHR = async (req, res) => {
 // @access  Private (Super Admin, Sub Admin, HR)
 exports.assignShifts = async (req, res) => {
   try {
-    const { shiftIds } = req.body;
+    const { shifts } = req.body;
 
-    if (!Array.isArray(shiftIds)) {
+    if (!Array.isArray(shifts)) {
       return res.status(400).json({
         success: false,
-        message: 'shiftIds must be an array',
+        message: 'shifts must be an array',
       });
     }
 
@@ -613,9 +629,11 @@ exports.assignShifts = async (req, res) => {
     }
 
     // Validate all shifts exist
-    if (shiftIds.length > 0) {
-      const shifts = await Shift.find({ _id: { $in: shiftIds } });
-      if (shifts.length !== shiftIds.length) {
+    if (shifts.length > 0) {
+      // Extract IDs depending on whether input is object or string (backward compatibility)
+      const shiftIds = shifts.map(s => (typeof s === 'string' ? s : s.shiftId));
+      const foundShifts = await Shift.find({ _id: { $in: shiftIds } });
+      if (foundShifts.length !== shiftIds.length) {
         return res.status(400).json({
           success: false,
           message: 'One or more shifts not found',
@@ -623,10 +641,16 @@ exports.assignShifts = async (req, res) => {
       }
     }
 
-    department.shifts = shiftIds;
+    // Ensure we store in the correct format [{ shiftId, gender }]
+    const formattedShifts = shifts.map(s => {
+      if (typeof s === 'string') return { shiftId: s, gender: 'All' };
+      return { shiftId: s.shiftId, gender: s.gender || 'All' };
+    });
+
+    department.shifts = formattedShifts;
     await department.save();
 
-    const populatedDepartment = await Department.findById(req.params.id).populate('shifts', 'name startTime endTime duration');
+    const populatedDepartment = await Department.findById(req.params.id).populate('shifts.shiftId', 'name startTime endTime duration');
 
     res.status(200).json({
       success: true,
@@ -649,7 +673,7 @@ exports.assignShifts = async (req, res) => {
 exports.getDepartmentConfiguration = async (req, res) => {
   try {
     const department = await Department.findById(req.params.id)
-      .populate('shifts', 'name startTime endTime duration isActive')
+      .populate('shifts.shiftId', 'name startTime endTime duration isActive')
       .populate('hod', 'name email role')
       .populate('hr', 'name email role');
 

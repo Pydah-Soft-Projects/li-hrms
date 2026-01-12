@@ -126,11 +126,83 @@ export default function DepartmentsPage() {
   // const [hodId, setHodId] = useState(''); // Removed Global HOD
 
   // Shift assignment state
-  const [selectedShiftIds, setSelectedShiftIds] = useState<string[]>([]);
-  const [selectedDesignationShiftIds, setSelectedDesignationShiftIds] = useState<string[]>([]);
+  const [selectedShifts, setSelectedShifts] = useState<{ shiftId: string; gender: string }[]>([]);
+  const [selectedDesignationShifts, setSelectedDesignationShifts] = useState<{ shiftId: string; gender: string }[]>([]);
   const [targetScope, setTargetScope] = useState<'division' | 'department' | 'designation'>('department');
   const [targetDivisionId, setTargetDivisionId] = useState<string>('');
   const [targetDesignationId, setTargetDesignationId] = useState<string>('');
+
+  // Effect to pre-fill shifts when scope/target changes
+  useEffect(() => {
+    if (!showShiftDialog) return;
+
+    let newSelectedShifts: { shiftId: string; gender: string }[] = [];
+
+    const normalizeShifts = (shifts: any[]) => {
+      return (shifts || []).map((s: any) => {
+        if (typeof s === 'string') return { shiftId: s, gender: 'All' };
+        if (s.shiftId) {
+          const sId = typeof s.shiftId === 'string' ? s.shiftId : s.shiftId._id;
+          return { shiftId: sId, gender: s.gender || 'All' };
+        }
+        return { shiftId: s._id, gender: 'All' };
+      });
+    };
+
+    if (targetScope === 'department') {
+      if (targetDivisionId) {
+        // Look for division-specific overrides
+        // divisionDefaults is now populated
+        const defaults = showShiftDialog.divisionDefaults?.find((dd: any) =>
+          (typeof dd.division === 'string' ? dd.division : dd.division._id) === targetDivisionId
+        );
+        newSelectedShifts = normalizeShifts(defaults?.shifts || []);
+      } else {
+        // Use global department shifts
+        newSelectedShifts = normalizeShifts(showShiftDialog.shifts || []);
+      }
+    } else if (targetScope === 'designation') {
+      if (targetDesignationId) {
+        const desig = designations.find(d => d._id === targetDesignationId);
+        if (desig) {
+          if (targetDivisionId) {
+            // Designation in Dept in Division
+            // We need to look in desig.departmentShifts for matching dept AND division
+            // OR desig.divisionDefaults?
+            // Based on backend 'designation_in_dept_in_div' it updates departmentShifts with division field
+            const override = desig.departmentShifts?.find((ds: any) =>
+              (typeof ds.department === 'string' ? ds.department : ds.department._id) === showShiftDialog._id &&
+              (typeof ds.division === 'string' ? ds.division : ds.division._id) === targetDivisionId
+            );
+            newSelectedShifts = normalizeShifts(override?.shifts || []);
+          } else {
+            // Designation in Dept (Global context of Dept?) or just Designation Global?
+            // Since 'Context Division' is required for Designation scope if divisions exist...
+            // If divisions exist but none selected (not possible due to required?), fallback to dept specific without division?
+            const override = desig.departmentShifts?.find((ds: any) =>
+              (typeof ds.department === 'string' ? ds.department : ds.department._id) === showShiftDialog._id &&
+              !ds.division
+            );
+            // If no specific override, maybe fall back to global designation shifts?
+            // Usually if I am editing a specific scope, I start with what is THERE.
+            // If nothing is there, I start empty? Or inherited? 
+            // Inheritance is better UX but tricky to save 'no change'.
+            // For now, let's show what is explicitly saved.
+            if (override) {
+              newSelectedShifts = normalizeShifts(override.shifts);
+            } else {
+              // Should we show designation global? 
+              // Maybe not, to avoid confusion that it's an override.
+              newSelectedShifts = [];
+            }
+          }
+        }
+      }
+    }
+
+    setSelectedShifts(newSelectedShifts);
+
+  }, [targetScope, targetDivisionId, targetDesignationId, showShiftDialog, designations]);
 
   // Division HOD state
   const [divisions, setDivisions] = useState<Division[]>([]);
@@ -330,7 +402,7 @@ export default function DepartmentsPage() {
           targetType = 'department_in_division';
           targetId = showShiftDialog._id;
         } else if (targetScope === 'designation') {
-          targetType = 'designation_in_division';
+          targetType = 'designation_in_dept_in_div';
           targetId = {
             designationId: targetDesignationId,
             departmentId: showShiftDialog._id
@@ -338,13 +410,13 @@ export default function DepartmentsPage() {
         }
 
         response = await api.assignShiftsToDivision(targetDivisionId, {
-          shifts: selectedShiftIds,
+          shifts: selectedShifts,
           targetType,
           targetId
         });
       } else if (targetScope === 'department') {
         // Fallback to legacy global department assignment if no division context
-        response = await api.assignShifts(showShiftDialog._id, selectedShiftIds);
+        response = await api.assignShifts(showShiftDialog._id, selectedShifts);
       } else {
         setError('Division context is required for this scope');
         return;
@@ -352,7 +424,7 @@ export default function DepartmentsPage() {
 
       if (response.success) {
         setShowShiftDialog(null);
-        setSelectedShiftIds([]);
+        setSelectedShifts([]);
         setTargetScope('department');
         setTargetDivisionId('');
         setTargetDesignationId('');
@@ -542,29 +614,94 @@ export default function DepartmentsPage() {
     setShowShiftDialog(dept);
     // Reload shifts to ensure we have the latest data
     loadShifts();
+    // Load designations for this department to populate the dropdown
+    loadDesignations(dept._id);
     // Set currently assigned shifts
-    const assignedShiftIds = (dept.shifts as (string | Shift)[])?.map((s: string | Shift) => (typeof s === 'string' ? s : s._id)) || [];
-    setSelectedShiftIds(assignedShiftIds);
+    // Parse existing shifts which might be strings (old) or objects (new)
+    const assignedShifts = (dept.shifts || []).map((s: any) => {
+      if (typeof s === 'string') return { shiftId: s, gender: 'All' };
+      if (s.shiftId) {
+        // It's a config object
+        const sId = typeof s.shiftId === 'string' ? s.shiftId : (s.shiftId as Shift)._id;
+        return { shiftId: sId, gender: s.gender || 'All' };
+      }
+      // It's a Shift object directly (legacy case)
+      return { shiftId: s._id, gender: 'All' };
+    });
+    setSelectedShifts(assignedShifts);
     setError('');
   };
 
   const toggleShiftSelection = (shiftId: string) => {
-    setSelectedShiftIds((prev) =>
-      prev.includes(shiftId) ? prev.filter((id) => id !== shiftId) : [...prev, shiftId]
-    );
+    setSelectedShifts((prev) => {
+      const exists = prev.find(s => s.shiftId === shiftId);
+      if (exists) {
+        return prev.filter(s => s.shiftId !== shiftId);
+      } else {
+        return [...prev, { shiftId, gender: 'All' }];
+      }
+    });
+  };
+
+  const updateShiftGender = (shiftId: string, gender: string) => {
+    setSelectedShifts(prev => prev.map(s => s.shiftId === shiftId ? { ...s, gender } : s));
   };
 
   const toggleDesignationShiftSelection = (shiftId: string) => {
-    setSelectedDesignationShiftIds((prev) =>
-      prev.includes(shiftId) ? prev.filter((id) => id !== shiftId) : [...prev, shiftId]
-    );
+    setSelectedDesignationShifts((prev) => {
+      const exists = prev.find(s => s.shiftId === shiftId);
+      if (exists) {
+        return prev.filter(s => s.shiftId !== shiftId);
+      } else {
+        return [...prev, { shiftId, gender: 'All' }];
+      }
+    });
+  };
+
+  const updateDesignationShiftGender = (shiftId: string, gender: string) => {
+    setSelectedDesignationShifts(prev => prev.map(s => s.shiftId === shiftId ? { ...s, gender } : s));
   };
 
   const handleOpenDesignationShiftDialog = (designation: Designation) => {
     setShowDesignationShiftDialog(designation);
     loadShifts();
-    const assignedShiftIds = (designation.shifts as (string | Shift)[])?.map((s: string | Shift) => (typeof s === 'string' ? s : s._id)) || [];
-    setSelectedDesignationShiftIds(assignedShiftIds);
+    // Parse existing shifts for this designation/scope
+    let existingShifts = [];
+    if (showDesignationDialog === 'global' || !showDesignationDialog) {
+      // Global defaults
+      existingShifts = designation.shifts || [];
+    } else {
+      // Find override for this department
+      const deptOverride = designation.departmentShifts?.find(ds =>
+        (typeof ds.department === 'string' ? ds.department : ds.department._id) === showDesignationDialog
+      );
+      if (deptOverride) {
+        existingShifts = deptOverride.shifts || [];
+      } else {
+        // Fallback to global if no override?? Or empty? Usually empty if creating new override.
+        // But if we want to show global assignments as pre-selected?
+        // Current logic was: `designation.shifts` (Global) ??
+        // Wait, line 585 in original code used `designation.shifts`.
+        // But if I am effectively *editing* parameters for a specific department, I should load THAT department's params if they exist.
+        // If they don't exist, I start clean (or maybe copy global).
+        // Let's stick to what was there but parse it correctly.
+        existingShifts = designation.shifts || [];
+      }
+    }
+
+    // Actually, line 585 was simply: `designation.shifts`. It didn't seem to account for scope overrides in loading!
+    // That might be a bug or feature of the original code. Let's fix it to load correct scope if possible, or just keep it simple.
+    // Given I am replacing logic, I will stick to `designation.shifts` for now to avoid breaking behavior, but parses properly.
+
+    const assignedShifts = existingShifts.map((s: any) => {
+      if (typeof s === 'string') return { shiftId: s, gender: 'All' };
+      if (s.shiftId) {
+        const sId = typeof s.shiftId === 'string' ? s.shiftId : (s.shiftId as Shift)._id;
+        return { shiftId: sId, gender: s.gender || 'All' };
+      }
+      return { shiftId: s._id, gender: 'All' };
+    });
+    setSelectedDesignationShifts(assignedShifts);
     setError('');
   };
 
@@ -576,13 +713,13 @@ export default function DepartmentsPage() {
     try {
       const response = await api.assignShiftsToDesignation(
         showDesignationShiftDialog._id,
-        selectedDesignationShiftIds,
+        selectedDesignationShifts,
         showDesignationDialog === 'global' ? undefined : (showDesignationDialog || undefined)
       );
 
       if (response.success) {
         setShowDesignationShiftDialog(null);
-        setSelectedDesignationShiftIds([]);
+        setSelectedDesignationShifts([]);
 
         // Update local state directly with the returned populated designation
         if (response.data) {
@@ -1017,7 +1154,7 @@ export default function DepartmentsPage() {
                 className="fixed inset-0 bg-slate-900/75 backdrop-blur-md transition-opacity"
                 onClick={() => {
                   setShowShiftDialog(null);
-                  setSelectedShiftIds([]);
+                  setSelectedShifts([]);
                 }}
               />
               <div className="relative z-50 w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl shadow-blue-500/10 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/95">
@@ -1033,7 +1170,7 @@ export default function DepartmentsPage() {
                   <button
                     onClick={() => {
                       setShowShiftDialog(null);
-                      setSelectedShiftIds([]);
+                      setSelectedShifts([]);
                     }}
                     className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 focus:outline-none focus:ring-2 focus:ring-red-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
                   >
@@ -1048,13 +1185,13 @@ export default function DepartmentsPage() {
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Target Scope</label>
                     <div className="flex rounded-2xl bg-slate-100 p-1 dark:bg-slate-800">
-                      {(['division', 'department', 'designation'] as const).map((scope) => (
+                      {(['department', 'designation'] as const).map((scope) => (
                         <button
                           key={scope}
                           type="button"
                           onClick={() => {
                             setTargetScope(scope);
-                            setSelectedShiftIds([]);
+                            // setSelectedShifts([]); // Removed to let useEffect handle it
                             // Reset target IDs when switching scope
                             if (scope === 'department') {
                               setTargetDivisionId('');
@@ -1070,23 +1207,23 @@ export default function DepartmentsPage() {
                       ))}
                     </div>
                     <p className="text-[10px] text-slate-500 italic">
-                      {targetScope === 'division' && "General defaults for everyone in the selected Division."}
                       {targetScope === 'department' && "Specific overrides for this Department."}
                       {targetScope === 'designation' && "Fine-grained overrides for a specific Designation."}
                     </p>
                   </div>
 
-                  {/* Division Selector (Required for Division/Designation scope, Optional for Department scope) */}
-                  {(targetScope === 'division' || targetScope === 'designation' || (targetScope === 'department' && (showShiftDialog.divisions?.length ?? 0) > 0)) && (
+                  {/* Division Selector (Required for Designation scope) */}
+                  {(targetScope === 'designation' || (targetScope === 'department' && (showShiftDialog.divisions?.length ?? 0) > 0)) && (
                     <div>
                       <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                        {targetScope === 'division' ? 'Target Division' : 'Context Division (Optional)'}
+                        {/* Optional context for Department, Required for Designation if mult-div */}
+                        Context Division (Optional)
                       </label>
                       <select
                         value={targetDivisionId}
                         onChange={(e) => setTargetDivisionId(e.target.value)}
                         className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                        required={targetScope === 'division' || targetScope === 'designation'}
+                        required={targetScope === 'designation'}
                       >
                         <option value="">Select Division</option>
                         {showShiftDialog.divisions?.map((divId: string | Division) => {
@@ -1144,39 +1281,56 @@ export default function DepartmentsPage() {
                         {shifts.map((shift) => (
                           <label
                             key={shift._id}
-                            className={`group flex cursor-pointer items-center gap-3 rounded-2xl border p-4 transition-all ${selectedShiftIds.includes(shift._id)
+                            className={`group flex flex-col gap-2 rounded-2xl border p-4 transition-all ${selectedShifts.some(s => s.shiftId === shift._id)
                               ? 'border-blue-300 bg-blue-50/50 shadow-md shadow-blue-100 dark:border-blue-700 dark:bg-blue-900/20'
                               : 'border-slate-200 bg-white hover:border-blue-200 hover:bg-blue-50/30 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600'
                               }`}
                           >
-                            <input
-                              type="checkbox"
-                              checked={selectedShiftIds.includes(shift._id)}
-                              onChange={() => toggleShiftSelection(shift._id)}
-                              className="h-5 w-5 rounded-lg border-slate-300 text-blue-600 transition-all focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 dark:border-slate-600"
-                            />
-                            <div className="flex-1">
-                              <div className="font-semibold text-slate-900 dark:text-slate-100">{shift.name}</div>
-                              <div className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-                                {shift.startTime} - {shift.endTime} ({shift.duration} hours)
+                            <div className="flex cursor-pointer items-center gap-3">
+                              <input
+                                type="checkbox"
+                                checked={selectedShifts.some(s => s.shiftId === shift._id)}
+                                onChange={() => toggleShiftSelection(shift._id)}
+                                className="h-5 w-5 rounded-lg border-slate-300 text-blue-600 transition-all focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 dark:border-slate-600"
+                              />
+                              <div className="flex-1">
+                                <div className="font-semibold text-slate-900 dark:text-slate-100">{shift.name}</div>
+                                <div className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                                  {shift.startTime} - {shift.endTime} ({shift.duration} hours)
+                                </div>
+                                {!shift.isActive && (
+                                  <span className="mt-1 inline-block rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+                                    Inactive
+                                  </span>
+                                )}
                               </div>
-                              {!shift.isActive && (
-                                <span className="mt-1 inline-block rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
-                                  Inactive
-                                </span>
-                              )}
                             </div>
+                            {selectedShifts.some(s => s.shiftId === shift._id) && (
+                              <div className="ml-8 mt-2 flex items-center gap-2" onClick={(e) => e.preventDefault()}>
+                                <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Gender:</label>
+                                <select
+                                  value={selectedShifts.find(s => s.shiftId === shift._id)?.gender || 'All'}
+                                  onChange={(e) => updateShiftGender(shift._id, e.target.value)}
+                                  className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 focus:border-blue-500 focus:outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                                >
+                                  <option value="All">All Genders</option>
+                                  <option value="Male">Male Only</option>
+                                  <option value="Female">Female Only</option>
+                                  <option value="Other">Other</option>
+                                </select>
+                              </div>
+                            )}
                           </label>
                         ))}
                       </div>
                     )}
                   </div>
 
-                  {selectedShiftIds.length > 0 && (
+                  {selectedShifts.length > 0 && (
                     <div className="rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 p-4 dark:border-blue-800 dark:from-blue-900/20 dark:to-indigo-900/20">
                       <p className="text-sm font-medium text-blue-800 dark:text-blue-300">
                         <span className="mr-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-500 text-xs font-bold text-white">
-                          {selectedShiftIds.length}
+                          {selectedShifts.length}
                         </span>
                         shift(s) selected
                       </p>
@@ -1200,7 +1354,7 @@ export default function DepartmentsPage() {
                       type="button"
                       onClick={() => {
                         setShowShiftDialog(null);
-                        setSelectedShiftIds([]);
+                        setSelectedShifts([]);
                       }}
                       className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
                     >
@@ -1462,15 +1616,22 @@ export default function DepartmentsPage() {
                                   {designation.shifts && designation.shifts.length > 0 && (
                                     <div className="flex flex-wrap gap-1 mt-1">
                                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest w-full">Global Defaults</span>
-                                      {(designation.shifts as Shift[]).map((shift: Shift) => (
-                                        <button
-                                          key={shift._id}
-                                          onClick={() => setShowShiftBreakdownDialog(designation)}
-                                          className="inline-flex items-center gap-1 rounded-md bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700 ring-1 ring-inset ring-purple-700/10 hover:bg-purple-100 transition-colors dark:bg-purple-400/10 dark:text-purple-400 dark:ring-purple-400/20 dark:hover:bg-purple-400/20 cursor-pointer"
-                                        >
-                                          {shift.name} {shift.startTime ? `(${shift.startTime})` : ''}
-                                        </button>
-                                      ))}
+                                      {(designation.shifts as any[])?.map((s: any) => {
+                                        const shift = s.shiftId ? (s.shiftId as Shift) : (s as Shift);
+                                        const gender = s.gender || 'All';
+                                        if (!shift || !shift.name) return null;
+                                        return (
+                                          <button
+                                            key={shift._id}
+                                            onClick={() => setShowShiftBreakdownDialog(designation)}
+                                            className="inline-flex items-center gap-1 rounded-md bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700 ring-1 ring-inset ring-purple-700/10 hover:bg-purple-100 transition-colors dark:bg-purple-400/10 dark:text-purple-400 dark:ring-purple-400/20 dark:hover:bg-purple-400/20 cursor-pointer"
+                                            title={`Gender: ${gender}`}
+                                          >
+                                            {shift.name} {shift.startTime ? `(${shift.startTime})` : ''}
+                                            {gender !== 'All' && <span className="ml-1 text-[10px] text-purple-500">({gender.charAt(0)})</span>}
+                                          </button>
+                                        );
+                                      })}
                                     </div>
                                   )}
                                   {/* Department-Specific Shifts */}
@@ -1478,16 +1639,22 @@ export default function DepartmentsPage() {
                                     <div className="flex flex-wrap gap-1 mt-1">
                                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest w-full">Dept Overrides</span>
                                       {designation.departmentShifts.flatMap((ds) =>
-                                        (ds.shifts as Shift[] | undefined)?.map((shift: Shift) => (
-                                          <button
-                                            key={`${(ds.department as any)._id}-${shift._id}`}
-                                            onClick={() => setShowShiftBreakdownDialog(designation)}
-                                            className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-700/10 hover:bg-emerald-100 transition-colors dark:bg-emerald-400/10 dark:text-emerald-400 dark:ring-emerald-400/20 dark:hover:bg-emerald-400/20 cursor-pointer"
-                                            title={`${(ds.division as any)?.name ? `${(ds.division as any).name} > ` : ''}${(ds.department as any).name}`}
-                                          >
-                                            {shift.name} {ds.division ? `(${(ds.division as any).code} > ${(ds.department as any).code || 'Dept'})` : `(${(ds.department as any).name})`}
-                                          </button>
-                                        )) || []
+                                        (ds.shifts as any[] | undefined)?.map((s: any) => {
+                                          const shift = s.shiftId ? (s.shiftId as Shift) : (s as Shift);
+                                          const gender = s.gender || 'All';
+                                          if (!shift || !shift.name) return null;
+                                          return (
+                                            <button
+                                              key={`${(ds.department as any)._id}-${shift._id}`}
+                                              onClick={() => setShowShiftBreakdownDialog(designation)}
+                                              className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-700/10 hover:bg-emerald-100 transition-colors dark:bg-emerald-400/10 dark:text-emerald-400 dark:ring-emerald-400/20 dark:hover:bg-emerald-400/20 cursor-pointer"
+                                              title={`${(ds.division as any)?.name ? `${(ds.division as any).name} > ` : ''}${(ds.department as any).name} | Gender: ${gender}`}
+                                            >
+                                              {shift.name} {ds.division ? `(${(ds.division as any).code} > ${(ds.department as any).code || 'Dept'})` : `(${(ds.department as any).name})`}
+                                              {gender !== 'All' && <span className="ml-1 text-[10px] text-emerald-500">({gender.charAt(0)})</span>}
+                                            </button>
+                                          );
+                                        }) || []
                                       )}
 
                                       {/* Division Defaults */}
@@ -1543,7 +1710,7 @@ export default function DepartmentsPage() {
                 className="fixed inset-0 bg-slate-900/75 backdrop-blur-md transition-opacity"
                 onClick={() => {
                   setShowDesignationShiftDialog(null);
-                  setSelectedDesignationShiftIds([]);
+                  setSelectedDesignationShifts([]);
                 }}
               />
               <div className="relative z-[60] w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl shadow-purple-500/10 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/95">
@@ -1559,7 +1726,7 @@ export default function DepartmentsPage() {
                   <button
                     onClick={() => {
                       setShowDesignationShiftDialog(null);
-                      setSelectedDesignationShiftIds([]);
+                      setSelectedDesignationShifts([]);
                     }}
                     className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 focus:outline-none focus:ring-2 focus:ring-red-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
                   >
@@ -1589,39 +1756,57 @@ export default function DepartmentsPage() {
                         {shifts.map((shift) => (
                           <label
                             key={shift._id}
-                            className={`group flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-all ${selectedDesignationShiftIds.includes(shift._id)
+                            className={`group flex flex-col gap-2 rounded-xl border p-3 transition-all ${selectedDesignationShifts.some(s => s.shiftId === shift._id)
                               ? 'border-purple-300 bg-purple-50/50 shadow-sm dark:border-purple-700 dark:bg-purple-900/20'
                               : 'border-slate-200 bg-white hover:border-purple-200 hover:bg-purple-50/30 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600'
                               }`}
                           >
-                            <input
-                              type="checkbox"
-                              checked={selectedDesignationShiftIds.includes(shift._id)}
-                              onChange={() => toggleDesignationShiftSelection(shift._id)}
-                              className="h-4 w-4 rounded border-slate-300 text-purple-600 transition-all focus:ring-2 focus:ring-purple-400 focus:ring-offset-2 dark:border-slate-600"
-                            />
-                            <div className="flex-1">
-                              <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">{shift.name}</div>
-                              <div className="text-xs text-slate-500 dark:text-slate-400">
-                                {shift.startTime} - {shift.endTime} ({shift.duration}h)
+                            <div className="flex cursor-pointer items-center gap-3">
+                              <input
+                                type="checkbox"
+                                checked={selectedDesignationShifts.some(s => s.shiftId === shift._id)}
+                                onChange={() => toggleDesignationShiftSelection(shift._id)}
+                                className="h-4 w-4 rounded border-slate-300 text-purple-600 transition-all focus:ring-2 focus:ring-purple-400 focus:ring-offset-2 dark:border-slate-600"
+                              />
+                              <div className="flex-1">
+                                <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">{shift.name}</div>
+                                <div className="text-xs text-slate-500 dark:text-slate-400">
+                                  {shift.startTime} - {shift.endTime} ({shift.duration}h)
+                                </div>
                               </div>
+                              {!shift.isActive && (
+                                <span className="rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-medium text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+                                  Inactive
+                                </span>
+                              )}
                             </div>
-                            {!shift.isActive && (
-                              <span className="rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-medium text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
-                                Inactive
-                              </span>
-                            )}
+                            {
+                              selectedDesignationShifts.some(s => s.shiftId === shift._id) && (
+                                <div className="ml-7 mt-2" onClick={(e) => e.preventDefault()}>
+                                  <select
+                                    value={selectedDesignationShifts.find(s => s.shiftId === shift._id)?.gender || 'All'}
+                                    onChange={(e) => updateDesignationShiftGender(shift._id, e.target.value)}
+                                    className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 focus:border-purple-500 focus:outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                                  >
+                                    <option value="All">All Genders</option>
+                                    <option value="Male">Male Only</option>
+                                    <option value="Female">Female Only</option>
+                                    <option value="Other">Other</option>
+                                  </select>
+                                </div>
+                              )
+                            }
                           </label>
                         ))}
                       </div>
                     )}
                   </div>
 
-                  {selectedDesignationShiftIds.length > 0 && (
+                  {selectedDesignationShifts.length > 0 && (
                     <div className="rounded-xl border border-purple-200 bg-gradient-to-r from-purple-50 to-indigo-50 p-3 dark:border-purple-800 dark:from-purple-900/20 dark:to-indigo-900/20">
                       <p className="text-sm font-medium text-purple-800 dark:text-purple-300">
                         <span className="mr-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-purple-500 text-xs font-bold text-white">
-                          {selectedDesignationShiftIds.length}
+                          {selectedDesignationShifts.length}
                         </span>
                         shift(s) selected
                       </p>
@@ -1649,7 +1834,7 @@ export default function DepartmentsPage() {
                       type="button"
                       onClick={() => {
                         setShowDesignationShiftDialog(null);
-                        setSelectedDesignationShiftIds([]);
+                        setSelectedDesignationShifts([]);
                       }}
                       className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
                     >
@@ -1704,16 +1889,24 @@ export default function DepartmentsPage() {
                         </span>
                       </h3>
                       <div className="space-y-2">
-                        {(showShiftBreakdownDialog.shifts as Shift[]).map((shift: Shift) => (
-                          <div key={shift._id} className="flex items-center justify-between rounded-lg border border-purple-200 bg-white p-3 dark:border-purple-700 dark:bg-slate-900">
-                            <div>
-                              <p className="font-medium text-slate-900 dark:text-slate-100">{shift.name}</p>
-                              <p className="text-xs text-slate-500 dark:text-slate-400">
-                                {shift.startTime} - {shift.endTime} ({shift.duration}h)
-                              </p>
+                        {(showShiftBreakdownDialog.shifts as any[]).map((s: any) => {
+                          const shift = s.shiftId ? (s.shiftId as Shift) : (s as Shift);
+                          const gender = s.gender || 'All';
+                          if (!shift || !shift.name) return null;
+                          return (
+                            <div key={shift._id} className="flex items-center justify-between rounded-lg border border-purple-200 bg-white p-3 dark:border-purple-700 dark:bg-slate-900">
+                              <div>
+                                <p className="font-medium text-slate-900 dark:text-slate-100">
+                                  {shift.name}
+                                  {gender !== 'All' && <span className="ml-2 text-xs font-normal text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full dark:bg-purple-900/30 dark:text-purple-300">{gender} Only</span>}
+                                </p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400">
+                                  {shift.startTime} - {shift.endTime} ({shift.duration}h)
+                                </p>
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -1737,16 +1930,24 @@ export default function DepartmentsPage() {
                           </h4>
                           <div className="space-y-2">
                             {ds.shifts && ds.shifts.length > 0 ? (
-                              (ds.shifts as Shift[]).map((shift: Shift) => (
-                                <div key={shift._id} className="flex items-center justify-between rounded-lg border border-emerald-200 bg-white p-3 dark:border-emerald-700 dark:bg-slate-900">
-                                  <div>
-                                    <p className="font-medium text-slate-900 dark:text-slate-100">{shift.name}</p>
-                                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                                      {shift.startTime} - {shift.endTime} ({shift.duration}h)
-                                    </p>
+                              (ds.shifts as any[]).map((s: any) => {
+                                const shift = s.shiftId ? (s.shiftId as Shift) : (s as Shift);
+                                const gender = s.gender || 'All';
+                                if (!shift || !shift.name) return null;
+                                return (
+                                  <div key={shift._id} className="flex items-center justify-between rounded-lg border border-emerald-200 bg-white p-3 dark:border-emerald-700 dark:bg-slate-900">
+                                    <div>
+                                      <p className="font-medium text-slate-900 dark:text-slate-100">
+                                        {shift.name}
+                                        {gender !== 'All' && <span className="ml-2 text-xs font-normal text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full dark:bg-emerald-900/30 dark:text-emerald-300">{gender} Only</span>}
+                                      </p>
+                                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                                        {shift.startTime} - {shift.endTime} ({shift.duration}h)
+                                      </p>
+                                    </div>
                                   </div>
-                                </div>
-                              ))
+                                );
+                              })
                             ) : (
                               <p className="text-xs text-slate-500 italic">No shifts assigned</p>
                             )}
@@ -1812,7 +2013,7 @@ export default function DepartmentsPage() {
                 onClick={() => setShowDesignationDialog('global')}
                 className="px-4 py-2 text-sm font-medium text-slate-100 bg-blue-600 rounded-xl hover:bg-blue-700 transition-colors"
               >
-               + Global Designations
+                + Global Designations
               </button>
             </div>
           </div>
@@ -2022,8 +2223,8 @@ export default function DepartmentsPage() {
             />
           )
         }
-      </div>
-    </div>
+      </div >
+    </div >
   );
 }
 

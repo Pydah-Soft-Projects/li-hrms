@@ -161,6 +161,8 @@ exports.generateGateInQR = async (req, res) => {
     }
 };
 
+const SecurityLog = require('../model/SecurityLog');
+
 /**
  * @desc    Verify Gate Pass (Scan QR)
  * @route   POST /api/security/verify
@@ -196,12 +198,26 @@ exports.verifyGatePass = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Permission record not found' });
         }
 
+        const logEntry = new SecurityLog({
+            permissionId: permission._id,
+            employeeId: permission.employeeId._id,
+            verifiedBy: req.user._id,
+            actionType: type === 'OUT' ? 'GATE_OUT' : 'GATE_IN'
+        });
+
         // Verify Secret
         if (type === 'OUT') {
             if (permission.gateOutSecret !== qrSecret) {
+                logEntry.status = 'FAILURE';
+                logEntry.details = 'Invalid or Expired Gate Out QR';
+                await logEntry.save();
                 return res.status(400).json({ success: false, message: 'Invalid or Expired Gate Out QR' });
             }
             if (permission.gateOutTime) {
+                logEntry.status = 'FAILURE';
+                logEntry.details = 'Gate Out already verified';
+                logEntry.actionType = 'VERIFICATION_FAILED'; // Or keep as GATE_OUT but failure
+                await logEntry.save();
                 return res.status(400).json({ success: false, message: 'Gate Out already verified', alreadyVerified: true });
             }
 
@@ -214,9 +230,16 @@ exports.verifyGatePass = async (req, res) => {
 
         } else if (type === 'IN') {
             if (permission.gateInSecret !== qrSecret) {
+                logEntry.status = 'FAILURE';
+                logEntry.details = 'Invalid or Expired Gate In QR';
+                await logEntry.save();
                 return res.status(400).json({ success: false, message: 'Invalid or Expired Gate In QR' });
             }
             if (permission.gateInTime) {
+                logEntry.status = 'FAILURE';
+                logEntry.details = 'Gate In already verified';
+                logEntry.actionType = 'VERIFICATION_FAILED';
+                await logEntry.save();
                 return res.status(400).json({ success: false, message: 'Gate In already verified', alreadyVerified: true });
             }
 
@@ -226,6 +249,10 @@ exports.verifyGatePass = async (req, res) => {
         }
 
         await permission.save();
+
+        logEntry.status = 'SUCCESS';
+        logEntry.details = `Gate ${type === 'OUT' ? 'Out' : 'In'} Verified Successfully at ${new Date().toISOString()}`;
+        await logEntry.save();
 
         res.status(200).json({
             success: true,

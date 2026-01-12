@@ -27,8 +27,15 @@ const DivisionSchema = new mongoose.Schema({
         ref: 'Department'
     }],
     shifts: [{
-        type: mongoose.Schema.ObjectId,
-        ref: 'Shift'
+        shiftId: {
+            type: mongoose.Schema.ObjectId,
+            ref: 'Shift'
+        },
+        gender: {
+            type: String,
+            enum: ['Male', 'Female', 'Other', 'All'],
+            default: 'All'
+        }
     }],
     isActive: {
         type: Boolean,
