@@ -195,26 +195,26 @@ export default function AttendancePage() {
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(item =>
-        item.employee.employee_name.toLowerCase().includes(query) ||
-        item.employee.emp_no.toLowerCase().includes(query)
+        item.employee?.employee_name?.toLowerCase().includes(query) ||
+        item.employee?.emp_no?.toLowerCase().includes(query)
       );
     }
 
     if (selectedDivision) {
       filtered = filtered.filter(item =>
-        item.employee.division?._id === selectedDivision
+        item.employee?.division?._id === selectedDivision
       );
     }
 
     if (selectedDepartment) {
       filtered = filtered.filter(item =>
-        item.employee.department?._id === selectedDepartment
+        item.employee?.department?._id === selectedDepartment
       );
     }
 
     if (selectedDesignation) {
       filtered = filtered.filter(item =>
-        item.employee.designation?._id === selectedDesignation
+        item.employee?.designation?._id === selectedDesignation
       );
     }
 
@@ -1288,15 +1288,16 @@ export default function AttendancePage() {
                       </tr>
                     ) : (
                       filteredMonthlyData.map((item) => {
+                        if (!item.employee) return null;
                         const daysPresent = item.presentDays !== undefined
                           ? item.presentDays
-                          : Object.values(item.dailyAttendance).filter(
+                          : Object.values(item.dailyAttendance || {}).filter(
                             (record) => record && (record.status === 'PRESENT' || record.status === 'PARTIAL')
                           ).length;
                         const payableShifts = item.payableShifts !== undefined ? item.payableShifts : 0;
-                        const monthPresent = Object.values(item.dailyAttendance).filter(r => r?.status === 'PRESENT').length;
-                        const monthAbsent = Object.values(item.dailyAttendance).filter(r => r?.status === 'ABSENT').length;
-                        const leaveRecords = Object.values(item.dailyAttendance).filter(r => r?.status === 'LEAVE' || r?.hasLeave);
+                        const monthPresent = Object.values(item.dailyAttendance || {}).filter(r => r?.status === 'PRESENT').length;
+                        const monthAbsent = Object.values(item.dailyAttendance || {}).filter(r => r?.status === 'ABSENT').length;
+                        const leaveRecords = Object.values(item.dailyAttendance || {}).filter(r => r?.status === 'LEAVE' || r?.hasLeave);
                         const totalLeaves = leaveRecords.length;
                         const lopCount = leaveRecords.filter(r => {
                           const anyR = r as any;
@@ -1305,7 +1306,7 @@ export default function AttendancePage() {
                             anyR?.leaveInfo?.leaveType?.toLowerCase().includes('loss of pay');
                         }).length;
                         const paidLeaves = totalLeaves - lopCount;
-                        const totalODs = Object.values(item.dailyAttendance).filter(r => r?.status === 'OD' || r?.hasOD).length;
+                        const totalODs = Object.values(item.dailyAttendance || {}).filter(r => r?.status === 'OD' || r?.hasOD).length;
 
                         return (
                           <tr key={item.employee._id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
@@ -1314,22 +1315,22 @@ export default function AttendancePage() {
                                 <div className="flex items-center gap-2">
                                   <div
                                     className="font-semibold truncate cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex-1"
-                                    onClick={() => handleEmployeeClick(item.employee)}
+                                    onClick={() => item.employee && handleEmployeeClick(item.employee)}
                                     title="Click to view monthly summary"
                                   >
-                                    {item.employee.employee_name}
+                                    {item.employee?.employee_name || 'Unknown Employee'}
                                   </div>
 
                                 </div>
                                 <div className="text-[9px] text-slate-500 dark:text-slate-400 truncate mt-1">
-                                  {item.employee.emp_no}
-                                  {item.employee.department && ` • ${(item.employee.department as any)?.name || ''}`}
+                                  {item.employee?.emp_no || '-'}
+                                  {item.employee?.department && ` • ${(item.employee?.department as any)?.name || ''}`}
                                 </div>
                               </div>
                             </td>
                             {daysArray.map((day) => {
                               const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                              const record = item.dailyAttendance[dateStr] || null;
+                              const record = (item.dailyAttendance || {})[dateStr] || null;
                               const shiftName = record?.shiftId && typeof record.shiftId === 'object' ? record.shiftId.name : '-';
 
                               let displayStatus = 'A';
@@ -1397,13 +1398,13 @@ export default function AttendancePage() {
                                   {daysPresent}
                                 </td>
                                 <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300">
-                                  {Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.otHours || 0), 0).toFixed(1)}
+                                  {Object.values(item.dailyAttendance || {}).reduce((sum, record) => sum + (record?.otHours || 0), 0).toFixed(1)}
                                 </td>
                                 <td className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700 dark:border-slate-700 dark:bg-purple-900/20 dark:text-purple-300">
-                                  {Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.extraHours || 0), 0).toFixed(1)}
+                                  {Object.values(item.dailyAttendance || {}).reduce((sum, record) => sum + (record?.extraHours || 0), 0).toFixed(1)}
                                 </td>
                                 <td className="border-r border-slate-200 bg-cyan-50 px-2 py-2 text-center text-[11px] font-bold text-cyan-700 dark:border-slate-700 dark:bg-cyan-900/20 dark:text-cyan-300">
-                                  {Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.permissionCount || 0), 0)}
+                                  {Object.values(item.dailyAttendance || {}).reduce((sum, record) => sum + (record?.permissionCount || 0), 0)}
                                 </td>
                                 <td className="border-r-0 border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:border-slate-700 dark:bg-green-900/20 dark:text-green-300">
                                   {payableShifts.toFixed(2)}
@@ -1432,10 +1433,10 @@ export default function AttendancePage() {
                             {tableType === 'ot' && (
                               <>
                                 <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700">
-                                  {Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.otHours || 0), 0).toFixed(1)}
+                                  {Object.values(item.dailyAttendance || {}).reduce((sum, record) => sum + (record?.otHours || 0), 0).toFixed(1)}
                                 </td>
                                 <td className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700">
-                                  {Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.extraHours || 0), 0).toFixed(1)}
+                                  {Object.values(item.dailyAttendance || {}).reduce((sum, record) => sum + (record?.extraHours || 0), 0).toFixed(1)}
                                 </td>
                               </>
                             )}

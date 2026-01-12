@@ -54,12 +54,17 @@ const designationSchema = new mongoose.Schema(
       default: 0,
     },
     // Optional shift assignments for this designation (overrides department shifts)
-    shifts: [
-      {
+    shifts: [{
+      shiftId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Shift',
       },
-    ],
+      gender: {
+        type: String,
+        enum: ['Male', 'Female', 'Other', 'All'],
+        default: 'All',
+      },
+    }],
     // Division-specific default shifts (across all departments in that division)
     divisionDefaults: [
       {
@@ -68,12 +73,17 @@ const designationSchema = new mongoose.Schema(
           ref: 'Division',
           required: true,
         },
-        shifts: [
-          {
+        shifts: [{
+          shiftId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'Shift',
           },
-        ],
+          gender: {
+            type: String,
+            enum: ['Male', 'Female', 'Other', 'All'],
+            default: 'All',
+          },
+        }],
       },
     ],
     // Department-specific shift overrides (contextual to a division)
@@ -89,12 +99,17 @@ const designationSchema = new mongoose.Schema(
           ref: 'Department',
           required: true,
         },
-        shifts: [
-          {
+        shifts: [{
+          shiftId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'Shift',
           },
-        ],
+          gender: {
+            type: String,
+            enum: ['Male', 'Female', 'Other', 'All'],
+            default: 'All',
+          },
+        }],
       },
     ],
     isActive: {

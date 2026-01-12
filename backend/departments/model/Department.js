@@ -105,12 +105,17 @@ const departmentSchema = new mongoose.Schema(
       },
     ],
     // Shift assignments for this department
-    shifts: [
-      {
+    shifts: [{
+      shiftId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Shift',
       },
-    ],
+      gender: {
+        type: String,
+        enum: ['Male', 'Female', 'Other', 'All'],
+        default: 'All',
+      },
+    }],
     // Designations linked to this department
     // Automatically populated when employees are assigned designations
     designations: [
@@ -149,12 +154,17 @@ const departmentSchema = new mongoose.Schema(
           type: mongoose.Schema.Types.ObjectId,
           ref: 'Division',
         },
-        shifts: [
-          {
+        shifts: [{
+          shiftId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'Shift',
           },
-        ],
+          gender: {
+            type: String,
+            enum: ['Male', 'Female', 'Other', 'All'],
+            default: 'All',
+          },
+        }],
       },
     ],
     isActive: {

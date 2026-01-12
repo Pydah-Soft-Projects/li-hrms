@@ -329,12 +329,12 @@ export interface Designation {
   code: string;
   description?: string;
   department?: string | Department;
-  shifts?: (string | Shift)[];
-  divisionDefaults?: { division: string | Division; shifts: (string | Shift)[] }[];
+  shifts?: { shiftId: string | Shift; gender: string }[];
+  divisionDefaults?: { division: string | Division; shifts: { shiftId: string | Shift; gender: string }[] }[];
   departmentShifts?: Array<{
     division?: string | Division;
     department: string | Department | { _id: string; name: string; code?: string };
-    shifts: (string | Shift)[];
+    shifts: { shiftId: string | Shift; gender: string }[];
     _id?: string;
   }>;
   paidLeaves?: number;
@@ -371,7 +371,7 @@ export interface Department {
     action: 'half_day' | 'full_day' | 'deduct_amount';
     amount?: number;
   }>;
-  shifts?: (string | Shift)[];
+  shifts?: { shiftId: string | Shift; gender: string }[];
   paidLeaves?: number;
   leaveLimits?: {
     casual: number;
@@ -383,7 +383,7 @@ export interface Department {
   updatedAt?: string;
   divisions?: (string | Division)[];
   designations?: (string | Designation)[];
-  divisionDefaults?: { division: string | Division; shifts: (string | Shift)[] }[];
+  divisionDefaults?: { division: string | Division; shifts: { shiftId: string | Shift; gender: string }[] }[];
 }
 
 export interface Division {
@@ -393,7 +393,7 @@ export interface Division {
   description?: string;
   manager?: { _id: string; name: string; email: string };
   departments?: (string | Department)[];
-  shifts?: (string | Shift)[];
+  shifts?: { shiftId: string | Shift; gender: string }[];
   isActive?: boolean;
 }
 
@@ -774,7 +774,7 @@ export const api = {
     });
   },
 
-  assignShiftsToDivision: async (id: string, data: { shifts: string[]; targetType: string; targetId?: string | { designationId: string; departmentId: string } }) => {
+  assignShiftsToDivision: async (id: string, data: { shifts: { shiftId: string; gender: string }[]; targetType: string; targetId?: string | { designationId: string; departmentId: string } }) => {
     return apiRequest<any>(`/divisions/${id}/shifts`, {
       method: 'POST',
       body: JSON.stringify(data),
@@ -867,10 +867,10 @@ export const api = {
     });
   },
 
-  assignShifts: async (id: string, shiftIds: string[]) => {
+  assignShifts: async (id: string, shifts: { shiftId: string; gender: string }[]) => {
     return apiRequest<Department>(`/departments/${id}/shifts`, {
       method: 'PUT',
-      body: JSON.stringify({ shiftIds }),
+      body: JSON.stringify({ shifts }),
     });
   },
 
@@ -915,10 +915,10 @@ export const api = {
     return apiRequest<void>(`/departments/designations/${id}`, { method: 'DELETE' });
   },
 
-  assignShiftsToDesignation: async (id: string, shiftIds: string[], departmentId?: string) => {
+  assignShiftsToDesignation: async (id: string, shifts: { shiftId: string; gender: string }[], departmentId?: string) => {
     return apiRequest<any>(`/departments/designations/${id}/shifts`, {
       method: 'PUT',
-      body: JSON.stringify({ shiftIds, departmentId }),
+      body: JSON.stringify({ shifts, departmentId }),
     });
   },
 

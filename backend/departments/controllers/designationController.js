@@ -16,7 +16,16 @@ exports.getAllDesignations = async (req, res) => {
     }
 
     const designations = await Designation.find(query)
-      .populate('shifts', 'name startTime endTime duration isActive')
+      .populate('shifts.shiftId', 'name startTime endTime duration isActive')
+      // Populate divisionDefaults
+      .populate({
+        path: 'divisionDefaults.division',
+        select: 'name code',
+      })
+      .populate({
+        path: 'divisionDefaults.shifts.shiftId',
+        select: 'name startTime endTime duration isActive',
+      })
       .populate({
         path: 'departmentShifts.department',
         select: 'name code',
@@ -26,7 +35,7 @@ exports.getAllDesignations = async (req, res) => {
         select: 'name code',
       })
       .populate({
-        path: 'departmentShifts.shifts',
+        path: 'departmentShifts.shifts.shiftId',
         select: 'name startTime endTime duration isActive',
       })
       .populate('createdBy', 'name email')
@@ -71,7 +80,16 @@ exports.getDesignationsByDepartment = async (req, res) => {
 
     // Populate global shifts and department-specific shifts
     const designations = await Designation.find(query)
-      .populate('shifts', 'name startTime endTime duration isActive')
+      .populate('shifts.shiftId', 'name startTime endTime duration isActive')
+      .populate('shifts.shiftId', 'name startTime endTime duration isActive')
+      .populate({
+        path: 'divisionDefaults.division',
+        select: 'name code',
+      })
+      .populate({
+        path: 'divisionDefaults.shifts.shiftId',
+        select: 'name startTime endTime duration isActive',
+      })
       .populate({
         path: 'departmentShifts.department',
         select: 'name code',
@@ -81,7 +99,7 @@ exports.getDesignationsByDepartment = async (req, res) => {
         select: 'name code',
       })
       .populate({
-        path: 'departmentShifts.shifts',
+        path: 'departmentShifts.shifts.shiftId',
         select: 'name startTime endTime duration isActive',
       })
       .populate('createdBy', 'name email')
@@ -123,7 +141,16 @@ exports.getDesignation = async (req, res) => {
   try {
     const designation = await Designation.findById(req.params.id)
       .populate('department', 'name code')
-      .populate('shifts', 'name startTime endTime duration isActive')
+      .populate('shifts.shiftId', 'name startTime endTime duration isActive')
+      .populate('shifts.shiftId', 'name startTime endTime duration isActive')
+      .populate({
+        path: 'divisionDefaults.division',
+        select: 'name code',
+      })
+      .populate({
+        path: 'divisionDefaults.shifts.shiftId',
+        select: 'name startTime endTime duration isActive',
+      })
       .populate({
         path: 'departmentShifts.department',
         select: 'name code',
@@ -133,7 +160,7 @@ exports.getDesignation = async (req, res) => {
         select: 'name code',
       })
       .populate({
-        path: 'departmentShifts.shifts',
+        path: 'departmentShifts.shifts.shiftId',
         select: 'name startTime endTime duration isActive',
       })
       .populate('createdBy', 'name email');
@@ -460,12 +487,12 @@ exports.updateDesignation = async (req, res) => {
 // @access  Private (Super Admin, Sub Admin, HR)
 exports.assignShifts = async (req, res) => {
   try {
-    const { shiftIds, departmentId } = req.body;
+    const { shifts, departmentId } = req.body; // Expect 'shifts' array
 
-    if (!Array.isArray(shiftIds)) {
+    if (!Array.isArray(shifts)) {
       return res.status(400).json({
         success: false,
-        message: 'shiftIds must be an array',
+        message: 'shifts must be an array',
       });
     }
 
@@ -478,15 +505,22 @@ exports.assignShifts = async (req, res) => {
     }
 
     // Validate all shifts exist
-    if (shiftIds.length > 0) {
-      const shifts = await Shift.find({ _id: { $in: shiftIds } });
-      if (shifts.length !== shiftIds.length) {
+    if (shifts.length > 0) {
+      const shiftIds = shifts.map(s => (typeof s === 'string' ? s : s.shiftId));
+      const foundShifts = await Shift.find({ _id: { $in: shiftIds } });
+      if (foundShifts.length !== shiftIds.length) {
         return res.status(400).json({
           success: false,
           message: 'One or more shifts not found',
         });
       }
     }
+
+    // Format shifts
+    const formattedShifts = shifts.map(s => {
+      if (typeof s === 'string') return { shiftId: s, gender: 'All' };
+      return { shiftId: s.shiftId, gender: s.gender || 'All' };
+    });
 
     if (departmentId) {
       // Find and update specific department configuration
@@ -495,16 +529,16 @@ exports.assignShifts = async (req, res) => {
       );
 
       if (existingConfigIndex > -1) {
-        designation.departmentShifts[existingConfigIndex].shifts = shiftIds;
+        designation.departmentShifts[existingConfigIndex].shifts = formattedShifts;
       } else {
         designation.departmentShifts.push({
           department: departmentId,
-          shifts: shiftIds,
+          shifts: formattedShifts,
         });
       }
     } else {
       // Global update (default)
-      designation.shifts = shiftIds;
+      designation.shifts = formattedShifts;
     }
 
     await designation.save();
@@ -512,7 +546,7 @@ exports.assignShifts = async (req, res) => {
     // Populate global shifts and department specific shifts
     const populatedDesignation = await Designation.findById(req.params.id)
       .populate('department', 'name code')
-      .populate('shifts', 'name startTime endTime duration isActive')
+      .populate('shifts.shiftId', 'name startTime endTime duration isActive')
       .populate({
         path: 'departmentShifts.department',
         select: 'name code',
@@ -522,7 +556,7 @@ exports.assignShifts = async (req, res) => {
         select: 'name code',
       })
       .populate({
-        path: 'departmentShifts.shifts',
+        path: 'departmentShifts.shifts.shiftId',
         select: 'name startTime endTime duration isActive',
       });
 
