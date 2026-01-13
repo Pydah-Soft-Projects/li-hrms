@@ -148,6 +148,10 @@ app.use('/api/bonus', bonusRoutes);
 const dashboardRoutes = require('./dashboard/index.js');
 app.use('/api/dashboard', dashboardRoutes);
 
+// Internal Job Test Routes (For verification)
+const jobTestRoutes = require('./shared/routes/jobTestRoutes');
+app.use('/api/internal/jobs', jobTestRoutes);
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({
@@ -177,6 +181,14 @@ const startServer = async () => {
     // Start attendance sync job
     const { startSyncJob } = require('./attendance/services/attendanceSyncJob');
     await startSyncJob();
+
+    // Start BullMQ Workers for Background Jobs
+    try {
+      const { startWorkers } = require('./shared/jobs/worker');
+      startWorkers();
+    } catch (redisError) {
+      console.warn('⚠️ Could not start BullMQ workers. Is Redis running?', redisError.message);
+    }
 
     // Start server
     app.listen(PORT, () => {

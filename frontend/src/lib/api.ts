@@ -1898,8 +1898,18 @@ export const api = {
     return apiRequest<any>(`/attendance/employees${query}`, { method: 'GET' });
   },
 
-  getMonthlyAttendance: async (year: number, month: number) => {
-    return apiRequest<any>(`/attendance/monthly?year=${year}&month=${month}`, {
+  getMonthlyAttendance: async (year: number, month: number, params?: { page?: number; limit?: number; search?: string; divisionId?: string; departmentId?: string; designationId?: string }) => {
+    const searchParams = new URLSearchParams();
+    searchParams.set('year', String(year));
+    searchParams.set('month', String(month));
+    if (params?.page) searchParams.set('page', String(params.page));
+    if (params?.limit) searchParams.set('limit', String(params.limit));
+    if (params?.search) searchParams.set('search', params.search);
+    if (params?.divisionId) searchParams.set('divisionId', params.divisionId);
+    if (params?.departmentId) searchParams.set('departmentId', params.departmentId);
+    if (params?.designationId) searchParams.set('designationId', params.designationId);
+
+    return apiRequest<any>(`/attendance/monthly?${searchParams.toString()}`, {
       method: 'GET',
     });
   },

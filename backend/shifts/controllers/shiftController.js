@@ -12,8 +12,22 @@ const mongoose = require('mongoose');
 exports.getAllShifts = async (req, res) => {
   try {
     const { isActive } = req.query;
-    const query = {};
+    const cacheService = require('../../shared/services/cacheService');
+    const cacheKey = `shifts:all:${isActive || 'any'}`;
 
+    // Try to get from cache
+    const cachedShifts = await cacheService.get(cacheKey);
+    if (cachedShifts) {
+      console.log(`[Cache] Serving shifts from cache: ${cacheKey}`);
+      return res.status(200).json({
+        success: true,
+        count: cachedShifts.length,
+        data: cachedShifts,
+        _cached: true
+      });
+    }
+
+    const query = {};
     if (isActive !== undefined) {
       query.isActive = isActive === 'true';
     }
@@ -21,6 +35,9 @@ exports.getAllShifts = async (req, res) => {
     const shifts = await Shift.find(query)
       .populate('createdBy', 'name email')
       .sort({ createdAt: -1 });
+
+    // Store in cache for 10 minutes
+    await cacheService.set(cacheKey, shifts, 600);
 
     res.status(200).json({
       success: true,
@@ -298,6 +315,10 @@ exports.createShift = async (req, res) => {
       createdBy: req.user?.userId,
     });
 
+    // Clear cache
+    const cacheService = require('../../shared/services/cacheService');
+    await cacheService.delByPattern('shifts:*');
+
     res.status(201).json({
       success: true,
       message: 'Shift created successfully',
@@ -391,6 +412,10 @@ exports.updateShift = async (req, res) => {
 
     await shift.save();
 
+    // Clear cache
+    const cacheService = require('../../shared/services/cacheService');
+    await cacheService.delByPattern('shifts:*');
+
     res.status(200).json({
       success: true,
       message: 'Shift updated successfully',
@@ -426,6 +451,10 @@ exports.deleteShift = async (req, res) => {
     }
 
     await shift.deleteOne();
+
+    // Clear cache
+    const cacheService = require('../../shared/services/cacheService');
+    await cacheService.delByPattern('shifts:*');
 
     res.status(200).json({
       success: true,

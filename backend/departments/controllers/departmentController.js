@@ -10,6 +10,21 @@ const Designation = require('../model/Designation');
 exports.getAllDepartments = async (req, res) => {
   try {
     const { isActive } = req.query;
+    const cacheService = require('../../shared/services/cacheService');
+    const cacheKey = `departments:all:${isActive || 'any'}`;
+
+    // Try to get from cache
+    const cachedDepts = await cacheService.get(cacheKey);
+    if (cachedDepts) {
+      console.log(`[Cache] Serving departments from cache: ${cacheKey}`);
+      return res.status(200).json({
+        success: true,
+        count: cachedDepts.length,
+        data: cachedDepts,
+        _cached: true
+      });
+    }
+
     const query = { ...req.scopeFilter };
 
     if (isActive !== undefined) {
@@ -33,6 +48,9 @@ exports.getAllDepartments = async (req, res) => {
       .populate('designations', 'name code isActive')
       .populate('createdBy', 'name email')
       .sort({ name: 1 });
+
+    // Store in cache for 10 minutes
+    await cacheService.set(cacheKey, departments, 600);
 
     res.status(200).json({
       success: true,
@@ -188,6 +206,10 @@ exports.createDepartment = async (req, res) => {
         { $addToSet: { departments: department._id } }
       );
     }
+
+    // Clear cache
+    const cacheService = require('../../shared/services/cacheService');
+    await cacheService.delByPattern('departments:*');
 
     res.status(201).json({
       success: true,
@@ -382,6 +404,10 @@ exports.updateDepartment = async (req, res) => {
 
     await department.save();
 
+    // Clear cache
+    const cacheService = require('../../shared/services/cacheService');
+    await cacheService.delByPattern('departments:*');
+
     res.status(200).json({
       success: true,
       message: 'Department updated successfully',
@@ -439,6 +465,10 @@ exports.deleteDepartment = async (req, res) => {
     }
 
     await department.deleteOne();
+
+    // Clear cache
+    const cacheService = require('../../shared/services/cacheService');
+    await cacheService.delByPattern('departments:*');
 
     res.status(200).json({
       success: true,
@@ -531,6 +561,10 @@ exports.assignHOD = async (req, res) => {
 
     await department.save();
 
+    // Clear cache
+    const cacheService = require('../../shared/services/cacheService');
+    await cacheService.delByPattern('departments:*');
+
     res.status(200).json({
       success: true,
       message: 'HOD assigned successfully to division',
@@ -590,6 +624,10 @@ exports.assignHR = async (req, res) => {
 
     department.hr = hrId;
     await department.save();
+
+    // Clear cache
+    const cacheService = require('../../shared/services/cacheService');
+    await cacheService.delByPattern('departments:*');
 
     res.status(200).json({
       success: true,
@@ -651,6 +689,10 @@ exports.assignShifts = async (req, res) => {
     await department.save();
 
     const populatedDepartment = await Department.findById(req.params.id).populate('shifts.shiftId', 'name startTime endTime duration');
+
+    // Clear cache
+    const cacheService = require('../../shared/services/cacheService');
+    await cacheService.delByPattern('departments:*');
 
     res.status(200).json({
       success: true,

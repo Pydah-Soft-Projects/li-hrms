@@ -275,7 +275,7 @@ exports.getMonthlyTableViewData = async (employees, year, month) => {
     const empNo = leave.employeeId?.emp_no || leave.emp_no;
     if (!empNo) return;
     if (!leaveMapByEmployee[empNo]) leaveMapByEmployee[empNo] = {};
-    
+
     const leaveStart = new Date(leave.fromDate);
     const leaveEnd = new Date(leave.toDate);
     leaveStart.setHours(0, 0, 0, 0);
@@ -336,38 +336,38 @@ exports.getMonthlyTableViewData = async (employees, year, month) => {
   // Recalculate Summaries (Verification Logic)
   const summaryMap = {};
   const summaryDataMap = {};
-  
+
   const summaryPromises = employees.map(async (emp) => {
     try {
       const summary = await calculateMonthlySummary(emp._id, emp.emp_no, targetYear, targetMonth);
-      
+
       // Verification logic (simplified for service - assuming core calculation is trusted or we can duplicate validation if critical)
       // For Controller Slimming, I'm keeping the complex validation logic here as it was in controller. 
       // It's "business logic" regarding data integrity.
-      
+
       // ... [Insert the verification Logic from controller if needed, or trust summary] ...
       // Copying the validation logic as it seems critical for this system
-      
+
       let verifiedLeaveDays = 0;
       const empLeaves = allLeaves.filter(l => {
         const empNo = l.employeeId?.emp_no || l.emp_no;
         return empNo === emp.emp_no;
       });
-      
+
       for (const leave of empLeaves) {
-          const leaveStart = new Date(leave.fromDate);
-          const leaveEnd = new Date(leave.toDate);
-          leaveStart.setHours(0, 0, 0, 0);
-          leaveEnd.setHours(23, 59, 59, 999);
-          let currentDate = new Date(leaveStart);
-          while (currentDate <= leaveEnd) {
-            const currentYear = currentDate.getFullYear();
-            const currentMonth = currentDate.getMonth() + 1;
-            if (currentYear === targetYear && currentMonth === targetMonth) {
-              verifiedLeaveDays += leave.isHalfDay ? 0.5 : 1;
-            }
-            currentDate.setDate(currentDate.getDate() + 1);
+        const leaveStart = new Date(leave.fromDate);
+        const leaveEnd = new Date(leave.toDate);
+        leaveStart.setHours(0, 0, 0, 0);
+        leaveEnd.setHours(23, 59, 59, 999);
+        let currentDate = new Date(leaveStart);
+        while (currentDate <= leaveEnd) {
+          const currentYear = currentDate.getFullYear();
+          const currentMonth = currentDate.getMonth() + 1;
+          if (currentYear === targetYear && currentMonth === targetMonth) {
+            verifiedLeaveDays += leave.isHalfDay ? 0.5 : 1;
           }
+          currentDate.setDate(currentDate.getDate() + 1);
+        }
       }
 
       let verifiedODDays = 0;
@@ -376,42 +376,42 @@ exports.getMonthlyTableViewData = async (employees, year, month) => {
         return empNo === emp.emp_no;
       });
       for (const od of empODs) {
-          if (od.odType_extended === 'hours') continue;
-          const odStart = new Date(od.fromDate);
-          const odEnd = new Date(od.toDate);
-          odStart.setHours(0, 0, 0, 0);
-          odEnd.setHours(23, 59, 59, 999);
-          let currentDate = new Date(odStart);
-          while (currentDate <= odEnd) {
-            const currentYear = currentDate.getFullYear();
-            const currentMonth = currentDate.getMonth() + 1;
-            if (currentYear === targetYear && currentMonth === targetMonth) {
-              verifiedODDays += od.isHalfDay ? 0.5 : 1;
-            }
-            currentDate.setDate(currentDate.getDate() + 1);
+        if (od.odType_extended === 'hours') continue;
+        const odStart = new Date(od.fromDate);
+        const odEnd = new Date(od.toDate);
+        odStart.setHours(0, 0, 0, 0);
+        odEnd.setHours(23, 59, 59, 999);
+        let currentDate = new Date(odStart);
+        while (currentDate <= odEnd) {
+          const currentYear = currentDate.getFullYear();
+          const currentMonth = currentDate.getMonth() + 1;
+          if (currentYear === targetYear && currentMonth === targetMonth) {
+            verifiedODDays += od.isHalfDay ? 0.5 : 1;
           }
+          currentDate.setDate(currentDate.getDate() + 1);
+        }
       }
 
       const verifiedLeaves = Math.round(verifiedLeaveDays * 10) / 10;
       const verifiedODs = Math.round(verifiedODDays * 10) / 10;
 
       if (Math.abs(summary.totalLeaves - verifiedLeaves) > 0.1 || Math.abs(summary.totalODs - verifiedODs) > 0.1) {
-          summary.totalLeaves = verifiedLeaves;
-          summary.totalODs = verifiedODs;
-          let totalPayableShifts = 0;
-          const presentDays = attendanceRecords.filter(
-            r => r.employeeNumber === emp.emp_no && (r.status === 'PRESENT' || r.status === 'PARTIAL')
-          );
-          for (const record of presentDays) {
-            if (record.shiftId && typeof record.shiftId === 'object' && record.shiftId.payableShifts !== undefined) {
-              totalPayableShifts += Number(record.shiftId.payableShifts);
-            } else {
-              totalPayableShifts += 1;
-            }
+        summary.totalLeaves = verifiedLeaves;
+        summary.totalODs = verifiedODs;
+        let totalPayableShifts = 0;
+        const presentDays = attendanceRecords.filter(
+          r => r.employeeNumber === emp.emp_no && (r.status === 'PRESENT' || r.status === 'PARTIAL')
+        );
+        for (const record of presentDays) {
+          if (record.shiftId && typeof record.shiftId === 'object' && record.shiftId.payableShifts !== undefined) {
+            totalPayableShifts += Number(record.shiftId.payableShifts);
+          } else {
+            totalPayableShifts += 1;
           }
-          totalPayableShifts += verifiedODDays;
-          summary.totalPayableShifts = Math.round(totalPayableShifts * 100) / 100;
-          await summary.save();
+        }
+        totalPayableShifts += verifiedODDays;
+        summary.totalPayableShifts = Math.round(totalPayableShifts * 100) / 100;
+        await summary.save();
       }
 
       return {
@@ -474,15 +474,12 @@ exports.getMonthlyTableViewData = async (employees, year, month) => {
     }
 
     return {
-      _id: emp._id,
-      emp_no: emp.emp_no,
-      employee_name: emp.employee_name,
-      department_name: emp.department_id?.name || '-',
-      designation_name: emp.designation_id?.name || '-',
-      division_name: emp.division_id?.name || '-',
-      attendance: dailyAttendance,
-      summary: summaryMap[emp.emp_no] || 0,
-      fullSummary: summaryDataMap[emp.emp_no] || null
+      _id: emp._id, // Keep for legacy if needed
+      employee: emp,
+      dailyAttendance: dailyAttendance,
+      presentDays: summaryDataMap[emp.emp_no]?.totalPresentDays || 0,
+      payableShifts: summaryMap[emp.emp_no] || 0,
+      summary: summaryDataMap[emp.emp_no] || null
     };
   });
 };

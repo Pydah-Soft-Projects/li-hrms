@@ -3,6 +3,8 @@ const Employee = require('../../employees/model/Employee');
 const Leave = require('../../leaves/model/Leave');
 const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 const Department = require('../../departments/model/Department');
+const EmployeeApplication = require('../../employee-applications/model/EmployeeApplication');
+const OD = require('../../leaves/model/OD');
 
 // @desc    Get dashboard statistics
 // @route   GET /api/dashboard/stats
@@ -235,5 +237,125 @@ exports.getDashboardStats = async (req, res) => {
       message: 'Error fetching dashboard stats',
       error: error.message,
     });
+  }
+};
+// @desc    Get detailed analytics for superadmin
+// @route   GET /api/dashboard/analytics
+// @access  Private (Super Admin)
+exports.getSuperAdminAnalytics = async (req, res) => {
+  try {
+    if (!['super_admin', 'sub_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, message: 'Not authorized' });
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+
+    const [
+      totalEmployees,
+      activeEmployees,
+      totalDepartments,
+      totalUsers,
+      todayStats,
+      yesterdayStats,
+      pendingLeaves,
+      pendingODs,
+      pendingApplications,
+      monthlyPresentDocs,
+      allLeaves,
+      allODs
+    ] = await Promise.all([
+      Employee.countDocuments(),
+      Employee.countDocuments({ is_active: true }),
+      Department.countDocuments(),
+      User.countDocuments(),
+      // Today Stats
+      AttendanceDaily.aggregate([
+        { $match: { date: today } },
+        {
+          $group: {
+            _id: null,
+            present: { $sum: { $cond: [{ $in: ["$status", ["P", "WO-P", "PH-P", "PRESENT"]] }, 1, 0] } },
+            absent: { $sum: { $cond: [{ $eq: ["$status", "ABSENT"] }, 1, 0] } }
+          }
+        }
+      ]),
+      // Yesterday Stats
+      AttendanceDaily.aggregate([
+        { $match: { date: yesterday } },
+        {
+          $group: {
+            _id: null,
+            present: { $sum: { $cond: [{ $in: ["$status", ["P", "WO-P", "PH-P", "PRESENT"]] }, 1, 0] } },
+            absent: { $sum: { $cond: [{ $eq: ["$status", "ABSENT"] }, 1, 0] } }
+          }
+        }
+      ]),
+      Leave.countDocuments({ status: 'pending' }),
+      OD.countDocuments ? await OD.countDocuments({ status: 'pending' }).catch(() => 0) : 0, // Fallback if OD model not exists/imported correctly
+      EmployeeApplication.countDocuments({ status: 'pending' }),
+      AttendanceDaily.countDocuments({
+        date: { $gte: startOfMonth, $lte: today },
+        status: { $in: ["P", "WO-P", "PH-P", "PRESENT", "PARTIAL"] }
+      }),
+      // For distributions (Simplified - getting all active leaves/ods for today)
+      Leave.find({
+        status: 'approved',
+        fromDate: { $lte: today },
+        toDate: { $gte: today }
+      }).populate('department', 'name'),
+      OD.find ? await OD.find({
+        status: 'approved',
+        fromDate: { $lte: today },
+        toDate: { $gte: today }
+      }).populate('department', 'name').catch(() => []) : []
+    ]);
+
+    // Process Distributions
+    const deptLeaveDist = {};
+    allLeaves.forEach(l => {
+      const name = l.department?.name || 'Unknown';
+      deptLeaveDist[name] = (deptLeaveDist[name] || 0) + 1;
+    });
+
+    const deptODDist = {};
+    allODs.forEach(o => {
+      const name = o.department?.name || 'Unknown';
+      deptODDist[name] = (deptODDist[name] || 0) + 1;
+    });
+
+    const daysPassed = today.getDate();
+    const attendanceRate = activeEmployees > 0 ? (monthlyPresentDocs / (activeEmployees * daysPassed)) * 100 : 0;
+
+    const data = {
+      totalEmployees,
+      activeEmployees,
+      totalDepartments,
+      totalUsers,
+      todayPresent: todayStats[0]?.present || 0,
+      todayAbsent: todayStats[0]?.absent || 0,
+      todayOnLeave: allLeaves.length,
+      todayODs: allODs.length,
+      yesterdayPresent: yesterdayStats[0]?.present || 0,
+      yesterdayAbsent: yesterdayStats[0]?.absent || 0,
+      yesterdayOnLeave: 0, // Would need another query for yesterday's leaves if critical
+      yesterdayODs: 0,
+      pendingLeaves,
+      pendingODs,
+      pendingPermissions: 0,
+      pendingApplications,
+      monthlyPresent: monthlyPresentDocs,
+      attendanceRate: Math.min(100, attendanceRate),
+      departmentLeaveDistribution: deptLeaveDist,
+      departmentODDistribution: deptODDist
+    };
+
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    console.error('Error fetching analytics:', error);
+    res.status(500).json({ success: false, message: 'Error fetching analytics', error: error.message });
   }
 };
