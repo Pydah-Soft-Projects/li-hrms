@@ -41,7 +41,7 @@ function calculateTotals(dailyRecords) {
     // Skip records with holiday or week_off status - they shouldn't be counted in any category
     const isHoliday = record.status === 'holiday' || record.firstHalf?.status === 'holiday' || record.secondHalf?.status === 'holiday';
     const isWeekOff = record.status === 'week_off' || record.firstHalf?.status === 'week_off' || record.secondHalf?.status === 'week_off';
-    
+
     if (isHoliday || isWeekOff) {
       // Still count OT hours for holidays/week_off if any
       totals.totalOTHours += record.otHours || 0;
@@ -53,14 +53,14 @@ function calculateTotals(dailyRecords) {
     const firstHalfStatus = record.firstHalf?.status;
     const secondHalfStatus = record.secondHalf?.status;
     // Consider split if: both halves exist and have different statuses, OR if record.isSplit is explicitly true
-    const isActuallySplit = (firstHalfStatus && secondHalfStatus && firstHalfStatus !== secondHalfStatus) || 
-                           (record.isSplit === true && firstHalfStatus && secondHalfStatus);
+    const isActuallySplit = (firstHalfStatus && secondHalfStatus && firstHalfStatus !== secondHalfStatus) ||
+      (record.isSplit === true && firstHalfStatus && secondHalfStatus);
 
     // If record is actually split, count halves separately
     if (isActuallySplit) {
       // Process first half - only count if status is explicitly set and valid
-      if (record.firstHalf && record.firstHalf.status && 
-          ['present', 'absent', 'leave', 'od'].includes(record.firstHalf.status)) {
+      if (record.firstHalf && record.firstHalf.status &&
+        ['present', 'absent', 'leave', 'od'].includes(record.firstHalf.status)) {
         if (record.firstHalf.status === 'present') {
           totals.presentHalfDays++;
         } else if (record.firstHalf.status === 'absent') {
@@ -79,8 +79,8 @@ function calculateTotals(dailyRecords) {
       }
 
       // Process second half - only count if status is explicitly set and valid
-      if (record.secondHalf && record.secondHalf.status && 
-          ['present', 'absent', 'leave', 'od'].includes(record.secondHalf.status)) {
+      if (record.secondHalf && record.secondHalf.status &&
+        ['present', 'absent', 'leave', 'od'].includes(record.secondHalf.status)) {
         if (record.secondHalf.status === 'present') {
           totals.presentHalfDays++;
         } else if (record.secondHalf.status === 'absent') {
@@ -101,7 +101,7 @@ function calculateTotals(dailyRecords) {
       // If not split, count as full day only (don't count halves separately)
       // Use the record.status if available, otherwise use firstHalf.status (they should be the same)
       const statusToCount = record.status || firstHalfStatus || secondHalfStatus;
-      
+
       // Only count if status is explicitly set and valid (not null, not holiday, not week_off)
       if (statusToCount && ['present', 'absent', 'leave', 'od'].includes(statusToCount)) {
         if (statusToCount === 'present') {
@@ -135,8 +135,40 @@ function calculateTotals(dailyRecords) {
   totals.totalLeaveDays = totals.totalPaidLeaveDays + totals.totalLopDays;
   totals.totalODDays = totals.odDays + totals.odHalfDays * 0.5;
 
-  // Calculate payable shifts = present + OD + paid leaves
-  totals.totalPayableShifts = totals.totalPresentDays + totals.totalODDays + totals.totalPaidLeaveDays;
+  // Calculate totalPayableShifts by summing up individual record values
+  // This respects shifts with multiple payable units (e.g. 2.0)
+  let totalPayableShiftsValue = 0;
+  for (const record of dailyRecords) {
+    const isHoliday = record.status === 'holiday' || record.firstHalf?.status === 'holiday' || record.secondHalf?.status === 'holiday';
+    const isWeekOff = record.status === 'week_off' || record.firstHalf?.status === 'week_off' || record.secondHalf?.status === 'week_off';
+
+    // Only count if it's a "payable" status (present, od, or paid leave)
+    // For simplicity in totalPayableShifts, we don't count holiday/weekoff here 
+    // as payroll calculation service adds those separately or handles them via totalPaidDays
+
+    // Check first half
+    if (record.firstHalf) {
+      const h1 = record.firstHalf;
+      if (h1.status === 'present' || h1.status === 'od' || (h1.status === 'leave' && h1.leaveType === 'paid')) {
+        totalPayableShiftsValue += (Number(record.payableShifts || 1) / 2);
+      }
+    }
+
+    // Check second half
+    if (record.secondHalf) {
+      const h2 = record.secondHalf;
+      if (h2.status === 'present' || h2.status === 'od' || (h2.status === 'leave' && h2.leaveType === 'paid')) {
+        totalPayableShiftsValue += (Number(record.payableShifts || 1) / 2);
+      }
+    }
+
+    // Special case: If status is 'HALF_DAY' from attendance (recorded in dailyRecord if synced)
+    // Attendance status map: attendanceRecordId.status or similar? 
+    // Actually, resolveConflicts maps HALF_DAY to a single present half if appropriate.
+    // So the split logic above already handles it (0.5 * payableShifts).
+  }
+
+  totals.totalPayableShifts = totalPayableShiftsValue;
 
   // Round to 2 decimal places
   Object.keys(totals).forEach(key => {

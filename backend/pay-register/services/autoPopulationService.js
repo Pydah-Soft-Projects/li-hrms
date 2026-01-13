@@ -431,6 +431,7 @@ async function populatePayRegisterFromSources(employeeId, emp_no, year, monthNum
       isSplit,
       shiftId: shift?.shiftId || null,
       shiftName: shift?.shiftName || null,
+      payableShifts: shift?.payableShifts || 1,
       otHours: ot?.totalHours || 0,
       attendanceRecordId: attendance?._id || null,
       leaveIds: leave?.leaveIds || [],
