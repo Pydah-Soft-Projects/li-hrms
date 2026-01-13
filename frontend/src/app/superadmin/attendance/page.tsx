@@ -1013,14 +1013,24 @@ export default function AttendancePage() {
     if (!time) return '-';
     try {
       const date = new Date(time);
-      const timeStr = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+      // FIX: Use UTC methods to display the time Exactly as Stored (ignoring Browser Timezone)
+      // This matches the GMT-based storage used for Shift Detection.
+      const h = String(date.getUTCHours()).padStart(2, '0');
+      const m = String(date.getUTCMinutes()).padStart(2, '0');
+      const timeStr = `${h}:${m}`;
 
       // If showDateIfDifferent is true and recordDate is provided, check if dates differ
       if (showDateIfDifferent && recordDate) {
-        const timeDateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        // Compare UTC Date vs recordDate
+        const y = date.getUTCFullYear();
+        const mo = String(date.getUTCMonth() + 1).padStart(2, '0');
+        const d = String(date.getUTCDate()).padStart(2, '0');
+        const timeDateStr = `${y}-${mo}-${d}`;
+
         if (timeDateStr !== recordDate) {
           // Dates are different - show date with time
-          const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+          const dateStr = `${monthNames[date.getUTCMonth()]} ${date.getUTCDate()}`;
           return `${dateStr}, ${timeStr}`;
         }
       }

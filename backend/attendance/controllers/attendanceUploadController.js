@@ -259,12 +259,11 @@ const parseExcelDate = (val, fallbackDate = null) => {
   }
 
   // Return local Date object
-  // FIX: Interpret the time components as Asia/Kolkata (IST)
-  // This ensures "09:30" is treated as "09:30 GMT+05:30" 
-  // which saves as "04:00 GMT" (Universal Truth)
-  // Logic works because Detection (IST) sees 09:30.
+  // FIX: Store as-is (GMT) for GMT-based Shift Detection
+  // The server appears to be GMT-based (reading 8:22 as 8:22).
+  // We must store "13:52" as "13:52 GMT" so the server sees 13:52.
   const timeStr = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')} ${String(H).padStart(2, '0')}:${String(M).padStart(2, '0')}:${String(S).padStart(2, '0')}`;
-  return dayjs.tz(timeStr, "YYYY-MM-DD HH:mm:ss", "Asia/Kolkata").toDate();
+  return dayjs(timeStr, "YYYY-MM-DD HH:mm:ss").toDate();
 };
 
 /**
