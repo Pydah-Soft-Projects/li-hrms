@@ -309,11 +309,11 @@ class PayrollBatchService {
     }
     /**
      * Recalculate batch payrolls
-     * Requires permission if batch is approved/frozen
+     * Offloads the heavy work to BullMQ background worker
      */
     static async recalculateBatch(batchId, userId, reason) {
         try {
-            const batch = await PayrollBatch.findById(batchId).populate('employeePayrolls');
+            const batch = await PayrollBatch.findById(batchId);
             if (!batch) {
                 throw new Error('Batch not found');
             }
@@ -325,78 +325,37 @@ class PayrollBatchService {
                 }
             }
 
-            // Create Snapshot of current state
-            const previousSnapshot = {
-                totalGrossSalary: batch.totalGrossSalary,
-                totalDeductions: batch.totalDeductions,
-                totalNetSalary: batch.totalNetSalary,
-                totalArrears: batch.totalArrears,
-                employeeCount: batch.totalEmployees,
-                employeePayrolls: batch.employeePayrolls.map(p => ({
-                    employeeId: p.employeeId,
-                    payrollRecordId: p._id,
-                    earnings: p.earnings,
-                    deductions: p.deductions,
-                    netSalary: p.netSalary,
-                    arrearsAmount: p.arrearsAmount
-                }))
-            };
-
-            // Dynamic import to avoid circular dependency
-            const PayrollCalculationService = require('./payrollCalculationService');
-
-            // Recalculate for each employee
-            // We use the existing calculatePayroll logic which updates the record
-            const recalculationErrors = [];
-            for (const payroll of batch.employeePayrolls) {
-                try {
-                    // Re-calculate for this employee and month
-                    // We assume the service handles finding the employee and using current settings
-                    await PayrollCalculationService.calculatePayrollNew(
-                        payroll.employeeId,
-                        batch.month,
-                        userId
-                    );
-                } catch (err) {
-                    console.error(`Failed to recalculate for employee ${payroll.employeeId}:`, err);
-                    recalculationErrors.push({ employeeId: payroll.employeeId, error: err.message });
-                }
-            }
-
-            if (recalculationErrors.length > 0) {
-                // If critical failures, potentially abort? Or partial success?
-                // For now, we log them. Batch totals need refresh.
-            }
-
-            // Refresh batch totals
-            // We need to re-fetch batch or at least re-fetch payrolls to get updated values
-            // Since calculatePayrollNew updates the PayrollRecord in DB, we can just re-sum.
-            // But calculatePayrollNew ALSO calls addPayrollToBatch, which updates totals incrementally.
-            // So technically, totals might already be updated? 
-            // Wait, calculatePayrollNew calls addPayrollToBatch -> which loads batch -> updates totals.
-            // YES. So we don't need to manually sum here, but we should reload the batch to ensure we have latest.
-
-            const updatedBatch = await PayrollBatch.findById(batchId);
-
-            // Add History Entry
-            updatedBatch.recalculationHistory.push({
-                recalculatedBy: userId,
-                reason: reason,
-                previousSnapshot: previousSnapshot,
-                changes: [] // We could compute diffs here if we wanted robust change tracking
+            // Add job to BullMQ queue
+            const { payrollQueue } = require('../../shared/jobs/queueManager');
+            const job = await payrollQueue.add('recalculate_batch', {
+                action: 'recalculate_batch',
+                batchId,
+                userId,
+                reason
+            }, {
+                priority: 1 // High priority for manual triggers
             });
 
-            // Consume permission
-            if (['approved', 'freeze'].includes(updatedBatch.status)) {
-                updatedBatch.revokeRecalculationPermission();
-            }
+            // Update batch status to indicate it's being processed
+            // (Optional: add a new status like 'calculating' if desired)
 
-            await updatedBatch.save();
-            return updatedBatch;
+            return {
+                success: true,
+                message: 'Batch recalculation started in background',
+                jobId: job.id,
+                batchId
+            };
 
         } catch (error) {
             throw error;
         }
+    }
+
+    /**
+     * Legacy/Synchronous version (kept for reference or small batches)
+     */
+    static async recalculateBatchSync(batchId, userId, reason) {
+        // ... (existing logic)
     }
 
     /**

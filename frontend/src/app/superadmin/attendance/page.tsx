@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
 
@@ -9,7 +9,7 @@ interface AttendanceRecord {
   inTime: string | null;
   outTime: string | null;
   totalHours: number | null;
-  status: 'PRESENT' | 'ABSENT' | 'PARTIAL' | 'LEAVE' | 'OD';
+  status: 'PRESENT' | 'ABSENT' | 'PARTIAL' | 'LEAVE' | 'OD' | '-';
   shiftId?: { _id: string; name: string; startTime: string; endTime: string; duration: number; payableShifts?: number } | string | null;
   isLateIn?: boolean;
   isEarlyOut?: boolean;
@@ -63,8 +63,11 @@ interface Employee {
   emp_no: string;
   employee_name: string;
   department?: { _id: string; name: string };
+  department_id?: { _id: string; name: string };
   designation?: { _id: string; name: string };
+  designation_id?: { _id: string; name: string };
   division?: { _id: string; name: string };
+  division_id?: { _id: string; name: string };
 }
 
 interface MonthlyAttendanceData {
@@ -136,9 +139,16 @@ export default function AttendancePage() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [designations, setDesignations] = useState<Designation[]>([]);
   const [divisions, setDivisions] = useState<any[]>([]);
+  const [selectedDivision, setSelectedDivision] = useState<string>('');
   const [selectedDepartment, setSelectedDepartment] = useState<string>('');
   const [selectedDesignation, setSelectedDesignation] = useState<string>('');
-  const [selectedDivision, setSelectedDivision] = useState<string>('');
+  // Pagination states for scaling
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(50);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [filteredMonthlyData, setFilteredMonthlyData] = useState<MonthlyAttendanceData[]>([]);
 
   // OutTime dialog state
@@ -185,41 +195,24 @@ export default function AttendancePage() {
   }, [selectedDepartment]);
 
   useEffect(() => {
-    loadMonthlyAttendance();
+    // Reset page when filters change
+    setPage(1);
+    loadMonthlyAttendance(true);
   }, [year, month, selectedDivision, selectedDepartment, selectedDesignation, tableType]);
 
+  // Handle Load More when page changes
   useEffect(() => {
-    // Apply filters to monthly data
-    let filtered = [...monthlyData];
-
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(item =>
-        item.employee?.employee_name?.toLowerCase().includes(query) ||
-        item.employee?.emp_no?.toLowerCase().includes(query)
-      );
+    if (page > 1) {
+      loadMonthlyAttendance(false);
     }
+  }, [page]);
 
-    if (selectedDivision) {
-      filtered = filtered.filter(item =>
-        item.employee?.division?._id === selectedDivision
-      );
-    }
-
-    if (selectedDepartment) {
-      filtered = filtered.filter(item =>
-        item.employee?.department?._id === selectedDepartment
-      );
-    }
-
-    if (selectedDesignation) {
-      filtered = filtered.filter(item =>
-        item.employee?.designation?._id === selectedDesignation
-      );
-    }
-
-    setFilteredMonthlyData(filtered);
-  }, [monthlyData, selectedDivision, selectedDepartment, selectedDesignation]);
+  useEffect(() => {
+    // In server-side pagination mode, we don't apply local filters 
+    // unless we have all data loaded (which we won't at 5k scale).
+    // So we just pass through monthlyData.
+    setFilteredMonthlyData(monthlyData);
+  }, [monthlyData]);
 
   const loadDivisions = async () => {
     try {
@@ -259,13 +252,47 @@ export default function AttendancePage() {
     }
   };
 
-  const loadMonthlyAttendance = async () => {
+  const loadMonthlyAttendance = async (reset: boolean = false) => {
     try {
-      setLoading(true);
+      if (reset) {
+        setLoading(true);
+      } else {
+        setLoadingMore(true);
+      }
+
       setError('');
-      const response = await api.getMonthlyAttendance(year, month);
+      const targetPage = reset ? 1 : page;
+
+      const response = await api.getMonthlyAttendance(year, month, {
+        page: targetPage,
+        limit,
+        search: searchQuery,
+        divisionId: selectedDivision,
+        departmentId: selectedDepartment,
+        designationId: selectedDesignation
+      });
+
       if (response.success) {
-        setMonthlyData(response.data || []);
+        const newData = response.data || [];
+        if (reset) {
+          setMonthlyData(newData);
+        } else {
+          // Append new data, but filter out duplicates just in case
+          setMonthlyData(prev => {
+            const existingIds = new Set(prev.map(i => i.employee._id));
+            const uniqueNewData = newData.filter((i: any) => !existingIds.has(i.employee._id));
+            return [...prev, ...uniqueNewData];
+          });
+        }
+
+        const pagInfo = (response as any).pagination;
+        if (pagInfo) {
+          setTotalPages(pagInfo.totalPages || 1);
+          setTotalCount(pagInfo.total || 0);
+          setHasMore(targetPage < pagInfo.totalPages);
+        } else {
+          setHasMore(false);
+        }
       } else {
         setError(response.message || 'Failed to load monthly attendance');
       }
@@ -273,7 +300,8 @@ export default function AttendancePage() {
       console.error('Error loading monthly attendance:', err);
       setError(err.message || 'Failed to load monthly attendance');
     } finally {
-      setLoading(false);
+      if (reset) setLoading(false);
+      setLoadingMore(false);
     }
   };
 
@@ -944,8 +972,204 @@ export default function AttendancePage() {
   };
 
   const daysInMonth = getDaysInMonth();
-  const daysArray = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+  const daysArray = useMemo(() => Array.from({ length: daysInMonth }, (_, i) => i + 1), [daysInMonth]);
 
+  // Virtualized row component
+  const Row = useCallback(({ index, style, data }: { index: number; style: React.CSSProperties; data: MonthlyAttendanceData[] }) => {
+    const item = data[index];
+    if (!item || !item.employee) {
+      console.log('Row index:', index, 'Missing item or employee');
+      return null;
+    }
+    console.log('Rendering row for:', item.employee.employee_name);
+
+    // Ensure dailyAttendance is always an object, never null or undefined
+    // Backend sends it as an object, but we add defensive check for safety
+    if (!item.dailyAttendance || typeof item.dailyAttendance !== 'object') {
+      console.warn('Invalid dailyAttendance for employee:', item.employee.employee_name, item.dailyAttendance);
+    }
+    const dailyAttendance = item.dailyAttendance ?? {};
+
+    // Safe helper to get values - prevents "Cannot convert undefined or null to object" error
+    const safeGetValues = (obj: any) => {
+      if (!obj || typeof obj !== 'object') return [];
+      try {
+        return Object.values(obj);
+      } catch (e) {
+        console.error('Error in Object.values:', e);
+        return [];
+      }
+    };
+
+    const daysPresent = item.presentDays !== undefined
+      ? item.presentDays
+      : safeGetValues(dailyAttendance).filter(
+        (record: any) => record && (record.status === 'PRESENT' || record.status === 'PARTIAL')
+      ).length;
+
+    const payableShifts = item.payableShifts !== undefined ? item.payableShifts : 0;
+    const monthPresent = safeGetValues(dailyAttendance).filter((r: any) => r?.status === 'PRESENT').length;
+    const monthAbsent = safeGetValues(dailyAttendance).filter((r: any) => r?.status === 'ABSENT').length;
+    const leaveRecords = safeGetValues(dailyAttendance).filter((r: any) => r?.status === 'LEAVE' || r?.hasLeave);
+    const totalLeaves = leaveRecords.length;
+    const lopCount = leaveRecords.filter((r: any) => {
+      const anyR = r as any;
+      return anyR?.leaveNature === 'lop' ||
+        anyR?.leaveInfo?.leaveType?.toLowerCase().includes('lop') ||
+        anyR?.leaveInfo?.leaveType?.toLowerCase().includes('loss of pay');
+    }).length;
+    const paidLeaves = totalLeaves - lopCount;
+    const totalODs = safeGetValues(dailyAttendance).filter((r: any) => r?.status === 'OD' || r?.hasOD).length;
+
+    // Helper for department/division names
+    const getDeptName = (emp: Employee) => {
+      if (emp.department && typeof emp.department === 'object') return emp.department.name;
+      if (emp.department_id && typeof emp.department_id === 'object') return emp.department_id.name;
+      return '';
+    };
+
+    return (
+      <div
+        role="row"
+        style={{ display: 'flex' }}
+        className="hover:bg-slate-50 dark:hover:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800"
+      >
+        <div role="cell" className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 text-[11px] font-medium text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white w-[200px] shrink-0">
+          <div>
+            <div className="flex items-center gap-2">
+              <div
+                className="font-semibold truncate cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex-1"
+                onClick={() => item.employee && handleEmployeeClick(item.employee)}
+                title="Click to view monthly summary"
+              >
+                {item.employee?.employee_name || 'Unknown Employee'}
+              </div>
+            </div>
+            <div className="text-[9px] text-slate-500 dark:text-slate-400 truncate mt-1">
+              {item.employee?.emp_no || '-'}
+              {getDeptName(item.employee) && ` • ${getDeptName(item.employee)}`}
+            </div>
+          </div>
+        </div>
+        {daysArray.map((day) => {
+          const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          const record = dailyAttendance[dateStr] || null;
+          const shiftName = record?.shiftId && typeof record.shiftId === 'object' ? (record.shiftId as any).name : '-';
+
+          let displayStatus = 'A';
+          if (record) {
+            if (record.status === 'PRESENT') displayStatus = 'P';
+            else if (record.status === 'PARTIAL') displayStatus = 'PT';
+            else if (record.status === 'LEAVE' || record.hasLeave) displayStatus = 'L';
+            else if (record.status === 'OD' || record.hasOD) displayStatus = 'OD';
+            else if (record.status === '-') displayStatus = '-';
+            else displayStatus = 'A';
+          }
+
+          const hasData = record && record.status !== '-';
+
+          return (
+            <div
+              key={day}
+              role="cell"
+              onClick={() => hasData && handleDateClick(item.employee, dateStr)}
+              className={`border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700 w-[35px] shrink-0 flex flex-col justify-center items-center ${hasData ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : ''
+                } ${getStatusColor(record)} ${getCellBackgroundColor(record)}`}
+            >
+              {hasData ? (
+                <div className="space-y-0.5">
+                  {tableType === 'complete' && (
+                    <>
+                      <div className="font-semibold text-[9px]">{displayStatus}</div>
+                      {shiftName !== '-' && (
+                        <div className="text-[8px] opacity-75 truncate" title={shiftName as string}>{(shiftName as string).substring(0, 3)}</div>
+                      )}
+                      {record && record.totalHours !== null && (
+                        <div className="text-[8px] font-semibold">{formatHours(record.totalHours)}</div>
+                      )}
+                    </>
+                  )}
+                  {tableType === 'present_absent' && (
+                    <div className="font-bold text-[10px]">{displayStatus}</div>
+                  )}
+                  {tableType === 'in_out' && (
+                    <div className="text-[8px] font-medium leading-tight">
+                      <div className="text-green-600 dark:text-green-400">{record?.inTime ? formatTime(record.inTime) : '-'}</div>
+                      <div className="text-red-600 dark:text-red-400">{record?.outTime ? formatTime(record.outTime) : '-'}</div>
+                    </div>
+                  )}
+                  {tableType === 'leaves' && (
+                    <div className="font-bold text-[10px] text-orange-600">{displayStatus === 'L' ? 'L' : '-'}</div>
+                  )}
+                  {tableType === 'od' && (
+                    <div className="font-bold text-[10px] text-indigo-600">{displayStatus === 'OD' ? 'OD' : '-'}</div>
+                  )}
+                  {tableType === 'ot' && (
+                    <div className="text-[8px] font-medium leading-tight">
+                      <div className="text-orange-600">{record?.otHours ? record.otHours.toFixed(1) : '-'}</div>
+                      <div className="text-purple-600">{record?.extraHours ? record.extraHours.toFixed(1) : '-'}</div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <span className="text-slate-400 text-[9px]">-</span>
+              )}
+            </div>
+          );
+        })}
+        {tableType === 'complete' && (
+          <>
+            <div role="cell" className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center text-[11px] font-bold text-blue-700 dark:border-slate-700 dark:bg-blue-900/20 dark:text-blue-300 w-[60px] shrink-0 flex items-center justify-center">
+              {daysPresent}
+            </div>
+            <div role="cell" className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300 w-[60px] shrink-0 flex items-center justify-center">
+              {safeGetValues(dailyAttendance).reduce((sum, record: any) => sum + (record?.otHours || 0), 0).toFixed(1)}
+            </div>
+            <div role="cell" className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700 dark:border-slate-700 dark:bg-purple-900/20 dark:text-purple-300 w-[60px] shrink-0 flex items-center justify-center">
+              {safeGetValues(dailyAttendance).reduce((sum, record: any) => sum + (record?.extraHours || 0), 0).toFixed(1)}
+            </div>
+            <div role="cell" className="border-r border-slate-200 bg-cyan-50 px-2 py-2 text-center text-[11px] font-bold text-cyan-700 dark:border-slate-700 dark:bg-cyan-900/20 dark:text-cyan-300 w-[80px] shrink-0 flex items-center justify-center">
+              {safeGetValues(dailyAttendance).reduce((sum, record: any) => sum + (record?.permissionCount || 0), 0)}
+            </div>
+            <div role="cell" className="bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:border-slate-700 dark:bg-green-900/20 dark:text-green-300 w-[70px] shrink-0 flex items-center justify-center">
+              {payableShifts.toFixed(2)}
+            </div>
+          </>
+        )}
+        {tableType === 'present_absent' && (
+          <>
+            <div role="cell" className="border-r border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 w-[60px] shrink-0 flex items-center justify-center">{monthPresent}</div>
+            <div role="cell" className="border-r border-slate-200 bg-red-50 px-2 py-2 text-center text-[11px] font-bold text-red-700 w-[60px] shrink-0 flex items-center justify-center">{monthAbsent}</div>
+          </>
+        )}
+        {tableType === 'in_out' && (
+          <div role="cell" className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center text-[11px] font-bold text-blue-700 w-[60px] shrink-0 flex items-center justify-center">{daysPresent}</div>
+        )}
+        {tableType === 'leaves' && (
+          <>
+            <div role="cell" className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 w-[60px] shrink-0 flex items-center justify-center">{totalLeaves}</div>
+            <div role="cell" className="border-r border-slate-200 bg-yellow-50 px-2 py-2 text-center text-[11px] font-bold text-yellow-700 w-[60px] shrink-0 flex items-center justify-center">{paidLeaves}</div>
+            <div role="cell" className="border-r border-slate-200 bg-rose-50 px-2 py-2 text-center text-[11px] font-bold text-rose-700 w-[60px] shrink-0 flex items-center justify-center">{lopCount}</div>
+          </>
+        )}
+        {tableType === 'od' && (
+          <div role="cell" className="border-r border-slate-200 bg-indigo-50 px-2 py-2 text-center text-[11px] font-bold text-indigo-700 w-[60px] shrink-0 flex items-center justify-center">{totalODs}</div>
+        )}
+        {tableType === 'ot' && (
+          <>
+            <div role="cell" className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 w-[60px] shrink-0 flex items-center justify-center">
+              {safeGetValues(dailyAttendance).reduce((sum, record: any) => sum + (record?.otHours || 0), 0).toFixed(1)}
+            </div>
+            <div role="cell" className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700 w-[60px] shrink-0 flex items-center justify-center">
+              {safeGetValues(dailyAttendance).reduce((sum, record: any) => sum + (record?.extraHours || 0), 0).toFixed(1)}
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }, [daysArray, year, month, handleEmployeeClick, handleDateClick, tableType]);
+
+  console.log('Attendance rendering. Data length:', filteredMonthlyData.length);
   return (
     <div className="relative min-h-screen">
       {/* Background */}
@@ -1161,1359 +1385,1256 @@ export default function AttendancePage() {
 
 
         {/* Attendance Table */}
-        <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-xs">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
-                  <th className="sticky left-0 z-10 w-[180px] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                    Employee
-                  </th>
-                  {daysArray.map((day) => (
-                    <th
-                      key={day}
-                      className="w-[calc((100%-180px-80px)/31)] border-r border-slate-200 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300"
-                    >
-                      {day}
-                    </th>
-                  ))}
-                  {tableType === 'complete' && (
-                    <>
-                      <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-blue-50 dark:bg-blue-900/20">Days Present</th>
-                      <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-orange-50 dark:bg-orange-900/20">OT Hours</th>
-                      <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-purple-50 dark:bg-purple-900/20">Extra Hours</th>
-                      <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-cyan-50 dark:bg-cyan-900/20">Permissions</th>
-                      <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-green-900/20 bg-green-50">Payable Shifts</th>
-                    </>
-                  )}
-                  {tableType === 'present_absent' && (
-                    <>
-                      <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-green-50 text-green-700">Present (M)</th>
-                      <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-red-50 text-red-700">Absent (M)</th>
-                    </>
-                  )}
-                  {tableType === 'in_out' && (
-                    <th className="w-[100px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-blue-50 text-blue-700">Total Days Present</th>
-                  )}
-                  {tableType === 'leaves' && (
-                    <>
-                      <th className="w-[100px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-orange-50 text-orange-700">Total Leaves</th>
-                      <th className="w-[100px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-yellow-50 text-yellow-700">Paid Leaves</th>
-                      <th className="w-[100px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-rose-50 text-rose-700">LOPs</th>
-                    </>
-                  )}
-                  {tableType === 'od' && (
-                    <th className="w-[100px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-indigo-50 text-indigo-700">Total ODs</th>
-                  )}
-                  {tableType === 'ot' && (
-                    <>
-                      <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-orange-50 text-orange-700">OT Hours</th>
-                      <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-purple-50 text-purple-700">Extra Hours</th>
-                    </>
-                  )}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                {loading ? (
+        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900 shadow-sm relative">
+          <div role="table" className="w-max min-w-full text-xs">
+            {/* Table Header */}
+            <div role="rowgroup" className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-800">
+              <div role="row" className="border-b border-slate-200 dark:border-slate-700 flex w-max min-w-full">
+                <div role="columnheader" className="sticky left-0 z-30 border-r border-slate-200 bg-slate-100 px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 w-[200px] shrink-0">
+                  Employee
+                </div>
+                {daysArray.map((day) => (
+                  <div
+                    key={day}
+                    role="columnheader"
+                    className="border-r border-slate-200 bg-slate-50 px-1 py-3 text-center text-[9px] font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 w-[35px] shrink-0"
+                  >
+                    {day}
+                  </div>
+                ))}
+                {tableType === 'complete' && (
                   <>
-                    {/* Skeleton Loading - only tbody cells */}
-                    {[1, 2, 3, 4, 5].map((i) => (
-                      <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                        <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
-                          <div className="h-4 w-32 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                          <div className="mt-1 h-3 w-24 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                        </td>
-                        {daysArray.map((day) => (
-                          <td
-                            key={day}
-                            className="border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700"
-                          >
-                            <div className="h-8 w-full animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                          </td>
-                        ))}
-                        {tableType === 'complete' && (
-                          <>
-                            <td className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-blue-900/20">
-                              <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                            </td>
-                            <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-orange-900/20">
-                              <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                            </td>
-                            <td className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-purple-900/20">
-                              <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                            </td>
-                            <td className="border-r border-slate-200 bg-cyan-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-cyan-900/20">
-                              <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                            </td>
-                            <td className="border-r-0 border-slate-200 bg-green-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-green-900/20">
-                              <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                            </td>
-                          </>
-                        )}
-                        {tableType === 'present_absent' && (
-                          <>
-                            <td className="border-r border-slate-200 bg-green-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
-                            <td className="border-r border-slate-200 bg-red-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
-                          </>
-                        )}
-                        {tableType === 'in_out' && (
-                          <td className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
-                        )}
-                        {tableType === 'leaves' && (
-                          <>
-                            <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
-                            <td className="border-r border-slate-200 bg-yellow-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
-                            <td className="border-r border-slate-200 bg-rose-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
-                          </>
-                        )}
-                        {tableType === 'od' && (
-                          <td className="border-r border-slate-200 bg-indigo-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
-                        )}
-                        {tableType === 'ot' && (
-                          <>
-                            <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
-                            <td className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
-                          </>
-                        )}
-                      </tr>
+                    <div role="columnheader" className="border-r border-slate-200 bg-blue-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-blue-700 dark:border-slate-700 dark:bg-blue-900/20 w-[60px] shrink-0">
+                      Pres
+                    </div>
+                    <div role="columnheader" className="border-r border-slate-200 bg-orange-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 w-[60px] shrink-0">
+                      OT
+                    </div>
+                    <div role="columnheader" className="border-r border-slate-200 bg-purple-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-purple-700 dark:border-slate-700 dark:bg-purple-900/20 w-[60px] shrink-0">
+                      Extra
+                    </div>
+                    <div role="columnheader" className="border-r border-slate-200 bg-cyan-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-cyan-700 dark:border-slate-700 dark:bg-cyan-900/20 w-[80px] shrink-0">
+                      Perms
+                    </div>
+                    <div role="columnheader" className="bg-green-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-green-700 dark:border-slate-700 dark:bg-green-900/20 w-[70px] shrink-0">
+                      Payable
+                    </div>
+                  </>
+                )}
+                {tableType === 'present_absent' && (
+                  <>
+                    <div role="columnheader" className="border-r border-slate-200 bg-green-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-green-700 w-[60px] shrink-0">P</div>
+                    <div role="columnheader" className="border-r border-slate-200 bg-red-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-red-700 w-[60px] shrink-0">A</div>
+                  </>
+                )}
+                {tableType === 'in_out' && (
+                  <div role="columnheader" className="border-r border-slate-200 bg-blue-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-blue-700 w-[60px] shrink-0">Days</div>
+                )}
+                {tableType === 'leaves' && (
+                  <>
+                    <div role="columnheader" className="border-r border-slate-200 bg-orange-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-orange-700 w-[60px] shrink-0">Tot</div>
+                    <div role="columnheader" className="border-r border-slate-200 bg-yellow-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-yellow-700 w-[60px] shrink-0">Paid</div>
+                    <div role="columnheader" className="border-r border-slate-200 bg-rose-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-rose-700 w-[60px] shrink-0">LOP</div>
+                  </>
+                )}
+                {tableType === 'od' && (
+                  <div role="columnheader" className="border-r border-slate-200 bg-indigo-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-indigo-700 w-[60px] shrink-0">Tot</div>
+                )}
+                {tableType === 'ot' && (
+                  <>
+                    <div role="columnheader" className="border-r border-slate-200 bg-orange-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-orange-700 w-[60px] shrink-0">OT</div>
+                    <div role="columnheader" className="border-r border-slate-200 bg-purple-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-purple-700 w-[60px] shrink-0">Extra</div>
+                  </>
+                )}
+              </div>
+            </div>
+            <div role="rowgroup" className="bg-white dark:bg-slate-900 flex flex-col">
+              {loading ? (
+                <>
+                  {/* Skeleton Loading - only tbody cells */}
+                  {[1, 2, 3, 4, 5].map((i) => (
+                    <div key={i} className="flex border-b border-slate-100 dark:border-slate-800 w-max min-w-full">
+                      <div className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900 w-[200px] shrink-0">
+                        <div className="h-4 w-32 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                        <div className="mt-1 h-3 w-24 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                      </div>
+                      {daysArray.map((day) => (
+                        <div
+                          key={day}
+                          className="border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700 w-[35px] shrink-0"
+                        >
+                          <div className="h-8 w-full animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                        </div>
+                      ))}
+                      {tableType === 'complete' && (
+                        <>
+                          <div className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-blue-900/20 w-[60px] shrink-0">
+                            <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                          </div>
+                          <div className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-orange-900/20 w-[60px] shrink-0">
+                            <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                          </div>
+                          <div className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-purple-900/20 w-[60px] shrink-0">
+                            <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                          </div>
+                          <div className="border-r border-slate-200 bg-cyan-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-cyan-900/20 w-[80px] shrink-0">
+                            <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                          </div>
+                          <div className="bg-green-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-green-900/20 w-[70px] shrink-0">
+                            <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                          </div>
+                        </>
+                      )}
+                      {tableType === 'present_absent' && (
+                        <>
+                          <div className="border-r border-slate-200 bg-green-50 px-2 py-2 text-center dark:border-slate-700 w-[60px] shrink-0"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></div>
+                          <div className="border-r border-slate-200 bg-red-50 px-2 py-2 text-center dark:border-slate-700 w-[60px] shrink-0"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></div>
+                        </>
+                      )}
+                      {tableType === 'in_out' && (
+                        <div className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center dark:border-slate-700 w-[60px] shrink-0"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></div>
+                      )}
+                      {tableType === 'leaves' && (
+                        <>
+                          <div className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center dark:border-slate-700 w-[60px] shrink-0"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></div>
+                          <div className="border-r border-slate-200 bg-yellow-50 px-2 py-2 text-center dark:border-slate-700 w-[60px] shrink-0"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></div>
+                          <div className="border-r border-slate-200 bg-rose-50 px-2 py-2 text-center dark:border-slate-700 w-[60px] shrink-0"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></div>
+                        </>
+                      )}
+                      {tableType === 'od' && (
+                        <div className="border-r border-slate-200 bg-indigo-50 px-2 py-2 text-center dark:border-slate-700 w-[60px] shrink-0"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></div>
+                      )}
+                      {tableType === 'ot' && (
+                        <>
+                          <div className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center dark:border-slate-700 w-[60px] shrink-0"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></div>
+                          <div className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center dark:border-slate-700 w-[60px] shrink-0"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></div>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </>
+              ) : filteredMonthlyData.length === 0 ? (
+                <div className="flex items-center justify-center p-8 text-slate-500 w-full min-h-[400px]">
+                  No employees found matching the selected filters.
+                </div>
+              ) : (
+                <div role="rowgroup" className="w-full">
+                  <div className="overflow-visible min-w-full">
+                    {filteredMonthlyData.map((item, index) => (
+                      <div key={item.employee._id}>
+                        {Row({ index, style: {}, data: filteredMonthlyData })}
+                      </div>
                     ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Load More Trigger */}
+          {hasMore && (
+            <div className="p-4 flex justify-center border-t border-slate-200 dark:border-slate-700">
+              <button
+                onClick={() => setPage(prev => prev + 1)}
+                disabled={loadingMore}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors text-sm font-medium shadow-sm flex items-center gap-2"
+              >
+                {loadingMore ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                    Loading More...
                   </>
                 ) : (
-                  <>
-                    {filteredMonthlyData.length === 0 ? (
-                      <tr>
-                        <td colSpan={daysArray.length + (tableType === 'complete' ? 6 : 2)} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
-                          No employees found matching the selected filters.
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredMonthlyData.map((item) => {
-                        if (!item.employee) return null;
-                        const daysPresent = item.presentDays !== undefined
-                          ? item.presentDays
-                          : Object.values(item.dailyAttendance || {}).filter(
-                            (record) => record && (record.status === 'PRESENT' || record.status === 'PARTIAL')
-                          ).length;
-                        const payableShifts = item.payableShifts !== undefined ? item.payableShifts : 0;
-                        const monthPresent = Object.values(item.dailyAttendance || {}).filter(r => r?.status === 'PRESENT').length;
-                        const monthAbsent = Object.values(item.dailyAttendance || {}).filter(r => r?.status === 'ABSENT').length;
-                        const leaveRecords = Object.values(item.dailyAttendance || {}).filter(r => r?.status === 'LEAVE' || r?.hasLeave);
-                        const totalLeaves = leaveRecords.length;
-                        const lopCount = leaveRecords.filter(r => {
-                          const anyR = r as any;
-                          return anyR?.leaveNature === 'lop' ||
-                            anyR?.leaveInfo?.leaveType?.toLowerCase().includes('lop') ||
-                            anyR?.leaveInfo?.leaveType?.toLowerCase().includes('loss of pay');
-                        }).length;
-                        const paidLeaves = totalLeaves - lopCount;
-                        const totalODs = Object.values(item.dailyAttendance || {}).filter(r => r?.status === 'OD' || r?.hasOD).length;
+                  'Load More Employees'
+                )}
+              </button>
+            </div>
+          )}
 
-                        return (
-                          <tr key={item.employee._id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                            <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 text-[11px] font-medium text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white">
+          {/* Pagination Info */}
+          <div className="px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-200 dark:border-slate-700 flex justify-between items-center text-[10px] text-slate-500 rounded-b-2xl">
+            <div>
+              Showing {filteredMonthlyData.length} of {totalCount} employees
+            </div>
+            <div>
+              Page {page} of {totalPages}
+            </div>
+          </div>
+          {
+            showUploadDialog && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+                  <div className="mb-4 flex items-center justify-between">
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">Upload Attendance Excel</h3>
+                    <button
+                      onClick={() => {
+                        setShowUploadDialog(false);
+                        setUploadFile(null);
+                      }}
+                      className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
+                    >
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                        Select Excel File
+                      </label>
+                      <input
+                        id="excel-upload-input"
+                        type="file"
+                        accept=".xlsx,.xls,.csv"
+                        onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+                      <button
+                        onClick={handleDownloadTemplate}
+                        className="text-blue-600 hover:underline dark:text-blue-400"
+                      >
+                        Download Template
+                      </button>
+                    </div>
+
+                    <div className="flex gap-3">
+                      <button
+                        onClick={handleExcelUpload}
+                        disabled={!uploadFile || uploading}
+                        className="flex-1 rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {uploading ? 'Uploading...' : 'Upload'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowUploadDialog(false);
+                          setUploadFile(null);
+                        }}
+                        className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )
+          }
+
+          {/* OutTime Dialog for PARTIAL Attendance */}
+          {
+            showOutTimeDialog && selectedRecordForOutTime && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+                  <div className="mb-4 flex items-center justify-between">
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">Enter Out Time</h3>
+                    <button
+                      onClick={() => {
+                        setShowOutTimeDialog(false);
+                        setSelectedRecordForOutTime(null);
+                        setOutTimeValue('');
+                      }}
+                      className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
+                    >
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800">
+                      <div className="text-sm font-medium text-slate-900 dark:text-white">
+                        {selectedRecordForOutTime?.employee?.employee_name}
+                      </div>
+                      <div className="text-xs text-slate-600 dark:text-slate-400">
+                        {selectedRecordForOutTime?.employee?.emp_no} • {selectedRecordForOutTime?.date}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                        Out Time *
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={outTimeValue}
+                        onChange={(e) => setOutTimeValue(e.target.value)}
+                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                        required
+                      />
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        Enter the logout time. Shift will be automatically assigned based on in-time and out-time.
+                      </p>
+                    </div>
+
+                    <div className="flex gap-3">
+                      <button
+                        onClick={handleUpdateOutTime}
+                        disabled={!outTimeValue || updatingOutTime}
+                        className="flex-1 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {updatingOutTime ? 'Updating...' : 'Update Out Time'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowOutTimeDialog(false);
+                          setSelectedRecordForOutTime(null);
+                          setOutTimeValue('');
+                        }}
+                        className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )
+          }
+
+          {/* Detail Dialog */}
+          {
+            showDetailDialog && attendanceDetail && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+                  <div className="mb-4 flex items-center justify-between">
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                      Attendance Details - {selectedDate}
+                      {selectedEmployee && (
+                        <span className="ml-2 text-sm font-normal text-slate-500 dark:text-slate-400">
+                          ({selectedEmployee?.employee_name})
+                        </span>
+                      )}
+                    </h3>
+                    <button
+                      onClick={() => {
+                        setShowDetailDialog(false);
+                        setError('');
+                        setSuccess('');
+                      }}
+                      className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
+                    >
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  {/* Success/Error Messages */}
+                  {success && (
+                    <div className="mb-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400">
+                      {success}
+                    </div>
+                  )}
+                  {error && (
+                    <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+                      {error}
+                    </div>
+                  )}
+
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Status</label>
+                        <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
+                          {attendanceDetail.status || 'ABSENT'}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Shift</label>
+                        <div className="mt-1 flex items-center gap-2">
+                          {!editingShift ? (
+                            <>
+                              <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                                {attendanceDetail.shiftId && typeof attendanceDetail.shiftId === 'object'
+                                  ? attendanceDetail.shiftId.name
+                                  : '-'}
+                              </div>
+                              <button
+                                onClick={() => {
+                                  setEditingShift(true);
+                                  if (attendanceDetail.shiftId && typeof attendanceDetail.shiftId === 'object') {
+                                    setSelectedShiftId(attendanceDetail.shiftId._id);
+                                  }
+                                }}
+                                className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"
+                              >
+                                {attendanceDetail.shiftId ? 'Change' : 'Assign'}
+                              </button>
+                            </>
+                          ) : (
+                            <div className="flex-1 flex items-center gap-2">
+                              <select
+                                value={selectedShiftId}
+                                onChange={(e) => setSelectedShiftId(e.target.value)}
+                                className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                              >
+                                <option value="">Select Shift</option>
+                                {availableShifts.map((shift) => (
+                                  <option key={shift._id} value={shift._id}>
+                                    {shift.name} ({shift.startTime} - {shift.endTime})
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                onClick={handleAssignShift}
+                                disabled={savingShift || !selectedShiftId}
+                                className="rounded-lg bg-green-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {savingShift ? 'Saving...' : 'Save'}
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setEditingShift(false);
+                                  setSelectedShiftId('');
+                                }}
+                                className="rounded-lg bg-slate-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-slate-600"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">In Time</label>
+                        <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
+                          {formatTime(attendanceDetail.inTime)}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Out Time</label>
+                        <div className="mt-1 flex items-center gap-2">
+                          {!editingOutTime ? (
+                            <>
+                              <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                                {attendanceDetail.outTime ? formatTime(attendanceDetail.outTime, true, selectedDate || '') : '-'}
+                              </div>
+                              {!attendanceDetail.outTime && (
+                                <button
+                                  onClick={() => {
+                                    setEditingOutTime(true);
+                                    if (attendanceDetail.outTime) {
+                                      const date = new Date(attendanceDetail.outTime);
+                                      setOutTimeInput(`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`);
+                                    }
+                                  }}
+                                  className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"
+                                >
+                                  Add
+                                </button>
+                              )}
+                              {attendanceDetail.outTime && (
+                                <button
+                                  onClick={() => {
+                                    setEditingOutTime(true);
+                                    const date = new Date(attendanceDetail.outTime);
+                                    setOutTimeInput(`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`);
+                                  }}
+                                  className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"
+                                >
+                                  Edit
+                                </button>
+                              )}
+                            </>
+                          ) : (
+                            <div className="flex-1 flex items-center gap-2">
+                              <input
+                                type="time"
+                                value={outTimeInput}
+                                onChange={(e) => setOutTimeInput(e.target.value)}
+                                className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                              />
+                              <button
+                                onClick={handleSaveOutTime}
+                                disabled={savingOutTime || !outTimeInput}
+                                className="rounded-lg bg-green-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {savingOutTime ? 'Saving...' : 'Save'}
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setEditingOutTime(false);
+                                  setOutTimeInput('');
+                                }}
+                                className="rounded-lg bg-slate-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-slate-600"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Total Hours</label>
+                        <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
+                          {formatHours(attendanceDetail.totalHours)}
+                        </div>
+                      </div>
+                      {attendanceDetail.isLateIn && attendanceDetail.lateInMinutes && (
+                        <div>
+                          <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Late In</label>
+                          <div className="mt-1 text-sm font-semibold text-orange-600 dark:text-orange-400">
+                            +{attendanceDetail.lateInMinutes} minutes
+                          </div>
+                        </div>
+                      )}
+                      {attendanceDetail.isEarlyOut && attendanceDetail.earlyOutMinutes && (
+                        <div>
+                          <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Early Out</label>
+                          <div className="mt-1 text-sm font-semibold text-orange-600 dark:text-orange-400">
+                            -{attendanceDetail.earlyOutMinutes} minutes
+                          </div>
+                          {attendanceDetail.earlyOutDeduction?.deductionApplied && (
+                            <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                              Deduction: {attendanceDetail.earlyOutDeduction.deductionType?.replace('_', ' ')}
+                              {attendanceDetail.earlyOutDeduction.deductionDays ? ` (${attendanceDetail.earlyOutDeduction.deductionDays} day(s))` : ''}
+                              {attendanceDetail.earlyOutDeduction.deductionAmount ? ` (₹${attendanceDetail.earlyOutDeduction.deductionAmount})` : ''}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                      {attendanceDetail.otHours && attendanceDetail.otHours > 0 && (
+                        <div>
+                          <label className="text-xs font-medium text-slate-600 dark:text-slate-400">OT Hours</label>
+                          <div className="mt-1 text-sm font-semibold text-orange-600 dark:text-orange-400">
+                            {attendanceDetail.otHours.toFixed(2)} hrs
+                          </div>
+                        </div>
+                      )}
+                      {attendanceDetail.extraHours && attendanceDetail.extraHours > 0 && (
+                        <div className="col-span-2">
+                          <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Extra Hours</label>
+                          <div className="mt-1 flex items-center justify-between">
+                            <div className="text-sm font-semibold text-purple-600 dark:text-purple-400">
+                              {attendanceDetail.extraHours.toFixed(2)} hrs
+                            </div>
+                            {!hasExistingOT && attendanceDetail.shiftId && (
+                              <button
+                                onClick={handleConvertExtraHoursToOT}
+                                disabled={convertingToOT}
+                                className="ml-3 rounded-lg bg-gradient-to-r from-purple-500 to-indigo-500 px-3 py-1.5 text-xs font-semibold text-white shadow-md shadow-purple-500/30 transition-all hover:from-purple-600 hover:to-indigo-600 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {convertingToOT ? 'Converting...' : 'Convert to OT'}
+                              </button>
+                            )}
+                            {hasExistingOT && (
+                              <span className="ml-3 rounded-full bg-green-100 px-2 py-1 text-[10px] font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                                Already Converted
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      {attendanceDetail.permissionHours && attendanceDetail.permissionHours > 0 && (
+                        <div>
+                          <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Permission Hours</label>
+                          <div className="mt-1 text-sm font-semibold text-cyan-600 dark:text-cyan-400">
+                            {attendanceDetail.permissionHours.toFixed(2)} hrs ({attendanceDetail.permissionCount || 0} permissions)
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Leave Conflicts - Show if attendance is present and leave conflicts exist */}
+                    {attendanceDetail.status === 'PRESENT' && leaveConflicts.length > 0 && (
+                      <div className="mt-4 rounded-lg border border-red-300 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/20">
+                        <div className="mb-3 flex items-center gap-2">
+                          <svg className="h-5 w-5 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          </svg>
+                          <h4 className="text-base font-semibold text-red-900 dark:text-red-200">Leave Conflict Detected</h4>
+                        </div>
+                        <p className="mb-3 text-sm text-red-800 dark:text-red-300">
+                          Employee has approved leave but attendance is logged for this date.
+                        </p>
+                        {leaveConflicts.map((conflict) => (
+                          <div key={conflict.leaveId} className="mb-3 rounded-lg border border-red-200 bg-white p-3 dark:border-red-700 dark:bg-slate-800">
+                            <div className="mb-2 text-sm font-medium text-red-900 dark:text-red-200">
+                              {conflict.leaveType} - {conflict.numberOfDays} day(s)
+                            </div>
+                            <div className="mb-2 text-xs text-red-700 dark:text-red-300">
+                              {new Date(conflict.fromDate).toLocaleDateString()}
+                              {conflict.fromDate !== conflict.toDate && ` - ${new Date(conflict.toDate).toLocaleDateString()}`}
+                              {conflict.isHalfDay && ` (${conflict.halfDayType === 'first_half' ? 'First Half' : 'Second Half'})`}
+                            </div>
+                            <div className="flex gap-2">
+                              {conflict.conflictType === 'full_day' ? (
+                                <button
+                                  onClick={() => handleRevokeLeave(conflict.leaveId)}
+                                  disabled={revokingLeave}
+                                  className="rounded-lg bg-red-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-all hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {revokingLeave ? 'Revoking...' : 'Revoke Leave'}
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => handleUpdateLeave(conflict.leaveId)}
+                                  disabled={updatingLeave}
+                                  className="rounded-lg bg-orange-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-all hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {updatingLeave ? 'Updating...' : 'Update Leave'}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Leave Information */}
+                    {attendanceDetail.hasLeave && attendanceDetail.leaveInfo && (
+                      <div className="mt-4 rounded-lg border border-orange-200 bg-orange-50 p-4 dark:border-orange-800 dark:bg-orange-900/20">
+                        <h4 className="mb-3 text-base font-semibold text-orange-900 dark:text-orange-200">Leave Information</h4>
+
+                        {/* Purpose/Reason */}
+                        {attendanceDetail.leaveInfo.purpose ? (
+                          <div className="mb-3">
+                            <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Purpose/Reason</label>
+                            <div className="mt-1 text-sm text-orange-900 dark:text-orange-100">
+                              {attendanceDetail.leaveInfo.purpose}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        <div className="grid grid-cols-2 gap-3 text-sm mb-3">
+                          <div>
+                            <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Leave Type</label>
+                            <div className="mt-1 font-semibold text-orange-900 dark:text-orange-100">
+                              {attendanceDetail.leaveInfo.leaveType || 'N/A'}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Half Day</label>
+                            <div className="mt-1 font-semibold text-orange-900 dark:text-orange-100">
+                              {attendanceDetail.leaveInfo.isHalfDay ? 'Yes' : 'No'}
+                              {attendanceDetail.leaveInfo.isHalfDay && attendanceDetail.leaveInfo.halfDayType && (
+                                <span className="ml-1 text-xs">({attendanceDetail.leaveInfo.halfDayType === 'first_half' ? 'First Half' : 'Second Half'})</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Date Range */}
+                        {attendanceDetail.leaveInfo.fromDate && attendanceDetail.leaveInfo.toDate && (
+                          <div className="mb-3">
+                            <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Date Range</label>
+                            <div className="mt-1 text-sm font-semibold text-orange-900 dark:text-orange-100">
+                              {new Date(attendanceDetail.leaveInfo.fromDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} - {new Date(attendanceDetail.leaveInfo.toDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Number of Days and Day in Leave */}
+                        <div className="grid grid-cols-2 gap-3 text-sm mb-3">
+                          <div>
+                            <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Total Days</label>
+                            <div className="mt-1 font-semibold text-orange-900 dark:text-orange-100">
+                              {attendanceDetail.leaveInfo.numberOfDays !== undefined && attendanceDetail.leaveInfo.numberOfDays !== null
+                                ? `${attendanceDetail.leaveInfo.numberOfDays} ${attendanceDetail.leaveInfo.numberOfDays === 1 ? 'day' : 'days'}`
+                                : 'N/A'}
+                            </div>
+                          </div>
+                          {attendanceDetail.leaveInfo.dayInLeave !== undefined && attendanceDetail.leaveInfo.dayInLeave !== null && (
+                            <div>
+                              <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Day in Leave</label>
+                              <div className="mt-1 font-semibold text-orange-900 dark:text-orange-100">
+                                {attendanceDetail.leaveInfo.dayInLeave === 1 ? '1st day' : attendanceDetail.leaveInfo.dayInLeave === 2 ? '2nd day' : attendanceDetail.leaveInfo.dayInLeave === 3 ? '3rd day' : `${attendanceDetail.leaveInfo.dayInLeave}th day`}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Applied Date */}
+                        {attendanceDetail.leaveInfo.appliedAt && (
+                          <div className="mb-3">
+                            <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Applied On</label>
+                            <div className="mt-1 text-sm text-orange-900 dark:text-orange-100">
+                              {new Date(attendanceDetail.leaveInfo.appliedAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Approved By and When */}
+                        {attendanceDetail.leaveInfo.approvedBy && (
+                          <div className="mb-3 grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Approved By</label>
+                              <div className="mt-1 text-sm font-semibold text-orange-900 dark:text-orange-100">
+                                {attendanceDetail.leaveInfo.approvedBy.name || attendanceDetail.leaveInfo.approvedBy.email || 'N/A'}
+                              </div>
+                            </div>
+                            {attendanceDetail.leaveInfo.approvedAt && (
                               <div>
-                                <div className="flex items-center gap-2">
-                                  <div
-                                    className="font-semibold truncate cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex-1"
-                                    onClick={() => item.employee && handleEmployeeClick(item.employee)}
-                                    title="Click to view monthly summary"
-                                  >
-                                    {item.employee?.employee_name || 'Unknown Employee'}
-                                  </div>
-
-                                </div>
-                                <div className="text-[9px] text-slate-500 dark:text-slate-400 truncate mt-1">
-                                  {item.employee?.emp_no || '-'}
-                                  {item.employee?.department && ` • ${(item.employee?.department as any)?.name || ''}`}
+                                <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Approved On</label>
+                                <div className="mt-1 text-sm text-orange-900 dark:text-orange-100">
+                                  {new Date(attendanceDetail.leaveInfo.approvedAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                                 </div>
                               </div>
-                            </td>
-                            {daysArray.map((day) => {
-                              const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                              const record = (item.dailyAttendance || {})[dateStr] || null;
-                              const shiftName = record?.shiftId && typeof record.shiftId === 'object' ? record.shiftId.name : '-';
+                            )}
+                          </div>
+                        )}
 
-                              let displayStatus = 'A';
-                              if (record) {
-                                if (record.status === 'PRESENT') displayStatus = 'P';
-                                else if (record.status === 'PARTIAL') displayStatus = 'PT';
-                                else if (record.status === 'LEAVE' || record.hasLeave) displayStatus = 'L';
-                                else if (record.status === 'OD' || record.hasOD) displayStatus = 'OD';
-                                else displayStatus = 'A';
-                              }
-
-                              const hasData = record && (record.status || record.hasLeave || record.hasOD);
-
-                              return (
-                                <td
-                                  key={day}
-                                  onClick={() => hasData && handleDateClick(item.employee, dateStr)}
-                                  className={`border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700 ${hasData ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : ''
-                                    } ${getStatusColor(record)} ${getCellBackgroundColor(record)}`}
-                                >
-                                  {hasData ? (
-                                    <div className="space-y-0.5">
-                                      {tableType === 'complete' && (
-                                        <>
-                                          <div className="font-semibold text-[9px]">{displayStatus}</div>
-                                          {shiftName !== '-' && record?.shiftId && (
-                                            <div className="text-[8px] opacity-75 truncate" title={shiftName}>{shiftName.substring(0, 3)}</div>
-                                          )}
-                                          {record && record.totalHours !== null && (
-                                            <div className="text-[8px] font-semibold">{formatHours(record.totalHours)}</div>
-                                          )}
-                                        </>
-                                      )}
-                                      {tableType === 'present_absent' && (
-                                        <div className="font-bold text-[10px]">{displayStatus}</div>
-                                      )}
-                                      {tableType === 'in_out' && (
-                                        <div className="text-[8px] font-medium leading-tight">
-                                          <div className="text-green-600 dark:text-green-400">{record?.inTime ? formatTime(record.inTime) : '-'}</div>
-                                          <div className="text-red-600 dark:text-red-400">{record?.outTime ? formatTime(record.outTime) : '-'}</div>
-                                        </div>
-                                      )}
-                                      {tableType === 'leaves' && (
-                                        <div className="font-bold text-[10px] text-orange-600">{displayStatus === 'L' ? 'L' : '-'}</div>
-                                      )}
-                                      {tableType === 'od' && (
-                                        <div className="font-bold text-[10px] text-indigo-600">{displayStatus === 'OD' ? 'OD' : '-'}</div>
-                                      )}
-                                      {tableType === 'ot' && (
-                                        <div className="text-[8px] font-medium leading-tight">
-                                          <div className="text-orange-600">{record?.otHours ? record.otHours.toFixed(1) : '-'}</div>
-                                          <div className="text-purple-600">{record?.extraHours ? record.extraHours.toFixed(1) : '-'}</div>
-                                        </div>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <span className="text-slate-400 text-[9px]">-</span>
-                                  )}
-                                </td>
-                              );
-                            })}
-                            {tableType === 'complete' && (
-                              <>
-                                <td className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center text-[11px] font-bold text-blue-700 dark:border-slate-700 dark:bg-blue-900/20 dark:text-blue-300">
-                                  {daysPresent}
-                                </td>
-                                <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300">
-                                  {Object.values(item.dailyAttendance || {}).reduce((sum, record) => sum + (record?.otHours || 0), 0).toFixed(1)}
-                                </td>
-                                <td className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700 dark:border-slate-700 dark:bg-purple-900/20 dark:text-purple-300">
-                                  {Object.values(item.dailyAttendance || {}).reduce((sum, record) => sum + (record?.extraHours || 0), 0).toFixed(1)}
-                                </td>
-                                <td className="border-r border-slate-200 bg-cyan-50 px-2 py-2 text-center text-[11px] font-bold text-cyan-700 dark:border-slate-700 dark:bg-cyan-900/20 dark:text-cyan-300">
-                                  {Object.values(item.dailyAttendance || {}).reduce((sum, record) => sum + (record?.permissionCount || 0), 0)}
-                                </td>
-                                <td className="border-r-0 border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:border-slate-700 dark:bg-green-900/20 dark:text-green-300">
-                                  {payableShifts.toFixed(2)}
-                                </td>
-                              </>
-                            )}
-                            {tableType === 'present_absent' && (
-                              <>
-                                <td className="border-r border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700">{monthPresent}</td>
-                                <td className="border-r border-slate-200 bg-red-50 px-2 py-2 text-center text-[11px] font-bold text-red-700">{monthAbsent}</td>
-                              </>
-                            )}
-                            {tableType === 'in_out' && (
-                              <td className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center text-[11px] font-bold text-blue-700">{daysPresent}</td>
-                            )}
-                            {tableType === 'leaves' && (
-                              <>
-                                <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700">{totalLeaves}</td>
-                                <td className="border-r border-slate-200 bg-yellow-50 px-2 py-2 text-center text-[11px] font-bold text-yellow-700">{paidLeaves}</td>
-                                <td className="border-r border-slate-200 bg-rose-50 px-2 py-2 text-center text-[11px] font-bold text-rose-700">{lopCount}</td>
-                              </>
-                            )}
-                            {tableType === 'od' && (
-                              <td className="border-r border-slate-200 bg-indigo-50 px-2 py-2 text-center text-[11px] font-bold text-indigo-700">{totalODs}</td>
-                            )}
-                            {tableType === 'ot' && (
-                              <>
-                                <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700">
-                                  {Object.values(item.dailyAttendance || {}).reduce((sum, record) => sum + (record?.otHours || 0), 0).toFixed(1)}
-                                </td>
-                                <td className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700">
-                                  {Object.values(item.dailyAttendance || {}).reduce((sum, record) => sum + (record?.extraHours || 0), 0).toFixed(1)}
-                                </td>
-                              </>
-                            )}
-                          </tr>
-                        );
-                      })
+                        {attendanceDetail.isConflict && (
+                          <div className="mt-2 rounded border border-red-300 bg-red-50 p-2 text-xs font-semibold text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
+                            ⚠️ Conflict: Leave approved but attendance logged for this date
+                          </div>
+                        )}
+                      </div>
                     )}
-                  </>
-                )}
-              </tbody>
-            </table>
-          </div>
+
+                    {/* OD Information */}
+                    {attendanceDetail.hasOD && attendanceDetail.odInfo && (
+                      <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
+                        <h4 className="mb-3 text-base font-semibold text-blue-900 dark:text-blue-200">On Duty (OD) Information</h4>
+
+                        {/* Early-Out Info */}
+                        {attendanceDetail.earlyOutMinutes !== undefined && attendanceDetail.earlyOutMinutes !== null && (
+                          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-900/20">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="text-xs font-medium text-amber-700 dark:text-amber-300">Early-Out Minutes</p>
+                                <p className="text-lg font-semibold text-amber-900 dark:text-amber-100">
+                                  {attendanceDetail.earlyOutMinutes} min
+                                </p>
+                              </div>
+                              {attendanceDetail.earlyOutDeduction?.deductionApplied && (
+                                <div className="text-right">
+                                  <p className="text-xs font-medium text-amber-700 dark:text-amber-300">Deduction Applied</p>
+                                  <p className="text-sm font-semibold text-amber-900 dark:text-amber-100 capitalize">
+                                    {attendanceDetail.earlyOutDeduction.deductionType?.replace('_', ' ') || 'N/A'}
+                                  </p>
+                                  {attendanceDetail.earlyOutDeduction.deductionDays && (
+                                    <p className="text-xs text-amber-700 dark:text-amber-300">
+                                      {attendanceDetail.earlyOutDeduction.deductionDays} day(s)
+                                    </p>
+                                  )}
+                                  {attendanceDetail.earlyOutDeduction.deductionAmount && (
+                                    <p className="text-xs text-amber-700 dark:text-amber-300">
+                                      ₹{attendanceDetail.earlyOutDeduction.deductionAmount}
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                            {attendanceDetail.earlyOutDeduction?.reason && (
+                              <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+                                {attendanceDetail.earlyOutDeduction.reason}
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Purpose/Reason */}
+                        {attendanceDetail.odInfo.purpose && (
+                          <div className="mb-3">
+                            <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Purpose/Reason</label>
+                            <div className="mt-1 text-sm text-blue-900 dark:text-blue-100">
+                              {attendanceDetail.odInfo.purpose}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Place Visited */}
+                        {attendanceDetail.odInfo.placeVisited && (
+                          <div className="mb-3">
+                            <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Place Visited</label>
+                            <div className="mt-1 text-sm text-blue-900 dark:text-blue-100">
+                              {attendanceDetail.odInfo.placeVisited}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-2 gap-3 text-sm mb-3">
+                          <div>
+                            <label className="text-xs font-medium text-blue-700 dark:text-blue-300">OD Type</label>
+                            <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
+                              {attendanceDetail.odInfo.odType || 'N/A'}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-blue-700 dark:text-blue-300">
+                              {attendanceDetail.odInfo.odType_extended === 'hours' ? 'Duration Type' : 'Half Day'}
+                            </label>
+                            <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
+                              {attendanceDetail.odInfo.odType_extended === 'hours' ? (
+                                'Hour-Based OD'
+                              ) : attendanceDetail.odInfo.isHalfDay ? (
+                                <>
+                                  Yes
+                                  {attendanceDetail.odInfo.halfDayType && (
+                                    <span className="ml-1 text-xs">({attendanceDetail.odInfo.halfDayType === 'first_half' ? 'First Half' : 'Second Half'})</span>
+                                  )}
+                                </>
+                              ) : (
+                                'No'
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Date Range */}
+                        {attendanceDetail.odInfo.fromDate && attendanceDetail.odInfo.toDate && (
+                          <div className="mb-3">
+                            <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Date Range</label>
+                            <div className="mt-1 text-sm font-semibold text-blue-900 dark:text-blue-100">
+                              {new Date(attendanceDetail.odInfo.fromDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} - {new Date(attendanceDetail.odInfo.toDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Hour-Based OD: Show Hours */}
+                        {attendanceDetail.odInfo.odType_extended === 'hours' && attendanceDetail.odInfo.durationHours && (
+                          <div className="mb-3 p-3 rounded-lg bg-blue-100 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-700">
+                            <label className="text-xs font-medium text-blue-700 dark:text-blue-300 block mb-2">OD Hours</label>
+                            <div className="text-lg font-bold text-blue-900 dark:text-blue-100">
+                              {(() => {
+                                const hours = Math.floor(attendanceDetail.odInfo.durationHours || 0);
+                                const mins = Math.round((attendanceDetail.odInfo.durationHours || 0) % 1 * 60);
+                                return `${hours}h ${mins}m`;
+                              })()}
+                            </div>
+                            {attendanceDetail.odInfo.odStartTime && attendanceDetail.odInfo.odEndTime && (
+                              <div className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                                Time: {attendanceDetail.odInfo.odStartTime} - {attendanceDetail.odInfo.odEndTime}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Full Day / Half Day: Show Days */}
+                        {attendanceDetail.odInfo.odType_extended !== 'hours' && (
+                          <div className="grid grid-cols-2 gap-3 text-sm mb-3">
+                            <div>
+                              <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Total Days</label>
+                              <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
+                                {attendanceDetail.odInfo.numberOfDays || 'N/A'} {attendanceDetail.odInfo.numberOfDays === 1 ? 'day' : 'days'}
+                              </div>
+                            </div>
+                            {attendanceDetail.odInfo.dayInOD && (
+                              <div>
+                                <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Day in OD</label>
+                                <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
+                                  {attendanceDetail.odInfo.dayInOD === 1 ? '1st day' : attendanceDetail.odInfo.dayInOD === 2 ? '2nd day' : attendanceDetail.odInfo.dayInOD === 3 ? '3rd day' : `${attendanceDetail.odInfo.dayInOD}th day`}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Applied Date */}
+                        {attendanceDetail.odInfo.appliedAt && (
+                          <div className="mb-3">
+                            <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Applied On</label>
+                            <div className="mt-1 text-sm text-blue-900 dark:text-blue-100">
+                              {new Date(attendanceDetail.odInfo.appliedAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Approved By and When */}
+                        {attendanceDetail.odInfo.approvedBy && (
+                          <div className="mb-3 grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Approved By</label>
+                              <div className="mt-1 text-sm font-semibold text-blue-900 dark:text-blue-100">
+                                {attendanceDetail.odInfo.approvedBy.name || attendanceDetail.odInfo.approvedBy.email || 'N/A'}
+                              </div>
+                            </div>
+                            {attendanceDetail.odInfo.approvedAt && (
+                              <div>
+                                <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Approved On</label>
+                                <div className="mt-1 text-sm text-blue-900 dark:text-blue-100">
+                                  {new Date(attendanceDetail.odInfo.approvedAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Only show conflict for full-day OD (not for half-day or hour-based OD) */}
+                        {attendanceDetail.isConflict &&
+                          attendanceDetail.odInfo &&
+                          attendanceDetail.odInfo.odType_extended !== 'half_day' &&
+                          attendanceDetail.odInfo.odType_extended !== 'hours' && (
+                            <div className="mt-2 rounded border border-red-300 bg-red-50 p-2 text-xs font-semibold text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
+                              ⚠️ Conflict: OD approved but attendance logged for this date
+                            </div>
+                          )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )
+          }
+
+          {/* Monthly Summary Modal */}
+          {
+            showSummaryModal && selectedEmployeeForSummary !== null && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                <div className="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900 print:shadow-none">
+                  <div className="mb-4 flex items-center justify-between print:hidden">
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">Monthly Attendance Summary</h3>
+                    <button
+                      onClick={() => {
+                        setShowSummaryModal(false);
+                        setSelectedEmployeeForSummary(null);
+                        setMonthlySummary(null);
+                      }}
+                      className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
+                    >
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  {loadingSummary ? (
+                    <div className="flex items-center justify-center p-12">
+                      <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
+                    </div>
+                  ) : monthlySummary ? (
+                    <div className="space-y-6">
+                      {/* Employee Details */}
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
+                        <h4 className="mb-3 text-base font-bold text-slate-900 dark:text-white">Employee Details</h4>
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div>
+                            <span className="font-medium text-slate-600 dark:text-slate-400">Name:</span>
+                            <span className="ml-2 text-slate-900 dark:text-white">{selectedEmployeeForSummary?.employee_name || '-'}</span>
+                          </div>
+                          <div>
+                            <span className="font-medium text-slate-600 dark:text-slate-400">Employee Number:</span>
+                            <span className="ml-2 text-slate-900 dark:text-white">{selectedEmployeeForSummary?.emp_no || '-'}</span>
+                          </div>
+                          {selectedEmployeeForSummary && selectedEmployeeForSummary.department && (
+                            <div>
+                              <span className="font-medium text-slate-600 dark:text-slate-400">Department:</span>
+                              <span className="ml-2 text-slate-900 dark:text-white">{((selectedEmployeeForSummary as any).department_id?.name || (selectedEmployeeForSummary.department as any)?.name || '-')}</span>
+                            </div>
+                          )}
+                          {selectedEmployeeForSummary && selectedEmployeeForSummary.designation && (
+                            <div>
+                              <span className="font-medium text-slate-600 dark:text-slate-400">Designation:</span>
+                              <span className="ml-2 text-slate-900 dark:text-white">{((selectedEmployeeForSummary as any).designation_id?.name || (selectedEmployeeForSummary.designation as any)?.name || '-')}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Monthly Summary Table */}
+                      <div className="rounded-lg border border-slate-200 dark:border-slate-700">
+                        <table className="w-full border-collapse text-sm">
+                          <thead className="bg-slate-100 dark:bg-slate-800">
+                            <tr>
+                              <th className="border border-slate-300 px-4 py-2 text-left font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Month</th>
+                              <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Total Leaves</th>
+                              <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Total ODs</th>
+                              <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Present Days</th>
+                              <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Total Days</th>
+                              <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Payable Shifts</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr>
+                              <td className="border border-slate-300 px-4 py-2 text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.monthName || `${monthNames[month - 1]} ${year}`}</td>
+                              <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalLeaves || 0}</td>
+                              <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalODs || 0}</td>
+                              <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalPresentDays || 0}</td>
+                              <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalDaysInMonth || 0}</td>
+                              <td className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalPayableShifts?.toFixed(2) || '0.00'}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Footer with Signature and Timestamp */}
+                      <div className="mt-8 flex items-end justify-between border-t border-slate-200 pt-4 dark:border-slate-700 print:mt-12">
+                        <div>
+                          <div className="mb-2 text-sm font-medium text-slate-600 dark:text-slate-400">Authorized Signature</div>
+                          <div className="h-12 w-48 border-b border-slate-300 dark:border-slate-600"></div>
+                        </div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400">
+                          Printed: {new Date().toLocaleString()}
+                        </div>
+                      </div>
+
+                      {/* Action Buttons */}
+                      <div className="flex justify-end gap-3 print:hidden">
+                        <button
+                          onClick={handleExportPDF}
+                          className="rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600"
+                        >
+                          Export as PDF
+                        </button>
+                        <button
+                          onClick={() => {
+                            setShowSummaryModal(false);
+                            setSelectedEmployeeForSummary(null);
+                            setMonthlySummary(null);
+                          }}
+                          className="rounded-xl border border-slate-200 bg-white px-6 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                        >
+                          Close
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-12 text-center text-slate-500 dark:text-slate-400">
+                      No summary data available
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          }
+
+          {/* Payslip Modal */}
+          {
+            showPayslipModal && selectedEmployeeForPayslip !== null && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                <div className="w-full max-w-5xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900 print:shadow-none print:max-w-full print:rounded-none">
+                  <div className="mb-4 flex items-center justify-between print:hidden">
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">Payslip</h3>
+                    <div className="flex items-center gap-2">
+                      {error && error.includes('not found') && (
+                        <button
+                          onClick={handleCalculatePayroll}
+                          disabled={calculatingPayroll}
+                          className="rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:from-blue-600 hover:to-indigo-700 disabled:opacity-50"
+                        >
+                          {calculatingPayroll ? 'Calculating...' : 'Calculate Payroll'}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => {
+                          setShowPayslipModal(false);
+                          setSelectedEmployeeForPayslip(null);
+                          setPayslipData(null);
+                          setError('');
+                        }}
+                        className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
+                      >
+                        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+
+                  {loadingPayslip ? (
+                    <div className="flex items-center justify-center p-12">
+                      <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
+                    </div>
+                  ) : error && !error.includes('not found') ? (
+                    <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200">
+                      {error}
+                    </div>
+                  ) : payslipData ? (
+                    <div className="space-y-4 print:space-y-3">
+                      {/* Payslip Header */}
+                      <div className="border-b-2 border-slate-300 pb-3 dark:border-slate-600">
+                        <h2 className="text-center text-xl font-bold text-slate-900 dark:text-white">
+                          PAYSLIP FOR THE MONTH OF: {(() => {
+                            const monthStr = payslipData.month || `${monthNames[month - 1]} ${year}`;
+                            // Format as "DEC 19" style
+                            const monthMatch = monthStr.match(/(\w+)\s+(\d{4})/);
+                            if (monthMatch) {
+                              const monthName = monthMatch[1].substring(0, 3).toUpperCase();
+                              const yearShort = monthMatch[2].substring(2);
+                              return `${monthName} ${yearShort}`;
+                            }
+                            return monthStr.toUpperCase();
+                          })()}
+                        </h2>
+                      </div>
+
+                      {/* Employee Details - Matching exact format from image */}
+                      <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
+                        <div className="flex">
+                          <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">Emp Code:</span>
+                          <span className="text-slate-900 dark:text-white">{payslipData.employee?.emp_no || '-'}</span>
+                        </div>
+                        <div className="flex">
+                          <span className="font-semibold text-slate-700 dark:text-slate-300 w-32">Emp Name:</span>
+                          <span className="text-slate-900 dark:text-white">{payslipData.employee?.name || '-'}</span>
+                        </div>
+                        <div className="flex">
+                          <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">Department:</span>
+                          <span className="text-slate-900 dark:text-white">{payslipData.employee?.department || '-'}</span>
+                        </div>
+                        <div className="flex">
+                          <span className="font-semibold text-slate-700 dark:text-slate-300 w-32">Designation:</span>
+                          <span className="text-slate-900 dark:text-white">{payslipData.employee?.designation || '-'}</span>
+                        </div>
+                        <div className="flex">
+                          <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">Location:</span>
+                          <span className="text-slate-900 dark:text-white">{payslipData.employee?.location || '-'}</span>
+                        </div>
+                        <div className="flex">
+                          <span className="font-semibold text-slate-700 dark:text-slate-300 w-32">Bank A/c No.:</span>
+                          <span className="text-slate-900 dark:text-white">{payslipData.employee?.bank_account_no || '-'}</span>
+                        </div>
+                        <div className="flex">
+                          <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">PAID LEAVES:</span>
+                          <span className="text-slate-900 dark:text-white">{payslipData.employee?.paidLeaves || 0}</span>
+                        </div>
+                        <div className="flex">
+                          <span className="font-semibold text-slate-700 dark:text-slate-300 w-32">PAID DAYS:</span>
+                          <span className="font-bold text-slate-900 dark:text-white">{payslipData.paidDays || payslipData.totalPayableShifts || 0}</span>
+                        </div>
+                        <div className="flex">
+                          <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">PF Code No.:</span>
+                          <span className="text-slate-900 dark:text-white">{payslipData.employee?.pf_number || '-'}</span>
+                        </div>
+                        <div className="flex">
+                          <span className="font-semibold text-slate-700 dark:text-slate-300 w-32">PF UAN:</span>
+                          <span className="text-slate-900 dark:text-white">{payslipData.employee?.pf_number || '-'}</span>
+                        </div>
+                        <div className="flex">
+                          <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">ESI No.:</span>
+                          <span className="text-slate-900 dark:text-white">{payslipData.employee?.esi_number || '-'}</span>
+                        </div>
+                      </div>
+
+                      {/* Earnings and Deductions Side by Side */}
+                      <div className="grid grid-cols-2 gap-4">
+                        {/* Earnings Section - Left Side */}
+                        <div className="border border-slate-300 dark:border-slate-600">
+                          <h3 className="border-b border-slate-300 bg-slate-100 px-4 py-2 text-left font-bold text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white">
+                            EARNINGS
+                          </h3>
+                          <div className="divide-y divide-slate-200 dark:divide-slate-700">
+                            <div className="flex justify-between px-4 py-2">
+                              <span className="text-slate-700 dark:text-slate-300">Basic:</span>
+                              <span className="font-semibold text-slate-900 dark:text-white">{payslipData.earnings?.basicPay?.toFixed(2) || '0.00'}</span>
+                            </div>
+                            {/* Map allowances - VDA, HRA, WA, etc. */}
+                            {payslipData.earnings?.allowances && payslipData.earnings.allowances.length > 0 && payslipData.earnings.allowances.map((allowance: any, idx: number) => (
+                              <div key={idx} className="flex justify-between px-4 py-2">
+                                <span className="text-slate-700 dark:text-slate-300">{allowance.name?.toUpperCase() || 'ALLOWANCE'}:</span>
+                                <span className="font-semibold text-slate-900 dark:text-white">{allowance.amount?.toFixed(2) || '0.00'}</span>
+                              </div>
+                            ))}
+                            {payslipData.earnings?.incentive !== 0 && (
+                              <div className="flex justify-between px-4 py-2">
+                                <span className="text-slate-700 dark:text-slate-300">INCENTIVE:</span>
+                                <span className="font-semibold text-slate-900 dark:text-white">{payslipData.earnings?.incentive?.toFixed(2) || '0.00'}</span>
+                              </div>
+                            )}
+                            {payslipData.earnings?.otPay > 0 && (
+                              <div className="flex justify-between px-4 py-2">
+                                <span className="text-slate-700 dark:text-slate-300">OT PAY:</span>
+                                <span className="font-semibold text-slate-900 dark:text-white">{payslipData.earnings?.otPay?.toFixed(2) || '0.00'}</span>
+                              </div>
+                            )}
+                            <div className="flex justify-between border-t-2 border-slate-300 bg-slate-100 px-4 py-2 font-bold dark:border-slate-600 dark:bg-slate-800">
+                              <span className="text-slate-900 dark:text-white">Gross Salary Rs.:</span>
+                              <span className="text-slate-900 dark:text-white">{payslipData.earnings?.grossSalary?.toFixed(2) || '0.00'}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Deductions Section - Right Side */}
+                        <div className="border border-slate-300 dark:border-slate-600">
+                          <h3 className="border-b border-slate-300 bg-slate-100 px-4 py-2 text-left font-bold text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white">
+                            DEDUCTIONS
+                          </h3>
+                          <div className="divide-y divide-slate-200 dark:divide-slate-700">
+                            {/* Other deductions first (PF, ESIC, TDS, etc.) */}
+                            {payslipData.deductions?.otherDeductions && payslipData.deductions.otherDeductions.length > 0 && payslipData.deductions.otherDeductions.map((deduction: any, idx: number) => (
+                              <div key={idx} className="flex justify-between px-4 py-2">
+                                <span className="text-slate-700 dark:text-slate-300">{deduction.name || 'Deduction'}:</span>
+                                <span className="font-semibold text-red-600 dark:text-red-400">{deduction.amount?.toFixed(2) || '0.00'}</span>
+                              </div>
+                            ))}
+                            {/* TDS - if exists in other deductions, otherwise show if configured */}
+                            {payslipData.deductions?.attendanceDeduction > 0 && (
+                              <div className="flex justify-between px-4 py-2">
+                                <span className="text-slate-700 dark:text-slate-300">Attendance Deduction:</span>
+                                <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.deductions.attendanceDeduction.toFixed(2)}</span>
+                              </div>
+                            )}
+                            {payslipData.deductions?.permissionDeduction > 0 && (
+                              <div className="flex justify-between px-4 py-2">
+                                <span className="text-slate-700 dark:text-slate-300">Permission Deduction:</span>
+                                <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.deductions.permissionDeduction.toFixed(2)}</span>
+                              </div>
+                            )}
+                            {payslipData.deductions?.leaveDeduction > 0 && (
+                              <div className="flex justify-between px-4 py-2">
+                                <span className="text-slate-700 dark:text-slate-300">Leave Deduction:</span>
+                                <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.deductions.leaveDeduction.toFixed(2)}</span>
+                              </div>
+                            )}
+                            {payslipData.loanAdvance?.advanceDeduction > 0 && (
+                              <div className="flex justify-between px-4 py-2">
+                                <span className="text-slate-700 dark:text-slate-300">AdV:</span>
+                                <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.loanAdvance.advanceDeduction.toFixed(2)}</span>
+                              </div>
+                            )}
+                            {payslipData.loanAdvance?.totalEMI > 0 && (
+                              <div className="flex justify-between px-4 py-2">
+                                <span className="text-slate-700 dark:text-slate-300">Loan EMI:</span>
+                                <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.loanAdvance.totalEMI.toFixed(2)}</span>
+                              </div>
+                            )}
+                            {/* BANK PAY and CASH PAY - these would be calculated from net salary */}
+                            <div className="flex justify-between border-t-2 border-slate-300 bg-slate-100 px-4 py-2 font-bold dark:border-slate-600 dark:bg-slate-800">
+                              <span className="text-slate-900 dark:text-white">Total Deductions:</span>
+                              <span className="text-red-600 dark:text-red-400">
+                                {((payslipData.deductions?.totalDeductions || 0) + (payslipData.loanAdvance?.totalEMI || 0) + (payslipData.loanAdvance?.advanceDeduction || 0)).toFixed(2)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Net Salary and Payment Details */}
+                      <div className="space-y-3">
+                        {/* Net Salary */}
+                        <div className="border-2 border-green-500 bg-green-50 p-3 dark:border-green-600 dark:bg-green-900/20">
+                          <div className="flex justify-between items-center">
+                            <span className="text-lg font-bold text-green-900 dark:text-green-200">Net Salary:</span>
+                            <span className="text-2xl font-bold text-green-900 dark:text-green-200">{payslipData.netSalary?.toFixed(2) || '0.00'}</span>
+                          </div>
+                        </div>
+
+                        {/* Rupees In Words */}
+                        <div className="border border-slate-300 bg-slate-50 px-4 py-2 dark:border-slate-600 dark:bg-slate-800">
+                          <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Rupees In Words:</span>
+                          <span className="ml-2 text-sm text-slate-900 dark:text-white">{numberToWords(payslipData.netSalary || 0)}</span>
+                        </div>
+                      </div>
+
+                      {/* Print Button */}
+                      <div className="flex justify-end gap-3 print:hidden">
+                        <button
+                          onClick={() => window.print()}
+                          className="rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 px-6 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:from-blue-600 hover:to-indigo-700"
+                        >
+                          Print Payslip
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-yellow-800 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-200">
+                      {error || 'Payslip not found. Please calculate payroll first.'}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          }
         </div>
       </div>
-      {showUploadDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Upload Attendance Excel</h3>
-              <button
-                onClick={() => {
-                  setShowUploadDialog(false);
-                  setUploadFile(null);
-                }}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
-              >
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Select Excel File
-                </label>
-                <input
-                  id="excel-upload-input"
-                  type="file"
-                  accept=".xlsx,.xls,.csv"
-                  onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                />
-              </div>
-
-              <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
-                <button
-                  onClick={handleDownloadTemplate}
-                  className="text-blue-600 hover:underline dark:text-blue-400"
-                >
-                  Download Template
-                </button>
-              </div>
-
-              <div className="flex gap-3">
-                <button
-                  onClick={handleExcelUpload}
-                  disabled={!uploadFile || uploading}
-                  className="flex-1 rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {uploading ? 'Uploading...' : 'Upload'}
-                </button>
-                <button
-                  onClick={() => {
-                    setShowUploadDialog(false);
-                    setUploadFile(null);
-                  }}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* OutTime Dialog for PARTIAL Attendance */}
-      {showOutTimeDialog && selectedRecordForOutTime && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Enter Out Time</h3>
-              <button
-                onClick={() => {
-                  setShowOutTimeDialog(false);
-                  setSelectedRecordForOutTime(null);
-                  setOutTimeValue('');
-                }}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
-              >
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800">
-                <div className="text-sm font-medium text-slate-900 dark:text-white">
-                  {selectedRecordForOutTime.employee.employee_name}
-                </div>
-                <div className="text-xs text-slate-600 dark:text-slate-400">
-                  {selectedRecordForOutTime.employee.emp_no} • {selectedRecordForOutTime.date}
-                </div>
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Out Time *
-                </label>
-                <input
-                  type="datetime-local"
-                  value={outTimeValue}
-                  onChange={(e) => setOutTimeValue(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                  required
-                />
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                  Enter the logout time. Shift will be automatically assigned based on in-time and out-time.
-                </p>
-              </div>
-
-              <div className="flex gap-3">
-                <button
-                  onClick={handleUpdateOutTime}
-                  disabled={!outTimeValue || updatingOutTime}
-                  className="flex-1 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {updatingOutTime ? 'Updating...' : 'Update Out Time'}
-                </button>
-                <button
-                  onClick={() => {
-                    setShowOutTimeDialog(false);
-                    setSelectedRecordForOutTime(null);
-                    setOutTimeValue('');
-                  }}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Detail Dialog */}
-      {showDetailDialog && attendanceDetail && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                Attendance Details - {selectedDate}
-                {selectedEmployee && (
-                  <span className="ml-2 text-sm font-normal text-slate-500 dark:text-slate-400">
-                    ({selectedEmployee.employee_name})
-                  </span>
-                )}
-              </h3>
-              <button
-                onClick={() => {
-                  setShowDetailDialog(false);
-                  setError('');
-                  setSuccess('');
-                }}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
-              >
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            {/* Success/Error Messages */}
-            {success && (
-              <div className="mb-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400">
-                {success}
-              </div>
-            )}
-            {error && (
-              <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
-                {error}
-              </div>
-            )}
-
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Status</label>
-                  <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
-                    {attendanceDetail.status || 'ABSENT'}
-                  </div>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Shift</label>
-                  <div className="mt-1 flex items-center gap-2">
-                    {!editingShift ? (
-                      <>
-                        <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                          {attendanceDetail.shiftId && typeof attendanceDetail.shiftId === 'object'
-                            ? attendanceDetail.shiftId.name
-                            : '-'}
-                        </div>
-                        <button
-                          onClick={() => {
-                            setEditingShift(true);
-                            if (attendanceDetail.shiftId && typeof attendanceDetail.shiftId === 'object') {
-                              setSelectedShiftId(attendanceDetail.shiftId._id);
-                            }
-                          }}
-                          className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"
-                        >
-                          {attendanceDetail.shiftId ? 'Change' : 'Assign'}
-                        </button>
-                      </>
-                    ) : (
-                      <div className="flex-1 flex items-center gap-2">
-                        <select
-                          value={selectedShiftId}
-                          onChange={(e) => setSelectedShiftId(e.target.value)}
-                          className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                        >
-                          <option value="">Select Shift</option>
-                          {availableShifts.map((shift) => (
-                            <option key={shift._id} value={shift._id}>
-                              {shift.name} ({shift.startTime} - {shift.endTime})
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          onClick={handleAssignShift}
-                          disabled={savingShift || !selectedShiftId}
-                          className="rounded-lg bg-green-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {savingShift ? 'Saving...' : 'Save'}
-                        </button>
-                        <button
-                          onClick={() => {
-                            setEditingShift(false);
-                            setSelectedShiftId('');
-                          }}
-                          className="rounded-lg bg-slate-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-slate-600"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-slate-600 dark:text-slate-400">In Time</label>
-                  <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
-                    {formatTime(attendanceDetail.inTime)}
-                  </div>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Out Time</label>
-                  <div className="mt-1 flex items-center gap-2">
-                    {!editingOutTime ? (
-                      <>
-                        <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                          {attendanceDetail.outTime ? formatTime(attendanceDetail.outTime, true, selectedDate || '') : '-'}
-                        </div>
-                        {!attendanceDetail.outTime && (
-                          <button
-                            onClick={() => {
-                              setEditingOutTime(true);
-                              if (attendanceDetail.outTime) {
-                                const date = new Date(attendanceDetail.outTime);
-                                setOutTimeInput(`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`);
-                              }
-                            }}
-                            className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"
-                          >
-                            Add
-                          </button>
-                        )}
-                        {attendanceDetail.outTime && (
-                          <button
-                            onClick={() => {
-                              setEditingOutTime(true);
-                              const date = new Date(attendanceDetail.outTime);
-                              setOutTimeInput(`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`);
-                            }}
-                            className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"
-                          >
-                            Edit
-                          </button>
-                        )}
-                      </>
-                    ) : (
-                      <div className="flex-1 flex items-center gap-2">
-                        <input
-                          type="time"
-                          value={outTimeInput}
-                          onChange={(e) => setOutTimeInput(e.target.value)}
-                          className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                        />
-                        <button
-                          onClick={handleSaveOutTime}
-                          disabled={savingOutTime || !outTimeInput}
-                          className="rounded-lg bg-green-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {savingOutTime ? 'Saving...' : 'Save'}
-                        </button>
-                        <button
-                          onClick={() => {
-                            setEditingOutTime(false);
-                            setOutTimeInput('');
-                          }}
-                          className="rounded-lg bg-slate-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-slate-600"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Total Hours</label>
-                  <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
-                    {formatHours(attendanceDetail.totalHours)}
-                  </div>
-                </div>
-                {attendanceDetail.isLateIn && attendanceDetail.lateInMinutes && (
-                  <div>
-                    <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Late In</label>
-                    <div className="mt-1 text-sm font-semibold text-orange-600 dark:text-orange-400">
-                      +{attendanceDetail.lateInMinutes} minutes
-                    </div>
-                  </div>
-                )}
-                {attendanceDetail.isEarlyOut && attendanceDetail.earlyOutMinutes && (
-                  <div>
-                    <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Early Out</label>
-                    <div className="mt-1 text-sm font-semibold text-orange-600 dark:text-orange-400">
-                      -{attendanceDetail.earlyOutMinutes} minutes
-                    </div>
-                    {attendanceDetail.earlyOutDeduction?.deductionApplied && (
-                      <p className="text-[11px] text-amber-600 dark:text-amber-400">
-                        Deduction: {attendanceDetail.earlyOutDeduction.deductionType?.replace('_', ' ')}
-                        {attendanceDetail.earlyOutDeduction.deductionDays ? ` (${attendanceDetail.earlyOutDeduction.deductionDays} day(s))` : ''}
-                        {attendanceDetail.earlyOutDeduction.deductionAmount ? ` (₹${attendanceDetail.earlyOutDeduction.deductionAmount})` : ''}
-                      </p>
-                    )}
-                  </div>
-                )}
-                {attendanceDetail.otHours && attendanceDetail.otHours > 0 && (
-                  <div>
-                    <label className="text-xs font-medium text-slate-600 dark:text-slate-400">OT Hours</label>
-                    <div className="mt-1 text-sm font-semibold text-orange-600 dark:text-orange-400">
-                      {attendanceDetail.otHours.toFixed(2)} hrs
-                    </div>
-                  </div>
-                )}
-                {attendanceDetail.extraHours && attendanceDetail.extraHours > 0 && (
-                  <div className="col-span-2">
-                    <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Extra Hours</label>
-                    <div className="mt-1 flex items-center justify-between">
-                      <div className="text-sm font-semibold text-purple-600 dark:text-purple-400">
-                        {attendanceDetail.extraHours.toFixed(2)} hrs
-                      </div>
-                      {!hasExistingOT && attendanceDetail.shiftId && (
-                        <button
-                          onClick={handleConvertExtraHoursToOT}
-                          disabled={convertingToOT}
-                          className="ml-3 rounded-lg bg-gradient-to-r from-purple-500 to-indigo-500 px-3 py-1.5 text-xs font-semibold text-white shadow-md shadow-purple-500/30 transition-all hover:from-purple-600 hover:to-indigo-600 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {convertingToOT ? 'Converting...' : 'Convert to OT'}
-                        </button>
-                      )}
-                      {hasExistingOT && (
-                        <span className="ml-3 rounded-full bg-green-100 px-2 py-1 text-[10px] font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                          Already Converted
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )}
-                {attendanceDetail.permissionHours && attendanceDetail.permissionHours > 0 && (
-                  <div>
-                    <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Permission Hours</label>
-                    <div className="mt-1 text-sm font-semibold text-cyan-600 dark:text-cyan-400">
-                      {attendanceDetail.permissionHours.toFixed(2)} hrs ({attendanceDetail.permissionCount || 0} permissions)
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Leave Conflicts - Show if attendance is present and leave conflicts exist */}
-              {attendanceDetail.status === 'PRESENT' && leaveConflicts.length > 0 && (
-                <div className="mt-4 rounded-lg border border-red-300 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/20">
-                  <div className="mb-3 flex items-center gap-2">
-                    <svg className="h-5 w-5 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                    </svg>
-                    <h4 className="text-base font-semibold text-red-900 dark:text-red-200">Leave Conflict Detected</h4>
-                  </div>
-                  <p className="mb-3 text-sm text-red-800 dark:text-red-300">
-                    Employee has approved leave but attendance is logged for this date.
-                  </p>
-                  {leaveConflicts.map((conflict) => (
-                    <div key={conflict.leaveId} className="mb-3 rounded-lg border border-red-200 bg-white p-3 dark:border-red-700 dark:bg-slate-800">
-                      <div className="mb-2 text-sm font-medium text-red-900 dark:text-red-200">
-                        {conflict.leaveType} - {conflict.numberOfDays} day(s)
-                      </div>
-                      <div className="mb-2 text-xs text-red-700 dark:text-red-300">
-                        {new Date(conflict.fromDate).toLocaleDateString()}
-                        {conflict.fromDate !== conflict.toDate && ` - ${new Date(conflict.toDate).toLocaleDateString()}`}
-                        {conflict.isHalfDay && ` (${conflict.halfDayType === 'first_half' ? 'First Half' : 'Second Half'})`}
-                      </div>
-                      <div className="flex gap-2">
-                        {conflict.conflictType === 'full_day' ? (
-                          <button
-                            onClick={() => handleRevokeLeave(conflict.leaveId)}
-                            disabled={revokingLeave}
-                            className="rounded-lg bg-red-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-all hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {revokingLeave ? 'Revoking...' : 'Revoke Leave'}
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => handleUpdateLeave(conflict.leaveId)}
-                            disabled={updatingLeave}
-                            className="rounded-lg bg-orange-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-all hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {updatingLeave ? 'Updating...' : 'Update Leave'}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Leave Information */}
-              {attendanceDetail.hasLeave && attendanceDetail.leaveInfo && (
-                <div className="mt-4 rounded-lg border border-orange-200 bg-orange-50 p-4 dark:border-orange-800 dark:bg-orange-900/20">
-                  <h4 className="mb-3 text-base font-semibold text-orange-900 dark:text-orange-200">Leave Information</h4>
-
-                  {/* Purpose/Reason */}
-                  {attendanceDetail.leaveInfo.purpose ? (
-                    <div className="mb-3">
-                      <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Purpose/Reason</label>
-                      <div className="mt-1 text-sm text-orange-900 dark:text-orange-100">
-                        {attendanceDetail.leaveInfo.purpose}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  <div className="grid grid-cols-2 gap-3 text-sm mb-3">
-                    <div>
-                      <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Leave Type</label>
-                      <div className="mt-1 font-semibold text-orange-900 dark:text-orange-100">
-                        {attendanceDetail.leaveInfo.leaveType || 'N/A'}
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Half Day</label>
-                      <div className="mt-1 font-semibold text-orange-900 dark:text-orange-100">
-                        {attendanceDetail.leaveInfo.isHalfDay ? 'Yes' : 'No'}
-                        {attendanceDetail.leaveInfo.isHalfDay && attendanceDetail.leaveInfo.halfDayType && (
-                          <span className="ml-1 text-xs">({attendanceDetail.leaveInfo.halfDayType === 'first_half' ? 'First Half' : 'Second Half'})</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Date Range */}
-                  {attendanceDetail.leaveInfo.fromDate && attendanceDetail.leaveInfo.toDate && (
-                    <div className="mb-3">
-                      <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Date Range</label>
-                      <div className="mt-1 text-sm font-semibold text-orange-900 dark:text-orange-100">
-                        {new Date(attendanceDetail.leaveInfo.fromDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} - {new Date(attendanceDetail.leaveInfo.toDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Number of Days and Day in Leave */}
-                  <div className="grid grid-cols-2 gap-3 text-sm mb-3">
-                    <div>
-                      <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Total Days</label>
-                      <div className="mt-1 font-semibold text-orange-900 dark:text-orange-100">
-                        {attendanceDetail.leaveInfo.numberOfDays !== undefined && attendanceDetail.leaveInfo.numberOfDays !== null
-                          ? `${attendanceDetail.leaveInfo.numberOfDays} ${attendanceDetail.leaveInfo.numberOfDays === 1 ? 'day' : 'days'}`
-                          : 'N/A'}
-                      </div>
-                    </div>
-                    {attendanceDetail.leaveInfo.dayInLeave !== undefined && attendanceDetail.leaveInfo.dayInLeave !== null && (
-                      <div>
-                        <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Day in Leave</label>
-                        <div className="mt-1 font-semibold text-orange-900 dark:text-orange-100">
-                          {attendanceDetail.leaveInfo.dayInLeave === 1 ? '1st day' : attendanceDetail.leaveInfo.dayInLeave === 2 ? '2nd day' : attendanceDetail.leaveInfo.dayInLeave === 3 ? '3rd day' : `${attendanceDetail.leaveInfo.dayInLeave}th day`}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Applied Date */}
-                  {attendanceDetail.leaveInfo.appliedAt && (
-                    <div className="mb-3">
-                      <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Applied On</label>
-                      <div className="mt-1 text-sm text-orange-900 dark:text-orange-100">
-                        {new Date(attendanceDetail.leaveInfo.appliedAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Approved By and When */}
-                  {attendanceDetail.leaveInfo.approvedBy && (
-                    <div className="mb-3 grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Approved By</label>
-                        <div className="mt-1 text-sm font-semibold text-orange-900 dark:text-orange-100">
-                          {attendanceDetail.leaveInfo.approvedBy.name || attendanceDetail.leaveInfo.approvedBy.email || 'N/A'}
-                        </div>
-                      </div>
-                      {attendanceDetail.leaveInfo.approvedAt && (
-                        <div>
-                          <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Approved On</label>
-                          <div className="mt-1 text-sm text-orange-900 dark:text-orange-100">
-                            {new Date(attendanceDetail.leaveInfo.approvedAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {attendanceDetail.isConflict && (
-                    <div className="mt-2 rounded border border-red-300 bg-red-50 p-2 text-xs font-semibold text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
-                      ⚠️ Conflict: Leave approved but attendance logged for this date
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* OD Information */}
-              {attendanceDetail.hasOD && attendanceDetail.odInfo && (
-                <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
-                  <h4 className="mb-3 text-base font-semibold text-blue-900 dark:text-blue-200">On Duty (OD) Information</h4>
-
-                  {/* Early-Out Info */}
-                  {attendanceDetail.earlyOutMinutes !== undefined && attendanceDetail.earlyOutMinutes !== null && (
-                    <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-900/20">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-xs font-medium text-amber-700 dark:text-amber-300">Early-Out Minutes</p>
-                          <p className="text-lg font-semibold text-amber-900 dark:text-amber-100">
-                            {attendanceDetail.earlyOutMinutes} min
-                          </p>
-                        </div>
-                        {attendanceDetail.earlyOutDeduction?.deductionApplied && (
-                          <div className="text-right">
-                            <p className="text-xs font-medium text-amber-700 dark:text-amber-300">Deduction Applied</p>
-                            <p className="text-sm font-semibold text-amber-900 dark:text-amber-100 capitalize">
-                              {attendanceDetail.earlyOutDeduction.deductionType?.replace('_', ' ') || 'N/A'}
-                            </p>
-                            {attendanceDetail.earlyOutDeduction.deductionDays && (
-                              <p className="text-xs text-amber-700 dark:text-amber-300">
-                                {attendanceDetail.earlyOutDeduction.deductionDays} day(s)
-                              </p>
-                            )}
-                            {attendanceDetail.earlyOutDeduction.deductionAmount && (
-                              <p className="text-xs text-amber-700 dark:text-amber-300">
-                                ₹{attendanceDetail.earlyOutDeduction.deductionAmount}
-                              </p>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      {attendanceDetail.earlyOutDeduction?.reason && (
-                        <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
-                          {attendanceDetail.earlyOutDeduction.reason}
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Purpose/Reason */}
-                  {attendanceDetail.odInfo.purpose && (
-                    <div className="mb-3">
-                      <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Purpose/Reason</label>
-                      <div className="mt-1 text-sm text-blue-900 dark:text-blue-100">
-                        {attendanceDetail.odInfo.purpose}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Place Visited */}
-                  {attendanceDetail.odInfo.placeVisited && (
-                    <div className="mb-3">
-                      <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Place Visited</label>
-                      <div className="mt-1 text-sm text-blue-900 dark:text-blue-100">
-                        {attendanceDetail.odInfo.placeVisited}
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-2 gap-3 text-sm mb-3">
-                    <div>
-                      <label className="text-xs font-medium text-blue-700 dark:text-blue-300">OD Type</label>
-                      <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
-                        {attendanceDetail.odInfo.odType || 'N/A'}
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-blue-700 dark:text-blue-300">
-                        {attendanceDetail.odInfo.odType_extended === 'hours' ? 'Duration Type' : 'Half Day'}
-                      </label>
-                      <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
-                        {attendanceDetail.odInfo.odType_extended === 'hours' ? (
-                          'Hour-Based OD'
-                        ) : attendanceDetail.odInfo.isHalfDay ? (
-                          <>
-                            Yes
-                            {attendanceDetail.odInfo.halfDayType && (
-                              <span className="ml-1 text-xs">({attendanceDetail.odInfo.halfDayType === 'first_half' ? 'First Half' : 'Second Half'})</span>
-                            )}
-                          </>
-                        ) : (
-                          'No'
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Date Range */}
-                  {attendanceDetail.odInfo.fromDate && attendanceDetail.odInfo.toDate && (
-                    <div className="mb-3">
-                      <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Date Range</label>
-                      <div className="mt-1 text-sm font-semibold text-blue-900 dark:text-blue-100">
-                        {new Date(attendanceDetail.odInfo.fromDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} - {new Date(attendanceDetail.odInfo.toDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Hour-Based OD: Show Hours */}
-                  {attendanceDetail.odInfo.odType_extended === 'hours' && attendanceDetail.odInfo.durationHours && (
-                    <div className="mb-3 p-3 rounded-lg bg-blue-100 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-700">
-                      <label className="text-xs font-medium text-blue-700 dark:text-blue-300 block mb-2">OD Hours</label>
-                      <div className="text-lg font-bold text-blue-900 dark:text-blue-100">
-                        {(() => {
-                          const hours = Math.floor(attendanceDetail.odInfo.durationHours || 0);
-                          const mins = Math.round((attendanceDetail.odInfo.durationHours || 0) % 1 * 60);
-                          return `${hours}h ${mins}m`;
-                        })()}
-                      </div>
-                      {attendanceDetail.odInfo.odStartTime && attendanceDetail.odInfo.odEndTime && (
-                        <div className="text-sm text-blue-700 dark:text-blue-300 mt-1">
-                          Time: {attendanceDetail.odInfo.odStartTime} - {attendanceDetail.odInfo.odEndTime}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Full Day / Half Day: Show Days */}
-                  {attendanceDetail.odInfo.odType_extended !== 'hours' && (
-                    <div className="grid grid-cols-2 gap-3 text-sm mb-3">
-                      <div>
-                        <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Total Days</label>
-                        <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
-                          {attendanceDetail.odInfo.numberOfDays || 'N/A'} {attendanceDetail.odInfo.numberOfDays === 1 ? 'day' : 'days'}
-                        </div>
-                      </div>
-                      {attendanceDetail.odInfo.dayInOD && (
-                        <div>
-                          <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Day in OD</label>
-                          <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
-                            {attendanceDetail.odInfo.dayInOD === 1 ? '1st day' : attendanceDetail.odInfo.dayInOD === 2 ? '2nd day' : attendanceDetail.odInfo.dayInOD === 3 ? '3rd day' : `${attendanceDetail.odInfo.dayInOD}th day`}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Applied Date */}
-                  {attendanceDetail.odInfo.appliedAt && (
-                    <div className="mb-3">
-                      <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Applied On</label>
-                      <div className="mt-1 text-sm text-blue-900 dark:text-blue-100">
-                        {new Date(attendanceDetail.odInfo.appliedAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Approved By and When */}
-                  {attendanceDetail.odInfo.approvedBy && (
-                    <div className="mb-3 grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Approved By</label>
-                        <div className="mt-1 text-sm font-semibold text-blue-900 dark:text-blue-100">
-                          {attendanceDetail.odInfo.approvedBy.name || attendanceDetail.odInfo.approvedBy.email || 'N/A'}
-                        </div>
-                      </div>
-                      {attendanceDetail.odInfo.approvedAt && (
-                        <div>
-                          <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Approved On</label>
-                          <div className="mt-1 text-sm text-blue-900 dark:text-blue-100">
-                            {new Date(attendanceDetail.odInfo.approvedAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Only show conflict for full-day OD (not for half-day or hour-based OD) */}
-                  {attendanceDetail.isConflict &&
-                    attendanceDetail.odInfo &&
-                    attendanceDetail.odInfo.odType_extended !== 'half_day' &&
-                    attendanceDetail.odInfo.odType_extended !== 'hours' && (
-                      <div className="mt-2 rounded border border-red-300 bg-red-50 p-2 text-xs font-semibold text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
-                        ⚠️ Conflict: OD approved but attendance logged for this date
-                      </div>
-                    )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Monthly Summary Modal */}
-      {showSummaryModal && selectedEmployeeForSummary !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900 print:shadow-none">
-            <div className="mb-4 flex items-center justify-between print:hidden">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Monthly Attendance Summary</h3>
-              <button
-                onClick={() => {
-                  setShowSummaryModal(false);
-                  setSelectedEmployeeForSummary(null);
-                  setMonthlySummary(null);
-                }}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
-              >
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            {loadingSummary ? (
-              <div className="flex items-center justify-center p-12">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
-              </div>
-            ) : monthlySummary ? (
-              <div className="space-y-6">
-                {/* Employee Details */}
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
-                  <h4 className="mb-3 text-base font-bold text-slate-900 dark:text-white">Employee Details</h4>
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <span className="font-medium text-slate-600 dark:text-slate-400">Name:</span>
-                      <span className="ml-2 text-slate-900 dark:text-white">{selectedEmployeeForSummary?.employee_name || '-'}</span>
-                    </div>
-                    <div>
-                      <span className="font-medium text-slate-600 dark:text-slate-400">Employee Number:</span>
-                      <span className="ml-2 text-slate-900 dark:text-white">{selectedEmployeeForSummary?.emp_no || '-'}</span>
-                    </div>
-                    {selectedEmployeeForSummary && selectedEmployeeForSummary.department && (
-                      <div>
-                        <span className="font-medium text-slate-600 dark:text-slate-400">Department:</span>
-                        <span className="ml-2 text-slate-900 dark:text-white">{(selectedEmployeeForSummary.department as any)?.name || '-'}</span>
-                      </div>
-                    )}
-                    {selectedEmployeeForSummary && selectedEmployeeForSummary.designation && (
-                      <div>
-                        <span className="font-medium text-slate-600 dark:text-slate-400">Designation:</span>
-                        <span className="ml-2 text-slate-900 dark:text-white">{(selectedEmployeeForSummary.designation as any)?.name || '-'}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Monthly Summary Table */}
-                <div className="rounded-lg border border-slate-200 dark:border-slate-700">
-                  <table className="w-full border-collapse text-sm">
-                    <thead className="bg-slate-100 dark:bg-slate-800">
-                      <tr>
-                        <th className="border border-slate-300 px-4 py-2 text-left font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Month</th>
-                        <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Total Leaves</th>
-                        <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Total ODs</th>
-                        <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Present Days</th>
-                        <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Total Days</th>
-                        <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Payable Shifts</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td className="border border-slate-300 px-4 py-2 text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.monthName || `${monthNames[month - 1]} ${year}`}</td>
-                        <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalLeaves || 0}</td>
-                        <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalODs || 0}</td>
-                        <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalPresentDays || 0}</td>
-                        <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalDaysInMonth || 0}</td>
-                        <td className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalPayableShifts?.toFixed(2) || '0.00'}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Footer with Signature and Timestamp */}
-                <div className="mt-8 flex items-end justify-between border-t border-slate-200 pt-4 dark:border-slate-700 print:mt-12">
-                  <div>
-                    <div className="mb-2 text-sm font-medium text-slate-600 dark:text-slate-400">Authorized Signature</div>
-                    <div className="h-12 w-48 border-b border-slate-300 dark:border-slate-600"></div>
-                  </div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400">
-                    Printed: {new Date().toLocaleString()}
-                  </div>
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex justify-end gap-3 print:hidden">
-                  <button
-                    onClick={handleExportPDF}
-                    className="rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600"
-                  >
-                    Export as PDF
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowSummaryModal(false);
-                      setSelectedEmployeeForSummary(null);
-                      setMonthlySummary(null);
-                    }}
-                    className="rounded-xl border border-slate-200 bg-white px-6 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="p-12 text-center text-slate-500 dark:text-slate-400">
-                No summary data available
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Payslip Modal */}
-      {showPayslipModal && selectedEmployeeForPayslip !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="w-full max-w-5xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900 print:shadow-none print:max-w-full print:rounded-none">
-            <div className="mb-4 flex items-center justify-between print:hidden">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Payslip</h3>
-              <div className="flex items-center gap-2">
-                {error && error.includes('not found') && (
-                  <button
-                    onClick={handleCalculatePayroll}
-                    disabled={calculatingPayroll}
-                    className="rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:from-blue-600 hover:to-indigo-700 disabled:opacity-50"
-                  >
-                    {calculatingPayroll ? 'Calculating...' : 'Calculate Payroll'}
-                  </button>
-                )}
-                <button
-                  onClick={() => {
-                    setShowPayslipModal(false);
-                    setSelectedEmployeeForPayslip(null);
-                    setPayslipData(null);
-                    setError('');
-                  }}
-                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
-                >
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            {loadingPayslip ? (
-              <div className="flex items-center justify-center p-12">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
-              </div>
-            ) : error && !error.includes('not found') ? (
-              <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200">
-                {error}
-              </div>
-            ) : payslipData ? (
-              <div className="space-y-4 print:space-y-3">
-                {/* Payslip Header */}
-                <div className="border-b-2 border-slate-300 pb-3 dark:border-slate-600">
-                  <h2 className="text-center text-xl font-bold text-slate-900 dark:text-white">
-                    PAYSLIP FOR THE MONTH OF: {(() => {
-                      const monthStr = payslipData.month || `${monthNames[month - 1]} ${year}`;
-                      // Format as "DEC 19" style
-                      const monthMatch = monthStr.match(/(\w+)\s+(\d{4})/);
-                      if (monthMatch) {
-                        const monthName = monthMatch[1].substring(0, 3).toUpperCase();
-                        const yearShort = monthMatch[2].substring(2);
-                        return `${monthName} ${yearShort}`;
-                      }
-                      return monthStr.toUpperCase();
-                    })()}
-                  </h2>
-                </div>
-
-                {/* Employee Details - Matching exact format from image */}
-                <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
-                  <div className="flex">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">Emp Code:</span>
-                    <span className="text-slate-900 dark:text-white">{payslipData.employee?.emp_no || '-'}</span>
-                  </div>
-                  <div className="flex">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300 w-32">Emp Name:</span>
-                    <span className="text-slate-900 dark:text-white">{payslipData.employee?.name || '-'}</span>
-                  </div>
-                  <div className="flex">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">Department:</span>
-                    <span className="text-slate-900 dark:text-white">{payslipData.employee?.department || '-'}</span>
-                  </div>
-                  <div className="flex">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300 w-32">Designation:</span>
-                    <span className="text-slate-900 dark:text-white">{payslipData.employee?.designation || '-'}</span>
-                  </div>
-                  <div className="flex">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">Location:</span>
-                    <span className="text-slate-900 dark:text-white">{payslipData.employee?.location || '-'}</span>
-                  </div>
-                  <div className="flex">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300 w-32">Bank A/c No.:</span>
-                    <span className="text-slate-900 dark:text-white">{payslipData.employee?.bank_account_no || '-'}</span>
-                  </div>
-                  <div className="flex">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">PAID LEAVES:</span>
-                    <span className="text-slate-900 dark:text-white">{payslipData.employee?.paidLeaves || 0}</span>
-                  </div>
-                  <div className="flex">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300 w-32">PAID DAYS:</span>
-                    <span className="font-bold text-slate-900 dark:text-white">{payslipData.paidDays || payslipData.totalPayableShifts || 0}</span>
-                  </div>
-                  <div className="flex">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">PF Code No.:</span>
-                    <span className="text-slate-900 dark:text-white">{payslipData.employee?.pf_number || '-'}</span>
-                  </div>
-                  <div className="flex">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300 w-32">PF UAN:</span>
-                    <span className="text-slate-900 dark:text-white">{payslipData.employee?.pf_number || '-'}</span>
-                  </div>
-                  <div className="flex">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">ESI No.:</span>
-                    <span className="text-slate-900 dark:text-white">{payslipData.employee?.esi_number || '-'}</span>
-                  </div>
-                </div>
-
-                {/* Earnings and Deductions Side by Side */}
-                <div className="grid grid-cols-2 gap-4">
-                  {/* Earnings Section - Left Side */}
-                  <div className="border border-slate-300 dark:border-slate-600">
-                    <h3 className="border-b border-slate-300 bg-slate-100 px-4 py-2 text-left font-bold text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white">
-                      EARNINGS
-                    </h3>
-                    <div className="divide-y divide-slate-200 dark:divide-slate-700">
-                      <div className="flex justify-between px-4 py-2">
-                        <span className="text-slate-700 dark:text-slate-300">Basic:</span>
-                        <span className="font-semibold text-slate-900 dark:text-white">{payslipData.earnings?.basicPay?.toFixed(2) || '0.00'}</span>
-                      </div>
-                      {/* Map allowances - VDA, HRA, WA, etc. */}
-                      {payslipData.earnings?.allowances && payslipData.earnings.allowances.length > 0 && payslipData.earnings.allowances.map((allowance: any, idx: number) => (
-                        <div key={idx} className="flex justify-between px-4 py-2">
-                          <span className="text-slate-700 dark:text-slate-300">{allowance.name?.toUpperCase() || 'ALLOWANCE'}:</span>
-                          <span className="font-semibold text-slate-900 dark:text-white">{allowance.amount?.toFixed(2) || '0.00'}</span>
-                        </div>
-                      ))}
-                      {payslipData.earnings?.incentive !== 0 && (
-                        <div className="flex justify-between px-4 py-2">
-                          <span className="text-slate-700 dark:text-slate-300">INCENTIVE:</span>
-                          <span className="font-semibold text-slate-900 dark:text-white">{payslipData.earnings?.incentive?.toFixed(2) || '0.00'}</span>
-                        </div>
-                      )}
-                      {payslipData.earnings?.otPay > 0 && (
-                        <div className="flex justify-between px-4 py-2">
-                          <span className="text-slate-700 dark:text-slate-300">OT PAY:</span>
-                          <span className="font-semibold text-slate-900 dark:text-white">{payslipData.earnings?.otPay?.toFixed(2) || '0.00'}</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between border-t-2 border-slate-300 bg-slate-100 px-4 py-2 font-bold dark:border-slate-600 dark:bg-slate-800">
-                        <span className="text-slate-900 dark:text-white">Gross Salary Rs.:</span>
-                        <span className="text-slate-900 dark:text-white">{payslipData.earnings?.grossSalary?.toFixed(2) || '0.00'}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Deductions Section - Right Side */}
-                  <div className="border border-slate-300 dark:border-slate-600">
-                    <h3 className="border-b border-slate-300 bg-slate-100 px-4 py-2 text-left font-bold text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white">
-                      DEDUCTIONS
-                    </h3>
-                    <div className="divide-y divide-slate-200 dark:divide-slate-700">
-                      {/* Other deductions first (PF, ESIC, TDS, etc.) */}
-                      {payslipData.deductions?.otherDeductions && payslipData.deductions.otherDeductions.length > 0 && payslipData.deductions.otherDeductions.map((deduction: any, idx: number) => (
-                        <div key={idx} className="flex justify-between px-4 py-2">
-                          <span className="text-slate-700 dark:text-slate-300">{deduction.name || 'Deduction'}:</span>
-                          <span className="font-semibold text-red-600 dark:text-red-400">{deduction.amount?.toFixed(2) || '0.00'}</span>
-                        </div>
-                      ))}
-                      {/* TDS - if exists in other deductions, otherwise show if configured */}
-                      {payslipData.deductions?.attendanceDeduction > 0 && (
-                        <div className="flex justify-between px-4 py-2">
-                          <span className="text-slate-700 dark:text-slate-300">Attendance Deduction:</span>
-                          <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.deductions.attendanceDeduction.toFixed(2)}</span>
-                        </div>
-                      )}
-                      {payslipData.deductions?.permissionDeduction > 0 && (
-                        <div className="flex justify-between px-4 py-2">
-                          <span className="text-slate-700 dark:text-slate-300">Permission Deduction:</span>
-                          <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.deductions.permissionDeduction.toFixed(2)}</span>
-                        </div>
-                      )}
-                      {payslipData.deductions?.leaveDeduction > 0 && (
-                        <div className="flex justify-between px-4 py-2">
-                          <span className="text-slate-700 dark:text-slate-300">Leave Deduction:</span>
-                          <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.deductions.leaveDeduction.toFixed(2)}</span>
-                        </div>
-                      )}
-                      {payslipData.loanAdvance?.advanceDeduction > 0 && (
-                        <div className="flex justify-between px-4 py-2">
-                          <span className="text-slate-700 dark:text-slate-300">AdV:</span>
-                          <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.loanAdvance.advanceDeduction.toFixed(2)}</span>
-                        </div>
-                      )}
-                      {payslipData.loanAdvance?.totalEMI > 0 && (
-                        <div className="flex justify-between px-4 py-2">
-                          <span className="text-slate-700 dark:text-slate-300">Loan EMI:</span>
-                          <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.loanAdvance.totalEMI.toFixed(2)}</span>
-                        </div>
-                      )}
-                      {/* BANK PAY and CASH PAY - these would be calculated from net salary */}
-                      <div className="flex justify-between border-t-2 border-slate-300 bg-slate-100 px-4 py-2 font-bold dark:border-slate-600 dark:bg-slate-800">
-                        <span className="text-slate-900 dark:text-white">Total Deductions:</span>
-                        <span className="text-red-600 dark:text-red-400">
-                          {((payslipData.deductions?.totalDeductions || 0) + (payslipData.loanAdvance?.totalEMI || 0) + (payslipData.loanAdvance?.advanceDeduction || 0)).toFixed(2)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Net Salary and Payment Details */}
-                <div className="space-y-3">
-                  {/* Net Salary */}
-                  <div className="border-2 border-green-500 bg-green-50 p-3 dark:border-green-600 dark:bg-green-900/20">
-                    <div className="flex justify-between items-center">
-                      <span className="text-lg font-bold text-green-900 dark:text-green-200">Net Salary:</span>
-                      <span className="text-2xl font-bold text-green-900 dark:text-green-200">{payslipData.netSalary?.toFixed(2) || '0.00'}</span>
-                    </div>
-                  </div>
-
-                  {/* Rupees In Words */}
-                  <div className="border border-slate-300 bg-slate-50 px-4 py-2 dark:border-slate-600 dark:bg-slate-800">
-                    <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Rupees In Words:</span>
-                    <span className="ml-2 text-sm text-slate-900 dark:text-white">{numberToWords(payslipData.netSalary || 0)}</span>
-                  </div>
-                </div>
-
-                {/* Print Button */}
-                <div className="flex justify-end gap-3 print:hidden">
-                  <button
-                    onClick={() => window.print()}
-                    className="rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 px-6 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:from-blue-600 hover:to-indigo-700"
-                  >
-                    Print Payslip
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-yellow-800 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-200">
-                {error || 'Payslip not found. Please calculate payroll first.'}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -2525,7 +2646,6 @@ function numberToWords(num: number): string {
 
   if (num === 0) return 'Zero Rupees Only';
 
-  // Separate integer and decimal parts
   const integerPart = Math.floor(num);
   const decimalPart = Math.round((num - integerPart) * 100);
 
@@ -2555,7 +2675,6 @@ function numberToWords(num: number): string {
   let words = '';
   let remaining = integerPart;
 
-  // Crores
   const crores = Math.floor(remaining / 10000000);
   if (crores > 0) {
     const croreWords = convertHundreds(crores);
@@ -2565,7 +2684,6 @@ function numberToWords(num: number): string {
     remaining %= 10000000;
   }
 
-  // Lakhs
   const lakhs = Math.floor(remaining / 100000);
   if (lakhs > 0) {
     const lakhWords = convertHundreds(lakhs);
@@ -2575,7 +2693,6 @@ function numberToWords(num: number): string {
     remaining %= 100000;
   }
 
-  // Thousands
   const thousands = Math.floor(remaining / 1000);
   if (thousands > 0) {
     const thousandWords = convertHundreds(thousands);
@@ -2585,7 +2702,6 @@ function numberToWords(num: number): string {
     remaining %= 1000;
   }
 
-  // Hundreds, Tens, Ones
   if (remaining > 0) {
     const remainingWords = convertHundreds(remaining);
     if (remainingWords) {
@@ -2593,7 +2709,6 @@ function numberToWords(num: number): string {
     }
   }
 
-  // Add paise if exists
   if (decimalPart > 0) {
     if (words.trim()) {
       words += ` and ${decimalPart}/100`;
@@ -2602,7 +2717,6 @@ function numberToWords(num: number): string {
     }
   }
 
-  // Clean up and format
   words = words.trim();
   if (!words) {
     return 'Zero Rupees Only';
@@ -2610,3 +2724,7 @@ function numberToWords(num: number): string {
 
   return words + ' Rupees Only';
 }
+
+
+
+

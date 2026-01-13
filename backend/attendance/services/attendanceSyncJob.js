@@ -54,27 +54,18 @@ const stopSyncJob = () => {
  * Run sync (internal function)
  */
 const runSync = async () => {
-  if (isRunning) {
-    console.log('⏳ Attendance sync already running, skipping...');
-    return;
-  }
-
   try {
-    isRunning = true;
-    console.log('🔄 Starting attendance sync from MSSQL...');
-    
-    const stats = await syncAttendanceFromMSSQL();
-    
-    if (stats.success) {
-      console.log(`✅ Attendance sync completed: ${stats.message}`);
-    } else {
-      console.error(`❌ Attendance sync failed: ${stats.message}`);
-    }
+    console.log('🔄 Queueing attendance sync job in BullMQ...');
 
+    const { attendanceSyncQueue } = require('../../shared/jobs/queueManager');
+    await attendanceSyncQueue.add('periodic_sync', {
+      action: 'sync_all',
+      triggeredAt: new Date().toISOString()
+    });
+
+    console.log('✅ Attendance sync job queued');
   } catch (error) {
-    console.error('❌ Error in attendance sync job:', error);
-  } finally {
-    isRunning = false;
+    console.error('❌ Error queueing attendance sync job:', error);
   }
 };
 

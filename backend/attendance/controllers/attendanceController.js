@@ -245,21 +245,34 @@ exports.getAttendanceDetail = async (req, res) => {
  */
 exports.getEmployeesWithAttendance = async (req, res) => {
   try {
-    const { date } = req.query;
+    const { date, page = 1, limit = 50 } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    // Get all employees within scope
+    // Get paginated employees within scope
     const employees = await Employee.find({
       ...req.scopeFilter,
       is_active: { $ne: false }
     })
       .select('emp_no employee_name department_id designation_id')
       .populate('department_id', 'name')
-      .populate('designation_id', 'name');
+      .populate('designation_id', 'name')
+      .sort({ emp_no: 1 })
+      .skip(skip)
+      .limit(parseInt(limit));
 
-    // If date provided, get attendance for that date
+    const total = await Employee.countDocuments({
+      ...req.scopeFilter,
+      is_active: { $ne: false }
+    });
+
+    // If date provided, get attendance for that date for these SPECIFIC employees
     let attendanceMap = {};
     if (date) {
-      const records = await AttendanceDaily.find({ date });
+      const empNos = employees.map(e => e.emp_no);
+      const records = await AttendanceDaily.find({
+        date,
+        employeeNumber: { $in: empNos }
+      });
       records.forEach(record => {
         attendanceMap[record.employeeNumber] = record;
       });
@@ -273,6 +286,12 @@ exports.getEmployeesWithAttendance = async (req, res) => {
     res.status(200).json({
       success: true,
       data: employeesWithAttendance,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        totalPages: Math.ceil(total / parseInt(limit))
+      }
     });
 
   } catch (error) {
@@ -291,7 +310,7 @@ exports.getEmployeesWithAttendance = async (req, res) => {
  */
 exports.getMonthlyAttendance = async (req, res) => {
   try {
-    const { year, month } = req.query;
+    const { year, month, page = 1, limit = 20, search, divisionId, departmentId, designationId } = req.query;
 
     if (!year || !month) {
       return res.status(400).json({
@@ -300,15 +319,32 @@ exports.getMonthlyAttendance = async (req, res) => {
       });
     }
 
-    // Get all active employees within scope
-    const employees = await Employee.find({
-      ...req.scopeFilter,
-      is_active: { $ne: false }
-    })
+    // Build filter based on scope and provided filters
+    const filter = { ...req.scopeFilter, is_active: { $ne: false } };
+
+    if (search) {
+      filter.$or = [
+        { employee_name: { $regex: search, $options: 'i' } },
+        { emp_no: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    if (divisionId) filter.division_id = divisionId;
+    if (departmentId) filter.department_id = departmentId;
+    if (designationId) filter.designation_id = designationId;
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    // Get paginated active employees
+    const employees = await Employee.find(filter)
       .populate('division_id', 'name')
       .populate('department_id', 'name')
       .populate('designation_id', 'name')
-      .sort({ employee_name: 1 });
+      .sort({ employee_name: 1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const totalEmployees = await Employee.countDocuments(filter);
 
     const { getMonthlyTableViewData } = require('../services/attendanceViewService');
     const employeesWithAttendance = await getMonthlyTableViewData(employees, year, month);
@@ -316,6 +352,12 @@ exports.getMonthlyAttendance = async (req, res) => {
     res.status(200).json({
       success: true,
       data: employeesWithAttendance,
+      pagination: {
+        total: totalEmployees,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(totalEmployees / parseInt(limit))
+      },
       month: parseInt(month),
       year: parseInt(year),
       daysInMonth: new Date(parseInt(year), parseInt(month), 0).getDate(),
@@ -663,11 +705,11 @@ exports.assignShift = async (req, res) => {
  */
 exports.getRecentActivity = async (req, res) => {
   try {
-    const { limit = 20 } = req.query;
+    const { page = 1, limit = 20 } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
 
     // 1. Determine Scope & Filter
     let logQuery = {};
-    const isScopeAll = !req.scopeFilter || Object.keys(req.scopeFilter).length === 0 || (req.scopeFilter._id === null && !req.scopeFilter.department_id);
 
     // If we have a specific scope filter (Division/HR/HOD/Emp)
     if (req.scopeFilter && Object.keys(req.scopeFilter).length > 0) {
@@ -676,19 +718,35 @@ exports.getRecentActivity = async (req, res) => {
       const allowedEmpNos = allowedEmployees.map(e => e.emp_no);
 
       if (allowedEmpNos.length === 0) {
-        return res.status(200).json({ success: true, data: [] });
+        return res.status(200).json({
+          success: true,
+          data: [],
+          pagination: { page: parseInt(page), limit: parseInt(limit), total: 0, totalPages: 0 }
+        });
       }
       logQuery.employeeNumber = { $in: allowedEmpNos };
     }
 
-    // 2. Fetch Recent Logs
+    // 2. Fetch Recent Logs (Paginated)
     const rawLogs = await AttendanceRawLog.find(logQuery)
       .sort({ timestamp: -1 })
+      .skip(skip)
       .limit(parseInt(limit))
       .lean();
 
+    const total = await AttendanceRawLog.countDocuments(logQuery);
+
     if (rawLogs.length === 0) {
-      return res.status(200).json({ success: true, data: [] });
+      return res.status(200).json({
+        success: true,
+        data: [],
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          totalPages: Math.ceil(total / parseInt(limit))
+        }
+      });
     }
 
     // 3. Hydrate Data
@@ -752,7 +810,13 @@ exports.getRecentActivity = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      data: activityFeed
+      data: activityFeed,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        totalPages: Math.ceil(total / parseInt(limit))
+      }
     });
 
   } catch (error) {

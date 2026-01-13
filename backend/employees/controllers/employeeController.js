@@ -347,11 +347,12 @@ const transformEmployeeForResponse = async (employee, populateUsers = true) => {
  */
 exports.getAllEmployees = async (req, res) => {
   try {
-    const { is_active, division_id, department_id, designation_id, includeLeft } = req.query;
+    const { is_active, division_id, department_id, designation_id, includeLeft, page = 1, limit = 50 } = req.query;
     const { scopeFilter } = req; // Get scope filter from data scope middleware
     const settings = await getEmployeeSettings();
 
     let employees = [];
+    const skip = (parseInt(page) - 1) * parseInt(limit);
 
     // Build filters - merge scope filter with query filters
     const filters = { ...scopeFilter };
@@ -367,20 +368,26 @@ exports.getAllEmployees = async (req, res) => {
 
     console.log('[Employee Controller] Scope filters:', filters);
 
+    let total = 0;
+
     // Fetch based on data source setting
     if (settings.dataSource === 'mssql' && isHRMSConnected()) {
-      // Fetch from MSSQL
+      // Fetch from MSSQL (Assume MSSQL doesn't support pagination easily in this helper yet, or fetch all)
       const mssqlEmployees = await getAllEmployeesMSSQL(filters);
-      employees = await resolveEmployeeReferences(mssqlEmployees);
+      total = mssqlEmployees.length;
+      employees = (await resolveEmployeeReferences(mssqlEmployees)).slice(skip, skip + parseInt(limit));
     } else {
       // Fetch from MongoDB (default)
       const query = { ...filters };
 
+      total = await Employee.countDocuments(query);
       const mongoEmployees = await Employee.find(query)
         .populate('division_id', 'name code')
         .populate('department_id', 'name code')
         .populate('designation_id', 'name code')
-        .sort({ employee_name: 1 });
+        .sort({ employee_name: 1 })
+        .skip(skip)
+        .limit(parseInt(limit));
 
       // Transform employees with user population
       employees = await Promise.all(mongoEmployees.map(async (emp) => {
@@ -404,6 +411,12 @@ exports.getAllEmployees = async (req, res) => {
       success: true,
       count: employees.length,
       dataSource: settings.dataSource,
+      pagination: {
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(total / parseInt(limit))
+      },
       data: employees,
     });
   } catch (error) {
