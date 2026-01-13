@@ -1259,6 +1259,91 @@ exports.getPayrollTransactionsWithAnalytics = async (req, res) => {
 };
 
 /**
+ * @desc    Bulk calculate payroll for employees matching filters
+ * @route   POST /api/payroll/bulk-calculate
+ * @access  Private (Super Admin, Sub Admin, HR)
+ */
+exports.calculatePayrollBulk = async (req, res) => {
+  try {
+    const { month, divisionId, departmentId, strategy } = req.body;
+
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Month (YYYY-MM) is required',
+      });
+    }
+
+    // Dynamic query for active employees
+    console.log('[Bulk Payroll] Req.scopeFilter:', JSON.stringify(req.scopeFilter));
+
+    const query = { ...req.scopeFilter, is_active: true };
+    if (divisionId) query.division_id = divisionId;
+    if (departmentId) query.department_id = departmentId;
+
+    console.log('[Bulk Payroll] Final Query:', JSON.stringify(query));
+    console.log('[Bulk Payroll] Filters - Division:', divisionId, 'Department:', departmentId, 'Month:', month);
+
+    const employees = await Employee.find(query).select('_id');
+
+    console.log('[Bulk Payroll] Found employees:', employees.length);
+
+    if (!employees || employees.length === 0) {
+      return res.status(200).json({
+        success: false,
+        message: 'No active employees found matching the filters',
+      });
+    }
+
+    const useLegacy = strategy === 'legacy';
+    const payrollCalculationService = require('../services/payrollCalculationService');
+    const calcFn = payrollCalculationService.calculatePayrollNew;
+
+    let successCount = 0;
+    let failCount = 0;
+    const batchIds = new Set();
+    const errors = [];
+
+    // Sequential processing to avoid overwhelming the database/S3/BullMQ
+    // and to safely handle batch locks individually
+    for (const emp of employees) {
+      try {
+        const result = await calcFn(emp._id.toString(), month, req.user._id, {
+          source: useLegacy ? 'all' : 'payregister',
+        });
+
+        if (result.batchId) {
+          batchIds.add(result.batchId.toString());
+        }
+        successCount++;
+      } catch (err) {
+        failCount++;
+        errors.push({ employeeId: emp._id, message: err.message });
+        console.error(`[Bulk Calc] Failed for ${emp._id}:`, err.message);
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Bulk calculation complete: ${successCount} success, ${failCount} failed`,
+      data: {
+        totalProcessed: employees.length,
+        successCount,
+        failCount,
+        batchIds: Array.from(batchIds),
+        errors: errors.slice(0, 10), // Return only first 10 errors for brevity
+      },
+    });
+  } catch (error) {
+    console.error('Error in bulk payroll calculation:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Internal server error during bulk calculation',
+    });
+  }
+};
+
+/**
  * @desc    Get attendance data for a range of months for an employee
  * @route   GET /api/payroll/attendance-range
  * @access  Private

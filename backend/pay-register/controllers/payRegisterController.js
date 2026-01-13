@@ -351,14 +351,13 @@ exports.getEditHistory = async (req, res) => {
 exports.getEmployeesWithPayRegister = async (req, res) => {
   try {
     const { month } = req.params;
-    const { departmentId, divisionId, status } = req.query;
+    const { departmentId, divisionId, status, page, limit } = req.query;
 
     console.log('[Pay Register Controller] getEmployeesWithPayRegister called:', {
       month,
       departmentId,
       divisionId,
-      status,
-      query: req.query,
+      status
     });
 
     // Validate month format
@@ -370,177 +369,168 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
     }
 
     const Employee = require('../../employees/model/Employee');
+    const PayrollRecord = require('../../payroll/model/PayrollRecord');
     const mongoose = require('mongoose');
-    const { populatePayRegisterFromSources } = require('../services/autoPopulationService');
-    const { calculateTotals } = require('../services/totalsCalculationService');
 
     // Parse month
     const [year, monthNum] = month.split('-').map(Number);
-
-    // Get all employees (optionally filtered by department)
-    // Include employees who:
-    // 1. Are active (is_active: true AND no leftDate)
-    // 2. Left during this month (leftDate is within this month)
+    const pageNum = parseInt(page) || 1;
+    const limitNum = parseInt(limit) || 50; // Default limit 50
+    const skip = (pageNum - 1) * limitNum;
     const monthStart = new Date(year, monthNum - 1, 1);
     const monthEnd = new Date(year, monthNum, 0, 23, 59, 59, 999);
 
+    // Build Employee Query
     let employeeQuery = {
       $or: [
-        // Active employees (no left date)
         { is_active: true, leftDate: null },
-        // Employees who left during this month
         { leftDate: { $gte: monthStart, $lte: monthEnd } }
       ]
     };
 
     if (departmentId) {
-      console.log('[Pay Register Controller] Filtering employees by departmentId:', departmentId);
-
-      // Convert departmentId to ObjectId if it's a valid ObjectId string
-      let deptObjectId;
+      let deptObjectId = departmentId;
       try {
-        deptObjectId = mongoose.Types.ObjectId.isValid(departmentId)
-          ? new mongoose.Types.ObjectId(departmentId)
-          : departmentId;
-      } catch (err) {
-        deptObjectId = departmentId;
-      }
-
+        if (mongoose.Types.ObjectId.isValid(departmentId)) {
+          deptObjectId = new mongoose.Types.ObjectId(departmentId);
+        }
+      } catch (err) { }
       employeeQuery.department_id = deptObjectId;
     }
 
     if (divisionId) {
-      console.log('[Pay Register Controller] Filtering employees by divisionId:', divisionId);
-
-      // Convert divisionId to ObjectId if it's a valid ObjectId string
-      let divObjectId;
+      let divObjectId = divisionId;
       try {
-        divObjectId = mongoose.Types.ObjectId.isValid(divisionId)
-          ? new mongoose.Types.ObjectId(divisionId)
-          : divisionId;
-      } catch (err) {
-        divObjectId = divisionId;
-      }
-
+        if (mongoose.Types.ObjectId.isValid(divisionId)) {
+          divObjectId = new mongoose.Types.ObjectId(divisionId);
+        }
+      } catch (err) { }
       employeeQuery.division_id = divObjectId;
     }
 
+    // 1. Bulk Fetch Employees with Pagination
+    const totalEmployees = await Employee.countDocuments(employeeQuery);
+
     const employees = await Employee.find(employeeQuery)
       .select('_id employee_name emp_no department_id designation_id leftDate leftReason')
-      .sort({ employee_name: 1 });
-
-    console.log('[Pay Register Controller] Found employees:', {
-      count: employees.length,
-      sampleEmployee: employees[0] ? {
-        _id: employees[0]._id.toString(),
-        employee_name: employees[0].employee_name,
-        emp_no: employees[0].emp_no,
-      } : null,
-    });
+      .populate('department_id', 'name')
+      .populate('designation_id', 'name')
+      .sort({ employee_name: 1 })
+      .skip(skip)
+      .limit(limitNum);
 
     if (employees.length === 0) {
-      console.log('[Pay Register Controller] No employees found, returning empty');
       return res.status(200).json({
         success: true,
         count: 0,
         data: [],
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total: totalEmployees,
+          totalPages: Math.ceil(totalEmployees / limitNum)
+        }
       });
     }
 
-    // Get or create pay register for each employee
-    const PayrollRecord = require('../../payroll/model/PayrollRecord');
+    const employeeIds = employees.map(e => e._id);
+
+    // 2. Bulk Fetch Existing Pay Registers (Include dailyRecords)
+    const payRegisters = await PayRegisterSummary.find({
+      employeeId: { $in: employeeIds },
+      month
+    })
+      .populate('employeeId', 'employee_name emp_no department_id designation_id')
+      .select('employeeId emp_no month status totals lastEditedAt dailyRecords');
+
+    // Map for O(1) Access
+    const prMap = new Map();
+    payRegisters.forEach(pr => {
+      const eId = pr.employeeId._id ? pr.employeeId._id.toString() : pr.employeeId.toString();
+      prMap.set(eId, pr);
+    });
+
+    // 3. Bulk Fetch Payroll Records (Context)
     const payrollRecords = await PayrollRecord.find({
-      employeeId: { $in: employees.map(e => e._id) },
-      month: month
+      employeeId: { $in: employeeIds },
+      month
     }).select('employeeId _id');
 
     const payrollMap = new Map();
     payrollRecords.forEach(pr => payrollMap.set(pr.employeeId.toString(), pr._id));
 
-    const payRegisters = [];
-    for (const employee of employees) {
-      try {
-        // Try to find existing pay register - need dailyRecords for recalculation
-        let payRegister = await PayRegisterSummary.findOne({
-          employeeId: employee._id,
-          month,
-        })
-          .populate('employeeId', 'employee_name emp_no department_id designation_id')
-          .select('employeeId emp_no month status totals lastEditedAt dailyRecords');
+    // 4. Construct Response (Merge & Stub)
+    const results = employees.map(employee => {
+      const eId = employee._id.toString();
+      const existingPR = prMap.get(eId);
+      const payrollId = payrollMap.get(eId);
 
-        // Recalculate totals to ensure accuracy
-        if (payRegister && payRegister.dailyRecords) {
-          payRegister.totals = calculateTotals(payRegister.dailyRecords);
-          payRegister.recalculateTotals(); // Also use model method for consistency
-          await payRegister.save();
-        }
-
-        // If not found, create it
-        if (!payRegister) {
-          console.log(`[Pay Register Controller] Creating pay register for employee ${employee.emp_no}`);
-
-          const dailyRecords = await populatePayRegisterFromSources(
-            employee._id,
-            employee.emp_no,
-            year,
-            monthNum
-          );
-
-          payRegister = await PayRegisterSummary.create({
-            employeeId: employee._id,
-            emp_no: employee.emp_no,
-            department_id: employee.department_id,
-            month,
-            monthName: new Date(year, monthNum - 1).toLocaleString('default', { month: 'long', year: 'numeric' }),
-            year,
-            monthNumber: monthNum,
-            totalDaysInMonth: new Date(year, monthNum, 0).getDate(),
-            dailyRecords,
-            totals: calculateTotals(dailyRecords),
-            status: 'draft',
-            lastAutoSyncedAt: new Date(),
-          });
-
-          await payRegister.populate('employeeId', 'employee_name emp_no department_id designation_id');
-        }
-
-        // Apply status filter if provided
-        if (status && payRegister.status !== status) {
-          continue;
-        }
-
-        // Select only needed fields
-        const payRegisterData = {
-          _id: payRegister._id,
-          employeeId: payRegister.employeeId,
-          emp_no: payRegister.emp_no,
-          month: payRegister.month,
-          status: payRegister.status,
-          totals: payRegister.totals,
-          lastEditedAt: payRegister.lastEditedAt,
-          payrollId: payrollMap.get(employee._id.toString()) || null,
+      if (existingPR) {
+        return {
+          _id: existingPR._id,
+          employeeId: existingPR.employeeId,
+          emp_no: existingPR.emp_no,
+          month: existingPR.month,
+          status: existingPR.status,
+          totals: existingPR.totals,
+          dailyRecords: existingPR.dailyRecords || [],
+          lastEditedAt: existingPR.lastEditedAt,
+          payrollId: payrollId || null
         };
-
-        payRegisters.push(payRegisterData);
-      } catch (err) {
-        console.error(`[Pay Register Controller] Error processing employee ${employee.emp_no}:`, err);
-        // Continue with other employees even if one fails
+      } else {
+        // Return In-Memory Stub (Fast!)
+        return {
+          _id: `stub_${eId}`,
+          employeeId: employee, // Full populated employee doc
+          emp_no: employee.emp_no,
+          month,
+          status: 'draft',
+          totals: {
+            presentDays: 0,
+            presentHalfDays: 0,
+            totalPresentDays: 0,
+            absentDays: 0,
+            absentHalfDays: 0,
+            totalAbsentDays: 0,
+            paidLeaveDays: 0,
+            paidLeaveHalfDays: 0,
+            totalPaidLeaveDays: 0,
+            unpaidLeaveDays: 0,
+            unpaidLeaveHalfDays: 0,
+            totalUnpaidLeaveDays: 0,
+            lopDays: 0,
+            lopHalfDays: 0,
+            totalLopDays: 0,
+            totalLeaveDays: 0,
+            odDays: 0,
+            odHalfDays: 0,
+            totalODDays: 0,
+            totalOTHours: 0,
+            totalPayableShifts: 0
+          },
+          dailyRecords: [], // Empty for stubs
+          lastEditedAt: null,
+          payrollId: payrollId || null,
+          isStub: true
+        };
       }
-    }
-
-    console.log('[Pay Register Controller] Returning pay registers:', {
-      count: payRegisters.length,
-      sample: payRegisters[0] ? {
-        employeeId: payRegisters[0].employeeId?._id || payRegisters[0].employeeId,
-        emp_no: payRegisters[0].emp_no,
-      } : null,
     });
+
+    // Filter by status if requested (Note: Status filtering across pages is tricky without aggregation, doing post-filter for now but pagination applies to employees mainly)
+    const finalResults = status ? results.filter(r => r.status === status) : results;
 
     res.status(200).json({
       success: true,
-      count: payRegisters.length,
-      data: payRegisters,
+      count: finalResults.length,
+      data: finalResults,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total: totalEmployees,
+        totalPages: Math.ceil(totalEmployees / limitNum)
+      }
     });
+
   } catch (error) {
     console.error('[Pay Register Controller] Error getting employees with pay register:', error);
     res.status(500).json({

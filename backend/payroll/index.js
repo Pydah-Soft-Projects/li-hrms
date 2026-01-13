@@ -10,6 +10,9 @@ router.use(protect);
 // Calculate payroll (Super Admin, Sub Admin, HR)
 router.post('/calculate', authorize('manager', 'super_admin', 'sub_admin', 'hr'), payrollController.calculatePayroll);
 
+// Bulk calculate payroll (Super Admin, Sub Admin, HR) - with scope filtering
+router.post('/bulk-calculate', applyScopeFilter, authorize('manager', 'super_admin', 'sub_admin', 'hr'), payrollController.calculatePayrollBulk);
+
 // Recalculate payroll (Super Admin, Sub Admin, HR)
 router.post('/recalculate', authorize('manager', 'super_admin', 'sub_admin', 'hr'), payrollController.recalculatePayroll);
 
