@@ -1112,7 +1112,6 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
 
     // Absent deduction
     let absentDeductionAmount = 0;
-    absentDays = workingDays - presentDays - totalLeaveDays - odDays;
     if (absentDays < 0) absentDays = 0;
     const absentSettings = await getAbsentDeductionSettings(departmentId);
     if (absentSettings.enableAbsentDeduction) {
