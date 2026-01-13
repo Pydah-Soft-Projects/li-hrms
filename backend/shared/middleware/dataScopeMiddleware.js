@@ -355,7 +355,7 @@ async function getEmployeeIdsInScope(user) {
 
     // Super Admins see everything
     if (user.role === 'super_admin' || user.role === 'sub_admin') {
-        const employees = await Employee.find({ isActive: true }).select('_id');
+        const employees = await Employee.find({ is_active: true }).select('_id');
         return employees.map(e => e._id);
     }
 
