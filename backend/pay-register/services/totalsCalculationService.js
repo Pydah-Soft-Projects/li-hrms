@@ -41,6 +41,9 @@ function calculateTotals(dailyRecords) {
 
   for (const record of dailyRecords) {
     // Track Holidays and Weekly Offs (can be fractional if split)
+    const isHoliday = record.status === 'holiday' || record.firstHalf?.status === 'holiday' || record.secondHalf?.status === 'holiday';
+    const isWeekOff = record.status === 'week_off' || record.firstHalf?.status === 'week_off' || record.secondHalf?.status === 'week_off';
+
     if (record.isSplit) {
       if (record.firstHalf?.status === 'holiday') totals.totalHolidays += 0.5;
       if (record.firstHalf?.status === 'week_off') totals.totalWeeklyOffs += 0.5;
