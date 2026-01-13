@@ -199,7 +199,7 @@ export default function AttendancePage() {
     // Reset page when filters change
     setPage(1);
     loadMonthlyAttendance(true);
-  }, [year, month, selectedDivision, selectedDepartment, selectedDesignation, tableType]);
+  }, [year, month, selectedDivision, selectedDepartment, selectedDesignation]); // Removed tableType dependency
 
   // Handle Load More when page changes
   useEffect(() => {
@@ -256,7 +256,21 @@ export default function AttendancePage() {
       if (response.success && response.data) {
         let depts = response.data;
         if (divisionId) {
-          depts = depts.filter((d: any) => d.division?._id === divisionId || (Array.isArray(d.divisions) && d.divisions.some((div: any) => div._id === divisionId)));
+          depts = depts.filter((d: any) => {
+            // Check direct division assignment (object or string)
+            const deptDivisionId = d.division && typeof d.division === 'object' ? d.division._id : d.division;
+            if (deptDivisionId === divisionId) return true;
+
+            // Check array of divisions
+            if (Array.isArray(d.divisions) && d.divisions.length > 0) {
+              return d.divisions.some((div: any) => {
+                const divId = div && typeof div === 'object' ? div._id : div;
+                return divId === divisionId;
+              });
+            }
+
+            return false;
+          });
         }
         setDepartments(depts);
       }
