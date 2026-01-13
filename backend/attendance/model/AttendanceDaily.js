@@ -33,7 +33,7 @@ const attendanceDailySchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['PRESENT', 'ABSENT', 'PARTIAL'],
+      enum: ['PRESENT', 'ABSENT', 'PARTIAL', 'HALF_DAY'],
       default: 'ABSENT',
     },
     source: {
@@ -175,16 +175,16 @@ attendanceDailySchema.index({ employeeNumber: 1, date: -1 });
 
 // Method to calculate total hours
 // Handles overnight shifts where out-time is before in-time (next day scenario)
-attendanceDailySchema.methods.calculateTotalHours = function() {
+attendanceDailySchema.methods.calculateTotalHours = function () {
   if (this.inTime && this.outTime) {
     let outTimeToUse = new Date(this.outTime);
     let inTimeToUse = new Date(this.inTime);
-    
+
     // If out-time is before in-time on the same date, it's likely next day (overnight shift)
     // Compare only the time portion, not the full date
     const outTimeOnly = outTimeToUse.getHours() * 60 + outTimeToUse.getMinutes();
     const inTimeOnly = inTimeToUse.getHours() * 60 + inTimeToUse.getMinutes();
-    
+
     // If out-time (time only) is less than in-time (time only), assume out-time is next day
     // This handles cases like: in at 20:00, out at 04:00 (next day)
     // But also handles: in at 08:02, out at 04:57 (next day)
@@ -195,7 +195,7 @@ attendanceDailySchema.methods.calculateTotalHours = function() {
         outTimeToUse.setDate(outTimeToUse.getDate() + 1);
       }
     }
-    
+
     const diffMs = outTimeToUse.getTime() - inTimeToUse.getTime();
     const diffHours = diffMs / (1000 * 60 * 60);
     this.totalHours = Math.round(diffHours * 100) / 100; // Round to 2 decimal places
@@ -204,10 +204,32 @@ attendanceDailySchema.methods.calculateTotalHours = function() {
   return null;
 };
 
-// Pre-save hook to calculate total hours and early-out deduction
-attendanceDailySchema.pre('save', async function() {
+// Pre-save hook to calculate total hours, status, and early-out deduction
+attendanceDailySchema.pre('save', async function () {
   if (this.inTime && this.outTime) {
     this.calculateTotalHours();
+
+    // Determine status based on total hours + OD hours vs shift duration
+    // Threshold: 70% of expected hours (Working + OD)
+    if (this.expectedHours) {
+      const effectiveHours = (this.totalHours || 0) + (this.odHours || 0);
+      const threshold = this.expectedHours * 0.7;
+
+      if (effectiveHours < threshold) {
+        this.status = 'HALF_DAY';
+      } else {
+        this.status = 'PRESENT';
+      }
+    } else {
+      // Default to PRESENT if we have both punches but no expectedHours
+      if (this.status !== 'HALF_DAY') {
+        this.status = 'PRESENT';
+      }
+    }
+  } else if (this.inTime || this.outTime) {
+    this.status = 'PARTIAL';
+  } else {
+    this.status = 'ABSENT';
   }
 
   // Calculate early-out deduction if earlyOutMinutes exists
@@ -215,7 +237,7 @@ attendanceDailySchema.pre('save', async function() {
     try {
       const { calculateEarlyOutDeduction } = require('../services/earlyOutDeductionService');
       const deduction = await calculateEarlyOutDeduction(this.earlyOutMinutes);
-      
+
       // Update early-out deduction fields
       this.earlyOutDeduction = {
         deductionApplied: deduction.deductionApplied,
@@ -251,20 +273,20 @@ attendanceDailySchema.pre('save', async function() {
 });
 
 // Post-save hook to recalculate monthly summary and detect extra hours
-attendanceDailySchema.post('save', async function() {
+attendanceDailySchema.post('save', async function () {
   try {
     const { recalculateOnAttendanceUpdate } = require('../services/summaryCalculationService');
     const { detectExtraHours } = require('../services/extraHoursService');
-    
+
     // If shiftId was modified, we need to recalculate the entire month
     if (this.isModified('shiftId')) {
       const dateObj = new Date(this.date);
       const year = dateObj.getFullYear();
       const monthNumber = dateObj.getMonth() + 1;
-      
+
       const Employee = require('../../employees/model/Employee');
       const employee = await Employee.findOne({ emp_no: this.employeeNumber, is_active: { $ne: false } });
-      
+
       if (employee) {
         const { calculateMonthlySummary } = require('../services/summaryCalculationService');
         await calculateMonthlySummary(employee._id, employee.emp_no, year, monthNumber);

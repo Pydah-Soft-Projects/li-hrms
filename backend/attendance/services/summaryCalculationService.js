@@ -32,20 +32,35 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber) {
       },
     }).populate('shiftId', 'payableShifts name');
 
-    // 2. Calculate total present days
-    const presentDays = attendanceRecords.filter(
-      (record) => record.status === 'PRESENT' || record.status === 'PARTIAL'
-    );
-    summary.totalPresentDays = presentDays.length;
+    // 2. Calculate total present days (Half-day counts as 0.5)
+    let totalPresentDays = 0;
+    for (const record of attendanceRecords) {
+      if (record.status === 'PRESENT' || record.status === 'PARTIAL') {
+        totalPresentDays += 1;
+      } else if (record.status === 'HALF_DAY') {
+        totalPresentDays += 0.5;
+      }
+    }
+    summary.totalPresentDays = Math.round(totalPresentDays * 10) / 10;
 
     // 3. Calculate total payable shifts from attendance
+    // Include HALF_DAY in the set of days that contribute to payable shifts
+    const activeAttendanceDays = attendanceRecords.filter(r =>
+      r.status === 'PRESENT' || r.status === 'PARTIAL' || r.status === 'HALF_DAY'
+    );
+
     let totalPayableShifts = 0;
-    for (const record of presentDays) {
+    for (const record of activeAttendanceDays) {
+      let basePayable = 1;
       if (record.shiftId && typeof record.shiftId === 'object' && record.shiftId.payableShifts !== undefined && record.shiftId.payableShifts !== null) {
-        totalPayableShifts += Number(record.shiftId.payableShifts);
+        basePayable = Number(record.shiftId.payableShifts);
+      }
+
+      // If it's a half day, they get half of the shift's payable value
+      if (record.status === 'HALF_DAY') {
+        totalPayableShifts += (basePayable / 2);
       } else {
-        // Default to 1 if shift doesn't have payableShifts or shift is not assigned
-        totalPayableShifts += 1;
+        totalPayableShifts += basePayable;
       }
     }
 
@@ -70,18 +85,18 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber) {
       // Reset time to avoid timezone issues
       leaveStart.setHours(0, 0, 0, 0);
       leaveEnd.setHours(23, 59, 59, 999);
-      
+
       // Count each day in the leave range that falls within the month
       let currentDate = new Date(leaveStart);
       while (currentDate <= leaveEnd) {
         const currentYear = currentDate.getFullYear();
         const currentMonth = currentDate.getMonth() + 1;
-        
+
         // Check if this date is within the target month
         if (currentYear === year && currentMonth === monthNumber) {
           totalLeaveDays += leave.isHalfDay ? 0.5 : 1;
         }
-        
+
         // Move to next day
         currentDate.setDate(currentDate.getDate() + 1);
       }
@@ -109,25 +124,25 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber) {
       if (od.odType_extended === 'hours') {
         continue;
       }
-      
+
       const odStart = new Date(od.fromDate);
       const odEnd = new Date(od.toDate);
-      
+
       // Reset time to avoid timezone issues
       odStart.setHours(0, 0, 0, 0);
       odEnd.setHours(23, 59, 59, 999);
-      
+
       // Count each day in the OD range that falls within the month
       let currentDate = new Date(odStart);
       while (currentDate <= odEnd) {
         const currentYear = currentDate.getFullYear();
         const currentMonth = currentDate.getMonth() + 1;
-        
+
         // Check if this date is within the target month
         if (currentYear === year && currentMonth === monthNumber) {
           totalODDays += od.isHalfDay ? 0.5 : 1;
         }
-        
+
         // Move to next day
         currentDate.setDate(currentDate.getDate() + 1);
       }
@@ -249,8 +264,8 @@ async function calculateAllEmployeesSummary(year, monthNumber) {
 async function recalculateOnAttendanceUpdate(emp_no, date) {
   try {
     const Employee = require('../../employees/model/Employee');
-    const employee = await Employee.findOne({ emp_no, isActive: true });
-    
+    const employee = await Employee.findOne({ emp_no, is_active: true });
+
     if (!employee) {
       console.warn(`Employee not found for emp_no: ${emp_no}`);
       return;
@@ -287,16 +302,16 @@ async function recalculateOnLeaveApproval(leave) {
     // Calculate all months affected by this leave
     const leaveStart = new Date(leave.fromDate);
     const leaveEnd = new Date(leave.toDate);
-    
+
     let currentDate = new Date(leaveStart.getFullYear(), leaveStart.getMonth(), 1);
     const endMonth = new Date(leaveEnd.getFullYear(), leaveEnd.getMonth(), 1);
-    
+
     while (currentDate <= endMonth) {
       const year = currentDate.getFullYear();
       const monthNumber = currentDate.getMonth() + 1;
-      
+
       await calculateMonthlySummary(employee._id, employee.emp_no, year, monthNumber);
-      
+
       // Move to next month
       currentDate.setMonth(currentDate.getMonth() + 1);
     }
@@ -326,16 +341,16 @@ async function recalculateOnODApproval(od) {
     // Calculate all months affected by this OD
     const odStart = new Date(od.fromDate);
     const odEnd = new Date(od.toDate);
-    
+
     let currentDate = new Date(odStart.getFullYear(), odStart.getMonth(), 1);
     const endMonth = new Date(odEnd.getFullYear(), odEnd.getMonth(), 1);
-    
+
     while (currentDate <= endMonth) {
       const year = currentDate.getFullYear();
       const monthNumber = currentDate.getMonth() + 1;
-      
+
       await calculateMonthlySummary(employee._id, employee.emp_no, year, monthNumber);
-      
+
       // Move to next month
       currentDate.setMonth(currentDate.getMonth() + 1);
     }

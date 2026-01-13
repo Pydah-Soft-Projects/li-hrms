@@ -455,7 +455,8 @@ exports.updateOutTime = async (req, res) => {
 
     // Update outTime
     attendanceRecord.outTime = outTimeDate;
-    attendanceRecord.status = attendanceRecord.status === 'PARTIAL' ? 'PRESENT' : attendanceRecord.status;
+    // Status will be automatically updated by the AttendanceDaily pre-save hook 
+    // based on total hours, OD hours and shift duration (70% threshold)
 
     // Re-run shift detection with new outTime
     const detectionResult = await detectAndAssignShift(
