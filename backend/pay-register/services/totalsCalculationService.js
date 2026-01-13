@@ -31,6 +31,8 @@ function calculateTotals(dailyRecords) {
     totalODDays: 0,
     totalOTHours: 0,
     totalPayableShifts: 0,
+    totalWeeklyOffs: 0,
+    totalHolidays: 0,
   };
 
   if (!dailyRecords || dailyRecords.length === 0) {
@@ -38,9 +40,16 @@ function calculateTotals(dailyRecords) {
   }
 
   for (const record of dailyRecords) {
-    // Skip records with holiday or week_off status - they shouldn't be counted in any category
-    const isHoliday = record.status === 'holiday' || record.firstHalf?.status === 'holiday' || record.secondHalf?.status === 'holiday';
-    const isWeekOff = record.status === 'week_off' || record.firstHalf?.status === 'week_off' || record.secondHalf?.status === 'week_off';
+    // Track Holidays and Weekly Offs (can be fractional if split)
+    if (record.isSplit) {
+      if (record.firstHalf?.status === 'holiday') totals.totalHolidays += 0.5;
+      if (record.firstHalf?.status === 'week_off') totals.totalWeeklyOffs += 0.5;
+      if (record.secondHalf?.status === 'holiday') totals.totalHolidays += 0.5;
+      if (record.secondHalf?.status === 'week_off') totals.totalWeeklyOffs += 0.5;
+    } else {
+      if (record.status === 'holiday') totals.totalHolidays += 1;
+      if (record.status === 'week_off') totals.totalWeeklyOffs += 1;
+    }
 
     if (isHoliday || isWeekOff) {
       // Still count OT hours for holidays/week_off if any

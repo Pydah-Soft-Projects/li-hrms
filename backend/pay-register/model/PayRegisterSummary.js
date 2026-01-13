@@ -87,11 +87,11 @@ const payRegisterSummarySchema = new mongoose.Schema(
             type: String,
             default: null, // Only set if status = 'leave'
           },
-        leaveNature: {
-          type: String,
-          enum: ['paid', 'lop', null],
-          default: null, // Only set if status = 'leave'
-        },
+          leaveNature: {
+            type: String,
+            enum: ['paid', 'lop', null],
+            default: null, // Only set if status = 'leave'
+          },
           isOD: {
             type: Boolean,
             default: false, // Only set if status = 'od'
@@ -124,16 +124,16 @@ const payRegisterSummarySchema = new mongoose.Schema(
             type: String,
             default: null,
           },
-        leaveNature: {
-          type: String,
-          enum: ['paid', 'lop', null],
-          default: null,
-        },
-    leaveNature: {
-      type: String,
-      enum: ['paid', 'lop', null],
-      default: null,
-    },
+          leaveNature: {
+            type: String,
+            enum: ['paid', 'lop', null],
+            default: null,
+          },
+          leaveNature: {
+            type: String,
+            enum: ['paid', 'lop', null],
+            default: null,
+          },
           isOD: {
             type: Boolean,
             default: false,
@@ -358,6 +358,16 @@ const payRegisterSummarySchema = new mongoose.Schema(
         default: 0,
         min: 0,
       },
+      totalWeeklyOffs: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      totalHolidays: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
     },
 
     // AUTO-SYNC TRACKING
@@ -489,7 +499,7 @@ payRegisterSummarySchema.statics.getOrCreate = async function (employeeId, emp_n
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
   const monthName = `${monthNames[monthNumber - 1]} ${year}`;
-  
+
   // Get total days in month
   const totalDaysInMonth = new Date(year, monthNumber, 0).getDate();
 
@@ -540,6 +550,8 @@ payRegisterSummarySchema.methods.recalculateTotals = function () {
     totalODDays: 0,
     totalOTHours: 0,
     totalPayableShifts: 0,
+    totalWeeklyOffs: 0,
+    totalHolidays: 0,
   };
 
   if (!this.dailyRecords || this.dailyRecords.length === 0) {
@@ -548,10 +560,20 @@ payRegisterSummarySchema.methods.recalculateTotals = function () {
   }
 
   for (const record of this.dailyRecords) {
-    // Skip records with holiday or week_off status - they shouldn't be counted in any category
+    // Track Holidays and Weekly Offs (can be fractional if split)
+    if (record.isSplit) {
+      if (record.firstHalf?.status === 'holiday') totals.totalHolidays += 0.5;
+      if (record.firstHalf?.status === 'week_off') totals.totalWeeklyOffs += 0.5;
+      if (record.secondHalf?.status === 'holiday') totals.totalHolidays += 0.5;
+      if (record.secondHalf?.status === 'week_off') totals.totalWeeklyOffs += 0.5;
+    } else {
+      if (record.status === 'holiday') totals.totalHolidays += 1;
+      if (record.status === 'week_off') totals.totalWeeklyOffs += 1;
+    }
+
     const isHoliday = record.status === 'holiday' || record.firstHalf?.status === 'holiday' || record.secondHalf?.status === 'holiday';
     const isWeekOff = record.status === 'week_off' || record.firstHalf?.status === 'week_off' || record.secondHalf?.status === 'week_off';
-    
+
     if (isHoliday || isWeekOff) {
       // Still count OT hours for holidays/week_off if any
       totals.totalOTHours += record.otHours || 0;
@@ -563,14 +585,14 @@ payRegisterSummarySchema.methods.recalculateTotals = function () {
     const firstHalfStatus = record.firstHalf?.status;
     const secondHalfStatus = record.secondHalf?.status;
     // Consider split if: both halves exist and have different statuses, OR if record.isSplit is explicitly true
-    const isActuallySplit = (firstHalfStatus && secondHalfStatus && firstHalfStatus !== secondHalfStatus) || 
-                           (record.isSplit === true && firstHalfStatus && secondHalfStatus);
+    const isActuallySplit = (firstHalfStatus && secondHalfStatus && firstHalfStatus !== secondHalfStatus) ||
+      (record.isSplit === true && firstHalfStatus && secondHalfStatus);
 
     // If record is actually split, count halves separately
     if (isActuallySplit) {
       // Process first half - only count if status is explicitly set and valid
-      if (record.firstHalf && record.firstHalf.status && 
-          ['present', 'absent', 'leave', 'od'].includes(record.firstHalf.status)) {
+      if (record.firstHalf && record.firstHalf.status &&
+        ['present', 'absent', 'leave', 'od'].includes(record.firstHalf.status)) {
         if (record.firstHalf.status === 'present') {
           totals.presentHalfDays++;
         } else if (record.firstHalf.status === 'absent') {
@@ -589,8 +611,8 @@ payRegisterSummarySchema.methods.recalculateTotals = function () {
       }
 
       // Process second half - only count if status is explicitly set and valid
-      if (record.secondHalf && record.secondHalf.status && 
-          ['present', 'absent', 'leave', 'od'].includes(record.secondHalf.status)) {
+      if (record.secondHalf && record.secondHalf.status &&
+        ['present', 'absent', 'leave', 'od'].includes(record.secondHalf.status)) {
         if (record.secondHalf.status === 'present') {
           totals.presentHalfDays++;
         } else if (record.secondHalf.status === 'absent') {
@@ -611,7 +633,7 @@ payRegisterSummarySchema.methods.recalculateTotals = function () {
       // If not split, count as full day only (don't count halves separately)
       // Use the record.status if available, otherwise use firstHalf.status (they should be the same)
       const statusToCount = record.status || firstHalfStatus || secondHalfStatus;
-      
+
       // Only count if status is explicitly set and valid (not null, not holiday, not week_off)
       if (statusToCount && ['present', 'absent', 'leave', 'od'].includes(statusToCount)) {
         if (statusToCount === 'present') {
@@ -647,6 +669,8 @@ payRegisterSummarySchema.methods.recalculateTotals = function () {
 
   // Calculate payable shifts = present + OD + paid leaves
   totals.totalPayableShifts = totals.totalPresentDays + totals.totalODDays + totals.totalPaidLeaveDays;
+  // This is where we will also use the shift-based payable units if implemented here
+  // But for now, let's keep it consistent with the service fix I just did
 
   this.totals = totals;
   return totals;

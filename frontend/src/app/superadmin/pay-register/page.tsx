@@ -75,6 +75,8 @@ interface PayRegisterSummary {
     totalODDays: number;
     totalOTHours: number;
     totalPayableShifts: number;
+    totalWeeklyOffs?: number;
+    totalHolidays?: number;
   };
   status: 'draft' | 'in_review' | 'finalized';
   lastAutoSyncedAt: string | null;
@@ -419,9 +421,13 @@ export default function PayRegisterPage() {
       const leave = getLeaveTotal(totals);
       const od = totals.totalODDays || 0;
       const ot = totals.totalOTHours || 0;
-      const extra = totals.totalOTHours || 0; // No separate extra hours field in totals
+      const extra = Math.max(0, (totals.totalPayableShifts || 0) - (totals.totalPresentDays || 0) - (totals.totalODDays || 0));
+      const weeklyOffs = totals.totalWeeklyOffs || 0;
+      const holidays = totals.totalHolidays || 0;
+      const totalPaidDays = (totals.totalPayableShifts || 0) + weeklyOffs + holidays;
+
       const monthDays = pr.totalDaysInMonth || daysInMonth;
-      const countedDays = present + absent + leave + od;
+      const countedDays = present + absent + leave + od + weeklyOffs + holidays;
       const matchesMonth = Math.abs(countedDays - monthDays) < 0.001;
       return {
         pr,
@@ -431,6 +437,9 @@ export default function PayRegisterPage() {
         od,
         ot,
         extra,
+        weeklyOffs,
+        holidays,
+        totalPaidDays,
         monthDays,
         countedDays,
         matchesMonth,
@@ -1043,7 +1052,8 @@ export default function PayRegisterPage() {
                     'Total Leaves',
                     'Total OD',
                     'Total OT Hours',
-                    'Total Extra Hours',
+                    'Total Extra Days',
+                    'Paid Days',
                     'Month Days',
                     'Counted Days',
                   ].map((label) => (
@@ -1085,6 +1095,7 @@ export default function PayRegisterPage() {
                       <td className="text-center px-2 py-2">{row.od.toFixed(1)}</td>
                       <td className="text-center px-2 py-2">{row.ot.toFixed(1)}</td>
                       <td className="text-center px-2 py-2">{row.extra.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2 font-bold text-blue-600 dark:text-blue-400">{row.totalPaidDays.toFixed(1)}</td>
                       <td className="text-center px-2 py-2">{row.monthDays}</td>
                       <td
                         className={`text-center px-2 py-2 font-semibold ${row.matchesMonth
