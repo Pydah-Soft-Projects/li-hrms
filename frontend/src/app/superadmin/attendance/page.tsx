@@ -276,6 +276,30 @@ export default function AttendancePage() {
     }
   };
 
+  // Helper to normalize data structure (handles both flat and nested responses)
+  const normalizeAttendanceData = (data: any[]): MonthlyAttendanceData[] => {
+    return data.map((item: any) => {
+      // If already normalized (has employee object and dailyAttendance)
+      if (item.employee && typeof item.employee === 'object' && item.dailyAttendance) {
+        return item as MonthlyAttendanceData;
+      }
+
+      // Map flat structure or attendance property to nested structure
+      return {
+        ...item,
+        employee: item.employee || {
+          _id: item._id, // Assuming root _id is employee id based on data pattern
+          emp_no: item.emp_no,
+          employee_name: item.employee_name,
+          department: { name: item.department_name },
+          designation: { name: item.designation_name },
+          division_id: item.division_id,
+        },
+        dailyAttendance: item.dailyAttendance || item.attendance || {},
+      } as MonthlyAttendanceData;
+    });
+  };
+
   const loadMonthlyAttendance = async (reset: boolean = false) => {
     try {
       if (reset) {
@@ -297,7 +321,8 @@ export default function AttendancePage() {
       });
 
       if (response.success) {
-        const newData = response.data || [];
+        const rawData = response.data || [];
+        const newData = normalizeAttendanceData(rawData);
         if (reset) {
           setMonthlyData(newData);
         } else {
@@ -335,9 +360,11 @@ export default function AttendancePage() {
       setError('');
       const response = await api.getMonthlyAttendance(year, month);
       if (response.success) {
+        const normalizedData = normalizeAttendanceData(response.data || []);
+
         // Convert monthly data to calendar format for all employees
         const calendarData: Record<string, Record<string, AttendanceRecord | null>> = {};
-        (response.data || []).forEach((item: MonthlyAttendanceData) => {
+        normalizedData.forEach((item: MonthlyAttendanceData) => {
           // Apply filters
           if (selectedDepartment && item.employee.department?._id !== selectedDepartment) return;
           if (selectedDesignation && item.employee.designation?._id !== selectedDesignation) return;
@@ -346,7 +373,7 @@ export default function AttendancePage() {
           calendarData[item.employee._id] = item.dailyAttendance;
         });
         setAttendanceData(calendarData);
-        setMonthlyData(response.data || []);
+        setMonthlyData(normalizedData);
       } else {
         setError(response.message || 'Failed to load attendance');
       }
