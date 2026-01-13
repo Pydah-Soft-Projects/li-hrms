@@ -21,12 +21,12 @@ const Shift = require('../../shifts/model/Shift');
 function getAllDatesInMonth(year, monthNumber) {
   const dates = [];
   const totalDays = new Date(year, monthNumber, 0).getDate();
-  
+
   for (let day = 1; day <= totalDays; day++) {
     const dateStr = `${year}-${String(monthNumber).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     dates.push(dateStr);
   }
-  
+
   return dates;
 }
 
@@ -116,11 +116,11 @@ async function fetchLeaveData(employeeId, month) {
   for (const leave of leaves) {
     const fromDate = new Date(leave.fromDate);
     const toDate = new Date(leave.toDate);
-    
+
     let currentDate = new Date(fromDate);
     while (currentDate <= toDate) {
       const dateStr = currentDate.toISOString().split('T')[0];
-      
+
       // Check if this date is within the target month
       if (dateStr.startsWith(month)) {
         if (!leaveMap[dateStr]) {
@@ -133,10 +133,10 @@ async function fetchLeaveData(employeeId, month) {
             originalLeaveType: leave.originalLeaveType || leave.leaveType,
           };
         }
-        
+
         leaveMap[dateStr].leaveIds.push(leave._id);
       }
-      
+
       currentDate.setDate(currentDate.getDate() + 1);
     }
   }
@@ -144,7 +144,7 @@ async function fetchLeaveData(employeeId, month) {
   // Process leave splits (these override full leaves for specific dates)
   for (const split of leaveSplits) {
     const dateStr = split.date.toISOString().split('T')[0];
-    
+
     if (!leaveMap[dateStr]) {
       leaveMap[dateStr] = {
         leaveIds: [],
@@ -191,11 +191,11 @@ async function fetchODData(employeeId, month) {
   for (const od of ods) {
     const fromDate = new Date(od.fromDate);
     const toDate = new Date(od.toDate);
-    
+
     let currentDate = new Date(fromDate);
     while (currentDate <= toDate) {
       const dateStr = currentDate.toISOString().split('T')[0];
-      
+
       if (dateStr.startsWith(month)) {
         if (!odMap[dateStr]) {
           odMap[dateStr] = {
@@ -205,10 +205,10 @@ async function fetchODData(employeeId, month) {
             odType: od.odType,
           };
         }
-        
+
         odMap[dateStr].odIds.push(od._id);
       }
-      
+
       currentDate.setDate(currentDate.getDate() + 1);
     }
   }
@@ -297,7 +297,7 @@ async function resolveConflicts(dateData) {
   // If leave exists, prioritize leave
   if (leave) {
     const leaveNature = leave.leaveNature || await getLeaveNature(leave.leaveType);
-    
+
     if (leave.isHalfDay) {
       if (leave.halfDayType === 'first_half') {
         firstHalf.status = 'leave';
@@ -337,12 +337,22 @@ async function resolveConflicts(dateData) {
   }
 
   // If attendance exists and no leave/OD, use attendance
-  if (attendance && attendance.status === 'PRESENT') {
-    if (firstHalf.status === 'absent') {
-      firstHalf.status = 'present';
-    }
-    if (secondHalf.status === 'absent') {
-      secondHalf.status = 'present';
+  if (attendance && (attendance.status === 'PRESENT' || attendance.status === 'HALF_DAY')) {
+    if (attendance.status === 'HALF_DAY') {
+      // Only fill ONE available half (preferably the first one if empty)
+      if (firstHalf.status === 'absent') {
+        firstHalf.status = 'present';
+      } else if (secondHalf.status === 'absent') {
+        secondHalf.status = 'present';
+      }
+    } else {
+      // Full day PRESENT
+      if (firstHalf.status === 'absent') {
+        firstHalf.status = 'present';
+      }
+      if (secondHalf.status === 'absent') {
+        secondHalf.status = 'present';
+      }
     }
   }
 

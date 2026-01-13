@@ -9,7 +9,7 @@ interface AttendanceRecord {
   inTime: string | null;
   outTime: string | null;
   totalHours: number | null;
-  status: 'PRESENT' | 'ABSENT' | 'PARTIAL' | 'LEAVE' | 'OD' | '-';
+  status: 'PRESENT' | 'ABSENT' | 'PARTIAL' | 'LEAVE' | 'OD' | 'HALF_DAY' | '-';
   shiftId?: { _id: string; name: string; startTime: string; endTime: string; duration: number; payableShifts?: number } | string | null;
   isLateIn?: boolean;
   isEarlyOut?: boolean;
@@ -981,6 +981,7 @@ export default function AttendancePage() {
     if (!record) return '';
     if (record.status === 'PRESENT') return 'bg-green-50 border-green-200 text-green-800 dark:bg-green-900/10 dark:border-green-800 dark:text-green-400';
     if (record.status === 'PARTIAL') return 'bg-yellow-50 border-yellow-200 text-yellow-800 dark:bg-yellow-900/10 dark:border-yellow-800 dark:text-yellow-400';
+    if (record.status === 'HALF_DAY') return 'bg-orange-50 border-orange-200 text-orange-800 dark:bg-orange-900/10 dark:border-orange-800 dark:text-orange-400';
     return '';
   };
 
@@ -1003,7 +1004,7 @@ export default function AttendancePage() {
       // Both leave and OD - show as conflict
       return 'bg-purple-100 border-purple-300 dark:bg-purple-900/30 dark:border-purple-700';
     }
-    if (record.status === 'ABSENT' || record.status === 'LEAVE' || record.status === 'OD') {
+    if (record.status === 'ABSENT' || record.status === 'LEAVE' || record.status === 'OD' || record.status === 'HALF_DAY') {
       return 'bg-slate-100 dark:bg-slate-800';
     }
     return '';
@@ -1417,10 +1418,19 @@ export default function AttendancePage() {
 
                   const daysPresent = item.presentDays !== undefined
                     ? item.presentDays
-                    : dailyValues.filter((record: any) => record && (record.status === 'PRESENT' || record.status === 'PARTIAL')).length;
+                    : dailyValues.reduce((sum, record: any) => {
+                      if (!record) return sum;
+                      if (record.status === 'PRESENT' || record.status === 'PARTIAL') return sum + 1;
+                      if (record.status === 'HALF_DAY') return sum + 0.5;
+                      return sum;
+                    }, 0);
 
                   const payableShifts = item.payableShifts !== undefined ? item.payableShifts : 0;
-                  const monthPresent = dailyValues.filter((r: any) => r?.status === 'PRESENT').length;
+                  const monthPresent = dailyValues.reduce((sum, r: any) => {
+                    if (r?.status === 'PRESENT') return sum + 1;
+                    if (r?.status === 'HALF_DAY') return sum + 0.5;
+                    return sum;
+                  }, 0);
                   const monthAbsent = dailyValues.filter((r: any) => r?.status === 'ABSENT').length;
                   const leaveRecords = dailyValues.filter((r: any) => r?.status === 'LEAVE' || r?.hasLeave);
                   const totalLeaves = leaveRecords.length;
@@ -1470,6 +1480,7 @@ export default function AttendancePage() {
                         let displayStatus = 'A';
                         if (record) {
                           if (record.status === 'PRESENT') displayStatus = 'P';
+                          else if (record.status === 'HALF_DAY') displayStatus = 'HD';
                           else if (record.status === 'PARTIAL') displayStatus = 'PT';
                           else if (record.status === 'LEAVE' || record.hasLeave) displayStatus = 'L';
                           else if (record.status === 'OD' || record.hasOD) displayStatus = 'OD';

@@ -9,6 +9,8 @@ const AttendanceDaily = require('../model/AttendanceDaily');
 const AttendanceSettings = require('../model/AttendanceSettings');
 const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
 const { fetchAttendanceLogsSQL } = require('../config/attendanceSQLHelper');
+const Employee = require('../../employees/model/Employee');
+const OD = require('../../leaves/model/OD');
 const { detectAndAssignShift } = require('../../shifts/services/shiftDetectionService');
 const { detectExtraHours } = require('./extraHoursService');
 
@@ -112,6 +114,10 @@ const processAndAggregateLogs = async (rawLogs, previousDayLinking = false, skip
     // NEW APPROACH: Process logs chronologically to pair IN/OUT correctly
     for (const [employeeNumber, logs] of Object.entries(logsByEmployee)) {
       try {
+        // Fetch employee to get ID for OD and settings lookup
+        const employee = await Employee.findOne({ emp_no: employeeNumber.toUpperCase() }).select('_id');
+        const employeeId = employee ? employee._id : null;
+
         // Logs are already sorted chronologically
         const pairedRecords = [];
         const usedOutLogs = new Set(); // Track which OUT logs have been used
@@ -226,13 +232,42 @@ const processAndAggregateLogs = async (rawLogs, previousDayLinking = false, skip
 
             // Create attendance record
             const shiftDate = inDate; // Shift date is always IN date
-            const status = outTime ? 'PRESENT' : 'PARTIAL';
 
-            // Calculate total hours
+            // Calculate total hours worked
             let totalHours = null;
             if (inTime && outTime) {
               const diffMs = outTime.getTime() - inTime.getTime();
               totalHours = Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100;
+            }
+
+            // Get approved OD hours for this day to count towards total work
+            let odHours = 0;
+            if (employeeId) {
+              const dayStart = new Date(shiftDate);
+              dayStart.setHours(0, 0, 0, 0);
+              const dayEnd = new Date(shiftDate);
+              dayEnd.setHours(23, 59, 59, 999);
+
+              const approvedODs = await OD.find({
+                employeeId,
+                status: 'approved',
+                $or: [
+                  { fromDate: { $lte: dayEnd }, toDate: { $gte: dayStart } }
+                ],
+                isActive: true
+              });
+
+              for (const od of approvedODs) {
+                if (od.odType_extended === 'hours') {
+                  odHours += od.durationHours || 0;
+                } else if (od.odType_extended === 'half_day' || od.isHalfDay) {
+                  // If it's a half-day OD, we assume it covers 50% of a standard day (e.g. 4.5h)
+                  odHours += 4.5;
+                } else {
+                  // Full day OD covers full shift (e.g. 9h)
+                  odHours += 9;
+                }
+              }
             }
 
             // Detect and assign shift
@@ -245,11 +280,27 @@ const processAndAggregateLogs = async (rawLogs, previousDayLinking = false, skip
               }
             }
 
+            // Determine status based on total hours + OD hours vs shift duration
+            // Threshold: 70% of expected hours (Working + OD)
+            let status = outTime ? 'PRESENT' : 'PARTIAL';
+            if (outTime && shiftAssignment && shiftAssignment.success && shiftAssignment.expectedHours) {
+              const effectiveHours = (totalHours || 0) + odHours;
+              const threshold = shiftAssignment.expectedHours * 0.7;
+
+              if (effectiveHours < threshold) {
+                status = 'HALF_DAY';
+                console.log(`[HalfDayDetection] Marked ${employeeNumber} as HALF_DAY on ${shiftDate}. Effective: ${effectiveHours}h, Threshold: ${threshold}h (70% of ${shiftAssignment.expectedHours}h)`);
+              } else {
+                status = 'PRESENT';
+              }
+            }
+
             // Prepare update data
             const updateData = {
               inTime,
               outTime,
               totalHours,
+              odHours, // Include OD hours for status calculation in pre-save hook
               status,
               lastSyncedAt: new Date(),
             };
