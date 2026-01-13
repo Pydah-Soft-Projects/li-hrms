@@ -158,6 +158,11 @@ export default function PayRegisterPage() {
   const [isHalfDayMode, setIsHalfDayMode] = useState(false);
   const [payrollStrategy, setPayrollStrategy] = useState<'legacy' | 'new'>('new');
 
+  // Pagination State
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth() + 1;
   const monthStr = `${year}-${String(month).padStart(2, '0')}`;
@@ -196,7 +201,9 @@ export default function PayRegisterPage() {
   };
 
   useEffect(() => {
-    loadPayRegisters();
+    setPage(1);
+    setHasMore(true);
+    loadPayRegisters(1, false);
     checkBatchLocks();
   }, [year, month, selectedDepartment, selectedDivision]);
 
@@ -245,105 +252,65 @@ export default function PayRegisterPage() {
     }
   };
 
-  const loadPayRegisters = async () => {
+  const loadPayRegisters = async (pageToLoad = 1, append = false) => {
     try {
-      setLoading(true);
-      console.log('[Pay Register] Loading pay registers:', { monthStr, selectedDepartment });
+      if (append) {
+        setLoadingMore(true);
+      } else {
+        setLoading(true);
+      }
+
+      console.log('[Pay Register] Loading pay registers:', { monthStr, selectedDepartment, page: pageToLoad });
 
       // Ensure we pass undefined instead of empty string
       const targetDeptId = selectedDepartment && selectedDepartment.trim() !== '' ? selectedDepartment : undefined;
       const targetDivId = selectedDivision && selectedDivision.trim() !== '' ? selectedDivision : undefined;
-      console.log('[Pay Register] Calling API with departmentId:', targetDeptId, 'divisionId:', targetDivId);
-      const response = await api.getEmployeesWithPayRegister(monthStr, targetDeptId, targetDivId);
 
-      console.log('[Pay Register] API Response:', {
-        success: response.success,
-        count: response.count,
-        dataLength: response.data?.length || 0,
-        data: response.data,
-      });
+      const limit = 50;
+      const response = await api.getEmployeesWithPayRegister(monthStr, targetDeptId, targetDivId, undefined, pageToLoad, limit);
 
       if (response.success) {
         const payRegisterList = response.data || [];
+        console.log('[Pay Register] Loaded page', pageToLoad, 'count:', payRegisterList.length);
 
-        console.log('[Pay Register] Processing pay register list:', {
-          listLength: payRegisterList.length,
-          firstItem: payRegisterList[0],
-        });
-
-        if (payRegisterList.length === 0) {
-          console.log('[Pay Register] No pay registers found, setting empty array');
-          setPayRegisters([]);
-          return;
+        if (append) {
+          setPayRegisters(prev => [...prev, ...payRegisterList]);
+        } else {
+          setPayRegisters(payRegisterList);
         }
 
-        // Load full pay register details for each employee
-        console.log('[Pay Register] Loading full details for', payRegisterList.length, 'employees');
-        const fullPayRegisters = await Promise.all(
-          payRegisterList.map(async (pr: any, index: number) => {
-            try {
-              const employeeId = typeof pr.employeeId === 'object' ? pr.employeeId._id : pr.employeeId;
-              console.log(`[Pay Register] Loading full details for employee ${index + 1}/${payRegisterList.length}:`, employeeId);
+        // Update pagination status
+        if (response.pagination) {
+          setHasMore(pageToLoad < response.pagination.totalPages);
+        } else {
+          // Fallback if pagination metadata is missing (shouldn't happen with new backend)
+          setHasMore(payRegisterList.length === limit);
+        }
 
-              let fullResponse = await api.getPayRegister(employeeId, monthStr);
-
-              // If pay register doesn't exist, create it
-              if (!fullResponse.success || !fullResponse.data) {
-                console.log(`[Pay Register] Pay register not found, creating for employee ${index + 1}`);
-                const createResponse = await api.createPayRegister(employeeId, monthStr);
-                if (createResponse.success && createResponse.data) {
-                  fullResponse = createResponse;
-                } else {
-                  console.warn(`[Pay Register] Failed to create pay register for employee ${index + 1}:`, createResponse);
-                  return null;
-                }
-              }
-
-              if (fullResponse.success && fullResponse.data) {
-                console.log(`[Pay Register] Successfully loaded pay register for employee ${index + 1}`);
-                return fullResponse.data;
-              }
-              console.warn(`[Pay Register] Failed to load pay register for employee ${index + 1}:`, fullResponse);
-              return null;
-            } catch (err) {
-              console.error(`[Pay Register] Error loading pay register for employee ${index + 1}:`, err);
-              // Try to create if get failed
-              try {
-                const employeeId = typeof pr.employeeId === 'object' ? pr.employeeId._id : pr.employeeId;
-                console.log(`[Pay Register] Attempting to create pay register for employee ${index + 1} after error`);
-                const createResponse = await api.createPayRegister(employeeId, monthStr);
-                if (createResponse.success && createResponse.data) {
-                  return createResponse.data;
-                }
-              } catch (createErr) {
-                console.error(`[Pay Register] Failed to create pay register for employee ${index + 1}:`, createErr);
-              }
-              return null;
-            }
-          })
-        );
-
-        const validPayRegisters = fullPayRegisters.filter(Boolean);
-        console.log('[Pay Register] Final valid pay registers:', validPayRegisters.length);
-        setPayRegisters(validPayRegisters);
-
-        if (validPayRegisters.length === 0 && payRegisterList.length > 0) {
-          console.warn('[Pay Register] No valid pay registers loaded despite API returning data');
+        if (payRegisterList.length === 0 && !append) {
+          toast.info('No employees found for this selection');
         }
       } else {
         console.error('[Pay Register] API call failed:', response);
-        setPayRegisters([]);
+        if (!append) setPayRegisters([]);
         if (response.message) {
           toast.error(response.message);
         }
       }
     } catch (err: any) {
       console.error('[Pay Register] Error loading pay registers:', err);
-      setPayRegisters([]);
+      if (!append) setPayRegisters([]);
       toast.error(err.message || 'Failed to load pay registers');
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
+  };
+
+  const handleLoadMore = () => {
+    const nextPage = page + 1;
+    setPage(nextPage);
+    loadPayRegisters(nextPage, true);
   };
 
   const handleSyncAll = async () => {
@@ -810,127 +777,134 @@ export default function PayRegisterPage() {
   };
 
   return (
-    <div className="space-y-6 p-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Pay Register</h1>
-        <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-          Manage monthly pay register for all employees
-        </p>
-      </div>
+    <div className="relative min-h-screen">
+      {/* Background */}
+      <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(to_right,#e2e8f01f_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f01f_1px,transparent_1px)] bg-[size:28px_28px] dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.12)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.12)_1px,transparent_1px)]" />
+      <div className="pointer-events-none fixed inset-0 bg-gradient-to-br from-blue-50/40 via-blue-50/35 to-transparent dark:from-slate-900/60 dark:via-slate-900/65 dark:to-slate-900/80" />
 
-      {/* Filters */}
-      <div className="bg-white dark:bg-slate-800 rounded-lg shadow p-4">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {/* Month Selector */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-              Month
-            </label>
-            <input
-              type="month"
-              value={monthStr}
-              onChange={(e) => {
-                const [y, m] = e.target.value.split('-');
-                setCurrentDate(new Date(parseInt(y), parseInt(m) - 1));
-              }}
-              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-white"
-            />
-          </div>
+      <div className="relative z-10 mx-auto max-w-[1920px] p-6">
+        {/* Header */}
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-4 pb-2">
+          <div className="flex flex-wrap items-center gap-4">
+            {/* Title Section */}
+            <div className="flex items-center gap-3 shrink-0">
+              <div className="flex flex-col">
+                <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white whitespace-nowrap">Pay Register</h1>
+              </div>
 
-          {/* Division Filter */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-              Division
-            </label>
-            <select
-              value={selectedDivision}
-              onChange={(e) => {
-                setSelectedDivision(e.target.value);
-                setSelectedDepartment(''); // Reset department when division changes
-              }}
-              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-white"
-            >
-              <option value="">All Divisions</option>
-              {divisions.map((div) => (
-                <option key={div._id} value={div._id}>
-                  {div.name}
-                </option>
-              ))}
-            </select>
-          </div>
+              <div className="h-6 w-px bg-slate-200 dark:bg-slate-800 hidden md:block" />
+            </div>
 
-          {/* Department Filter */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-              Department
-            </label>
-            <select
-              value={selectedDepartment}
-              onChange={(e) => setSelectedDepartment(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-white"
-            >
-              <option value="">All Departments</option>
-              <option value="">All Departments</option>
-              {departments
-                .filter(dept => {
-                  if (!selectedDivision) return true;
-                  const currentDivision = divisions.find(d => d._id === selectedDivision);
-                  // Check if department ID is in the division's departments list
-                  // The departments array in Division might be strings or objects depending on API
-                  // Assuming strings based on usual behavior, but safe check needed
-                  return currentDivision?.departments?.some((d: any) =>
-                    d === dept._id || d._id === dept._id
-                  );
-                })
-                .map((dept) => (
-                  <option key={dept._id} value={dept._id}>
-                    {dept.name}
-                  </option>
+            {/* Filters Group */}
+            <div className="flex flex-nowrap items-center gap-1.5 p-1 bg-slate-100/50 dark:bg-slate-800/40 rounded-xl border border-slate-200/60 dark:border-slate-700/60 backdrop-blur-sm">
+              {/* Division Filter */}
+              <select
+                value={selectedDivision}
+                onChange={(e) => {
+                  setSelectedDivision(e.target.value);
+                  setSelectedDepartment('');
+                }}
+                className="h-8 pl-2 pr-6 text-[11px] font-semibold bg-white dark:bg-slate-800 border-0 rounded-lg focus:ring-2 focus:ring-blue-500/20 text-slate-700 dark:text-slate-300 shadow-sm min-w-[100px] max-w-[140px]"
+              >
+                <option value="">All Divisions</option>
+                {divisions.map((div) => (
+                  <option key={div._id} value={div._id}>{div.name}</option>
                 ))}
-            </select>
-          </div>
+              </select>
 
-          {/* Actions + Payroll Strategy */}
-          <div className="flex items-end gap-3 flex-wrap">
-            <div className="flex items-center gap-2">
-              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">Payroll Engine</label>
+              {/* Department Filter */}
+              <select
+                value={selectedDepartment}
+                onChange={(e) => setSelectedDepartment(e.target.value)}
+                className="h-8 pl-2 pr-6 text-[11px] font-semibold bg-white dark:bg-slate-800 border-0 rounded-lg focus:ring-2 focus:ring-blue-500/20 text-slate-700 dark:text-slate-300 shadow-sm min-w-[100px] max-w-[140px]"
+              >
+                <option value="">All Departments</option>
+                {departments
+                  .filter(dept => {
+                    if (!selectedDivision) return true;
+                    const currentDivision = divisions.find(d => d._id === selectedDivision);
+                    return currentDivision?.departments?.some((d: any) => d === dept._id || d._id === dept._id);
+                  })
+                  .map((dept) => (
+                    <option key={dept._id} value={dept._id}>{dept.name}</option>
+                  ))}
+              </select>
+
+              {/* Payroll Engine selector (Previously Payroll Strategy) */}
               <select
                 value={payrollStrategy}
                 onChange={(e) => setPayrollStrategy(e.target.value as any)}
-                className="px-2 py-1 text-xs border border-slate-300 dark:border-slate-700 rounded-md dark:bg-slate-800 dark:text-white"
+                className="h-8 pl-2 pr-6 text-[11px] font-semibold bg-blue-50 dark:bg-blue-900/20 border-0 rounded-lg focus:ring-2 focus:ring-blue-500/20 text-blue-700 dark:text-blue-400 shadow-sm"
               >
-                <option value="new">Use Payroll Records Only (new)</option>
-                <option value="legacy">All related data (legacy)</option>
+                <option value="new">Engine: New</option>
+                <option value="legacy">Engine: Legacy</option>
               </select>
             </div>
+
+            {/* Month/Year Navigation */}
+            <div className="flex items-center gap-0.5 p-0.5 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+              <button
+                onClick={() => {
+                  const newDate = new Date(currentDate);
+                  newDate.setMonth(currentDate.getMonth() - 1);
+                  setCurrentDate(newDate);
+                }}
+                className="h-8 w-8 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+              >
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+
+              <input
+                type="month"
+                value={monthStr}
+                onChange={(e) => {
+                  const [y, m] = e.target.value.split('-');
+                  setCurrentDate(new Date(parseInt(y), parseInt(m) - 1));
+                }}
+                className="h-8 bg-transparent border-0 text-[11px] font-bold text-slate-900 dark:text-white focus:ring-0 p-0 cursor-pointer w-[100px]"
+              />
+
+              <button
+                onClick={() => {
+                  const newDate = new Date(currentDate);
+                  newDate.setMonth(currentDate.getMonth() + 1);
+                  setCurrentDate(newDate);
+                }}
+                className="h-8 w-8 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+              >
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-nowrap items-center gap-3 shrink-0">
             <button
               onClick={handleSyncAll}
               disabled={syncing}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="h-9 px-4 flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-sm disabled:opacity-50 transition-all"
             >
-              {syncing ? 'Syncing All...' : 'Sync All'}
+              <svg className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              {syncing ? 'Syncing...' : 'Sync All'}
             </button>
+
             {(() => {
-              // Strict restriction for Past Months:
-              // If ANY payroll record exists for the listed employees, HIDE the Calculate button.
-              // This forces users to view the existing batch/payslips instead of recalculating.
               if (isPastMonth) {
                 const hasPayrollRecords = payRegisters.some(pr => !!pr.payrollId);
-                if (hasPayrollRecords) {
-                  return null; // Hide button completely
-                }
+                if (hasPayrollRecords) return null;
               }
 
-              // Determine button state based on Selected Department
               if (selectedDepartment) {
                 const batchInfo = departmentBatchStatus.get(selectedDepartment);
                 const status = batchInfo?.status || 'pending';
                 const permissionGranted = batchInfo?.permissionGranted || false;
 
-                if (status === 'freeze' || status === 'complete') {
-                  return null; // Do not display for Frozen/Complete
-                }
+                if (status === 'freeze' || status === 'complete') return null;
 
                 if (status === 'approved' && !permissionGranted) {
                   return (
@@ -943,37 +917,34 @@ export default function PayRegisterPage() {
                           toast.error("Batch ID not found");
                         }
                       }}
-                      className="px-4 py-2 bg-amber-500 text-white rounded-md hover:bg-amber-600 shadow-sm"
+                      className="h-9 px-4 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-xl shadow-sm transition-all"
                     >
-                      Request Recalculation Permission
+                      Permission Required
                     </button>
                   );
                 }
 
-                // Pending or Approved+Permission -> Show Recalculate
                 return (
                   <button
                     onClick={handleCalculatePayrollForAll}
                     disabled={bulkCalculating || exportingExcel}
-                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                    className="h-9 px-4 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-xl shadow-sm disabled:opacity-50 transition-all"
                   >
-                    {bulkCalculating ? 'Calculating...' : exportingExcel ? 'Preparing Excel...' : 'Recalculate Payroll'}
+                    {bulkCalculating ? 'Calculating...' : 'Recalculate Payroll'}
                   </button>
                 );
               }
 
-              // Default (All Departments)
               return (
                 <>
                   <button
                     onClick={handleCalculatePayrollForAll}
                     disabled={bulkCalculating || exportingExcel}
-                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                    className="h-9 px-4 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-xl shadow-sm disabled:opacity-50 transition-all"
                   >
-                    {bulkCalculating ? 'Calculating...' : exportingExcel ? 'Preparing Excel...' : 'Calculate Payroll (Listed)'}
+                    {bulkCalculating ? 'Calculating...' : 'Calculate Payroll'}
                   </button>
 
-                  {/* Export Excel Button */}
                   <button
                     onClick={async () => {
                       const listedEmployeeIds = payRegisters.map((pr) =>
@@ -982,10 +953,9 @@ export default function PayRegisterPage() {
                       await downloadPayrollExcel(listedEmployeeIds);
                     }}
                     disabled={exportingExcel || payRegisters.length === 0}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm flex items-center gap-2"
-                    title="Export payroll to Excel for listed employees"
+                    className="h-9 px-4 flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold rounded-xl shadow-sm disabled:opacity-50 transition-all"
                   >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
                     {exportingExcel ? 'Exporting...' : 'Export Excel'}
@@ -1187,6 +1157,7 @@ export default function PayRegisterPage() {
           <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-xs">
+                {/* ... (table content - unchanged) ... */}
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
                     <th className="sticky left-0 z-10 w-[180px] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
@@ -1484,6 +1455,17 @@ export default function PayRegisterPage() {
                 </tbody>
               </table>
             </div>
+            {hasMore && (
+              <div className="flex justify-center p-4 border-t border-slate-200 dark:border-slate-700">
+                <button
+                  onClick={handleLoadMore}
+                  disabled={loadingMore}
+                  className="px-4 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
+                >
+                  {loadingMore ? 'Loading...' : 'Load More Employees'}
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -219,7 +219,7 @@ export interface ApiResponse<T> {
     page: number;
     limit: number;
     totalPages: number;
-    totalEmployees: number;
+    total: number;
   };
 }
 
@@ -2593,11 +2593,13 @@ export const api = {
     });
   },
 
-  getEmployeesWithPayRegister: async (month: string, departmentId?: string, divisionId?: string, status?: string) => {
+  getEmployeesWithPayRegister: async (month: string, departmentId?: string, divisionId?: string, status?: string, page?: number, limit?: number) => {
     const query = new URLSearchParams();
     if (departmentId) query.append('departmentId', departmentId);
     if (divisionId) query.append('divisionId', divisionId);
     if (status) query.append('status', status);
+    if (page) query.append('page', String(page));
+    if (limit) query.append('limit', String(limit));
     return apiRequest<any>(`/pay-register/employees/${month}${query.toString() ? `?${query.toString()}` : ''}`, {
       method: 'GET',
     });
