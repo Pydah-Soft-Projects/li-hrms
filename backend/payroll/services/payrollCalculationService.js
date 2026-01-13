@@ -936,11 +936,12 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
       console.log(`✓ Days validation passed: ${calculatedTotal} = ${monthDays}`);
     }
 
-    // Step 4: Calculate Extra Days
-    // Formula: Extra Days = Payable Shifts - (Present Days + OD Days)
-    const extraDays = Math.max(0, payableShifts - presentDays - odDays);
-    console.log(`\nExtra Days Calculation:`);
-    console.log(`  Extra Days = ${payableShifts} - (${presentDays} + ${odDays}) = ${extraDays}`);
+    // Step 4: Calculate Extra Days (Incentive Units)
+    // Formula: Extra Days = Payable Units - (Worked Days + Paid Leave Units)
+    // This represents the shift-based bonus (e.g. Double Shift = 1.0 extra)
+    const extraDays = Math.max(0, payableShifts - (presentDays + odDays + paidLeaveDays));
+    console.log(`\nExtra Days Calculation (Incentive):`);
+    console.log(`  Extra Days = ${payableShifts} - (${presentDays} + ${odDays} + ${paidLeaveDays}) = ${extraDays}`);
 
     // Step 5: Calculate Total Paid Days
     // Formula: Total Paid Days = Present + Week Offs + Paid Leave + Extra + OD
@@ -955,22 +956,28 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     console.log(`  Total Paid Days = ${presentDays} + ${weeklyOffs} + ${paidLeaveDays} + ${extraDays} + ${odDays} = ${totalPaidDays}`);
 
     // Step 6: Calculate Working Days and Per Day Salary
-    const workingDays = monthDays - holidays - weeklyOffs;
-    if (workingDays <= 0) throw new Error('Working days computed as zero or negative');
-
+    // divisor = monthDays (standard month pay)
     const basicPay = employee.gross_salary;
-    const perDaySalary = basicPay / workingDays;
+    const perDaySalary = basicPay / monthDays;
     console.log(`\nSalary Calculation:`);
     console.log(`  Basic Pay: ₹${basicPay}`);
-    console.log(`  Working Days: ${workingDays}`);
+    console.log(`  Month Days (Divisor): ${monthDays}`);
     console.log(`  Per Day Salary: ₹${perDaySalary.toFixed(2)}`);
 
-    // Step 7: Calculate Earned Salary (NEW FORMULA)
-    // Formula: Earned Salary = Total Paid Days × Per Day Salary
-    const earnedSalary = totalPaidDays * perDaySalary;
-    console.log(`  Earned Salary = ${totalPaidDays} × ₹${perDaySalary.toFixed(2)} = ₹${earnedSalary.toFixed(2)}`);
+    // Step 7: Calculate Earned Salary (Base Days)
+    // Formula: Base Paid Days = Month Days - Absent Days
+    // This includes Present + Weekly Offs + Holidays + Paid Leave + OD
+    const basePaidDays = Math.max(0, monthDays - absentDays);
+    const earnedSalary = basePaidDays * perDaySalary;
+    console.log(`\nEarned Salary Calculation:`);
+    console.log(`  Base Paid Days = ${monthDays} - ${absentDays} = ${basePaidDays}`);
+    console.log(`  Earned Salary = ${basePaidDays} × ₹${perDaySalary.toFixed(2)} = ₹${earnedSalary.toFixed(2)}`);
 
-    // Step 8: Calculate OT Pay
+    // Step 8: Calculate Incentive Amount (Extra Shifts)
+    const incentiveAmount = extraDays * perDaySalary;
+    console.log(`  Incentive Amount = ${extraDays.toFixed(2)} × ₹${perDaySalary.toFixed(2)} = ₹${incentiveAmount.toFixed(2)}`);
+
+    // Step 9: Calculate OT Pay
     const otPayResult = await otPayService.calculateOTPay(
       attendanceSummary.totalOTHours || 0,
       departmentId.toString()
@@ -984,9 +991,11 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     console.log(`  OT Days: ${otDays}`);
     console.log(`  OT Pay: ₹${otPay.toFixed(2)}`);
 
-    // Step 9: Initial Gross Salary (before allowances)
-    let grossAmountSalary = earnedSalary + otPay;
-    console.log(`\nInitial Gross Salary (before allowances): ₹${grossAmountSalary.toFixed(2)}`);
+    // Step 10: Initial Gross Salary (before allowances)
+    // Formula: Gross = Earned Salary (Base) + Incentive (Extra Shifts) + OT Pay
+    let grossAmountSalary = earnedSalary + incentiveAmount + otPay;
+    console.log(`\nInitial Gross Salary (before allowances):`);
+    console.log(`  ₹${earnedSalary.toFixed(2)} + ₹${incentiveAmount.toFixed(2)} + ₹${otPay.toFixed(2)} = ₹${grossAmountSalary.toFixed(2)}`);
     console.log('========================================\n');
 
     // Get includeMissing setting (whether to include non-overridden base items)
@@ -1169,8 +1178,8 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     // Earnings
     payrollRecord.set('earnings.basicPay', Number(basicPay) || 0);
     payrollRecord.set('earnings.perDayBasicPay', Number(perDaySalary) || 0);
-    payrollRecord.set('earnings.payableAmount', Number(earnedSalary) || 0);
-    payrollRecord.set('earnings.incentive', Number(extraDays * perDaySalary) || 0); // Incentive from extra days
+    payrollRecord.set('earnings.payableAmount', Number(earnedSalary) || 0); // This is Earned Salary (Base Days)
+    payrollRecord.set('earnings.incentive', Number(incentiveAmount) || 0); // This is Incentive (Extra Shifts)
     payrollRecord.set('earnings.otPay', Number(otPay) || 0);
     payrollRecord.set('earnings.otHours', Number(otHours) || 0);
     payrollRecord.set('earnings.otRatePerHour', Number(otRatePerHour) || 0);
