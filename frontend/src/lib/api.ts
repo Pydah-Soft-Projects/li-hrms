@@ -214,6 +214,13 @@ export interface ApiResponse<T> {
   syncError?: any;
   identifier?: string;
   generatedPassword?: string;
+  jobId?: string;
+  pagination?: {
+    page: number;
+    limit: number;
+    totalPages: number;
+    totalEmployees: number;
+  };
 }
 
 export interface LoginResponse {
@@ -654,6 +661,10 @@ export const api = {
     return apiRequest<any>('/dashboard/stats', { method: 'GET' });
   },
 
+  getDashboardAnalytics: async () => {
+    return apiRequest<any>('/dashboard/analytics', { method: 'GET' });
+  },
+
   getEmployeesWithoutAccount: async () => {
     return apiRequest<any>('/users/employees-without-account', { method: 'GET' });
   },
@@ -1010,13 +1021,23 @@ export const api = {
   },
 
   // Employees
-  getEmployees: async (filters?: { is_active?: boolean; department_id?: string; division_id?: string; designation_id?: string; includeLeft?: boolean }) => {
+  getEmployees: async (filters?: {
+    is_active?: boolean;
+    department_id?: string;
+    division_id?: string;
+    designation_id?: string;
+    includeLeft?: boolean;
+    page?: number;
+    limit?: number;
+  }) => {
     const params = new URLSearchParams();
     if (filters?.is_active !== undefined) params.append('is_active', String(filters.is_active));
     if (filters?.department_id) params.append('department_id', filters.department_id);
     if (filters?.division_id) params.append('division_id', filters.division_id);
     if (filters?.designation_id) params.append('designation_id', filters.designation_id);
     if (filters?.includeLeft !== undefined) params.append('includeLeft', String(filters.includeLeft));
+    if (filters?.page !== undefined) params.append('page', String(filters.page));
+    if (filters?.limit !== undefined) params.append('limit', String(filters.limit));
     const query = params.toString() ? `?${params.toString()}` : '';
     return apiRequest<any>(`/employees${query}`, { method: 'GET' });
   },

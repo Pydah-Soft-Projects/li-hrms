@@ -19,6 +19,7 @@ const sqlHelper = require('../../employees/config/sqlHelper');
 const { generatePassword, sendCredentials } = require('../../shared/services/passwordNotificationService');
 const s3UploadService = require('../../shared/services/s3UploadService');
 const { resolveQualificationLabels } = require('../services/fieldMappingService');
+const { applicationQueue } = require('../../shared/jobs/queueManager');
 
 /**
  * Internal helper for creating a single application
@@ -748,28 +749,18 @@ exports.bulkApproveApplications = async (req, res) => {
       });
     }
 
-    const results = {
-      successCount: 0,
-      failCount: 0,
-      errors: [],
-    };
+    // Enqueue Bulk Approval Job
+    const job = await applicationQueue.add('approve-bulk', {
+      type: 'approve-bulk',
+      applicationIds,
+      bulkSettings,
+      approverId: req.user._id
+    });
 
-    // Process applications one by one (to avoid too much concurrent load and handle individual errors)
-    for (const id of applicationIds) {
-      try {
-        await approveSingleApplicationInternal(id, bulkSettings || {}, req.user._id);
-        results.successCount++;
-      } catch (error) {
-        results.failCount++;
-        results.errors.push({ id, message: error.message });
-        console.error(`Bulk approval failed for application ${id}:`, error.message);
-      }
-    }
-
-    res.status(200).json({
-      success: results.failCount === 0,
-      message: `Bulk approval completed: ${results.successCount} succeeded, ${results.failCount} failed.`,
-      data: results,
+    res.status(202).json({
+      success: true,
+      message: `Bulk approval job queued for ${applicationIds.length} applications.`,
+      jobId: job.id,
     });
   } catch (error) {
     console.error('Error in bulk approving applications:', error);
@@ -868,43 +859,18 @@ exports.bulkRejectApplications = async (req, res) => {
       });
     }
 
-    const results = {
-      successCount: 0,
-      failCount: 0,
-      errors: [],
-    };
+    // Enqueue Bulk Rejection Job
+    const job = await applicationQueue.add('reject-bulk', {
+      type: 'reject-bulk',
+      applicationIds,
+      comments,
+      approverId: req.user._id
+    });
 
-    // Process applications one by one
-    for (const id of applicationIds) {
-      try {
-        const application = await EmployeeApplication.findById(id);
-
-        if (!application) {
-          throw new Error(`Application ${id} not found`);
-        }
-
-        if (application.status !== 'pending') {
-          throw new Error(`Application for ${application.emp_no} is already ${application.status}`);
-        }
-
-        application.status = 'rejected';
-        application.rejectedBy = req.user._id;
-        application.rejectionComments = comments || 'Bulk rejected';
-        application.rejectedAt = new Date();
-
-        await application.save();
-        results.successCount++;
-      } catch (error) {
-        results.failCount++;
-        results.errors.push({ id, message: error.message });
-        console.error(`Bulk rejection failed for application ${id}:`, error.message);
-      }
-    }
-
-    res.status(200).json({
-      success: results.failCount === 0,
-      message: `Bulk rejection completed: ${results.successCount} succeeded, ${results.failCount} failed.`,
-      data: results,
+    res.status(202).json({
+      success: true,
+      message: `Bulk rejection job queued for ${applicationIds.length} applications.`,
+      jobId: job.id,
     });
   } catch (error) {
     console.error('Error in bulk rejecting applications:', error);

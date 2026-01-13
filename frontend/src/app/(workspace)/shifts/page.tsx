@@ -130,10 +130,13 @@ export default function ShiftsPage() {
         const resolveShiftsList = (list: (string | any)[] | undefined): Shift[] => {
           if (!list || list.length === 0) return [];
           return list.map(item => {
-            if (typeof item === 'string') {
-              return allShifts.find((s: any) => s._id === item) || null;
+            let val = item;
+            if (val && typeof val === 'object' && 'shiftId' in val) val = val.shiftId;
+
+            if (typeof val === 'string') {
+              return allShifts.find((s: any) => s._id === val) || null;
             }
-            return item; // Assume it's an object
+            return val;
           }).filter(Boolean) as Shift[];
         };
 
@@ -722,8 +725,10 @@ export default function ShiftsPage() {
             {/* 1. Division Defaults */}
             {scopedDivisions.length > 0 && scopedDivisions.map(division => {
               const divisionShifts = (division.shifts || []).map(s => {
-                if (typeof s === 'string') return shifts.find(allS => allS._id === s);
-                return s;
+                let val: any = s;
+                if (val && typeof val === 'object' && 'shiftId' in val) val = val.shiftId;
+                const shiftId = typeof val === 'string' ? val : val._id;
+                return typeof val === 'string' ? shifts.find(allS => allS._id === shiftId) : val;
               }).filter(Boolean) as Shift[];
 
               if (divisionShifts.length === 0) return null;
@@ -747,8 +752,10 @@ export default function ShiftsPage() {
               // Collect all effective shifts for this department
               // 1. Direct Department Shifts
               const directShifts = (dept.shifts || []).map(s => {
-                const shiftId = typeof s === 'string' ? s : s._id;
-                return typeof s === 'string' ? shifts.find(allS => allS._id === s) : s;
+                let val: any = s;
+                if (val && typeof val === 'object' && 'shiftId' in val) val = val.shiftId;
+                const shiftId = typeof val === 'string' ? val : val._id;
+                return typeof val === 'string' ? shifts.find(allS => allS._id === shiftId) : val;
               }).filter(Boolean) as Shift[];
 
               // 2. Division-Specific Department Shifts (from divisionDefaults)
@@ -761,8 +768,10 @@ export default function ShiftsPage() {
                 }
                 return [];
               }).map(s => {
-                const shiftId = typeof s === 'string' ? s : s._id;
-                return typeof s === 'string' ? shifts.find(allS => allS._id === s) : s;
+                let val: any = s;
+                if (val && typeof val === 'object' && 'shiftId' in val) val = val.shiftId;
+                const shiftId = typeof val === 'string' ? val : (val as any)._id; // Cast to avoid TS validation if type is incomplete
+                return typeof val === 'string' ? shifts.find(allS => allS._id === shiftId) : val;
               }).filter(Boolean) as Shift[];
 
               const allDeptShifts = [...directShifts, ...divDefaultShifts];
@@ -810,8 +819,10 @@ export default function ShiftsPage() {
 
                           // Resolve Objects
                           const resolvedDesShifts = effectiveShifts.map(s => {
-                            const shiftId = typeof s === 'string' ? s : s._id;
-                            return typeof s === 'string' ? shifts.find(allS => allS._id === s) : s;
+                            let val: any = s;
+                            if (val && typeof val === 'object' && 'shiftId' in val) val = val.shiftId;
+                            const shiftId = typeof val === 'string' ? val : (val as any)._id;
+                            return typeof val === 'string' ? shifts.find(allS => allS._id === shiftId) : val;
                           }).filter(Boolean) as Shift[];
 
                           if (resolvedDesShifts.length === 0) return null;

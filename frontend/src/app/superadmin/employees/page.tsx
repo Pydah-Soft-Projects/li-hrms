@@ -1,6 +1,6 @@
 'use client'; // Cache bust: Force recompile 1
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { api, Employee, Department, Division, Designation, EmployeeApplication, Allowance, Deduction } from '@/lib/api';
 import { auth } from '@/lib/auth';
@@ -191,6 +191,11 @@ const RenderFilterHeader = ({
   );
 };
 
+const isEmployeeActive = (employee: any) => {
+  const status = employee.is_active;
+  return status === true || status === 1 || (status !== false && status !== 0 && status !== '0');
+};
+
 export default function EmployeesPage() {
   const [activeTab, setActiveTab] = useState<'employees' | 'applications'>('employees');
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -224,7 +229,8 @@ export default function EmployeesPage() {
     email: true
   });
   const [dataSource, setDataSource] = useState<string>('mongodb');
-  const [searchTerm, setSearchTerm] = useState('');
+
+
   const [applicationSearchTerm, setApplicationSearchTerm] = useState('');
   const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [userRole, setUserRole] = useState<string>('');
@@ -243,10 +249,20 @@ export default function EmployeesPage() {
     columns: [],
   });
 
-  // Pagination & Filtering State
-  const [employeePage, setEmployeePage] = useState(1);
-  const [employeeRowsPerPage, setEmployeeRowsPerPage] = useState(10);
+  // Infinite Scrolling State (replacing client-side pagination)
+  const [currentPage, setCurrentPage] = useState(1);
+  const [hasMoreEmployees, setHasMoreEmployees] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const observerTarget = useRef<HTMLDivElement>(null);
   const [employeeFilters, setEmployeeFilters] = useState<Record<string, string>>({});
+
+  // Search and Filter State
+  const [searchQuery, setSearchQuery] = useState('');
+
+
+  // Keep these for any remaining UI that might reference them
+  const [employeePage, setEmployeePage] = useState(1);
+  const [employeeRowsPerPage, setEmployeeRowsPerPage] = useState(50);
 
   const [applicationPage, setApplicationPage] = useState(1);
   const [applicationRowsPerPage, setApplicationRowsPerPage] = useState(10);
@@ -626,7 +642,7 @@ export default function EmployeesPage() {
     if (user) {
       setUserRole(user.role);
     }
-    loadEmployees();
+    loadEmployees(1, false); // Load first page
     loadDivisions();
     loadDepartments();
     loadFormSettings();
@@ -651,6 +667,7 @@ export default function EmployeesPage() {
       console.error('Error loading divisions:', err);
     }
   };
+
 
   useEffect(() => {
     // Show all designations since they are now global
@@ -942,51 +959,53 @@ export default function EmployeesPage() {
     return value;
   };
 
-  const loadEmployees = async () => {
+  const loadEmployees = async (pageNum: number = 1, append: boolean = false) => {
     try {
-      setLoading(true);
+      if (!append) setLoading(true);
+
       const response = await api.getEmployees({
         ...(includeLeftEmployees ? { includeLeft: true } : {}),
+        ...(searchQuery ? { search: searchQuery } : {}),
+        ...(selectedDivisionFilter ? { divisionId: selectedDivisionFilter } : {}),
+        page: pageNum,
+        limit: 50,
       });
+
       if (response.success) {
         // Ensure paidLeaves is always included and is a number
         const employeesData = (response.data || []).map((emp: any, index: number) => {
           const paidLeaves = emp.paidLeaves !== undefined && emp.paidLeaves !== null ? Number(emp.paidLeaves) : 0;
-          // Debug: Log first employee to check paidLeaves and reporting_to
-          if (index === 0) {
-            console.log('Loading employee:', {
-              emp_no: emp.emp_no,
-              paidLeaves,
-              original: emp.paidLeaves,
-              reporting_to: emp.reporting_to,
-              dynamicFields: emp.dynamicFields,
-              reporting_to_in_dynamicFields: emp.dynamicFields?.reporting_to
-            });
-          }
-          // Debug: Log any employee with reporting_to or reporting_to_
-          if (emp.reporting_to || emp.reporting_to_ || emp.dynamicFields?.reporting_to || emp.dynamicFields?.reporting_to_) {
-            console.log('Employee with reporting_to:', {
-              emp_no: emp.emp_no,
-              reporting_to_root: emp.reporting_to,
-              reporting_to__root: emp.reporting_to_,
-              reporting_to_dynamic: emp.dynamicFields?.reporting_to,
-              reporting_to__dynamic: emp.dynamicFields?.reporting_to_,
-              isArray: Array.isArray(emp.reporting_to || emp.reporting_to_ || emp.dynamicFields?.reporting_to || emp.dynamicFields?.reporting_to_),
-              firstItem: (emp.reporting_to || emp.reporting_to_ || emp.dynamicFields?.reporting_to || emp.dynamicFields?.reporting_to_)?.[0]
-            });
-          }
           return {
             ...emp,
             paidLeaves,
           };
         });
-        setEmployees(employeesData);
+
+        if (append) {
+          setEmployees(prev => [...prev, ...employeesData]);
+        } else {
+          setEmployees(employeesData);
+        }
+
         setDataSource(response.dataSource || 'mongodb');
+
+        // Update pagination state
+        const pagination = (response as any).pagination;
+        if (pagination) {
+          setHasMoreEmployees(pagination.page < pagination.totalPages);
+          setCurrentPage(pagination.page);
+        } else {
+          setHasMoreEmployees(false);
+        }
       }
     } catch (err) {
       console.error('Error loading employees:', err);
     } finally {
-      setLoading(false);
+      if (append) {
+        setLoadingMore(false);
+      } else {
+        setLoading(false);
+      }
     }
   };
 
@@ -1007,6 +1026,48 @@ export default function EmployeesPage() {
       console.error('Error loading departments:', err);
     }
   };
+
+  const loadMoreEmployees = useCallback(async () => {
+    if (loadingMore || !hasMoreEmployees) return;
+
+    setLoadingMore(true);
+    const nextPage = currentPage + 1;
+    await loadEmployees(nextPage, true);
+  }, [currentPage, hasMoreEmployees, loadingMore, loadEmployees]);
+
+  // Trigger search and filter with debounce
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      // Reset to page 1 and load with new filters
+      loadEmployees(1, false);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery, selectedDivisionFilter]);
+
+
+  // Intersection Observer for infinite scroll
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMoreEmployees && !loading && !loadingMore) {
+          loadMoreEmployees();
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    const currentTarget = observerTarget.current;
+    if (currentTarget) {
+      observer.observe(currentTarget);
+    }
+
+    return () => {
+      if (currentTarget) {
+        observer.unobserve(currentTarget);
+      }
+    };
+  }, [hasMoreEmployees, loading, loadingMore, loadMoreEmployees]);
 
   const loadApplications = async () => {
     try {
@@ -1586,23 +1647,8 @@ export default function EmployeesPage() {
     setError('');
   };
 
-  const filteredEmployeesBase = employees.filter(emp => {
-    // Filter by search term
-    const matchesSearch =
-      emp.emp_no.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      emp.employee_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      emp.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      emp.phone_number?.includes(searchTerm);
-
-    // Filter by left employees (if includeLeftEmployees is false, exclude those with leftDate)
-    const matchesLeftFilter = includeLeftEmployees || !emp.leftDate;
-
-    // Filter by selected division
-    const matchesDivision = !selectedDivisionFilter ||
-      (emp.division?._id === selectedDivisionFilter || emp.division_id === selectedDivisionFilter);
-
-    return matchesSearch && matchesLeftFilter && matchesDivision;
-  });
+  // Filtering is now handled server-side via loadEmployees
+  const filteredEmployeesBase = employees;
 
   // Apply column filters
   const filteredEmployees = filterData(filteredEmployeesBase, employeeFilters);
@@ -1933,8 +1979,8 @@ export default function EmployeesPage() {
             <input
               type="text"
               placeholder={activeTab === 'employees' ? "Search employees..." : "Search applications..."}
-              value={activeTab === 'employees' ? searchTerm : applicationSearchTerm}
-              onChange={(e) => activeTab === 'employees' ? setSearchTerm(e.target.value) : setApplicationSearchTerm(e.target.value)}
+              value={activeTab === 'employees' ? searchQuery : applicationSearchTerm}
+              onChange={(e) => activeTab === 'employees' ? setSearchQuery(e.target.value) : setApplicationSearchTerm(e.target.value)}
               className="w-full rounded-2xl border border-slate-200 bg-white pl-11 pr-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
             />
             <svg className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -2376,14 +2422,14 @@ export default function EmployeesPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                        {paginatedEmployees.length === 0 ? (
+                        {employees.length === 0 ? (
                           <tr>
                             <td colSpan={7} className="px-6 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
                               No employees found matching your criteria
                             </td>
                           </tr>
                         ) : (
-                          paginatedEmployees.map((employee) => (
+                          employees.map((employee) => (
                             <tr
                               key={employee.emp_no}
                               className="transition-colors hover:bg-green-50/30 dark:hover:bg-green-900/10 cursor-pointer"
@@ -2412,11 +2458,11 @@ export default function EmployeesPage() {
                               </td>
                               <td className="whitespace-nowrap px-6 py-4">
                                 <div className="flex flex-col gap-1">
-                                  <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${(employee.is_active === true || employee.is_active === 1 || (employee.is_active !== false && employee.is_active !== 0 && employee.is_active !== '0'))
+                                  <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${isEmployeeActive(employee)
                                     ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
                                     : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
                                     }`}>
-                                    {(employee.is_active === true || employee.is_active === 1 || (employee.is_active !== false && employee.is_active !== 0 && employee.is_active !== '0')) ? 'Active' : 'Inactive'}
+                                    {isEmployeeActive(employee) ? 'Active' : 'Inactive'}
                                   </span>
                                   {employee.leftDate && (
                                     <span className="inline-flex rounded-full px-2.5 py-1 text-xs font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
@@ -2499,20 +2545,20 @@ export default function EmployeesPage() {
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         if (updatingStatusIds.has(employee.emp_no)) return;
-                                        const isActive = (employee.is_active === true || employee.is_active === 1 || (employee.is_active !== false && employee.is_active !== 0 && employee.is_active !== '0'));
+                                        const isActive = isEmployeeActive(employee);
                                         handleDeactivate(employee.emp_no, isActive);
                                       }}
                                       disabled={updatingStatusIds.has(employee.emp_no)}
-                                      className={`rounded-lg p-2 transition-all ${(employee.is_active === true || employee.is_active === 1 || (employee.is_active !== false && employee.is_active !== 0 && employee.is_active !== '0'))
+                                      className={`rounded-lg p-2 transition-all ${isEmployeeActive(employee)
                                         ? 'text-amber-400 hover:bg-amber-50 hover:text-amber-600 dark:hover:bg-amber-900/30 dark:hover:text-amber-400'
                                         : 'text-green-400 hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/30 dark:hover:text-green-400'
                                         } ${updatingStatusIds.has(employee.emp_no) ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                      title={(employee.is_active === true || employee.is_active === 1 || (employee.is_active !== false && employee.is_active !== 0 && employee.is_active !== '0')) ? 'Deactivate' : 'Activate'}
+                                      title={isEmployeeActive(employee) ? 'Deactivate' : 'Activate'}
                                     >
                                       {updatingStatusIds.has(employee.emp_no) ? (
                                         <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
                                       ) : (
-                                        (employee.is_active === true || employee.is_active === 1 || (employee.is_active !== false && employee.is_active !== 0 && employee.is_active !== '0')) ? (
+                                        isEmployeeActive(employee) ? (
                                           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
                                           </svg>
@@ -2533,55 +2579,35 @@ export default function EmployeesPage() {
                       </tbody>
                     </table>
                   </div>
-                  <div className="flex flex-wrap items-center justify-between gap-4 border-t border-slate-200 bg-slate-50/50 px-6 py-3 dark:border-slate-700 dark:bg-slate-900/50">
-                    {/* Show Entries Control */}
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-slate-600 dark:text-slate-400">Show</span>
-                      <select
-                        value={employeeRowsPerPage}
-                        onChange={(e) => {
-                          setEmployeeRowsPerPage(Number(e.target.value));
-                          setEmployeePage(1);
-                        }}
-                        className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm font-medium text-slate-700 focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                      >
-                        <option value={10}>10</option>
-                        <option value={20}>20</option>
-                        <option value={50}>50</option>
-                        <option value={100}>100</option>
-                      </select>
-                      <span className="text-sm text-slate-600 dark:text-slate-400">entries</span>
+                  {/* Infinite scroll trigger with skeleton loading */}
+                  {!loading && hasMoreEmployees && (
+                    <div ref={observerTarget}>
+                      {loadingMore && (
+                        <div className="border-t border-slate-200 dark:border-slate-700">
+                          {/* Skeleton loading rows */}
+                          {[...Array(3)].map((_, i) => (
+                            <div key={`skeleton-${i}`} className="flex items-center border-b border-slate-100 px-6 py-4 dark:border-slate-800">
+                              <div className="flex flex-1 items-center gap-4">
+                                <div className="h-4 w-12 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                                <div className="h-4 w-32 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                                <div className="h-4 w-24 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                                <div className="h-4 w-28 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                                <div className="h-4 w-20 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                                <div className="h-4 w-24 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-
-                    <p className="text-sm text-slate-600 dark:text-slate-400">
-                      Showing <span className="font-medium">{filteredEmployees.length}</span> of <span className="font-medium">{employees.length}</span> employees
-                    </p>
-
-                    {/* Pagination Controls */}
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => setEmployeePage(Math.max(1, employeePage - 1))}
-                        disabled={employeePage === 1}
-                        className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
-                      >
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                        </svg>
-                      </button>
-                      <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                        Page {employeePage} of {totalEmployeePages || 1}
-                      </span>
-                      <button
-                        onClick={() => setEmployeePage(Math.min(totalEmployeePages, employeePage + 1))}
-                        disabled={employeePage === totalEmployeePages || totalEmployeePages === 0}
-                        className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
-                      >
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                      </button>
+                  )}
+                  {!loading && !hasMoreEmployees && employees.length > 0 && (
+                    <div className="border-t border-slate-200 bg-slate-50/50 px-6 py-4 text-center dark:border-slate-700 dark:bg-slate-900/50">
+                      <p className="text-sm text-slate-500 dark:text-slate-400">
+                        Showing all {employees.length} employees
+                      </p>
                     </div>
-                  </div>
+                  )}
                 </div>
               )
             }

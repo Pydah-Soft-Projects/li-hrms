@@ -276,7 +276,10 @@ export default function DepartmentsPage() {
     setError('');
 
     try {
-      const response = await api.assignShifts(showShiftDialog._id, selectedShiftIds);
+      const response = await api.assignShifts(
+        showShiftDialog._id,
+        selectedShiftIds.map(id => ({ shiftId: id, gender: 'Any' }))
+      );
 
       if (response.success) {
         setShowShiftDialog(null);
@@ -462,7 +465,7 @@ export default function DepartmentsPage() {
       // Pass the current department ID to save shifts specifically for this department
       const response = await api.assignShiftsToDesignation(
         showDesignationShiftDialog._id,
-        selectedDesignationShiftIds,
+        selectedDesignationShiftIds.map(id => ({ shiftId: id, gender: 'Any' })),
         showDesignationDialog || undefined
       );
 

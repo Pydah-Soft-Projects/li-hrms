@@ -4,7 +4,7 @@
 /* eslint-disable @next/next/no-img-element */
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { api, Department, Division, Designation } from '@/lib/api';
@@ -189,6 +189,12 @@ export default function EmployeesPage() {
   const [applicationFilters, setApplicationFilters] = useState<Record<string, string>>({});
   const [activeFilterColumn, setActiveFilterColumn] = useState<string | null>(null);
   const [filterPos, setFilterPos] = useState({ top: 0, left: 0 });
+
+  // Infinite scrolling state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [hasMoreEmployees, setHasMoreEmployees] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const observerTarget = useRef<HTMLDivElement>(null);
 
   // Helper to extract unique values for a column
   const getUniqueValues = (data: any[], key: string, nestedKey?: string) => {
@@ -507,7 +513,7 @@ export default function EmployeesPage() {
       setUserRole(user.role);
       setCurrentUser(user);
     }
-    loadEmployees();
+    loadEmployees(1, false); // Load first page
     loadDivisions();
     loadDepartments();
     loadFormSettings();
@@ -515,6 +521,36 @@ export default function EmployeesPage() {
       loadApplications();
     }
   }, []);
+
+  // Reset pagination when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+    setHasMoreEmployees(true);
+    loadEmployees(1, false);
+  }, [includeLeftEmployees]);
+
+  // Intersection Observer for infinite scroll
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMoreEmployees && !loading && !loadingMore) {
+          loadMoreEmployees();
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    const currentTarget = observerTarget.current;
+    if (currentTarget) {
+      observer.observe(currentTarget);
+    }
+
+    return () => {
+      if (currentTarget) {
+        observer.unobserve(currentTarget);
+      }
+    };
+  }, [hasMoreEmployees, loading, loadingMore, currentPage]);
 
   useEffect(() => {
     if (activeTab === 'applications') {
@@ -706,17 +742,18 @@ export default function EmployeesPage() {
       const response = await api.bulkApproveEmployeeApplications(selectedApplicationIds, bulkSettings);
 
       if (response.success) {
-        setSuccess(`Bulk approval completed! Succeeded: ${response.data.successCount}, Failed: ${response.data.failCount}`);
+        // BullMQ returns jobId, not immediate results
+        setSuccess(`Bulk approval job queued successfully! Processing ${selectedApplicationIds.length} applications in the background. Job ID: ${response.jobId || 'N/A'}`);
       } else {
-        setError(response.message || 'Bulk approval failed or partially failed');
-        if (response.data?.successCount > 0) {
-          setSuccess(`Partially completed. Succeeded: ${response.data.successCount}`);
-        }
+        setError(response.message || 'Bulk approval failed');
       }
 
       setSelectedApplicationIds([]);
-      loadApplications();
-      loadEmployees();
+      // Reload after a short delay to see updated results
+      setTimeout(() => {
+        loadApplications();
+        loadEmployees();
+      }, 2000);
     } catch (err: any) {
       setError(err.message || 'An error occurred during bulk approval');
       console.error(err);
@@ -777,18 +814,20 @@ export default function EmployeesPage() {
     return value;
   };
 
-  const loadEmployees = async () => {
+  const loadEmployees = async (pageNum: number = 1, append: boolean = false) => {
     try {
-      setLoading(true);
+      if (!append) setLoading(true);
       const response = await api.getEmployees({
         ...(includeLeftEmployees ? { includeLeft: true } : {}),
+        page: pageNum,
+        limit: 50,
       });
       if (response.success) {
         // Ensure paidLeaves is always included and is a number
         const employeesData = (response.data || []).map((emp: any, index: number) => {
           const paidLeaves = emp.paidLeaves !== undefined && emp.paidLeaves !== null ? Number(emp.paidLeaves) : 0;
           // Debug: Log first employee to check paidLeaves and reporting_to
-          if (index === 0) {
+          if (index === 0 && pageNum === 1) {
             console.log('Loading employee:', {
               emp_no: emp.emp_no,
               paidLeaves,
@@ -816,15 +855,42 @@ export default function EmployeesPage() {
             paidLeaves,
           };
         });
-        setEmployees(employeesData);
+
+        if (append) {
+          setEmployees(prev => [...prev, ...employeesData]);
+        } else {
+          setEmployees(employeesData);
+        }
+
         setDataSource(response.dataSource || 'mongodb');
+
+        // Update pagination state
+        const pagination = response.pagination;
+        if (pagination) {
+          setHasMoreEmployees(pagination.page < pagination.totalPages);
+          setCurrentPage(pagination.page);
+        } else {
+          setHasMoreEmployees(false);
+        }
       }
     } catch (err) {
       console.error('Error loading employees:', err);
     } finally {
-      setLoading(false);
+      if (append) {
+        setLoadingMore(false);
+      } else {
+        setLoading(false);
+      }
     }
   };
+
+  const loadMoreEmployees = useCallback(async () => {
+    if (loadingMore || !hasMoreEmployees) return;
+
+    setLoadingMore(true);
+    const nextPage = currentPage + 1;
+    await loadEmployees(nextPage, true);
+  }, [currentPage, hasMoreEmployees, loadingMore, loadEmployees]);
 
   const loadDivisions = async () => {
     try {

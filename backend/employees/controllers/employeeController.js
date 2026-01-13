@@ -347,7 +347,7 @@ const transformEmployeeForResponse = async (employee, populateUsers = true) => {
  */
 exports.getAllEmployees = async (req, res) => {
   try {
-    const { is_active, division_id, department_id, designation_id, includeLeft, page = 1, limit = 50 } = req.query;
+    const { is_active, division_id, divisionId, department_id, designation_id, includeLeft, page = 1, limit = 50, search } = req.query;
     const { scopeFilter } = req; // Get scope filter from data scope middleware
     const settings = await getEmployeeSettings();
 
@@ -357,9 +357,20 @@ exports.getAllEmployees = async (req, res) => {
     // Build filters - merge scope filter with query filters
     const filters = { ...scopeFilter };
     if (is_active !== undefined) filters.is_active = is_active === 'true';
-    if (division_id) filters.division_id = division_id;
+    if (division_id || divisionId) filters.division_id = division_id || divisionId;
     if (department_id) filters.department_id = department_id;
     if (designation_id) filters.designation_id = designation_id;
+
+    // Search functionality
+    if (search) {
+      const searchRegex = new RegExp(search, 'i');
+      filters.$or = [
+        { emp_no: searchRegex },
+        { employee_name: searchRegex },
+        { phone_number: searchRegex },
+        { email: searchRegex }
+      ];
+    }
 
     // By default, exclude employees who have left (unless includeLeft=true)
     if (includeLeft !== 'true') {

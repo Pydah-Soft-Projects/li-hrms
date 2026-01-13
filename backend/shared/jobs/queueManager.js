@@ -26,7 +26,20 @@ const attendanceSyncQueue = new Queue('attendanceSyncQueue', {
     }
 });
 
+const applicationQueue = new Queue('applicationQueue', {
+    connection: redisConfig,
+    defaultJobOptions: {
+        attempts: 2,
+        backoff: {
+            type: 'exponential',
+            delay: 5000,
+        },
+        removeOnComplete: true,
+    }
+});
+
 module.exports = {
     payrollQueue,
-    attendanceSyncQueue
+    attendanceSyncQueue,
+    applicationQueue
 };

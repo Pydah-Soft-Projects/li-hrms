@@ -150,6 +150,7 @@ export default function AttendancePage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [filteredMonthlyData, setFilteredMonthlyData] = useState<MonthlyAttendanceData[]>([]);
+  const observerTarget = useRef<HTMLDivElement>(null);
 
   // OutTime dialog state
   const [showOutTimeDialog, setShowOutTimeDialog] = useState(false);
@@ -213,6 +214,29 @@ export default function AttendancePage() {
     // So we just pass through monthlyData.
     setFilteredMonthlyData(monthlyData);
   }, [monthlyData]);
+
+  // Intersection Observer for infinite scroll
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !loading && !loadingMore) {
+          setPage(prev => prev + 1);
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    const currentTarget = observerTarget.current;
+    if (currentTarget) {
+      observer.observe(currentTarget);
+    }
+
+    return () => {
+      if (currentTarget) {
+        observer.unobserve(currentTarget);
+      }
+    };
+  }, [hasMore, loading, loadingMore, page]);
 
   const loadDivisions = async () => {
     try {
@@ -975,199 +999,7 @@ export default function AttendancePage() {
   const daysArray = useMemo(() => Array.from({ length: daysInMonth }, (_, i) => i + 1), [daysInMonth]);
 
   // Virtualized row component
-  const Row = useCallback(({ index, style, data }: { index: number; style: React.CSSProperties; data: MonthlyAttendanceData[] }) => {
-    const item = data[index];
-    if (!item || !item.employee) {
-      console.log('Row index:', index, 'Missing item or employee');
-      return null;
-    }
-    console.log('Rendering row for:', item.employee.employee_name);
 
-    // Ensure dailyAttendance is always an object, never null or undefined
-    // Backend sends it as an object, but we add defensive check for safety
-    if (!item.dailyAttendance || typeof item.dailyAttendance !== 'object') {
-      console.warn('Invalid dailyAttendance for employee:', item.employee.employee_name, item.dailyAttendance);
-    }
-    const dailyAttendance = item.dailyAttendance ?? {};
-
-    // Safe helper to get values - prevents "Cannot convert undefined or null to object" error
-    const safeGetValues = (obj: any) => {
-      if (!obj || typeof obj !== 'object') return [];
-      try {
-        return Object.values(obj);
-      } catch (e) {
-        console.error('Error in Object.values:', e);
-        return [];
-      }
-    };
-
-    const daysPresent = item.presentDays !== undefined
-      ? item.presentDays
-      : safeGetValues(dailyAttendance).filter(
-        (record: any) => record && (record.status === 'PRESENT' || record.status === 'PARTIAL')
-      ).length;
-
-    const payableShifts = item.payableShifts !== undefined ? item.payableShifts : 0;
-    const monthPresent = safeGetValues(dailyAttendance).filter((r: any) => r?.status === 'PRESENT').length;
-    const monthAbsent = safeGetValues(dailyAttendance).filter((r: any) => r?.status === 'ABSENT').length;
-    const leaveRecords = safeGetValues(dailyAttendance).filter((r: any) => r?.status === 'LEAVE' || r?.hasLeave);
-    const totalLeaves = leaveRecords.length;
-    const lopCount = leaveRecords.filter((r: any) => {
-      const anyR = r as any;
-      return anyR?.leaveNature === 'lop' ||
-        anyR?.leaveInfo?.leaveType?.toLowerCase().includes('lop') ||
-        anyR?.leaveInfo?.leaveType?.toLowerCase().includes('loss of pay');
-    }).length;
-    const paidLeaves = totalLeaves - lopCount;
-    const totalODs = safeGetValues(dailyAttendance).filter((r: any) => r?.status === 'OD' || r?.hasOD).length;
-
-    // Helper for department/division names
-    const getDeptName = (emp: Employee) => {
-      if (emp.department && typeof emp.department === 'object') return emp.department.name;
-      if (emp.department_id && typeof emp.department_id === 'object') return emp.department_id.name;
-      return '';
-    };
-
-    return (
-      <div
-        role="row"
-        style={{ display: 'flex' }}
-        className="hover:bg-slate-50 dark:hover:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800"
-      >
-        <div role="cell" className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 text-[11px] font-medium text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white w-[200px] shrink-0">
-          <div>
-            <div className="flex items-center gap-2">
-              <div
-                className="font-semibold truncate cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex-1"
-                onClick={() => item.employee && handleEmployeeClick(item.employee)}
-                title="Click to view monthly summary"
-              >
-                {item.employee?.employee_name || 'Unknown Employee'}
-              </div>
-            </div>
-            <div className="text-[9px] text-slate-500 dark:text-slate-400 truncate mt-1">
-              {item.employee?.emp_no || '-'}
-              {getDeptName(item.employee) && ` • ${getDeptName(item.employee)}`}
-            </div>
-          </div>
-        </div>
-        {daysArray.map((day) => {
-          const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-          const record = dailyAttendance[dateStr] || null;
-          const shiftName = record?.shiftId && typeof record.shiftId === 'object' ? (record.shiftId as any).name : '-';
-
-          let displayStatus = 'A';
-          if (record) {
-            if (record.status === 'PRESENT') displayStatus = 'P';
-            else if (record.status === 'PARTIAL') displayStatus = 'PT';
-            else if (record.status === 'LEAVE' || record.hasLeave) displayStatus = 'L';
-            else if (record.status === 'OD' || record.hasOD) displayStatus = 'OD';
-            else if (record.status === '-') displayStatus = '-';
-            else displayStatus = 'A';
-          }
-
-          const hasData = record && record.status !== '-';
-
-          return (
-            <div
-              key={day}
-              role="cell"
-              onClick={() => hasData && handleDateClick(item.employee, dateStr)}
-              className={`border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700 w-[35px] shrink-0 flex flex-col justify-center items-center ${hasData ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : ''
-                } ${getStatusColor(record)} ${getCellBackgroundColor(record)}`}
-            >
-              {hasData ? (
-                <div className="space-y-0.5">
-                  {tableType === 'complete' && (
-                    <>
-                      <div className="font-semibold text-[9px]">{displayStatus}</div>
-                      {shiftName !== '-' && (
-                        <div className="text-[8px] opacity-75 truncate" title={shiftName as string}>{(shiftName as string).substring(0, 3)}</div>
-                      )}
-                      {record && record.totalHours !== null && (
-                        <div className="text-[8px] font-semibold">{formatHours(record.totalHours)}</div>
-                      )}
-                    </>
-                  )}
-                  {tableType === 'present_absent' && (
-                    <div className="font-bold text-[10px]">{displayStatus}</div>
-                  )}
-                  {tableType === 'in_out' && (
-                    <div className="text-[8px] font-medium leading-tight">
-                      <div className="text-green-600 dark:text-green-400">{record?.inTime ? formatTime(record.inTime) : '-'}</div>
-                      <div className="text-red-600 dark:text-red-400">{record?.outTime ? formatTime(record.outTime) : '-'}</div>
-                    </div>
-                  )}
-                  {tableType === 'leaves' && (
-                    <div className="font-bold text-[10px] text-orange-600">{displayStatus === 'L' ? 'L' : '-'}</div>
-                  )}
-                  {tableType === 'od' && (
-                    <div className="font-bold text-[10px] text-indigo-600">{displayStatus === 'OD' ? 'OD' : '-'}</div>
-                  )}
-                  {tableType === 'ot' && (
-                    <div className="text-[8px] font-medium leading-tight">
-                      <div className="text-orange-600">{record?.otHours ? record.otHours.toFixed(1) : '-'}</div>
-                      <div className="text-purple-600">{record?.extraHours ? record.extraHours.toFixed(1) : '-'}</div>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <span className="text-slate-400 text-[9px]">-</span>
-              )}
-            </div>
-          );
-        })}
-        {tableType === 'complete' && (
-          <>
-            <div role="cell" className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center text-[11px] font-bold text-blue-700 dark:border-slate-700 dark:bg-blue-900/20 dark:text-blue-300 w-[60px] shrink-0 flex items-center justify-center">
-              {daysPresent}
-            </div>
-            <div role="cell" className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300 w-[60px] shrink-0 flex items-center justify-center">
-              {safeGetValues(dailyAttendance).reduce((sum, record: any) => sum + (record?.otHours || 0), 0).toFixed(1)}
-            </div>
-            <div role="cell" className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700 dark:border-slate-700 dark:bg-purple-900/20 dark:text-purple-300 w-[60px] shrink-0 flex items-center justify-center">
-              {safeGetValues(dailyAttendance).reduce((sum, record: any) => sum + (record?.extraHours || 0), 0).toFixed(1)}
-            </div>
-            <div role="cell" className="border-r border-slate-200 bg-cyan-50 px-2 py-2 text-center text-[11px] font-bold text-cyan-700 dark:border-slate-700 dark:bg-cyan-900/20 dark:text-cyan-300 w-[80px] shrink-0 flex items-center justify-center">
-              {safeGetValues(dailyAttendance).reduce((sum, record: any) => sum + (record?.permissionCount || 0), 0)}
-            </div>
-            <div role="cell" className="bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:border-slate-700 dark:bg-green-900/20 dark:text-green-300 w-[70px] shrink-0 flex items-center justify-center">
-              {payableShifts.toFixed(2)}
-            </div>
-          </>
-        )}
-        {tableType === 'present_absent' && (
-          <>
-            <div role="cell" className="border-r border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 w-[60px] shrink-0 flex items-center justify-center">{monthPresent}</div>
-            <div role="cell" className="border-r border-slate-200 bg-red-50 px-2 py-2 text-center text-[11px] font-bold text-red-700 w-[60px] shrink-0 flex items-center justify-center">{monthAbsent}</div>
-          </>
-        )}
-        {tableType === 'in_out' && (
-          <div role="cell" className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center text-[11px] font-bold text-blue-700 w-[60px] shrink-0 flex items-center justify-center">{daysPresent}</div>
-        )}
-        {tableType === 'leaves' && (
-          <>
-            <div role="cell" className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 w-[60px] shrink-0 flex items-center justify-center">{totalLeaves}</div>
-            <div role="cell" className="border-r border-slate-200 bg-yellow-50 px-2 py-2 text-center text-[11px] font-bold text-yellow-700 w-[60px] shrink-0 flex items-center justify-center">{paidLeaves}</div>
-            <div role="cell" className="border-r border-slate-200 bg-rose-50 px-2 py-2 text-center text-[11px] font-bold text-rose-700 w-[60px] shrink-0 flex items-center justify-center">{lopCount}</div>
-          </>
-        )}
-        {tableType === 'od' && (
-          <div role="cell" className="border-r border-slate-200 bg-indigo-50 px-2 py-2 text-center text-[11px] font-bold text-indigo-700 w-[60px] shrink-0 flex items-center justify-center">{totalODs}</div>
-        )}
-        {tableType === 'ot' && (
-          <>
-            <div role="cell" className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 w-[60px] shrink-0 flex items-center justify-center">
-              {safeGetValues(dailyAttendance).reduce((sum, record: any) => sum + (record?.otHours || 0), 0).toFixed(1)}
-            </div>
-            <div role="cell" className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700 w-[60px] shrink-0 flex items-center justify-center">
-              {safeGetValues(dailyAttendance).reduce((sum, record: any) => sum + (record?.extraHours || 0), 0).toFixed(1)}
-            </div>
-          </>
-        )}
-      </div>
-    );
-  }, [daysArray, year, month, handleEmployeeClick, handleDateClick, tableType]);
 
   console.log('Attendance rendering. Data length:', filteredMonthlyData.length);
   return (
@@ -1386,180 +1218,324 @@ export default function AttendancePage() {
 
         {/* Attendance Table */}
         <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900 shadow-sm relative">
-          <div role="table" className="w-max min-w-full text-xs">
+          <table className="w-full text-xs box-border">
             {/* Table Header */}
-            <div role="rowgroup" className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-800">
-              <div role="row" className="border-b border-slate-200 dark:border-slate-700 flex w-max min-w-full">
-                <div role="columnheader" className="sticky left-0 z-30 border-r border-slate-200 bg-slate-100 px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 w-[200px] shrink-0">
+            <thead className="bg-slate-50 dark:bg-slate-800 sticky top-0 z-20">
+              <tr className="border-b border-slate-200 dark:border-slate-700 w-full">
+                <th className="sticky left-0 z-30 border-r border-slate-200 bg-slate-100 px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 w-[200px] min-w-[200px]">
                   Employee
-                </div>
+                </th>
                 {daysArray.map((day) => (
-                  <div
+                  <th
                     key={day}
-                    role="columnheader"
-                    className="border-r border-slate-200 bg-slate-50 px-1 py-3 text-center text-[9px] font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 w-[35px] shrink-0"
+                    className="border-r border-slate-200 bg-slate-50 px-1 py-3 text-center text-[9px] font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 w-[35px] min-w-[35px]"
                   >
                     {day}
-                  </div>
+                  </th>
                 ))}
                 {tableType === 'complete' && (
                   <>
-                    <div role="columnheader" className="border-r border-slate-200 bg-blue-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-blue-700 dark:border-slate-700 dark:bg-blue-900/20 w-[60px] shrink-0">
+                    <th className="border-r border-slate-200 bg-blue-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-blue-700 dark:border-slate-700 dark:bg-blue-900/20 w-[60px] min-w-[60px]">
                       Pres
-                    </div>
-                    <div role="columnheader" className="border-r border-slate-200 bg-orange-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 w-[60px] shrink-0">
+                    </th>
+                    <th className="border-r border-slate-200 bg-orange-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 w-[60px] min-w-[60px]">
                       OT
-                    </div>
-                    <div role="columnheader" className="border-r border-slate-200 bg-purple-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-purple-700 dark:border-slate-700 dark:bg-purple-900/20 w-[60px] shrink-0">
+                    </th>
+                    <th className="border-r border-slate-200 bg-purple-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-purple-700 dark:border-slate-700 dark:bg-purple-900/20 w-[60px] min-w-[60px]">
                       Extra
-                    </div>
-                    <div role="columnheader" className="border-r border-slate-200 bg-cyan-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-cyan-700 dark:border-slate-700 dark:bg-cyan-900/20 w-[80px] shrink-0">
+                    </th>
+                    <th className="border-r border-slate-200 bg-cyan-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-cyan-700 dark:border-slate-700 dark:bg-cyan-900/20 w-[80px] min-w-[80px]">
                       Perms
-                    </div>
-                    <div role="columnheader" className="bg-green-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-green-700 dark:border-slate-700 dark:bg-green-900/20 w-[70px] shrink-0">
+                    </th>
+                    <th className="bg-green-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-green-700 dark:border-slate-700 dark:bg-green-900/20 w-[70px] min-w-[70px]">
                       Payable
-                    </div>
+                    </th>
                   </>
                 )}
                 {tableType === 'present_absent' && (
                   <>
-                    <div role="columnheader" className="border-r border-slate-200 bg-green-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-green-700 w-[60px] shrink-0">P</div>
-                    <div role="columnheader" className="border-r border-slate-200 bg-red-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-red-700 w-[60px] shrink-0">A</div>
+                    <th className="border-r border-slate-200 bg-green-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-green-700 w-[60px] min-w-[60px]">P</th>
+                    <th className="border-r border-slate-200 bg-red-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-red-700 w-[60px] min-w-[60px]">A</th>
                   </>
                 )}
                 {tableType === 'in_out' && (
-                  <div role="columnheader" className="border-r border-slate-200 bg-blue-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-blue-700 w-[60px] shrink-0">Days</div>
+                  <th className="border-r border-slate-200 bg-blue-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-blue-700 w-[60px] min-w-[60px]">Days</th>
                 )}
                 {tableType === 'leaves' && (
                   <>
-                    <div role="columnheader" className="border-r border-slate-200 bg-orange-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-orange-700 w-[60px] shrink-0">Tot</div>
-                    <div role="columnheader" className="border-r border-slate-200 bg-yellow-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-yellow-700 w-[60px] shrink-0">Paid</div>
-                    <div role="columnheader" className="border-r border-slate-200 bg-rose-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-rose-700 w-[60px] shrink-0">LOP</div>
+                    <th className="border-r border-slate-200 bg-orange-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-orange-700 w-[60px] min-w-[60px]">Tot</th>
+                    <th className="border-r border-slate-200 bg-yellow-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-yellow-700 w-[60px] min-w-[60px]">Paid</th>
+                    <th className="border-r border-slate-200 bg-rose-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-rose-700 w-[60px] min-w-[60px]">LOP</th>
                   </>
                 )}
                 {tableType === 'od' && (
-                  <div role="columnheader" className="border-r border-slate-200 bg-indigo-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-indigo-700 w-[60px] shrink-0">Tot</div>
+                  <th className="border-r border-slate-200 bg-indigo-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-indigo-700 w-[60px] min-w-[60px]">Tot</th>
                 )}
                 {tableType === 'ot' && (
                   <>
-                    <div role="columnheader" className="border-r border-slate-200 bg-orange-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-orange-700 w-[60px] shrink-0">OT</div>
-                    <div role="columnheader" className="border-r border-slate-200 bg-purple-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-purple-700 w-[60px] shrink-0">Extra</div>
+                    <th className="border-r border-slate-200 bg-orange-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-orange-700 w-[60px] min-w-[60px]">OT</th>
+                    <th className="border-r border-slate-200 bg-purple-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-purple-700 w-[60px] min-w-[60px]">Extra</th>
                   </>
                 )}
-              </div>
-            </div>
-            <div role="rowgroup" className="bg-white dark:bg-slate-900 flex flex-col">
+              </tr>
+            </thead>
+            <tbody className="bg-white dark:bg-slate-900">
               {loading ? (
                 <>
                   {/* Skeleton Loading - only tbody cells */}
                   {[1, 2, 3, 4, 5].map((i) => (
-                    <div key={i} className="flex border-b border-slate-100 dark:border-slate-800 w-max min-w-full">
-                      <div className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900 w-[200px] shrink-0">
+                    <tr key={i} className="border-b border-slate-100 dark:border-slate-800 w-full">
+                      <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900 w-[200px] min-w-[200px]">
                         <div className="h-4 w-32 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
                         <div className="mt-1 h-3 w-24 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                      </div>
+                      </td>
                       {daysArray.map((day) => (
-                        <div
+                        <td
                           key={day}
-                          className="border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700 w-[35px] shrink-0"
+                          className="border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700 w-[35px] min-w-[35px]"
                         >
                           <div className="h-8 w-full animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                        </div>
+                        </td>
                       ))}
                       {tableType === 'complete' && (
                         <>
-                          <div className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-blue-900/20 w-[60px] shrink-0">
+                          <td className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-blue-900/20 w-[60px] min-w-[60px]">
                             <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                          </div>
-                          <div className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-orange-900/20 w-[60px] shrink-0">
+                          </td>
+                          <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-orange-900/20 w-[60px] min-w-[60px]">
                             <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                          </div>
-                          <div className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-purple-900/20 w-[60px] shrink-0">
+                          </td>
+                          <td className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-purple-900/20 w-[60px] min-w-[60px]">
                             <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                          </div>
-                          <div className="border-r border-slate-200 bg-cyan-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-cyan-900/20 w-[80px] shrink-0">
+                          </td>
+                          <td className="border-r border-slate-200 bg-cyan-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-cyan-900/20 w-[80px] min-w-[80px]">
                             <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                          </div>
-                          <div className="bg-green-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-green-900/20 w-[70px] shrink-0">
+                          </td>
+                          <td className="bg-green-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-green-900/20 w-[70px] min-w-[70px]">
                             <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                          </div>
+                          </td>
                         </>
                       )}
                       {tableType === 'present_absent' && (
                         <>
-                          <div className="border-r border-slate-200 bg-green-50 px-2 py-2 text-center dark:border-slate-700 w-[60px] shrink-0"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></div>
-                          <div className="border-r border-slate-200 bg-red-50 px-2 py-2 text-center dark:border-slate-700 w-[60px] shrink-0"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></div>
+                          <td className="border-r border-slate-200 bg-green-50 px-2 py-2 text-center dark:border-slate-700 w-[60px] min-w-[60px]"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
+                          <td className="border-r border-slate-200 bg-red-50 px-2 py-2 text-center dark:border-slate-700 w-[60px] min-w-[60px]"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
                         </>
                       )}
                       {tableType === 'in_out' && (
-                        <div className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center dark:border-slate-700 w-[60px] shrink-0"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></div>
+                        <td className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center dark:border-slate-700 w-[60px] min-w-[60px]"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
                       )}
                       {tableType === 'leaves' && (
                         <>
-                          <div className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center dark:border-slate-700 w-[60px] shrink-0"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></div>
-                          <div className="border-r border-slate-200 bg-yellow-50 px-2 py-2 text-center dark:border-slate-700 w-[60px] shrink-0"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></div>
-                          <div className="border-r border-slate-200 bg-rose-50 px-2 py-2 text-center dark:border-slate-700 w-[60px] shrink-0"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></div>
+                          <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center dark:border-slate-700 w-[60px] min-w-[60px]"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
+                          <td className="border-r border-slate-200 bg-yellow-50 px-2 py-2 text-center dark:border-slate-700 w-[60px] min-w-[60px]"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
+                          <td className="border-r border-slate-200 bg-rose-50 px-2 py-2 text-center dark:border-slate-700 w-[60px] min-w-[60px]"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
                         </>
                       )}
                       {tableType === 'od' && (
-                        <div className="border-r border-slate-200 bg-indigo-50 px-2 py-2 text-center dark:border-slate-700 w-[60px] shrink-0"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></div>
+                        <td className="border-r border-slate-200 bg-indigo-50 px-2 py-2 text-center dark:border-slate-700 w-[60px] min-w-[60px]"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
                       )}
                       {tableType === 'ot' && (
                         <>
-                          <div className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center dark:border-slate-700 w-[60px] shrink-0"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></div>
-                          <div className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center dark:border-slate-700 w-[60px] shrink-0"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></div>
+                          <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center dark:border-slate-700 w-[60px] min-w-[60px]"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
+                          <td className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center dark:border-slate-700 w-[60px] min-w-[60px]"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
                         </>
                       )}
-                    </div>
+                    </tr>
                   ))}
                 </>
               ) : filteredMonthlyData.length === 0 ? (
-                <div className="flex items-center justify-center p-8 text-slate-500 w-full min-h-[400px]">
-                  No employees found matching the selected filters.
-                </div>
+                <tr>
+                  <td colSpan={daysArray.length + 8} className="p-8 text-center text-slate-500 min-h-[400px]">
+                    No employees found matching the selected filters.
+                  </td>
+                </tr>
               ) : (
-                <div role="rowgroup" className="w-full">
-                  <div className="overflow-visible min-w-full">
-                    {filteredMonthlyData.map((item, index) => (
-                      <div key={item.employee._id}>
-                        {Row({ index, style: {}, data: filteredMonthlyData })}
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                filteredMonthlyData.map((item, index) => {
+                  {/* Inline logic from previous Row component */ }
+                  // Ensure dailyAttendance is always an object
+                  const dailyAttendance = (item.dailyAttendance && typeof item.dailyAttendance === 'object') ? item.dailyAttendance : {};
+
+                  // Safe helper was here, but we can just use safe checks inline or Object.values(dailyAttendance || {})
+                  const safeGetValues = (obj: any) => {
+                    if (!obj || typeof obj !== 'object') return [];
+                    try { return Object.values(obj); } catch (e) { return []; }
+                  };
+
+                  const dailyValues: any[] = safeGetValues(dailyAttendance);
+
+                  const daysPresent = item.presentDays !== undefined
+                    ? item.presentDays
+                    : dailyValues.filter((record: any) => record && (record.status === 'PRESENT' || record.status === 'PARTIAL')).length;
+
+                  const payableShifts = item.payableShifts !== undefined ? item.payableShifts : 0;
+                  const monthPresent = dailyValues.filter((r: any) => r?.status === 'PRESENT').length;
+                  const monthAbsent = dailyValues.filter((r: any) => r?.status === 'ABSENT').length;
+                  const leaveRecords = dailyValues.filter((r: any) => r?.status === 'LEAVE' || r?.hasLeave);
+                  const totalLeaves = leaveRecords.length;
+                  const lopCount = leaveRecords.filter((r: any) => {
+                    const anyR = r as any;
+                    return anyR?.leaveNature === 'lop' ||
+                      anyR?.leaveInfo?.leaveType?.toLowerCase().includes('lop') ||
+                      anyR?.leaveInfo?.leaveType?.toLowerCase().includes('loss of pay');
+                  }).length;
+                  const paidLeaves = totalLeaves - lopCount;
+                  const totalODs = dailyValues.filter((r: any) => r?.status === 'OD' || r?.hasOD).length;
+
+                  // Helper for department/division names
+                  const getDeptName = (emp: Employee) => {
+                    if (emp.department && typeof emp.department === 'object') return emp.department.name;
+                    if (emp.department_id && typeof emp.department_id === 'object') return emp.department_id.name;
+                    return '';
+                  };
+
+                  return (
+                    <tr
+                      key={item.employee?._id || index}
+                      className="hover:bg-slate-50 dark:hover:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 transition-colors w-full"
+                    >
+                      <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 text-[11px] font-medium text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white w-[200px] min-w-[200px]">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <div
+                              className="font-semibold truncate cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex-1"
+                              onClick={() => item.employee && handleEmployeeClick(item.employee)}
+                              title="Click to view monthly summary"
+                            >
+                              {item.employee?.employee_name || 'Unknown Employee'}
+                            </div>
+                          </div>
+                          <div className="text-[9px] text-slate-500 dark:text-slate-400 truncate mt-1">
+                            {item.employee?.emp_no || '-'}
+                            {item.employee && getDeptName(item.employee) && ` • ${getDeptName(item.employee)}`}
+                          </div>
+                        </div>
+                      </td>
+                      {daysArray.map((day) => {
+                        const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                        const record = dailyAttendance[dateStr] || null;
+                        const shiftName = record?.shiftId && typeof record.shiftId === 'object' ? (record.shiftId as any).name : '-';
+
+                        let displayStatus = 'A';
+                        if (record) {
+                          if (record.status === 'PRESENT') displayStatus = 'P';
+                          else if (record.status === 'PARTIAL') displayStatus = 'PT';
+                          else if (record.status === 'LEAVE' || record.hasLeave) displayStatus = 'L';
+                          else if (record.status === 'OD' || record.hasOD) displayStatus = 'OD';
+                          else if (record.status === '-') displayStatus = '-';
+                          else displayStatus = 'A';
+                        }
+
+                        const hasData = record && record.status !== '-';
+
+                        return (
+                          <td
+                            key={day}
+                            onClick={() => hasData && item.employee && handleDateClick(item.employee, dateStr)}
+                            className={`border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700 w-[35px] min-w-[35px] align-middle ${hasData ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : ''
+                              } ${getStatusColor(record)} ${getCellBackgroundColor(record)}`}
+                          >
+                            <div className="flex flex-col items-center justify-center w-full h-full">
+                              {hasData ? (
+                                <div className="space-y-0.5">
+                                  {tableType === 'complete' && (
+                                    <>
+                                      <div className="font-semibold text-[9px]">{displayStatus}</div>
+                                      {shiftName !== '-' && (
+                                        <div className="text-[8px] opacity-75 truncate max-w-[30px]" title={shiftName as string}>{(shiftName as string).substring(0, 3)}</div>
+                                      )}
+                                      {record && record.totalHours !== null && (
+                                        <div className="text-[8px] font-semibold">{formatHours(record.totalHours)}</div>
+                                      )}
+                                    </>
+                                  )}
+                                  {tableType === 'present_absent' && (
+                                    <div className="font-bold text-[10px]">{displayStatus}</div>
+                                  )}
+                                  {tableType === 'in_out' && (
+                                    <div className="text-[8px] font-medium leading-tight">
+                                      <div className="text-green-600 dark:text-green-400">{record?.inTime ? formatTime(record.inTime) : '-'}</div>
+                                      <div className="text-red-600 dark:text-red-400">{record?.outTime ? formatTime(record.outTime) : '-'}</div>
+                                    </div>
+                                  )}
+                                  {tableType === 'leaves' && (
+                                    <div className="font-bold text-[10px] text-orange-600">{displayStatus === 'L' ? 'L' : '-'}</div>
+                                  )}
+                                  {tableType === 'od' && (
+                                    <div className="font-bold text-[10px] text-indigo-600">{displayStatus === 'OD' ? 'OD' : '-'}</div>
+                                  )}
+                                  {tableType === 'ot' && (
+                                    <div className="text-[8px] font-medium leading-tight">
+                                      <div className="text-orange-600">{record?.otHours ? record.otHours.toFixed(1) : '-'}</div>
+                                      <div className="text-purple-600">{record?.extraHours ? record.extraHours.toFixed(1) : '-'}</div>
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-slate-400 text-[9px]">-</span>
+                              )}
+                            </div>
+                          </td>
+                        );
+                      })}
+                      {tableType === 'complete' && (
+                        <>
+                          <td className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center text-[11px] font-bold text-blue-700 dark:border-slate-700 dark:bg-blue-900/20 dark:text-blue-300 w-[60px] min-w-[60px]">
+                            {daysPresent}
+                          </td>
+                          <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300 w-[60px] min-w-[60px]">
+                            {dailyValues.reduce((sum, record: any) => sum + (record?.otHours || 0), 0).toFixed(1)}
+                          </td>
+                          <td className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700 dark:border-slate-700 dark:bg-purple-900/20 dark:text-purple-300 w-[60px] min-w-[60px]">
+                            {dailyValues.reduce((sum, record: any) => sum + (record?.extraHours || 0), 0).toFixed(1)}
+                          </td>
+                          <td className="border-r border-slate-200 bg-cyan-50 px-2 py-2 text-center text-[11px] font-bold text-cyan-700 dark:border-slate-700 dark:bg-cyan-900/20 dark:text-cyan-300 w-[80px] min-w-[80px]">
+                            {dailyValues.reduce((sum, record: any) => sum + (record?.permissionCount || 0), 0)}
+                          </td>
+                          <td className="bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:border-slate-700 dark:bg-green-900/20 dark:text-green-300 w-[70px] min-w-[70px]">
+                            {payableShifts.toFixed(2)}
+                          </td>
+                        </>
+                      )}
+                      {tableType === 'present_absent' && (
+                        <>
+                          <td className="border-r border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 w-[60px] min-w-[60px]">{monthPresent}</td>
+                          <td className="border-r border-slate-200 bg-red-50 px-2 py-2 text-center text-[11px] font-bold text-red-700 w-[60px] min-w-[60px]">{monthAbsent}</td>
+                        </>
+                      )}
+                      {tableType === 'in_out' && (
+                        <td className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center text-[11px] font-bold text-blue-700 w-[60px] min-w-[60px]">{daysPresent}</td>
+                      )}
+                      {tableType === 'leaves' && (
+                        <>
+                          <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 w-[60px] min-w-[60px]">{totalLeaves}</td>
+                          <td className="border-r border-slate-200 bg-yellow-50 px-2 py-2 text-center text-[11px] font-bold text-yellow-700 w-[60px] min-w-[60px]">{paidLeaves}</td>
+                          <td className="border-r border-slate-200 bg-rose-50 px-2 py-2 text-center text-[11px] font-bold text-rose-700 w-[60px] min-w-[60px]">{lopCount}</td>
+                        </>
+                      )}
+                      {tableType === 'od' && (
+                        <td className="border-r border-slate-200 bg-indigo-50 px-2 py-2 text-center text-[11px] font-bold text-indigo-700 w-[60px] min-w-[60px]">{totalODs}</td>
+                      )}
+                      {tableType === 'ot' && (
+                        <>
+                          <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 w-[60px] min-w-[60px]">
+                            {dailyValues.reduce((sum, record: any) => sum + (record?.otHours || 0), 0).toFixed(1)}
+                          </td>
+                          <td className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700 w-[60px] min-w-[60px]">
+                            {dailyValues.reduce((sum, record: any) => sum + (record?.extraHours || 0), 0).toFixed(1)}
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  );
+                })
               )}
-            </div>
-          </div>
+            </tbody>
+          </table>
+          <div ref={observerTarget} className="h-4 w-full" />
 
-          {/* Load More Trigger */}
-          {hasMore && (
-            <div className="p-4 flex justify-center border-t border-slate-200 dark:border-slate-700">
-              <button
-                onClick={() => setPage(prev => prev + 1)}
-                disabled={loadingMore}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors text-sm font-medium shadow-sm flex items-center gap-2"
-              >
-                {loadingMore ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                    Loading More...
-                  </>
-                ) : (
-                  'Load More Employees'
-                )}
-              </button>
-            </div>
-          )}
 
-          {/* Pagination Info */}
-          <div className="px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-200 dark:border-slate-700 flex justify-between items-center text-[10px] text-slate-500 rounded-b-2xl">
-            <div>
-              Showing {filteredMonthlyData.length} of {totalCount} employees
-            </div>
-            <div>
-              Page {page} of {totalPages}
-            </div>
-          </div>
+
           {
             showUploadDialog && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
