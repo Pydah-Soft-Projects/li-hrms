@@ -2010,7 +2010,13 @@ export default function DepartmentsPage() {
             {/* Secondary Actions */}
             <div className="flex gap-2">
               <button
-                onClick={() => setShowDesignationDialog('global')}
+                onClick={() => setShowBulkUploadDesig(true)}
+                className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300"
+              >
+                Bulk Import
+              </button>
+              <button
+                onClick={() => handleOpenDesignationDialog('global')}
                 className="px-4 py-2 text-sm font-medium text-slate-100 bg-blue-600 rounded-xl hover:bg-blue-700 transition-colors"
               >
                 + Global Designations

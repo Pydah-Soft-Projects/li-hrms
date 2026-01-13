@@ -3647,10 +3647,13 @@ export default function EmployeesPage() {
                     const div = divisions.find(d => d.name.toLowerCase() === rowDivName.toLowerCase());
                     if (!div) return [];
 
-                    // Filter departments that belong to this division
-                    return departments
-                      .filter(dept => (dept as any).divisions?.includes(div._id))
-                      .map(d => ({ value: d.name, label: d.name }));
+                    // Correctly filter based on populated divisions (array of objects) or IDs (array of strings)
+                    return departments.filter(dept => (dept as any).divisions?.some((d: any) =>
+                      (typeof d === 'string' ? d : d._id) === div._id
+                    )).map(dept => ({
+                      label: dept.name,
+                      value: dept.name
+                    }));
                   }
                 };
               }

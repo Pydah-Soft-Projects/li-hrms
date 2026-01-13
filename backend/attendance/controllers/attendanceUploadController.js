@@ -12,6 +12,10 @@ const XLSX = require('xlsx');
 const dayjs = require('dayjs');
 const customParseFormat = require('dayjs/plugin/customParseFormat');
 dayjs.extend(customParseFormat);
+const utc = require('dayjs/plugin/utc');
+const timezone = require('dayjs/plugin/timezone');
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 /**
  * @desc    Upload attendance from Excel
@@ -255,7 +259,12 @@ const parseExcelDate = (val, fallbackDate = null) => {
   }
 
   // Return local Date object
-  return new Date(y, m - 1, d, H, M, S);
+  // FIX: Interpret the time components as Asia/Kolkata (IST)
+  // This ensures "09:30" is treated as "09:30 GMT+05:30" 
+  // which saves as "04:00 GMT" (Universal Truth)
+  // Logic works because Detection (IST) sees 09:30.
+  const timeStr = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')} ${String(H).padStart(2, '0')}:${String(M).padStart(2, '0')}:${String(S).padStart(2, '0')}`;
+  return dayjs.tz(timeStr, "YYYY-MM-DD HH:mm:ss", "Asia/Kolkata").toDate();
 };
 
 /**
