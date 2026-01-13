@@ -20,7 +20,7 @@ function checkIfManuallyEdited(payRegister, date) {
 
   // Check if there are any manual edits for this date
   const editsForDate = payRegister.editHistory.filter((edit) => edit.date === date);
-  
+
   // If there are edits, consider it manually edited
   // We can add more sophisticated logic here (e.g., ignore auto-sync edits)
   return editsForDate.length > 0;
@@ -224,7 +224,7 @@ async function syncPayRegisterFromOT(ot) {
 
     // Find the daily record
     const dailyRecord = payRegister.dailyRecords.find((r) => r.date === dateStr);
-    
+
     if (dailyRecord) {
       // Update OT hours
       // Sum all approved OT hours for this date
@@ -259,22 +259,39 @@ async function syncPayRegisterFromOT(ot) {
  */
 async function manualSyncPayRegister(employeeId, month) {
   try {
-    const payRegister = await PayRegisterSummary.findOne({
+    let payRegister = await PayRegisterSummary.findOne({
       employeeId,
       month,
     });
 
-    if (!payRegister) {
-      throw new Error('Pay register not found');
+    const [year, monthNum] = month.split('-').map(Number);
+    const Employee = require('../../employees/model/Employee');
+    const employee = await Employee.findById(employeeId);
+
+    if (!employee) {
+      throw new Error('Employee not found');
     }
 
-    const [year, monthNum] = month.split('-').map(Number);
     const dailyRecords = await populatePayRegisterFromSources(
       employeeId,
-      payRegister.emp_no,
+      employee.emp_no,
       year,
       monthNum
     );
+
+    if (!payRegister) {
+      // Create if it doesn't exist
+      payRegister = new PayRegisterSummary({
+        employeeId,
+        emp_no: employee.emp_no,
+        month,
+        monthName: new Date(year, monthNum - 1).toLocaleString('default', { month: 'long', year: 'numeric' }),
+        year,
+        monthNumber: monthNum,
+        totalDaysInMonth: new Date(year, monthNum, 0).getDate(),
+        status: 'draft',
+      });
+    }
 
     payRegister.dailyRecords = dailyRecords;
     payRegister.totals = calculateTotals(dailyRecords);
