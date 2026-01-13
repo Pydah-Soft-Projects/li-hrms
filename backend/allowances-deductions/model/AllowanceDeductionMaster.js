@@ -72,9 +72,16 @@ const allowanceDeductionMasterSchema = new mongoose.Schema(
       },
     },
 
-    // Department-Specific Overrides
+    // Department-Specific Overrides (can be division-department specific)
     departmentRules: [
       {
+        // Optional: If specified, this rule applies only to this division-department combination
+        // If not specified, this rule applies to all divisions within the department
+        divisionId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'Division',
+          default: null,
+        },
         departmentId: {
           type: mongoose.Schema.Types.ObjectId,
           ref: 'Department',
@@ -183,11 +190,15 @@ allowanceDeductionMasterSchema.pre('validate', async function () {
     return;
   }
 
-  // Check for duplicate department IDs
-  const departmentIds = this.departmentRules.map((rule) => rule.departmentId.toString());
-  const uniqueIds = [...new Set(departmentIds)];
-  if (departmentIds.length !== uniqueIds.length) {
-    throw new Error('Duplicate department IDs found in department rules');
+  // Check for duplicate division-department combinations
+  const combinations = this.departmentRules.map((rule) => {
+    const divId = rule.divisionId ? rule.divisionId.toString() : 'null';
+    const deptId = rule.departmentId.toString();
+    return `${divId}:${deptId}`;
+  });
+  const uniqueCombinations = [...new Set(combinations)];
+  if (combinations.length !== uniqueCombinations.length) {
+    throw new Error('Duplicate division-department combinations found in department rules');
   }
 
   // Validate each department rule
@@ -228,21 +239,42 @@ allowanceDeductionMasterSchema.index({ name: 1 }, { unique: true });
 allowanceDeductionMasterSchema.index({ category: 1 });
 allowanceDeductionMasterSchema.index({ isActive: 1 });
 allowanceDeductionMasterSchema.index({ 'departmentRules.departmentId': 1 });
+allowanceDeductionMasterSchema.index({ 'departmentRules.divisionId': 1, 'departmentRules.departmentId': 1 });
 
-// Static method to get resolved rule for a department
-allowanceDeductionMasterSchema.statics.getResolvedRule = async function (masterId, departmentId) {
+// Static method to get resolved rule for a department (with optional division support)
+allowanceDeductionMasterSchema.statics.getResolvedRule = async function (masterId, departmentId, divisionId = null) {
   const master = await this.findById(masterId);
   if (!master) {
     return null;
   }
 
-  // Check for department override
-  const deptRule = master.departmentRules.find(
-    (rule) => rule.departmentId.toString() === departmentId.toString()
-  );
+  // Priority 1: Check for division-department specific rule
+  if (divisionId && master.departmentRules && master.departmentRules.length > 0) {
+    const divDeptRule = master.departmentRules.find(
+      (rule) =>
+        rule.divisionId &&
+        rule.divisionId.toString() === divisionId.toString() &&
+        rule.departmentId.toString() === departmentId.toString()
+    );
+    if (divDeptRule) {
+      return divDeptRule;
+    }
+  }
 
-  // Return department rule if exists, else global rule
-  return deptRule || master.globalRule;
+  // Priority 2: Check for department-only rule (backward compatible)
+  if (departmentId && master.departmentRules && master.departmentRules.length > 0) {
+    const deptOnlyRule = master.departmentRules.find(
+      (rule) =>
+        !rule.divisionId && // No division specified
+        rule.departmentId.toString() === departmentId.toString()
+    );
+    if (deptOnlyRule) {
+      return deptOnlyRule;
+    }
+  }
+
+  // Priority 3: Return global rule
+  return master.globalRule;
 };
 
 module.exports = mongoose.models.AllowanceDeductionMaster || mongoose.model('AllowanceDeductionMaster', allowanceDeductionMasterSchema);

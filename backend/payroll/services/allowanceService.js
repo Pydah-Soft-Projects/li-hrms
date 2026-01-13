@@ -6,36 +6,61 @@ const AllowanceDeductionMaster = require('../../allowances-deductions/model/Allo
  */
 
 /**
- * Get resolved allowance rule for a department
+ * Get resolved allowance rule for a department (with optional division support)
  * @param {Object} allowanceMaster - AllowanceDeductionMaster document
  * @param {String} departmentId - Department ID
- * @returns {Object} Resolved rule (department override or global)
+ * @param {String} divisionId - Optional Division ID
+ * @returns {Object} Resolved rule (division-department override, department-only override, or global)
  */
-function getResolvedAllowanceRule(allowanceMaster, departmentId) {
+function getResolvedAllowanceRule(allowanceMaster, departmentId, divisionId = null) {
   if (!allowanceMaster || !allowanceMaster.isActive) {
     return null;
   }
 
-  // Check for department override
-  if (departmentId && allowanceMaster.departmentRules && allowanceMaster.departmentRules.length > 0) {
-    const deptRule = allowanceMaster.departmentRules.find(
-      (rule) => rule.departmentId.toString() === departmentId.toString()
+  // Priority 1: Check for division-department specific rule
+  if (divisionId && departmentId && allowanceMaster.departmentRules && allowanceMaster.departmentRules.length > 0) {
+    const divDeptRule = allowanceMaster.departmentRules.find(
+      (rule) =>
+        rule.divisionId &&
+        rule.divisionId.toString() === divisionId.toString() &&
+        rule.departmentId.toString() === departmentId.toString()
     );
 
-    if (deptRule) {
+    if (divDeptRule) {
       return {
-        type: deptRule.type,
-        amount: deptRule.amount,
-        percentage: deptRule.percentage,
-        percentageBase: deptRule.percentageBase,
-        minAmount: deptRule.minAmount,
-        maxAmount: deptRule.maxAmount,
-        basedOnPresentDays: deptRule.basedOnPresentDays || false,
+        type: divDeptRule.type,
+        amount: divDeptRule.amount,
+        percentage: divDeptRule.percentage,
+        percentageBase: divDeptRule.percentageBase,
+        minAmount: divDeptRule.minAmount,
+        maxAmount: divDeptRule.maxAmount,
+        basedOnPresentDays: divDeptRule.basedOnPresentDays || false,
       };
     }
   }
 
-  // Return global rule
+  // Priority 2: Check for department-only rule (backward compatible)
+  if (departmentId && allowanceMaster.departmentRules && allowanceMaster.departmentRules.length > 0) {
+    const deptOnlyRule = allowanceMaster.departmentRules.find(
+      (rule) =>
+        !rule.divisionId && // No division specified
+        rule.departmentId.toString() === departmentId.toString()
+    );
+
+    if (deptOnlyRule) {
+      return {
+        type: deptOnlyRule.type,
+        amount: deptOnlyRule.amount,
+        percentage: deptOnlyRule.percentage,
+        percentageBase: deptOnlyRule.percentageBase,
+        minAmount: deptOnlyRule.minAmount,
+        maxAmount: deptOnlyRule.maxAmount,
+        basedOnPresentDays: deptOnlyRule.basedOnPresentDays || false,
+      };
+    }
+  }
+
+  // Priority 3: Return global rule
   if (allowanceMaster.globalRule) {
     return {
       type: allowanceMaster.globalRule.type,
@@ -102,9 +127,11 @@ function calculateAllowanceAmount(rule, basicPay, grossSalary = null, attendance
  * @param {Number} basicPay - Basic pay
  * @param {Number} grossSalary - Gross salary (for second pass)
  * @param {Boolean} useGrossBase - Whether to use gross salary as base for percentage
+ * @param {Object} attendanceData - Attendance data for proration
+ * @param {String} divisionId - Optional Division ID
  * @returns {Array} Array of allowance objects
  */
-async function calculateAllowances(departmentId, basicPay, grossSalary = null, useGrossBase = false, attendanceData = null) {
+async function calculateAllowances(departmentId, basicPay, grossSalary = null, useGrossBase = false, attendanceData = null, divisionId = null) {
   try {
     // Fetch all active allowances
     const allowanceMasters = await AllowanceDeductionMaster.find({
@@ -115,7 +142,7 @@ async function calculateAllowances(departmentId, basicPay, grossSalary = null, u
     const allowances = [];
 
     for (const master of allowanceMasters) {
-      const rule = getResolvedAllowanceRule(master, departmentId);
+      const rule = getResolvedAllowanceRule(master, departmentId, divisionId);
 
       if (!rule) {
         continue;

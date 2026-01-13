@@ -20,6 +20,7 @@ exports.getAllAllowancesDeductions = async (req, res) => {
     }
 
     const items = await AllowanceDeductionMaster.find(query)
+      .populate('departmentRules.divisionId', 'name code')
       .populate('departmentRules.departmentId', 'name code')
       .populate('createdBy', 'name email')
       .populate('updatedBy', 'name email')
@@ -55,6 +56,7 @@ exports.getAllowances = async (req, res) => {
     }
 
     const allowances = await AllowanceDeductionMaster.find(query)
+      .populate('departmentRules.divisionId', 'name code')
       .populate('departmentRules.departmentId', 'name code')
       .populate('createdBy', 'name email')
       .populate('updatedBy', 'name email')
@@ -90,6 +92,7 @@ exports.getDeductions = async (req, res) => {
     }
 
     const deductions = await AllowanceDeductionMaster.find(query)
+      .populate('departmentRules.divisionId', 'name code')
       .populate('departmentRules.departmentId', 'name code')
       .populate('createdBy', 'name email')
       .populate('updatedBy', 'name email')
@@ -118,6 +121,7 @@ exports.getDeductions = async (req, res) => {
 exports.getAllowanceDeduction = async (req, res) => {
   try {
     const item = await AllowanceDeductionMaster.findById(req.params.id)
+      .populate('departmentRules.divisionId', 'name code')
       .populate('departmentRules.departmentId', 'name code')
       .populate('createdBy', 'name email')
       .populate('updatedBy', 'name email');
@@ -312,13 +316,13 @@ exports.updateAllowanceDeduction = async (req, res) => {
 };
 
 /**
- * @desc    Add or update department rule
+ * @desc    Add or update department rule (can be division-department specific)
  * @route   PUT /api/allowances-deductions/:id/department-rule
  * @access  Private (Super Admin, Sub Admin, HR)
  */
 exports.addOrUpdateDepartmentRule = async (req, res) => {
   try {
-    const { departmentId, type, amount, percentage, percentageBase, minAmount, maxAmount } = req.body;
+    const { divisionId, departmentId, type, amount, percentage, percentageBase, minAmount, maxAmount, basedOnPresentDays } = req.body;
 
     if (!departmentId) {
       return res.status(400).json({
@@ -334,6 +338,18 @@ exports.addOrUpdateDepartmentRule = async (req, res) => {
         success: false,
         message: 'Department not found',
       });
+    }
+
+    // Verify division exists if provided
+    if (divisionId) {
+      const Division = require('../../departments/model/Division');
+      const division = await Division.findById(divisionId);
+      if (!division) {
+        return res.status(404).json({
+          success: false,
+          message: 'Division not found',
+        });
+      }
     }
 
     const item = await AllowanceDeductionMaster.findById(req.params.id);
@@ -374,12 +390,18 @@ exports.addOrUpdateDepartmentRule = async (req, res) => {
       }
     }
 
-    // Check if department rule already exists
-    const existingRuleIndex = item.departmentRules.findIndex(
-      (rule) => rule.departmentId.toString() === departmentId.toString()
-    );
+    // Check if division-department combination already exists
+    const existingRuleIndex = item.departmentRules.findIndex((rule) => {
+      const ruleDiv = rule.divisionId ? rule.divisionId.toString() : null;
+      const reqDiv = divisionId || null;
+      const ruleDept = rule.departmentId.toString();
+      const reqDept = departmentId.toString();
+
+      return ruleDiv === reqDiv && ruleDept === reqDept;
+    });
 
     const departmentRule = {
+      divisionId: divisionId || null,
       departmentId,
       type,
       amount: type === 'fixed' ? amount : null,
@@ -387,6 +409,7 @@ exports.addOrUpdateDepartmentRule = async (req, res) => {
       percentageBase: type === 'percentage' ? percentageBase : null,
       minAmount: minAmount || null,
       maxAmount: maxAmount || null,
+      basedOnPresentDays: type === 'fixed' ? (basedOnPresentDays || false) : false,
     };
 
     if (existingRuleIndex >= 0) {
@@ -400,12 +423,15 @@ exports.addOrUpdateDepartmentRule = async (req, res) => {
     item.updatedBy = req.user._id;
     await item.save();
 
+    await item.populate('departmentRules.divisionId', 'name code');
     await item.populate('departmentRules.departmentId', 'name code');
     await item.populate('updatedBy', 'name email');
 
     res.status(200).json({
       success: true,
-      message: 'Department rule updated successfully',
+      message: divisionId
+        ? 'Division-department specific rule updated successfully'
+        : 'Department rule updated successfully',
       data: item,
     });
   } catch (error) {
@@ -419,13 +445,14 @@ exports.addOrUpdateDepartmentRule = async (req, res) => {
 };
 
 /**
- * @desc    Remove department rule
- * @route   DELETE /api/allowances-deductions/:id/department-rule/:deptId
+ * @desc    Remove department rule (can be division-department specific)
+ * @route   DELETE /api/allowances-deductions/:id/department-rule/:deptId?divisionId=xxx
  * @access  Private (Super Admin, Sub Admin, HR)
  */
 exports.removeDepartmentRule = async (req, res) => {
   try {
     const { id, deptId } = req.params;
+    const { divisionId } = req.query;
 
     const item = await AllowanceDeductionMaster.findById(id);
     if (!item) {
@@ -435,14 +462,22 @@ exports.removeDepartmentRule = async (req, res) => {
       });
     }
 
-    const ruleIndex = item.departmentRules.findIndex(
-      (rule) => rule.departmentId.toString() === deptId.toString()
-    );
+    // Find rule matching division-department combination
+    const ruleIndex = item.departmentRules.findIndex((rule) => {
+      const ruleDiv = rule.divisionId ? rule.divisionId.toString() : null;
+      const reqDiv = divisionId || null;
+      const ruleDept = rule.departmentId.toString();
+      const reqDept = deptId.toString();
+
+      return ruleDiv === reqDiv && ruleDept === reqDept;
+    });
 
     if (ruleIndex === -1) {
       return res.status(404).json({
         success: false,
-        message: 'Department rule not found',
+        message: divisionId
+          ? 'Division-department specific rule not found'
+          : 'Department rule not found',
       });
     }
 

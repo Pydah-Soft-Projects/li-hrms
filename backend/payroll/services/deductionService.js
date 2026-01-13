@@ -461,9 +461,10 @@ async function calculateOtherDeductions(departmentId, basicPay, grossSalary = nu
 }
 
 /**
- * Get resolved deduction rule for a department
+ * Get resolved deduction rule for a department (with optional division support)
  * @param {Object} deductionMaster - AllowanceDeductionMaster document
  * @param {String} departmentId - Department ID
+ * @param {String} divisionId - Optional Division ID
  * @returns {Object} Resolved rule
  */
 function getResolvedDeductionRule(deductionMaster, departmentId, divisionId = null) {
@@ -471,29 +472,50 @@ function getResolvedDeductionRule(deductionMaster, departmentId, divisionId = nu
     return null;
   }
 
-  // TODO: Add divisionRules support if needed in AllowanceDeductionMaster
-  // For now, we prioritize departmentRules as before, but this supports division context if passed
-
-  // Check for department override
-  if (departmentId && deductionMaster.departmentRules && deductionMaster.departmentRules.length > 0) {
-    const deptRule = deductionMaster.departmentRules.find(
-      (rule) => rule.departmentId.toString() === departmentId.toString()
+  // Priority 1: Check for division-department specific rule
+  if (divisionId && departmentId && deductionMaster.departmentRules && deductionMaster.departmentRules.length > 0) {
+    const divDeptRule = deductionMaster.departmentRules.find(
+      (rule) =>
+        rule.divisionId &&
+        rule.divisionId.toString() === divisionId.toString() &&
+        rule.departmentId.toString() === departmentId.toString()
     );
 
-    if (deptRule) {
+    if (divDeptRule) {
       return {
-        type: deptRule.type,
-        amount: deptRule.amount,
-        percentage: deptRule.percentage,
-        percentageBase: deptRule.percentageBase,
-        minAmount: deptRule.minAmount,
-        maxAmount: deptRule.maxAmount,
-        basedOnPresentDays: deptRule.basedOnPresentDays || false,
+        type: divDeptRule.type,
+        amount: divDeptRule.amount,
+        percentage: divDeptRule.percentage,
+        percentageBase: divDeptRule.percentageBase,
+        minAmount: divDeptRule.minAmount,
+        maxAmount: divDeptRule.maxAmount,
+        basedOnPresentDays: divDeptRule.basedOnPresentDays || false,
       };
     }
   }
 
-  // Return global rule
+  // Priority 2: Check for department-only rule (backward compatible)
+  if (departmentId && deductionMaster.departmentRules && deductionMaster.departmentRules.length > 0) {
+    const deptOnlyRule = deductionMaster.departmentRules.find(
+      (rule) =>
+        !rule.divisionId && // No division specified
+        rule.departmentId.toString() === departmentId.toString()
+    );
+
+    if (deptOnlyRule) {
+      return {
+        type: deptOnlyRule.type,
+        amount: deptOnlyRule.amount,
+        percentage: deptOnlyRule.percentage,
+        percentageBase: deptOnlyRule.percentageBase,
+        minAmount: deptOnlyRule.minAmount,
+        maxAmount: deptOnlyRule.maxAmount,
+        basedOnPresentDays: deptOnlyRule.basedOnPresentDays || false,
+      };
+    }
+  }
+
+  // Priority 3: Return global rule
   if (deductionMaster.globalRule) {
     return {
       type: deductionMaster.globalRule.type,

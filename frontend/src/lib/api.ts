@@ -2332,6 +2332,7 @@ export const api = {
   },
 
   addOrUpdateDepartmentRule: async (id: string, data: {
+    divisionId?: string;  // NEW: Optional division ID
     departmentId: string;
     type: 'fixed' | 'percentage';
     amount?: number;
@@ -2347,8 +2348,9 @@ export const api = {
     });
   },
 
-  removeDepartmentRule: async (id: string, deptId: string) => {
-    return apiRequest<void>(`/allowances-deductions/${id}/department-rule/${deptId}`, {
+  removeDepartmentRule: async (id: string, deptId: string, divisionId?: string) => {
+    const query = divisionId ? `?divisionId=${divisionId}` : '';
+    return apiRequest<void>(`/allowances-deductions/${id}/department-rule/${deptId}${query}`, {
       method: 'DELETE',
     });
   },
