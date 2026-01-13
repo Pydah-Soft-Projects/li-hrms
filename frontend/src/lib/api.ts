@@ -2395,6 +2395,13 @@ export const api = {
     });
   },
 
+  calculatePayrollBulk: async (params: { month: string; divisionId?: string; departmentId?: string; strategy?: string }) => {
+    return apiRequest<any>('/payroll/bulk-calculate', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  },
+
   exportPayrollExcel: async (params: { month: string; departmentId?: string; employeeIds?: string[] }) => {
     const query = new URLSearchParams();
     query.append('month', params.month);
@@ -2416,8 +2423,16 @@ export const api = {
     });
 
     if (!response.ok) {
-      const text = await response.text();
-      throw new Error(text || 'Failed to export payroll');
+      // Try to parse as JSON first (for structured error responses)
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || errorData.error || 'Failed to export payroll');
+      } else {
+        // Fallback to text for non-JSON responses
+        const text = await response.text();
+        throw new Error(text || 'Failed to export payroll');
+      }
     }
 
     const blob = await response.blob();

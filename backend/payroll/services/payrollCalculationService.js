@@ -1018,6 +1018,13 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     const normalizedEmployeeAllowances = normalizeOverrides(employee.employeeAllowances || [], 'allowance');
     const normalizedEmployeeDeductions = normalizeOverrides(employee.employeeDeductions || [], 'deduction');
 
+    // Merge allowances with overrides
+    const resolvedAllowances = mergeWithOverrides(
+      baseAllowances,
+      normalizedEmployeeAllowances,
+      includeMissing
+    );
+
     // Process allowances
     let totalAllowances = 0;
     const allowanceBreakdown = resolvedAllowances

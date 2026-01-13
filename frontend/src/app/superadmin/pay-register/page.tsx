@@ -3,9 +3,10 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from "next/navigation";
 import { api, apiRequest, Employee, Division } from '@/lib/api';
-import { toast } from 'react-toastify';
+import { toast, ToastContainer } from 'react-toastify';
 import ArrearsPayrollSection from '@/components/Arrears/ArrearsPayrollSection';
 import Spinner from '@/components/Spinner';
+import 'react-toastify/dist/ReactToastify.css';
 
 
 
@@ -636,8 +637,12 @@ export default function PayRegisterPage() {
       window.URL.revokeObjectURL(url);
       toast.success('Payroll Excel ready');
     } catch (err: any) {
-      console.error('Error exporting payroll:', err);
-      toast.error(err.message || 'Failed to export payroll Excel');
+      // Debug: Log the error details
+      console.log('[Export Error]', err?.message || err);
+      // Show user-friendly error message via toast
+      const errorMessage = err?.message || 'Failed to export payroll Excel';
+      console.log('[Showing Toast]', errorMessage);
+      toast.error(errorMessage);
     } finally {
       setExportingExcel(false);
     }
@@ -656,31 +661,33 @@ export default function PayRegisterPage() {
     setBulkCalculating(true);
     toast.info('Calculating payroll for listed employees...');
     try {
-      for (const pr of payRegisters) {
-        const employeeId = typeof pr.employeeId === 'object' ? pr.employeeId._id : pr.employeeId;
+      const requestData = {
+        month: monthStr,
+        divisionId: selectedDivision === 'all' ? undefined : selectedDivision,
+        departmentId: selectedDepartment === 'all' ? undefined : selectedDepartment,
+        strategy: payrollStrategy
+      };
 
-        // Filter arrears for this specific employee
-        // Now using the employeeId stored in selectedArrears items
-        const employeeArrears = selectedArrears.filter((arrear: any) => {
-          return arrear.employeeId === employeeId;
-        });
+      console.log('[Bulk Calculate] Request:', requestData);
 
-        try {
-          const response = await api.calculatePayroll(employeeId, monthStr, params, employeeArrears);
-          if (response && response.data && response.data.batchId) {
-            batchIds.add(response.data.batchId);
-          }
-          successCount += 1;
-        } catch (err) {
-          failCount += 1;
-          console.error(`Error calculating payroll for employee ${employeeId}:`, err);
+      const response = await api.calculatePayrollBulk(requestData);
+
+      console.log('[Bulk Calculate] Response:', response);
+
+      if (response.success) {
+        successCount = response.data.successCount;
+        failCount = response.data.failCount;
+        if (response.data.batchIds) {
+          response.data.batchIds.forEach((id: string) => batchIds.add(id));
         }
-      }
 
-      if (failCount === 0) {
-        toast.success(`Payroll calculated for ${successCount} employees`);
+        if (failCount === 0) {
+          toast.success(`Payroll calculated for ${successCount} employees`);
+        } else {
+          toast.error(`Calculated ${successCount}, failed ${failCount}`);
+        }
       } else {
-        toast.error(`Calculated ${successCount}, failed ${failCount}`);
+        toast.error(response.message || 'Bulk calculation failed');
       }
 
       // Redirect logic based on batches created
@@ -708,8 +715,9 @@ export default function PayRegisterPage() {
         toast.warning('Calculation failed for all employees. Nothing to export.');
       }
 
-    } catch (error) {
-      console.error('Error in bulk payroll calculation:', error);
+    } catch (error: any) {
+      console.log('[Bulk Calculate] Error:', error);
+      toast.error(error?.message || 'Failed to calculate payroll');
     } finally {
       setBulkCalculating(false);
     }
@@ -2012,6 +2020,7 @@ export default function PayRegisterPage() {
           onArrearsSelected={handleArrearsSelected}
         />
       </div>
+      <ToastContainer position="top-right" autoClose={3000} />
     </div>
   );
 }

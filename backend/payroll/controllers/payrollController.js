@@ -661,6 +661,12 @@ exports.getPayrollRecords = async (req, res) => {
 
     const query = { ...req.scopeFilter };
 
+    // Debugging Payslip Issue
+    console.log('[getPayrollRecords] Params:', { month, employeeId, departmentId, status });
+    console.log('[getPayrollRecords] User Role:', req.user.role);
+    console.log('[getPayrollRecords] Scope:', JSON.stringify(req.scopeFilter));
+    console.log('[getPayrollRecords] Initial Query:', JSON.stringify(query));
+
     // Role-based filtering
     const isAdmin = ['super_admin', 'sub_admin', 'hr'].includes(req.user.role);
 
@@ -763,6 +769,9 @@ exports.getPayrollRecords = async (req, res) => {
       })
       .sort({ month: -1, emp_no: 1 })
       .limit(1000); // Limit to prevent large queries
+
+    console.log(`[getPayrollRecords] Final Query executed:`, JSON.stringify(query));
+    console.log(`[getPayrollRecords] Found ${payrollRecords.length} records.`);
 
     res.status(200).json({
       success: true,
