@@ -4,8 +4,15 @@ import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import Swal from 'sweetalert2';
 import Spinner from '@/components/Spinner';
+import { useAuth } from '@/contexts/AuthContext';  // NEW: Import useAuth for role checking
 
 interface Department {
+  _id: string;
+  name: string;
+  code?: string;
+}
+
+interface Division {
   _id: string;
   name: string;
   code?: string;
@@ -22,6 +29,7 @@ interface GlobalRule {
 }
 
 interface DepartmentRule {
+  divisionId?: string | { _id: string; name: string; code?: string } | null;  // NEW: Optional division ID
   departmentId: string | { _id: string; name: string; code?: string };
   type: 'fixed' | 'percentage';
   amount?: number | null;
@@ -45,10 +53,12 @@ interface AllowanceDeduction {
 }
 
 export default function AllowancesDeductionsPage() {
+  const { user } = useAuth();  // NEW: Get current user for role checking
   const [activeTab, setActiveTab] = useState<'all' | 'allowances' | 'deductions'>('all');
   const [items, setItems] = useState<AllowanceDeduction[]>([]);
   const [loading, setLoading] = useState(true);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [divisions, setDivisions] = useState<Division[]>([]);  // NEW: Divisions state
 
   // Dialog states
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -74,6 +84,7 @@ export default function AllowancesDeductionsPage() {
 
   // Department rule form
   const [deptRuleForm, setDeptRuleForm] = useState({
+    divisionId: '',  // NEW: Optional division selection
     departmentId: '',
     type: 'fixed' as 'fixed' | 'percentage',
     amount: null as number | null,
@@ -87,6 +98,7 @@ export default function AllowancesDeductionsPage() {
   useEffect(() => {
     loadItems();
     loadDepartments();
+    loadDivisions();  // NEW: Load divisions
   }, [activeTab]);
 
   const loadItems = async () => {
@@ -130,6 +142,18 @@ export default function AllowancesDeductionsPage() {
     }
   };
 
+  // NEW: Load divisions function
+  const loadDivisions = async () => {
+    try {
+      const response = await api.getDivisions(true);
+      if (response.success && response.data) {
+        setDivisions(response.data);
+      }
+    } catch (error) {
+      console.error('Error loading divisions:', error);
+    }
+  };
+
   const handleCreate = () => {
     resetForm();
     setShowCreateDialog(true);
@@ -169,6 +193,7 @@ export default function AllowancesDeductionsPage() {
       setSelectedItem(item);
       setSelectedDeptForRule(deptId);
       setDeptRuleForm({
+        divisionId: rule.divisionId ? (typeof rule.divisionId === 'string' ? rule.divisionId : rule.divisionId._id) : '',  // NEW: Include divisionId
         departmentId: deptId,
         type: rule.type,
         amount: rule.amount ?? null,
@@ -200,6 +225,7 @@ export default function AllowancesDeductionsPage() {
 
   const resetDeptRuleForm = () => {
     setDeptRuleForm({
+      divisionId: '',  // NEW: Reset divisionId
       departmentId: '',
       type: 'fixed',
       amount: null,
@@ -402,6 +428,7 @@ export default function AllowancesDeductionsPage() {
       }
 
       const response = await api.addOrUpdateDepartmentRule(selectedItem._id, {
+        divisionId: deptRuleForm.divisionId || undefined,  // NEW: Include optional divisionId
         departmentId: deptRuleForm.departmentId,
         type: deptRuleForm.type,
         amount: deptRuleForm.type === 'fixed' ? (deptRuleForm.amount ?? undefined) : undefined,
@@ -440,11 +467,13 @@ export default function AllowancesDeductionsPage() {
     }
   };
 
-  const handleDeleteDeptRule = async (itemId: string, deptId: string) => {
+  const handleDeleteDeptRule = async (itemId: string, deptId: string, divisionId?: string | null) => {
     const result = await Swal.fire({
       icon: 'question',
       title: 'Remove Department Rule?',
-      text: 'Are you sure you want to remove this department rule?',
+      text: divisionId
+        ? 'Are you sure you want to remove this division-department specific rule?'
+        : 'Are you sure you want to remove this department-wide rule?',
       showCancelButton: true,
       confirmButtonColor: '#10b981',
       cancelButtonColor: '#ef4444',
@@ -455,7 +484,7 @@ export default function AllowancesDeductionsPage() {
     if (!result.isConfirmed) return;
 
     try {
-      const response = await api.removeDepartmentRule(itemId, deptId);
+      const response = await api.removeDepartmentRule(itemId, deptId, divisionId || undefined);
       if (response.success) {
         Swal.fire({
           icon: 'success',
@@ -714,16 +743,32 @@ export default function AllowancesDeductionsPage() {
                     <div className="space-y-1.5 max-h-24 overflow-y-auto">
                       {item.departmentRules.slice(0, 2).map((rule, idx) => {
                         const deptId = typeof rule.departmentId === 'string' ? rule.departmentId : rule.departmentId._id;
+                        const divId = rule.divisionId ? (typeof rule.divisionId === 'string' ? rule.divisionId : rule.divisionId._id) : null;
+                        const divName = rule.divisionId && typeof rule.divisionId === 'object' ? rule.divisionId.name : null;
+                        // Check if user has permission to edit/delete (SuperAdmin, SubAdmin, HR)
+                        const canManageOverrides = user && ['super_admin', 'sub_admin', 'hr'].includes(user.role);
+
                         return (
                           <div
                             key={idx}
                             className="rounded-lg border border-green-200 bg-gradient-to-r from-green-50 to-green-50 p-2 dark:border-green-800 dark:from-green-900/20 dark:to-green-900/20"
                           >
-                            <div className="flex items-center justify-between">
+                            <div className="flex items-center justify-between gap-2">
                               <div className="flex-1 min-w-0">
-                                <p className="text-[10px] font-semibold text-slate-900 dark:text-slate-100 truncate">
-                                  {getDepartmentName(rule.departmentId)}
-                                </p>
+                                <div className="flex items-center gap-1.5 mb-1">
+                                  <p className="text-[10px] font-semibold text-slate-900 dark:text-slate-100 truncate">
+                                    {getDepartmentName(rule.departmentId)}
+                                  </p>
+                                  {divId ? (
+                                    <span className="inline-flex items-center rounded-md bg-blue-100 px-1.5 py-0.5 text-[9px] font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                                      {divName || 'Division'}
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center rounded-md bg-slate-100 px-1.5 py-0.5 text-[9px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                                      All Divisions
+                                    </span>
+                                  )}
+                                </div>
                                 <p className="mt-0.5 text-[10px] text-slate-600 dark:text-slate-400">
                                   {rule.type === 'fixed' ? (
                                     <>₹{rule.amount?.toLocaleString() || 0} (Fixed)</>
@@ -737,6 +782,31 @@ export default function AllowancesDeductionsPage() {
                                   </p>
                                 )}
                               </div>
+                              {/* Action buttons - only for authorized roles */}
+                              {canManageOverrides && (
+                                <div className="flex flex-col gap-1">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleEditDeptRule(item, deptId);
+                                    }}
+                                    className="rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 text-[9px] font-semibold text-blue-700 transition-all hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-300 dark:hover:bg-blue-900/50"
+                                    title="Edit this override"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteDeptRule(item._id, deptId, divId);
+                                    }}
+                                    className="rounded-md border border-red-200 bg-red-50 px-2 py-0.5 text-[9px] font-semibold text-red-700 transition-all hover:bg-red-100 dark:border-red-800 dark:bg-red-900/30 dark:text-red-300 dark:hover:bg-red-900/50"
+                                    title="Delete this override"
+                                  >
+                                    Del
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           </div>
                         );
@@ -1052,6 +1122,30 @@ export default function AllowancesDeductionsPage() {
             </div>
 
             <div className="space-y-4">
+              {/* Division (Optional) */}
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                  Division <span className="text-slate-400">(Optional)</span>
+                </label>
+                <select
+                  value={deptRuleForm.divisionId}
+                  onChange={(e) => setDeptRuleForm({ ...deptRuleForm, divisionId: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                >
+                  <option value="">All Divisions (Department-wide)</option>
+                  {divisions
+                    .filter((div) => div._id)
+                    .map((div) => (
+                      <option key={div._id} value={div._id}>
+                        {div.name} {div.code ? `(${div.code})` : ''}
+                      </option>
+                    ))}
+                </select>
+                <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
+                  Leave empty to apply this rule to all divisions in the selected department
+                </p>
+              </div>
+
               {/* Department Selection */}
               <div>
                 <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">

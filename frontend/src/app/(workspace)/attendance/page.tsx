@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
 import { useAuth } from '@/contexts/AuthContext';
@@ -147,6 +147,15 @@ export default function AttendancePage() {
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Pagination states for infinite scroll (NEW)
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(50);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const observerTarget = useRef<HTMLDivElement>(null);  // NEW: Ref for IntersectionObserver
+
   // Table type state
   const [tableType, setTableType] = useState<'complete' | 'present_absent' | 'in_out' | 'leaves' | 'od' | 'ot'>('complete');
 
@@ -226,16 +235,7 @@ export default function AttendancePage() {
           try {
             const response = await api.getAttendanceCalendar(emp.emp_no, year, month);
             if (response.success) {
-              // Transform to expected format if needed, or set directly
-              // The API returns { data: { "YYYY-MM-DD": Record } }
-              // But we want to confirm structure.
-              // Actually getAttendanceCalendar returns data object directly as the map.
               setAttendanceData(prev => ({ ...prev, [emp._id]: response.data || {} }));
-              // Also set detail view data if needed, but for now just the map
-
-              // We also need to populate monthlyData for the summary view if we want to reuse that UI?
-              // Or just reuse the calendar view which relies on `availableShifts` and `attendanceData`.
-              // The Calendar view uses `attendanceData[selectedEmployee._id]`.
             }
           } catch (e) { console.error(e); }
           setLoadingAttendance(false);
@@ -243,9 +243,51 @@ export default function AttendancePage() {
       }
       fetchEmpAttendance();
     } else {
-      loadMonthlyAttendance();
+      // NEW: Reset pagination and load first page
+      setPage(1);
+      setHasMore(true);
+      loadMonthlyAttendance(true);
     }
   }, [year, month, isEmployee, user]);
+
+  // NEW: Reset page when filters change
+  useEffect(() => {
+    if (!isEmployee) {
+      setPage(1);
+      setHasMore(true);
+      loadMonthlyAttendance(true);
+    }
+  }, [selectedDivision, selectedDepartment, selectedDesignation]);
+
+  // NEW: Handle Load More when page changes
+  useEffect(() => {
+    if (page > 1 && !isEmployee) {
+      loadMonthlyAttendance(false);
+    }
+  }, [page]);
+
+  // NEW: Intersection Observer for infinite scroll
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !loading && !loadingMore) {
+          setPage(prev => prev + 1);
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    const currentTarget = observerTarget.current;
+    if (currentTarget) {
+      observer.observe(currentTarget);
+    }
+
+    return () => {
+      if (currentTarget) {
+        observer.unobserve(currentTarget);
+      }
+    };
+  }, [hasMore, loading, loadingMore, page]);
 
   useEffect(() => {
     // Apply filters to monthly data
@@ -343,13 +385,49 @@ export default function AttendancePage() {
     }
   };
 
-  const loadMonthlyAttendance = async () => {
+  const loadMonthlyAttendance = async (reset: boolean = false) => {
     try {
-      setLoading(true);
+      if (reset) {
+        setLoading(true);
+      } else {
+        setLoadingMore(true);
+      }
+
       setError('');
-      const response = await api.getMonthlyAttendance(year, month);
+      const targetPage = reset ? 1 : page;
+
+      const response = await api.getMonthlyAttendance(year, month, {
+        page: targetPage,
+        limit,
+        search: searchQuery,
+        divisionId: selectedDivision,
+        departmentId: selectedDepartment,
+        designationId: selectedDesignation
+      });
+
       if (response.success) {
-        setMonthlyData(response.data || []);
+        const newData = response.data || [];
+
+        if (reset) {
+          setMonthlyData(newData);
+        } else {
+          // Append new data, filter out duplicates
+          setMonthlyData(prev => {
+            const existingIds = new Set(prev.map(i => i.employee._id));
+            const uniqueNewData = newData.filter((i: any) => !existingIds.has(i.employee._id));
+            return [...prev, ...uniqueNewData];
+          });
+        }
+
+        // Update pagination status
+        const pagInfo = (response as any).pagination;
+        if (pagInfo) {
+          setTotalPages(pagInfo.totalPages || 1);
+          setTotalCount(pagInfo.total || 0);
+          setHasMore(targetPage < pagInfo.totalPages);
+        } else {
+          setHasMore(false);
+        }
       } else {
         setError(response.message || 'Failed to load monthly attendance');
       }
@@ -357,7 +435,8 @@ export default function AttendancePage() {
       console.error('Error loading monthly attendance:', err);
       setError(err.message || 'Failed to load monthly attendance');
     } finally {
-      setLoading(false);
+      if (reset) setLoading(false);
+      setLoadingMore(false);
     }
   };
 
@@ -1633,6 +1712,22 @@ export default function AttendancePage() {
               )}
             </tbody>
           </table>
+
+          {/* Infinite Scroll Sentinel (NEW) */}
+          <div ref={observerTarget} className="h-4 w-full" />
+
+          {/* Loading More Indicator (NEW) */}
+          {loadingMore && (
+            <div className="flex justify-center items-center py-8">
+              <div className="flex items-center gap-3 text-slate-600 dark:text-slate-400">
+                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                <span className="text-sm font-medium">Loading more attendance records...</span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

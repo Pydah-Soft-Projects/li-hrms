@@ -2,18 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from "next/navigation";
-import { api, apiRequest } from '@/lib/api';
+import { api, apiRequest, Employee, Division } from '@/lib/api';
 import { toast } from 'react-toastify';
 import ArrearsPayrollSection from '@/components/Arrears/ArrearsPayrollSection';
 import Spinner from '@/components/Spinner';
 
-interface Employee {
-  _id: string;
-  emp_no: string;
-  employee_name: string;
-  department_id?: string | { _id: string; name: string };
-  designation_id?: string | { _id: string; name: string };
-}
+
 
 
 interface DailyRecord {
@@ -105,6 +99,8 @@ export default function PayRegisterPage() {
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [activeTable, setActiveTable] = useState<TableType>('present');
   const [departments, setDepartments] = useState<any[]>([]);
+  const [divisions, setDivisions] = useState<Division[]>([]);  // NEW: Division state
+  const [selectedDivision, setSelectedDivision] = useState<string>('');  // NEW: Selected division filter
   const [selectedDepartment, setSelectedDepartment] = useState<string>('');
   const [leaveTypes, setLeaveTypes] = useState<any[]>([]);
   const [calculatingId, setCalculatingId] = useState<string | null>(null);
@@ -162,6 +158,11 @@ export default function PayRegisterPage() {
   const [isHalfDayMode, setIsHalfDayMode] = useState(false);
   const [payrollStrategy, setPayrollStrategy] = useState<'legacy' | 'new'>('new');
 
+  // Pagination State (NEW)
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth() + 1;
   const monthStr = `${year}-${String(month).padStart(2, '0')}`;
@@ -172,9 +173,22 @@ export default function PayRegisterPage() {
 
   useEffect(() => {
     loadShifts();
+    loadDivisions();  // NEW: Load divisions
     loadDepartments();
     loadLeaveTypes();
   }, []);
+
+  // NEW: Load divisions function
+  const loadDivisions = async () => {
+    try {
+      const response = await api.getDivisions();
+      if (response.success) {
+        setDivisions(response.data || []);
+      }
+    } catch (err) {
+      console.error('Error loading divisions:', err);
+    }
+  };
 
   const loadLeaveTypes = async () => {
     try {
@@ -188,13 +202,16 @@ export default function PayRegisterPage() {
   };
 
   useEffect(() => {
-    loadPayRegisters();
+    setPage(1);  // NEW: Reset page when filters change
+    setHasMore(true);  // NEW: Reset hasMore
+    loadPayRegisters(1, false);  // NEW: Load first page
     checkBatchLocks();
-  }, [year, month, selectedDepartment]);
+  }, [year, month, selectedDepartment, selectedDivision]);  // NEW: Added selectedDivision dependency
 
   const checkBatchLocks = async () => {
     try {
-      const response = await api.getPayrollBatches({ month: monthStr });
+      const divId = selectedDivision && selectedDivision.trim() !== '' ? selectedDivision : undefined;  // NEW: Include divisionId
+      const response = await api.getPayrollBatches({ month: monthStr, divisionId: divId });  // NEW: Pass divisionId
       if (response && response.data) {
         const statusMap = new Map<string, { status: string, permissionGranted: boolean, batchId: string }>();
         // response.data is array of batches
@@ -236,105 +253,67 @@ export default function PayRegisterPage() {
     }
   };
 
-  const loadPayRegisters = async () => {
+  // NEW: Updated to support pagination
+  const loadPayRegisters = async (pageToLoad = 1, append = false) => {
     try {
-      setLoading(true);
-      console.log('[Pay Register] Loading pay registers:', { monthStr, selectedDepartment });
+      if (append) {
+        setLoadingMore(true);
+      } else {
+        setLoading(true);
+      }
+
+      console.log('[Pay Register] Loading pay registers:', { monthStr, selectedDepartment, selectedDivision, page: pageToLoad });
 
       // Ensure we pass undefined instead of empty string
-      const deptId = selectedDepartment && selectedDepartment.trim() !== '' ? selectedDepartment : undefined;
-      console.log('[Pay Register] Calling API with departmentId:', deptId);
+      const targetDeptId = selectedDepartment && selectedDepartment.trim() !== '' ? selectedDepartment : undefined;
+      const targetDivId = selectedDivision && selectedDivision.trim() !== '' ? selectedDivision : undefined;
 
-      const response = await api.getEmployeesWithPayRegister(monthStr, deptId);
-
-      console.log('[Pay Register] API Response:', {
-        success: response.success,
-        count: response.count,
-        dataLength: response.data?.length || 0,
-        data: response.data,
-      });
+      const limit = 50;
+      const response = await api.getEmployeesWithPayRegister(monthStr, targetDeptId, targetDivId, undefined, pageToLoad, limit);
 
       if (response.success) {
         const payRegisterList = response.data || [];
+        console.log('[Pay Register] Loaded page', pageToLoad, 'count:', payRegisterList.length);
 
-        console.log('[Pay Register] Processing pay register list:', {
-          listLength: payRegisterList.length,
-          firstItem: payRegisterList[0],
-        });
-
-        if (payRegisterList.length === 0) {
-          console.log('[Pay Register] No pay registers found, setting empty array');
-          setPayRegisters([]);
-          return;
+        if (append) {
+          setPayRegisters(prev => [...prev, ...payRegisterList]);
+        } else {
+          setPayRegisters(payRegisterList);
         }
 
-        // Load full pay register details for each employee
-        console.log('[Pay Register] Loading full details for', payRegisterList.length, 'employees');
-        const fullPayRegisters = await Promise.all(
-          payRegisterList.map(async (pr: any, index: number) => {
-            try {
-              const employeeId = typeof pr.employeeId === 'object' ? pr.employeeId._id : pr.employeeId;
-              console.log(`[Pay Register] Loading full details for employee ${index + 1}/${payRegisterList.length}:`, employeeId);
+        // Update pagination status
+        if (response.pagination) {
+          setHasMore(pageToLoad < response.pagination.totalPages);
+        } else {
+          // Fallback if pagination metadata is missing
+          setHasMore(payRegisterList.length === limit);
+        }
 
-              let fullResponse = await api.getPayRegister(employeeId, monthStr);
-
-              // If pay register doesn't exist, create it
-              if (!fullResponse.success || !fullResponse.data) {
-                console.log(`[Pay Register] Pay register not found, creating for employee ${index + 1}`);
-                const createResponse = await api.createPayRegister(employeeId, monthStr);
-                if (createResponse.success && createResponse.data) {
-                  fullResponse = createResponse;
-                } else {
-                  console.warn(`[Pay Register] Failed to create pay register for employee ${index + 1}:`, createResponse);
-                  return null;
-                }
-              }
-
-              if (fullResponse.success && fullResponse.data) {
-                console.log(`[Pay Register] Successfully loaded pay register for employee ${index + 1}`);
-                return fullResponse.data;
-              }
-              console.warn(`[Pay Register] Failed to load pay register for employee ${index + 1}:`, fullResponse);
-              return null;
-            } catch (err) {
-              console.error(`[Pay Register] Error loading pay register for employee ${index + 1}:`, err);
-              // Try to create if get failed
-              try {
-                const employeeId = typeof pr.employeeId === 'object' ? pr.employeeId._id : pr.employeeId;
-                console.log(`[Pay Register] Attempting to create pay register for employee ${index + 1} after error`);
-                const createResponse = await api.createPayRegister(employeeId, monthStr);
-                if (createResponse.success && createResponse.data) {
-                  return createResponse.data;
-                }
-              } catch (createErr) {
-                console.error(`[Pay Register] Failed to create pay register for employee ${index + 1}:`, createErr);
-              }
-              return null;
-            }
-          })
-        );
-
-        const validPayRegisters = fullPayRegisters.filter(Boolean);
-        console.log('[Pay Register] Final valid pay registers:', validPayRegisters.length);
-        setPayRegisters(validPayRegisters);
-
-        if (validPayRegisters.length === 0 && payRegisterList.length > 0) {
-          console.warn('[Pay Register] No valid pay registers loaded despite API returning data');
+        if (payRegisterList.length === 0 && !append) {
+          toast.info('No employees found for this selection');
         }
       } else {
         console.error('[Pay Register] API call failed:', response);
-        setPayRegisters([]);
+        if (!append) setPayRegisters([]);
         if (response.message) {
           toast.error(response.message);
         }
       }
     } catch (err: any) {
       console.error('[Pay Register] Error loading pay registers:', err);
-      setPayRegisters([]);
+      if (!append) setPayRegisters([]);
       toast.error(err.message || 'Failed to load pay registers');
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
+  };
+
+  // NEW: Handle load more
+  const handleLoadMore = () => {
+    const nextPage = page + 1;
+    setPage(nextPage);
+    loadPayRegisters(nextPage, true);
   };
 
   const handleSyncAll = async () => {
@@ -827,6 +806,25 @@ export default function PayRegisterPage() {
               }}
               className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-white"
             />
+          </div>
+
+          {/* Division Filter (NEW) */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+              Division
+            </label>
+            <select
+              value={selectedDivision}
+              onChange={(e) => setSelectedDivision(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-white"
+            >
+              <option value="">All Divisions</option>
+              {divisions.map((div) => (
+                <option key={div._id} value={div._id}>
+                  {div.name}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* Department Filter */}
@@ -1967,6 +1965,29 @@ export default function PayRegisterPage() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Load More Button (NEW) */}
+      {hasMore && !loading && payRegisters.length > 0 && (
+        <div className="flex justify-center my-6">
+          <button
+            onClick={handleLoadMore}
+            disabled={loadingMore}
+            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md hover:shadow-lg"
+          >
+            {loadingMore ? (
+              <span className="flex items-center gap-2">
+                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                Loading More...
+              </span>
+            ) : (
+              `Load More (Page ${page + 1})`
+            )}
+          </button>
         </div>
       )}
 
