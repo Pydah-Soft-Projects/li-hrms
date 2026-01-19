@@ -638,7 +638,7 @@ export default function EmployeesPage() {
     if (user) {
       setUserRole(user.role);
     }
-    loadEmployees(1, false); // Load first page
+    loadEmployees(1); // Load first page
     loadDivisions();
     loadDepartments();
     loadFormSettings();

@@ -283,6 +283,19 @@ export async function apiRequest<T>(
     console.log(`[API Response] ${response.status} ${url}`, data);
 
     if (!response.ok) {
+      if (response.status === 401) {
+        console.warn('[API] Unauthorized access detected (401). Logging out...');
+        auth.logout();
+        if (typeof window !== 'undefined') {
+          // Prevent multiple alerts/redirects if multiple requests fail at once
+          if (!(window as any)._isLoggingOut) {
+            (window as any)._isLoggingOut = true;
+            alert('Your session has expired. Please login again for security reasons.');
+            window.location.href = '/login';
+          }
+        }
+      }
+
       return {
         success: false,
         message: data.message || 'An error occurred',
