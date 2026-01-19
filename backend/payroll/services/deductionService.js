@@ -4,6 +4,7 @@ const DepartmentSettings = require('../../departments/model/DepartmentSettings')
 const PermissionDeductionSettings = require('../../permissions/model/PermissionDeductionSettings');
 const AttendanceDeductionSettings = require('../../attendance/model/AttendanceDeductionSettings');
 const AllowanceDeductionMaster = require('../../allowances-deductions/model/AllowanceDeductionMaster');
+const cacheService = require('../../shared/services/cacheService');
 
 /**
  * Deduction Calculation Service
@@ -17,16 +18,23 @@ const AllowanceDeductionMaster = require('../../allowances-deductions/model/Allo
  */
 async function getResolvedPermissionDeductionRules(departmentId, divisionId = null) {
   try {
+    const cacheKey = `settings:deduction:permission:dept:${departmentId}:div:${divisionId || 'none'}`;
+    let resolved = await cacheService.get(cacheKey);
+    if (resolved) return resolved;
+
     const deptSettings = await DepartmentSettings.getByDeptAndDiv(departmentId, divisionId);
     const globalSettings = await PermissionDeductionSettings.getActiveSettings();
 
-    return {
+    resolved = {
       countThreshold: deptSettings?.permissions?.deductionRules?.countThreshold ?? globalSettings?.deductionRules?.countThreshold ?? null,
       deductionType: deptSettings?.permissions?.deductionRules?.deductionType ?? globalSettings?.deductionRules?.deductionType ?? null,
       deductionAmount: deptSettings?.permissions?.deductionRules?.deductionAmount ?? globalSettings?.deductionRules?.deductionAmount ?? null,
       minimumDuration: deptSettings?.permissions?.deductionRules?.minimumDuration ?? globalSettings?.deductionRules?.minimumDuration ?? null,
       calculationMode: deptSettings?.permissions?.deductionRules?.calculationMode ?? globalSettings?.deductionRules?.calculationMode ?? null,
     };
+
+    await cacheService.set(cacheKey, resolved, 300);
+    return resolved;
   } catch (error) {
     console.error('Error getting resolved permission deduction rules:', error);
     return {
@@ -46,16 +54,23 @@ async function getResolvedPermissionDeductionRules(departmentId, divisionId = nu
  */
 async function getResolvedAttendanceDeductionRules(departmentId, divisionId = null) {
   try {
+    const cacheKey = `settings:deduction:attendance:dept:${departmentId}:div:${divisionId || 'none'}`;
+    let resolved = await cacheService.get(cacheKey);
+    if (resolved) return resolved;
+
     const deptSettings = await DepartmentSettings.getByDeptAndDiv(departmentId, divisionId);
     const globalSettings = await AttendanceDeductionSettings.getActiveSettings();
 
-    return {
+    resolved = {
       combinedCountThreshold: deptSettings?.attendance?.deductionRules?.combinedCountThreshold ?? globalSettings?.deductionRules?.combinedCountThreshold ?? null,
       deductionType: deptSettings?.attendance?.deductionRules?.deductionType ?? globalSettings?.deductionRules?.deductionType ?? null,
       deductionAmount: deptSettings?.attendance?.deductionRules?.deductionAmount ?? globalSettings?.deductionRules?.deductionAmount ?? null,
       minimumDuration: deptSettings?.attendance?.deductionRules?.minimumDuration ?? globalSettings?.deductionRules?.minimumDuration ?? null,
       calculationMode: deptSettings?.attendance?.deductionRules?.calculationMode ?? globalSettings?.deductionRules?.calculationMode ?? null,
     };
+
+    await cacheService.set(cacheKey, resolved, 300);
+    return resolved;
   } catch (error) {
     console.error('Error getting resolved attendance deduction rules:', error);
     return {
@@ -330,10 +345,16 @@ function calculateLeaveDeduction(totalLeaves, paidLeaves, totalDaysInMonth, basi
  */
 async function getAllActiveDeductions(departmentId, divisionId = null) {
   try {
-    const deductionMasters = await AllowanceDeductionMaster.find({
-      category: 'deduction',
-      isActive: true,
-    });
+    const cacheKey = `settings:deduction:masters:all`;
+    let deductionMasters = await cacheService.get(cacheKey);
+
+    if (!deductionMasters) {
+      deductionMasters = await AllowanceDeductionMaster.find({
+        category: 'deduction',
+        isActive: true,
+      }).lean();
+      await cacheService.set(cacheKey, deductionMasters, 600); // Master data can be cached longer
+    }
 
     const deductions = [];
 

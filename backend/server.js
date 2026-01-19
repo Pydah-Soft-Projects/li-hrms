@@ -2,6 +2,9 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const compression = require('compression');
+const rateLimit = require('express-rate-limit');
 const { initializeAllDatabases } = require('./config/init');
 const { checkConnection: checkS3Connection } = require('./shared/services/s3UploadService');
 
@@ -10,6 +13,22 @@ module.exports = app;
 const PORT = process.env.PORT || 5000;
 
 // Middleware
+app.use(helmet()); // Security headers
+app.use(compression()); // Gzip compression
+
+// Rate Limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5000, // Limit each IP to 5000 requests per windowMs
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: 'Too Many Requests',
+    message: 'Too many requests from this IP, please try again after 15 minutes'
+  }
+});
+app.use('/api/', limiter); // Apply rate limiting to all API routes
+
 const logger = require('./middleware/logger');
 app.use(logger); // Log all requests
 

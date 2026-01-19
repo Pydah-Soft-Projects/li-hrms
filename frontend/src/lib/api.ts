@@ -1029,6 +1029,7 @@ export const api = {
     includeLeft?: boolean;
     page?: number;
     limit?: number;
+    search?: string;
   }) => {
     const params = new URLSearchParams();
     if (filters?.is_active !== undefined) params.append('is_active', String(filters.is_active));
@@ -1038,6 +1039,7 @@ export const api = {
     if (filters?.includeLeft !== undefined) params.append('includeLeft', String(filters.includeLeft));
     if (filters?.page !== undefined) params.append('page', String(filters.page));
     if (filters?.limit !== undefined) params.append('limit', String(filters.limit));
+    if (filters?.search) params.append('search', filters.search);
     const query = params.toString() ? `?${params.toString()}` : '';
     return apiRequest<any>(`/employees${query}`, { method: 'GET' });
   },

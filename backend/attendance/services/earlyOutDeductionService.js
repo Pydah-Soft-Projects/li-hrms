@@ -1,4 +1,5 @@
 const EarlyOutSettings = require('../model/EarlyOutSettings');
+const cacheService = require('../../shared/services/cacheService');
 
 /**
  * Early-Out Deduction Service
@@ -8,12 +9,25 @@ const EarlyOutSettings = require('../model/EarlyOutSettings');
 /**
  * Calculate deduction for a single early-out instance
  * @param {Number} earlyOutMinutes - Minutes of early-out
+ * @param {Object} [providedSettings] - Optional settings to avoid DB hit (for batching)
  * @returns {Object} Deduction details
  */
-async function calculateEarlyOutDeduction(earlyOutMinutes) {
+async function calculateEarlyOutDeduction(earlyOutMinutes, providedSettings = null) {
   try {
-    // Get active early-out settings
-    const settings = await EarlyOutSettings.getActiveSettings();
+    // Get active early-out settings (with caching)
+    let settings = providedSettings;
+    if (!settings) {
+      const cacheKey = 'settings:early_out:active';
+      settings = await cacheService.get(cacheKey);
+
+      if (!settings) {
+        settings = await EarlyOutSettings.getActiveSettings();
+        if (settings) {
+          // Cache for 10 minutes
+          await cacheService.set(cacheKey, settings, 600);
+        }
+      }
+    }
 
     // If early-out settings are disabled, return no deduction
     if (!settings || !settings.isEnabled) {
@@ -160,13 +174,21 @@ async function calculateMonthlyEarlyOutDeductions(employeeNumber, year, monthNum
       custom_amount: 0,
     };
 
+    // Get settings once for the month (batching optimization)
+    const settingsCacheKey = 'settings:early_out:active';
+    let settings = await cacheService.get(settingsCacheKey);
+    if (!settings) {
+      settings = await EarlyOutSettings.getActiveSettings();
+      if (settings) await cacheService.set(settingsCacheKey, settings, 600);
+    }
+
     // Calculate deductions for each day
     for (const record of attendanceRecords) {
       if (record.earlyOutMinutes > 0) {
         totalEarlyOutMinutes += record.earlyOutMinutes;
 
-        // Calculate deduction for this day
-        const deduction = await calculateEarlyOutDeduction(record.earlyOutMinutes);
+        // Calculate deduction for this day - PASS SETTINGS to avoid redundant DB hits
+        const deduction = await calculateEarlyOutDeduction(record.earlyOutMinutes, settings);
 
         if (deduction.deductionApplied) {
           if (deduction.deductionDays) {

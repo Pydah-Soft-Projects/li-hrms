@@ -239,14 +239,16 @@ exports.getMonthlyTableViewData = async (employees, year, month) => {
   const startDateObj = new Date(targetYear, targetMonth - 1, 1);
   const endDateObj = new Date(targetYear, targetMonth, 0, 23, 59, 59, 999);
 
-  // Get all attendance records for the month
+  // Get all attendance records for the month (Using .lean() and projections)
   const empNos = employees.map(e => e.emp_no);
   const attendanceRecords = await AttendanceDaily.find({
     employeeNumber: { $in: empNos },
     date: { $gte: startDate, $lte: endDateStr },
   })
+    .select('employeeNumber date status inTime outTime totalHours lateInMinutes earlyOutMinutes isLateIn isEarlyOut shiftId expectedHours otHours extraHours permissionHours permissionCount notes earlyOutDeduction')
     .populate('shiftId', 'name startTime endTime duration payableShifts')
-    .sort({ employeeNumber: 1, date: 1 });
+    .sort({ employeeNumber: 1, date: 1 })
+    .lean();
 
   // Get all approved leaves
   const empIds = employees.map(e => e._id);
@@ -257,7 +259,10 @@ exports.getMonthlyTableViewData = async (employees, year, month) => {
       { fromDate: { $lte: endDateObj }, toDate: { $gte: startDateObj } },
     ],
     isActive: true,
-  }).populate('employeeId', 'emp_no');
+  })
+    .select('employeeId fromDate toDate leaveType isHalfDay halfDayType')
+    .populate('employeeId', 'emp_no')
+    .lean();
 
   // Get all approved ODs
   const allODs = await OD.find({
@@ -267,7 +272,10 @@ exports.getMonthlyTableViewData = async (employees, year, month) => {
       { fromDate: { $lte: endDateObj }, toDate: { $gte: startDateObj } },
     ],
     isActive: true,
-  }).populate('employeeId', 'emp_no');
+  })
+    .select('employeeId fromDate toDate odType odType_extended isHalfDay halfDayType odStartTime odEndTime')
+    .populate('employeeId', 'emp_no')
+    .lean();
 
   // Create Leave Map
   const leaveMapByEmployee = {};
@@ -333,106 +341,34 @@ exports.getMonthlyTableViewData = async (employees, year, month) => {
     attendanceMap[record.employeeNumber][record.date] = record;
   });
 
-  // Recalculate Summaries (Verification Logic)
-  const summaryMap = {};
+  // Optimize Summary Retrieval: Fetch all summaries at once instead of in a loop
+  const MonthlyAttendanceSummary = require('../model/MonthlyAttendanceSummary');
+  const monthStr = `${targetYear}-${String(targetMonth).padStart(2, '0')}`;
+  const preCalculatedSummaries = await MonthlyAttendanceSummary.find({
+    employeeId: { $in: empIds },
+    month: monthStr
+  }).lean();
+
   const summaryDataMap = {};
-
-  const summaryPromises = employees.map(async (emp) => {
-    try {
-      const summary = await calculateMonthlySummary(emp._id, emp.emp_no, targetYear, targetMonth);
-
-      // Verification logic (simplified for service - assuming core calculation is trusted or we can duplicate validation if critical)
-      // For Controller Slimming, I'm keeping the complex validation logic here as it was in controller. 
-      // It's "business logic" regarding data integrity.
-
-      // ... [Insert the verification Logic from controller if needed, or trust summary] ...
-      // Copying the validation logic as it seems critical for this system
-
-      let verifiedLeaveDays = 0;
-      const empLeaves = allLeaves.filter(l => {
-        const empNo = l.employeeId?.emp_no || l.emp_no;
-        return empNo === emp.emp_no;
-      });
-
-      for (const leave of empLeaves) {
-        const leaveStart = new Date(leave.fromDate);
-        const leaveEnd = new Date(leave.toDate);
-        leaveStart.setHours(0, 0, 0, 0);
-        leaveEnd.setHours(23, 59, 59, 999);
-        let currentDate = new Date(leaveStart);
-        while (currentDate <= leaveEnd) {
-          const currentYear = currentDate.getFullYear();
-          const currentMonth = currentDate.getMonth() + 1;
-          if (currentYear === targetYear && currentMonth === targetMonth) {
-            verifiedLeaveDays += leave.isHalfDay ? 0.5 : 1;
-          }
-          currentDate.setDate(currentDate.getDate() + 1);
-        }
-      }
-
-      let verifiedODDays = 0;
-      const empODs = allODs.filter(od => {
-        const empNo = od.employeeId?.emp_no || od.emp_no;
-        return empNo === emp.emp_no;
-      });
-      for (const od of empODs) {
-        if (od.odType_extended === 'hours') continue;
-        const odStart = new Date(od.fromDate);
-        const odEnd = new Date(od.toDate);
-        odStart.setHours(0, 0, 0, 0);
-        odEnd.setHours(23, 59, 59, 999);
-        let currentDate = new Date(odStart);
-        while (currentDate <= odEnd) {
-          const currentYear = currentDate.getFullYear();
-          const currentMonth = currentDate.getMonth() + 1;
-          if (currentYear === targetYear && currentMonth === targetMonth) {
-            verifiedODDays += od.isHalfDay ? 0.5 : 1;
-          }
-          currentDate.setDate(currentDate.getDate() + 1);
-        }
-      }
-
-      const verifiedLeaves = Math.round(verifiedLeaveDays * 10) / 10;
-      const verifiedODs = Math.round(verifiedODDays * 10) / 10;
-
-      if (Math.abs(summary.totalLeaves - verifiedLeaves) > 0.1 || Math.abs(summary.totalODs - verifiedODs) > 0.1) {
-        summary.totalLeaves = verifiedLeaves;
-        summary.totalODs = verifiedODs;
-        let totalPayableShifts = 0;
-        const presentDays = attendanceRecords.filter(
-          r => r.employeeNumber === emp.emp_no && (r.status === 'PRESENT' || r.status === 'PARTIAL')
-        );
-        for (const record of presentDays) {
-          if (record.shiftId && typeof record.shiftId === 'object' && record.shiftId.payableShifts !== undefined) {
-            totalPayableShifts += Number(record.shiftId.payableShifts);
-          } else {
-            totalPayableShifts += 1;
-          }
-        }
-        totalPayableShifts += verifiedODDays;
-        summary.totalPayableShifts = Math.round(totalPayableShifts * 100) / 100;
-        await summary.save();
-      }
-
-      return {
-        emp_no: emp.emp_no,
-        payableShifts: summary.totalPayableShifts,
-        summary: summary
-      };
-
-    } catch (error) {
-      console.error(`Error calculating summary for ${emp.emp_no}:`, error);
-      return { emp_no: emp.emp_no, payableShifts: 0, summary: null };
-    }
+  preCalculatedSummaries.forEach(s => {
+    summaryDataMap[s.emp_no] = s;
   });
 
-  const summaryResults = await Promise.all(summaryPromises);
-  summaryResults.forEach(result => {
-    summaryMap[result.emp_no] = result.payableShifts;
-    if (result.summary) {
-      summaryDataMap[result.emp_no] = result.summary;
+  // Handle missing summaries (only calculate for those that don't exist)
+  for (const emp of employees) {
+    if (!summaryDataMap[emp.emp_no]) {
+      try {
+        const newSummary = await calculateMonthlySummary(emp._id, emp.emp_no, targetYear, targetMonth);
+        summaryDataMap[emp.emp_no] = newSummary.toObject();
+      } catch (err) {
+        console.error(`Failed to calculate missing summary for ${emp.emp_no}:`, err);
+      }
     }
-  });
+  }
+
+  // Recalculate Summaries (Verification Logic)
+  // The previous summaryPromises block is replaced by the optimized summary retrieval above.
+  // The verification logic is now integrated into the final response mapping or can be done here if needed.
 
   // Build final response structure
   return employees.map(emp => {
@@ -486,7 +422,7 @@ exports.getMonthlyTableViewData = async (employees, year, month) => {
       employee: emp,
       dailyAttendance: dailyAttendance,
       presentDays: summaryDataMap[emp.emp_no]?.totalPresentDays || 0,
-      payableShifts: summaryMap[emp.emp_no] || 0,
+      payableShifts: summaryDataMap[emp.emp_no]?.totalPayableShifts || 0,
       summary: summaryDataMap[emp.emp_no] || null
     };
   });

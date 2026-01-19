@@ -21,8 +21,12 @@ let sqlPool = null;
 const connectMongoDB = async () => {
   try {
     const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/hrms';
-    await mongoose.connect(mongoURI);
-    console.log('✅ MongoDB connected successfully');
+    await mongoose.connect(mongoURI, {
+      maxPoolSize: 500, // Handle high concurrency
+      minPoolSize: 10,
+      socketTimeoutMS: 45000,
+    });
+    console.log('✅ MongoDB connected successfully (Pool Size: 500)');
   } catch (error) {
     console.error('❌ MongoDB connection error:', error.message);
     if (process.env.NODE_ENV !== 'test') {
@@ -51,7 +55,7 @@ const connectSQL = async () => {
         password: process.env.SQL_PASSWORD,
         database: database,
         waitForConnections: true,
-        connectionLimit: 10,
+        connectionLimit: 300, // Increased for high load
         queueLimit: 0,
         // MySQL specific options
         multipleStatements: true
@@ -98,8 +102,8 @@ const connectSQL = async () => {
           enableArithAbort: true,
         },
         pool: {
-          max: 10,
-          min: 0,
+          max: 300, // Increased for high load
+          min: 10,
           idleTimeoutMillis: 30000,
         },
       };

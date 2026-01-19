@@ -9,13 +9,15 @@ const logger = (req, res, next) => {
   // Log request
   console.log(`[${timestamp}] ${method} ${url} - IP: ${ip}`);
 
-  // Log request body for POST/PUT/PATCH (excluding sensitive data)
-  if (['POST', 'PUT', 'PATCH'].includes(method) && req.body) {
+  // Log request body ONLY for non-production or specific scenarios to save I/O
+  if (process.env.NODE_ENV !== 'production' && ['POST', 'PUT', 'PATCH'].includes(method) && req.body) {
     const sanitizedBody = { ...req.body };
     // Remove sensitive fields from logs
     if (sanitizedBody.password) sanitizedBody.password = '***';
     if (sanitizedBody.token) sanitizedBody.token = '***';
-    console.log(`[${timestamp}] Request Body:`, JSON.stringify(sanitizedBody, null, 2));
+    // Truncate large bodies in logs
+    const bodyStr = JSON.stringify(sanitizedBody);
+    console.log(`[${timestamp}] Request Body:`, bodyStr.length > 500 ? bodyStr.substring(0, 500) + '...' : bodyStr);
   }
 
   // Log response
@@ -23,7 +25,7 @@ const logger = (req, res, next) => {
   res.send = function (data) {
     const statusCode = res.statusCode;
     console.log(`[${timestamp}] Response: ${statusCode} ${method} ${url}`);
-    
+
     // Log error responses
     if (statusCode >= 400) {
       try {

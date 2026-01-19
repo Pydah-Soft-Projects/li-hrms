@@ -1,4 +1,5 @@
 const AllowanceDeductionMaster = require('../../allowances-deductions/model/AllowanceDeductionMaster');
+const cacheService = require('../../shared/services/cacheService');
 
 /**
  * Allowance Calculation Service
@@ -133,11 +134,17 @@ function calculateAllowanceAmount(rule, basicPay, grossSalary = null, attendance
  */
 async function calculateAllowances(departmentId, basicPay, grossSalary = null, useGrossBase = false, attendanceData = null, divisionId = null) {
   try {
-    // Fetch all active allowances
-    const allowanceMasters = await AllowanceDeductionMaster.find({
-      category: 'allowance',
-      isActive: true,
-    });
+    // Fetch all active allowances with caching
+    const cacheKey = `settings:allowance:masters:all`;
+    let allowanceMasters = await cacheService.get(cacheKey);
+
+    if (!allowanceMasters) {
+      allowanceMasters = await AllowanceDeductionMaster.find({
+        category: 'allowance',
+        isActive: true,
+      }).lean();
+      await cacheService.set(cacheKey, allowanceMasters, 600);
+    }
 
     const allowances = [];
 

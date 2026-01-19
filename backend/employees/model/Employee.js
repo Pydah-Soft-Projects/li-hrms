@@ -245,6 +245,9 @@ employeeSchema.index({ phone_number: 1 });
 employeeSchema.index({ email: 1 });
 employeeSchema.index({ division_id: 1 });
 
+// Compound index for efficient scoped/filtered discovery at 1M scale
+employeeSchema.index({ division_id: 1, department_id: 1, is_active: 1 }, { background: true });
+
 // Virtual for department population
 employeeSchema.virtual('department', {
   ref: 'Department',

@@ -49,10 +49,16 @@ const attendanceRawLogSchema = new mongoose.Schema(
 );
 
 // Unique index: prevent duplicate logs (same employee, timestamp, source)
-attendanceRawLogSchema.index({ employeeNumber: 1, timestamp: 1, source: 1 }, { unique: true });
+attendanceRawLogSchema.index({ employeeNumber: 1, timestamp: 1, source: 1 }, { unique: true, background: true });
 
-// Index for date queries
-attendanceRawLogSchema.index({ employeeNumber: 1, date: 1 });
+// Index for date queries (Compound for performance)
+attendanceRawLogSchema.index({ employeeNumber: 1, date: 1 }, { background: true });
+
+// Index for recent activity feed (Descending timestamp)
+attendanceRawLogSchema.index({ timestamp: -1 }, { background: true });
+
+// Compound index for employee's recent activity
+attendanceRawLogSchema.index({ employeeNumber: 1, timestamp: -1 }, { background: true });
 
 module.exports = mongoose.models.AttendanceRawLog || mongoose.model('AttendanceRawLog', attendanceRawLogSchema);
 

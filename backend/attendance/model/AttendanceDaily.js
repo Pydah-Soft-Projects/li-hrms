@@ -165,13 +165,16 @@ const attendanceDailySchema = new mongoose.Schema(
 );
 
 // Unique index: one record per employee per date
-attendanceDailySchema.index({ employeeNumber: 1, date: 1 }, { unique: true });
+attendanceDailySchema.index({ employeeNumber: 1, date: 1 }, { unique: true, background: true });
 
-// Index for calendar queries
-attendanceDailySchema.index({ date: 1 });
+// Index for calendar and reporting queries
+attendanceDailySchema.index({ date: 1, status: 1 }, { background: true });
 
-// Index for employee queries
-attendanceDailySchema.index({ employeeNumber: 1, date: -1 });
+// Index for employee history/list queries (Compound for performance)
+attendanceDailySchema.index({ employeeNumber: 1, date: -1 }, { background: true });
+
+// Index for shift-based analytics
+attendanceDailySchema.index({ shiftId: 1, date: 1 }, { background: true });
 
 // Method to calculate total hours
 // Handles overnight shifts where out-time is before in-time (next day scenario)

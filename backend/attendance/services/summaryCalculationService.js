@@ -23,14 +23,17 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber) {
     const startDateStr = `${year}-${String(monthNumber).padStart(2, '0')}-01`;
     const endDateStr = `${year}-${String(monthNumber).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
 
-    // 1. Get all attendance records for this month
+    // 1. Get all attendance records for this month (Using .lean() and projections)
     const attendanceRecords = await AttendanceDaily.find({
       employeeNumber: emp_no,
       date: {
         $gte: startDateStr,
         $lte: endDateStr,
       },
-    }).populate('shiftId', 'payableShifts name');
+    })
+      .select('status shiftId totalHours extraHours earlyOutMinutes')
+      .populate('shiftId', 'payableShifts name')
+      .lean();
 
     // 2. Calculate total present days (Half-day counts as 0.5)
     let totalPresentDays = 0;
@@ -64,7 +67,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber) {
       }
     }
 
-    // 4. Get approved leaves for this month
+    // 4. Get approved leaves for this month (Using .lean() and projections)
     const approvedLeaves = await Leave.find({
       employeeId,
       status: 'approved',
@@ -75,7 +78,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber) {
         },
       ],
       isActive: true,
-    });
+    }).select('fromDate toDate isHalfDay').lean();
 
     // Calculate total leave days in this month - count each day individually
     let totalLeaveDays = 0;
@@ -103,7 +106,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber) {
     }
     summary.totalLeaves = Math.round(totalLeaveDays * 10) / 10; // Round to 1 decimal
 
-    // 5. Get approved ODs for this month
+    // 5. Get approved ODs for this month (Using .lean() and projections)
     const approvedODs = await OD.find({
       employeeId,
       status: 'approved',
@@ -114,7 +117,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber) {
         },
       ],
       isActive: true,
-    });
+    }).select('fromDate toDate isHalfDay odType_extended').lean();
 
     // Calculate total OD days in this month
     // IMPORTANT: Exclude hour-based ODs (they're stored as hours, not days)
@@ -162,7 +165,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber) {
       status: 'approved',
       date: { $gte: startDateStr, $lte: endDateStr },
       isActive: true,
-    });
+    }).select('otHours').lean();
 
     let totalOTHours = 0;
     for (const ot of approvedOTs) {
@@ -184,7 +187,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber) {
       status: 'approved',
       date: { $gte: startDateStr, $lte: endDateStr },
       isActive: true,
-    });
+    }).select('permissionHours').lean();
 
     let totalPermissionHours = 0;
     let totalPermissionCount = 0;
