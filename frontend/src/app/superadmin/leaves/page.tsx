@@ -1230,7 +1230,7 @@ export default function LeavesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                {leaves.filter(leave => !['pending', 'hod_approved'].includes(leave.status)).map((leave) => (
+                {leaves.map((leave) => (
                   <tr
                     key={leave._id}
                     className="hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer transition-colors"
@@ -1291,7 +1291,7 @@ export default function LeavesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                {ods.filter(od => !['pending', 'hod_approved'].includes(od.status)).map((od) => (
+                {ods.map((od) => (
                   <tr
                     key={od._id}
                     className="hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer transition-colors"
