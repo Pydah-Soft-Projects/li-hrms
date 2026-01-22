@@ -154,6 +154,105 @@ const startWorkers = () => {
         return results;
     }, { connection: redisConfig });
 
+    // Attendance Upload Worker
+    const attendanceUploadWorker = new Worker('attendanceUploadQueue', async (job) => {
+        const { fileBuffer, userId, originalName, rowCount } = job.data;
+        console.log(`[Worker] Processing attendance upload: ${originalName} (${rowCount} rows) for User ${userId}`);
+
+        const XLSX = require('xlsx');
+        const AttendanceRawLog = require('../../attendance/model/AttendanceRawLog');
+        const { processAndAggregateLogs } = require('../../attendance/services/attendanceSyncService');
+        const { batchDetectExtraHours } = require('../../attendance/services/extraHoursService');
+        const { io } = require('../../server'); // Import io from server.js
+
+        try {
+            // Reconstruct buffer
+            const buffer = Buffer.from(fileBuffer, 'base64');
+            const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true, cellNF: true });
+            const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+            const data = XLSX.utils.sheet_to_json(worksheet);
+
+            // Need to reconstruct the parsing logic from controller
+            // For simplicity, we'll implement a robust parser here or ideally move it to a service
+            // Re-using the parseLegacyRows/parseSimpleRows logic would be better if they were in a service
+            // Since they are currently in the controller, I will implement a basic version or 
+            // Better: Move parsing logic to a service if possible. 
+            // For now, I'll copy the essentials to ensure functionality.
+
+            const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+            let isLegacy = false;
+            let headerIdx = -1;
+            for (let i = 0; i < 10; i++) {
+                if (rows[i] && rows[i].includes('SNO') && rows[i].includes('E .NO') && rows[i].includes('PDate')) {
+                    isLegacy = true; headerIdx = i; break;
+                }
+            }
+
+            const { parseLegacyRows, parseSimpleRows } = require('../../attendance/services/attendanceUploadService');
+
+            let rawLogs = [];
+            if (isLegacy) {
+                const legacyResult = parseLegacyRows(rows, headerIdx);
+                rawLogs = legacyResult.rawLogs;
+            } else {
+                const simpleResult = parseSimpleRows(data);
+                rawLogs = simpleResult.rawLogs;
+            }
+
+            // Parsing handled above via attendanceUploadService
+
+
+            // Bulk Insert
+            if (rawLogs.length > 0) {
+                const bulkOps = rawLogs.map(log => ({
+                    updateOne: {
+                        filter: { employeeNumber: log.employeeNumber, timestamp: log.timestamp, type: log.type },
+                        update: { $setOnInsert: log },
+                        upsert: true
+                    }
+                }));
+                await AttendanceRawLog.bulkWrite(bulkOps, { ordered: false });
+
+                // Aggregate
+                const stats = await processAndAggregateLogs(rawLogs, false);
+
+                // Extra Hours
+                const processedDates = [...new Set(rawLogs.map(log => log.date))];
+                if (processedDates.length > 0) {
+                    const sortedDates = processedDates.sort();
+                    await batchDetectExtraHours(sortedDates[0], sortedDates[sortedDates.length - 1]);
+                }
+
+                const { app, io } = require('../../server'); // Import from server.js
+                const activeIo = io || (app && typeof app.get === 'function' ? app.get('io') : null);
+
+                // Notify User
+                if (activeIo) {
+                    activeIo.to(`user_${userId}`).emit('toast_notification', {
+                        type: 'success',
+                        message: `Attendance upload of "${originalName}" completed successfully! ${rawLogs.length} logs processed.`,
+                        title: 'Attendance Upload Complete'
+                    });
+                }
+            }
+
+            return { success: true, count: rawLogs.length };
+        } catch (error) {
+            console.error(`[Worker] Attendance upload failed:`, error);
+            const { app, io } = require('../../server');
+            const activeIo = io || (app && typeof app.get === 'function' ? app.get('io') : null);
+
+            if (activeIo) {
+                activeIo.to(`user_${userId}`).emit('toast_notification', {
+                    type: 'error',
+                    message: `Attendance upload of "${originalName}" failed: ${error.message}`,
+                    title: 'Attendance Upload Failed'
+                });
+            }
+            throw error;
+        }
+    }, { connection: redisConfig });
+
     payrollWorker.on('completed', (job) => {
         console.log(`[Worker] Job ${job.id} has completed!`);
     });

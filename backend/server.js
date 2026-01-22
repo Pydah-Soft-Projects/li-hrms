@@ -9,7 +9,41 @@ const { initializeAllDatabases } = require('./config/init');
 const { checkConnection: checkS3Connection } = require('./shared/services/s3UploadService');
 
 const app = express();
-module.exports = app;
+const http = require('http');
+const server = http.createServer(app);
+const { Server } = require('socket.io');
+
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  'http://192.168.3.147:3000',
+  'http://192.168.3.198:3000',
+  'http://localhost:3000'
+].filter(Boolean);
+
+const io = new Server(server, {
+  cors: {
+    origin: allowedOrigins,
+    credentials: true,
+  }
+});
+
+// Store io on app for easy access in routes if needed
+app.set('io', io);
+
+io.on('connection', (socket) => {
+  console.log('🔌 New client connected:', socket.id);
+
+  socket.on('join_user_room', (userId) => {
+    socket.join(`user_${userId}`);
+    console.log(`👤 User ${userId} joined their room`);
+  });
+
+  socket.on('disconnect', () => {
+    console.log('🔌 Client disconnected');
+  });
+});
+
+// Export at the end of file
 const PORT = process.env.PORT || 5000;
 
 // Middleware
@@ -32,13 +66,8 @@ app.use('/api/', limiter); // Apply rate limiting to all API routes
 const logger = require('./middleware/logger');
 app.use(logger); // Log all requests
 
-const allowedOrigins = [
-  process.env.FRONTEND_URL,
-  'http://192.168.3.147:3000',
-  'http://192.168.3.198:3000',
-  'http://localhost:3000'
-].filter(Boolean);
-
+// CORS configuration already handled in Socket.io initialization above,
+// but we still need it for Express routes
 app.use(cors({
   origin: allowedOrigins,
   credentials: true,
@@ -210,11 +239,12 @@ const startServer = async () => {
     }
 
     // Start server
-    app.listen(PORT, () => {
+    server.listen(PORT, () => {
       console.log(`🚀 HRMS Backend Server is running on port ${PORT}`);
       console.log(`📍 Server URL: http://localhost:${PORT}`);
       console.log(`📋 API Root: http://localhost:${PORT}/`);
       console.log(`💚 Health Check: http://localhost:${PORT}/health`);
+      console.log(`🔌 WebSocket Enabled`);
       console.log(`\n📦 Available Endpoints:`);
       console.log(`   - Authentication: /api/auth`);
       console.log(`   - Users: /api/users`);
@@ -251,7 +281,8 @@ process.on('SIGTERM', async () => {
 });
 
 // Export app for testing
-module.exports = app;
+// Export app for testing
+module.exports = { app, server, io };
 
 // Start the server only if run directly (not required as a module)
 if (require.main === module) {

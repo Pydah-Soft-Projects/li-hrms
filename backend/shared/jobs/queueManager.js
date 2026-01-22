@@ -38,8 +38,17 @@ const applicationQueue = new Queue('applicationQueue', {
     }
 });
 
+const attendanceUploadQueue = new Queue('attendanceUploadQueue', {
+    connection: redisConfig,
+    defaultJobOptions: {
+        attempts: 1, // Don't retry parsing potentially corrupt files
+        removeOnComplete: true,
+    }
+});
+
 module.exports = {
     payrollQueue,
     attendanceSyncQueue,
-    applicationQueue
+    applicationQueue,
+    attendanceUploadQueue
 };

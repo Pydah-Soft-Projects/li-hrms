@@ -22,6 +22,14 @@ dayjs.extend(timezone);
  * @route   POST /api/attendance/upload
  * @access  Private (Super Admin, Sub Admin, HR)
  */
+const { attendanceUploadQueue } = require('../../shared/jobs/queueManager');
+const { parseLegacyRows, parseSimpleRows } = require('../services/attendanceUploadService');
+
+/**
+ * @desc    Upload attendance from Excel
+ * @route   POST /api/attendance/upload
+ * @access  Private (Super Admin, Sub Admin, HR)
+ */
 exports.uploadExcel = async (req, res) => {
   try {
     if (!req.file) {
@@ -46,6 +54,37 @@ exports.uploadExcel = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Excel file is empty',
+      });
+    }
+
+    // Estimate processing time (simple heuristic: 500 records per minute, min 1 min)
+    const estimatedMinutes = Math.max(1, Math.ceil(data.length / 500));
+
+    // threshold for background processing
+    const ASYNC_THRESHOLD = 100;
+
+    if (data.length > ASYNC_THRESHOLD) {
+      // Offload to background worker
+      const jobId = `upload_${Date.now()}_${req.user.id}`;
+
+      // We pass the buffer and user info to the worker
+      // Note: BullMQ connection must be established
+      await attendanceUploadQueue.add('processAttendanceUpload', {
+        fileBuffer: req.file.buffer.toString('base64'), // Convert to base64 for job data
+        userId: req.user.id,
+        userName: req.user.name,
+        originalName: req.file.originalname,
+        rowCount: data.length
+      }, { jobId });
+
+      return res.status(202).json({
+        success: true,
+        isAsync: true,
+        message: `Large file detected (${data.length} rows). Processing started in background.`,
+        data: {
+          estimatedMinutes,
+          message: `This operation may take approximately ${estimatedMinutes} minutes. You are free to do other operations. You will receive a notification once completed.`
+        }
       });
     }
 
@@ -103,29 +142,32 @@ exports.uploadExcel = async (req, res) => {
     const finalProcessedLogs = [];
     let duplicateCount = 0;
 
-    for (const logData of uniqueLogs) {
-      try {
-        await AttendanceRawLog.create(logData);
-        finalProcessedLogs.push(logData);
-      } catch (err) {
-        if (err.code === 11000) {
-          duplicateCount++;
-          // Still add to finalProcessedLogs so processAndAggregateLogs knows which employees/dates to refresh
-          finalProcessedLogs.push(logData);
-        } else {
-          console.error(`[AttendanceUpload] DB Error for ${logData.employeeNumber}: ${err.message}`);
-          errors.push(`DB Error for ${logData.employeeNumber}: ${err.message}`);
+    // OPTIMIZATION: Use Bulk Write instead of individual creates
+    if (uniqueLogs.length > 0) {
+      const bulkOps = uniqueLogs.map(log => ({
+        updateOne: {
+          filter: {
+            employeeNumber: log.employeeNumber,
+            timestamp: log.timestamp,
+            type: log.type
+          },
+          update: { $setOnInsert: log },
+          upsert: true
         }
-      }
+      }));
+
+      const result = await AttendanceRawLog.bulkWrite(bulkOps, { ordered: false });
+      duplicateCount = uniqueLogs.length - result.upsertedCount;
+      // All unique logs are "processed" even if they already existed in DB
+      finalProcessedLogs.push(...uniqueLogs);
     }
 
-    console.log(`[AttendanceUpload] Unique logs found: ${uniqueLogs.length}, New: ${finalProcessedLogs.length - duplicateCount}, Duplicates: ${duplicateCount}`);
+    console.log(`[AttendanceUpload] Unique logs found: ${uniqueLogs.length}, New: ${uniqueLogs.length - duplicateCount}, Duplicates: ${duplicateCount}`);
 
     // 4. Process and aggregate
     const stats = await processAndAggregateLogs(finalProcessedLogs, false);
 
     // IMPORTANT: After processing logs, detect extra hours for all affected records
-    // This ensures extra hours are calculated for all attendance records from Excel upload
     try {
       console.log('[ExcelUpload] Detecting extra hours for all processed records...');
 
@@ -136,20 +178,18 @@ exports.uploadExcel = async (req, res) => {
       }))];
 
       if (processedDates.length > 0) {
-        const minDate = processedDates.sort()[0];
-        const maxDate = processedDates.sort()[processedDates.length - 1];
+        const { batchDetectExtraHours } = require('../services/extraHoursService');
+        const sortedDates = processedDates.sort();
+        const minDate = sortedDates[0];
+        const maxDate = sortedDates[sortedDates.length - 1];
 
-        // Batch detect extra hours for all records in the date range
+        // Batch detect extra hours
         const extraHoursStats = await batchDetectExtraHours(minDate, maxDate);
-        console.log(`[ExcelUpload] Extra hours detection: ${extraHoursStats.message}`);
-
-        // Add extra hours stats to response
         stats.extraHoursDetected = extraHoursStats.updated;
         stats.extraHoursProcessed = extraHoursStats.processed;
       }
     } catch (extraHoursError) {
       console.error('[ExcelUpload] Error detecting extra hours:', extraHoursError);
-      // Don't fail the upload if extra hours detection fails
       stats.extraHoursError = extraHoursError.message;
     }
 
@@ -176,94 +216,6 @@ exports.uploadExcel = async (req, res) => {
       message: error.message || 'Failed to upload Excel file',
     });
   }
-};
-
-/**
- * Format date to YYYY-MM-DD
- */
-const formatDate = (date) => {
-  return dayjs(date).format('YYYY-MM-DD');
-};
-
-/**
- * Robust date/time parser for Excel inputs
- * Extracts components and rebases "Time Only" values to current/target date
- */
-const parseExcelDate = (val, fallbackDate = null) => {
-  if (!val) return null;
-
-  let y, m, d, H, M, S;
-
-  if (typeof val === 'number') {
-    // 1. Handle Excel Serial Number
-    const dateObj = XLSX.SSF.parse_date_code(val);
-    y = dateObj.y;
-    m = dateObj.m;
-    d = dateObj.d;
-    H = dateObj.H;
-    M = dateObj.M;
-    S = dateObj.S;
-  } else if (val instanceof Date) {
-    // 2. Handle JS Date object (parsed by XLSX with cellDates: true)
-    y = val.getFullYear();
-    m = val.getMonth() + 1;
-    d = val.getDate();
-    H = val.getHours();
-    M = val.getMinutes();
-    S = val.getSeconds();
-  } else {
-    // 3. Handle String
-    const str = String(val).trim();
-
-    // Detect if this is a time-only string (HH:mm or HH:mm:ss)
-    const isTimeOnly = /^([01]\d|2[0-3]):([0-5]\d)(:([0-5]\d))?$/.test(str);
-
-    const formats = [
-      'YYYY-MM-DD HH:mm:ss',
-      'YYYY-MM-DD HH:mm',
-      'DD-MM-YYYY HH:mm:ss',
-      'DD-MM-YYYY HH:mm',
-      'YYYY/MM/DD HH:mm:ss',
-      'DD/MM/YYYY HH:mm',
-      'HH:mm:ss',
-      'HH:mm'
-    ];
-
-    const parsed = dayjs(str, formats, true);
-    if (parsed.isValid()) {
-      y = isTimeOnly ? 1900 : parsed.year(); // Force rebase for time-only
-      m = parsed.month() + 1;
-      d = parsed.date();
-      H = parsed.hour();
-      M = parsed.minute();
-      S = parsed.second();
-    } else {
-      const native = new Date(str.replace(/Z|[+-]\d{2}(:?\d{2})?$/g, '')); // Strip timezone/UTC indicator for strict local construction
-      if (isNaN(native.getTime())) return null;
-      y = native.getFullYear();
-      m = native.getMonth() + 1;
-      d = native.getDate();
-      H = native.getHours();
-      M = native.getMinutes();
-      S = native.getSeconds();
-    }
-  }
-
-  // REBASE Logic: Excel defaults "Time Only" cells to 1899-12-30 or 1900-01-01
-  // Or dayjs defaults to current date for time-only strings
-  if (y < 1920) {
-    const base = fallbackDate || new Date();
-    y = base.getFullYear();
-    m = base.getMonth() + 1;
-    d = base.getDate();
-  }
-
-  // Return local Date object
-  // FIX: Store as-is (GMT) for GMT-based Shift Detection
-  // The server appears to be GMT-based (reading 8:22 as 8:22).
-  // We must store "13:52" as "13:52 GMT" so the server sees 13:52.
-  const timeStr = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')} ${String(H).padStart(2, '0')}:${String(M).padStart(2, '0')}:${String(S).padStart(2, '0')}`;
-  return dayjs(timeStr, "YYYY-MM-DD HH:mm:ss").toDate();
 };
 
 /**
@@ -306,155 +258,4 @@ exports.downloadTemplate = async (req, res) => {
       message: error.message || 'Failed to generate template',
     });
   }
-};
-
-/**
- * Specialized parser for "Legacy Report" (SNO, E.NO... format)
- */
-const parseLegacyRows = (rows, headerIdx) => {
-  const rawLogs = [];
-  const errors = [];
-  console.log(`[AttendanceUpload] Beginning legacy parse of ${rows.length - headerIdx - 1} rows`);
-
-  for (let i = headerIdx + 1; i < rows.length; i++) {
-    const row = rows[i];
-    if (!row || row.length < 2) continue;
-
-    // Row usually starts with a SNO (number)
-    const snoRaw = row[0];
-    const sno = Number(snoRaw);
-
-    // Check if this is a valid data row (must have a number at col 0)
-    if (isNaN(sno) || sno === 0) {
-      // Log skip for unexpected content if it looks like it should have been data
-      if (snoRaw && String(snoRaw).trim() !== '') {
-        console.log(`[AttendanceUpload] Skipping Row ${i + 1}: Invalid SNO "${snoRaw}"`);
-      }
-      continue;
-    }
-
-    const empNo = String(row[1]).trim().toUpperCase();
-    const pDateRaw = row[5];
-
-    if (!empNo || !pDateRaw) {
-      console.log(`[AttendanceUpload] Skipping Row ${i + 1}: Missing EmpNo or Date`);
-      continue;
-    }
-
-    let baseDate;
-    if (typeof pDateRaw === 'number') {
-      const dObj = XLSX.SSF.parse_date_code(pDateRaw);
-      baseDate = new Date(dObj.y, dObj.m - 1, dObj.d);
-    } else if (pDateRaw instanceof Date) {
-      baseDate = new Date(pDateRaw.getFullYear(), pDateRaw.getMonth(), pDateRaw.getDate());
-    } else {
-      const d = dayjs(String(pDateRaw).trim(), ['DD-MMM-YY', 'DD-MMM-YYYY', 'YYYY-MM-DD', 'DD-MM-YYYY']);
-      if (!d.isValid()) continue;
-      baseDate = d.toDate();
-    }
-
-    // Helper to extract punches
-    const in1 = row[6], out1 = row[7], in2 = row[8], out2 = row[9];
-
-    let tIn1 = null, tOut1 = null;
-    if (isValidLegacyTime(in1)) {
-      tIn1 = legacyTimeToDate(baseDate, in1);
-      rawLogs.push({ employeeNumber: empNo, timestamp: tIn1, type: 'IN', source: 'excel', date: dayjs(tIn1).format('YYYY-MM-DD'), rawData: row });
-
-      if (isValidLegacyTime(out1)) {
-        tOut1 = legacyTimeToDate(baseDate, out1);
-        if (tOut1 < tIn1) tOut1 = new Date(tOut1.getTime() + 86400000);
-        rawLogs.push({ employeeNumber: empNo, timestamp: tOut1, type: 'OUT', source: 'excel', date: dayjs(tOut1).format('YYYY-MM-DD'), rawData: row });
-      }
-    }
-
-    if (isValidLegacyTime(in2)) {
-      // Check if in2 is actually TOT HRS (Duration) misaligned
-      let isDuration = false;
-      if (tIn1 && tOut1) {
-        const diffMin = (tOut1 - tIn1) / 60000;
-        const durVal = Math.floor(diffMin / 60) + (Math.round(diffMin % 60) / 100);
-        if (Math.abs(durVal - Number(in2)) < 0.01) isDuration = true;
-      }
-
-      if (!isDuration) {
-        const tIn2 = legacyTimeToDate(baseDate, in2);
-        rawLogs.push({ employeeNumber: empNo, timestamp: tIn2, type: 'IN', source: 'excel', date: dayjs(tIn2).format('YYYY-MM-DD'), rawData: row });
-
-        if (isValidLegacyTime(out2)) {
-          let tOut2 = legacyTimeToDate(baseDate, out2);
-          if (tOut2 < tIn2) tOut2 = new Date(tOut2.getTime() + 86400000);
-          rawLogs.push({ employeeNumber: empNo, timestamp: tOut2, type: 'OUT', source: 'excel', date: dayjs(tOut2).format('YYYY-MM-DD'), rawData: row });
-        }
-      }
-    }
-  }
-  return { rawLogs, errors };
-};
-
-/**
- * Fallback parser for Simple List format
- */
-const parseSimpleRows = async (data) => {
-  const rawLogs = [];
-  const errors = [];
-
-  for (let i = 0; i < data.length; i++) {
-    const row = data[i];
-    const empNo = row['Employee Number'] || row['EmployeeNumber'] || row['Emp No'] || row['EmpNo'] || row['emp_no'];
-    const inTime = row['In-Time'] || row['InTime'] || row['In Time'] || row['in_time'] || row['Check In'];
-    const outTime = row['Out-Time'] || row['OutTime'] || row['Out Time'] || row['out_time'] || row['Check Out'];
-
-    if (!empNo || !inTime) continue;
-
-    const inTimeDate = parseExcelDate(inTime);
-    if (!inTimeDate || isNaN(inTimeDate.getTime())) continue;
-
-    rawLogs.push({
-      employeeNumber: String(empNo).trim().toUpperCase(),
-      timestamp: inTimeDate,
-      type: 'IN',
-      source: 'excel',
-      date: dayjs(inTimeDate).format('YYYY-MM-DD'),
-      rawData: row,
-    });
-
-    if (outTime) {
-      const outTimeDate = parseExcelDate(outTime, inTimeDate);
-      if (outTimeDate && !isNaN(outTimeDate.getTime())) {
-        rawLogs.push({
-          employeeNumber: String(empNo).trim().toUpperCase(),
-          timestamp: outTimeDate,
-          type: 'OUT',
-          source: 'excel',
-          date: dayjs(outTimeDate).format('YYYY-MM-DD'),
-          rawData: row,
-        });
-      }
-    }
-  }
-  return { rawLogs, errors };
-};
-
-const isValidLegacyTime = (val) => {
-  if (val === undefined || val === null || val === '') return false;
-  const n = Number(val);
-  return !isNaN(n) && n !== 0;
-};
-
-const legacyTimeToDate = (baseDate, val) => {
-  let hh, mm;
-  if (typeof val === 'number') {
-    hh = Math.floor(val);
-    mm = Math.round((val - hh) * 100);
-  } else {
-    const s = String(val).replace(':', '.');
-    const p = s.split('.');
-    hh = parseInt(p[0]);
-    mm = parseInt(p[1] || '0');
-  }
-  if (isNaN(hh) || isNaN(mm)) return null;
-  const d = new Date(baseDate);
-  d.setHours(hh, mm, 0, 0);
-  return d;
 };

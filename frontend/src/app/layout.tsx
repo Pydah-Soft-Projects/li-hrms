@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import { AuthProvider } from "@/contexts/AuthContext";
+import { WorkspaceProvider } from "@/contexts/WorkspaceContext";
+import { SocketProvider } from "@/contexts/SocketContext";
+import { ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 
 
 const inter = Inter({
@@ -23,7 +28,14 @@ export default function RootLayout({
       <body
         className={`${inter.variable} antialiased font-sans`}
       >
-        {children}
+        <AuthProvider>
+          <WorkspaceProvider>
+            <SocketProvider>
+              {children}
+            </SocketProvider>
+          </WorkspaceProvider>
+        </AuthProvider>
+        <ToastContainer />
       </body>
     </html>
   );

@@ -767,13 +767,20 @@ export default function AttendancePage() {
       setSuccess('');
       const response = await api.uploadAttendanceExcel(uploadFile);
       if (response.success) {
-        setSuccess(response.message || 'File uploaded successfully');
+        if (response.isAsync) {
+          // Large file, processing in background
+          toast.info(response.data.message || 'Processing started in background');
+        } else {
+          toast.success(response.message || 'File uploaded successfully');
+          loadMonthlyAttendance();
+        }
+
         setUploadFile(null);
         setShowUploadDialog(false);
         const fileInput = document.getElementById('excel-upload-input') as HTMLInputElement;
         if (fileInput) fileInput.value = '';
-        loadMonthlyAttendance();
       } else {
+        toast.error(response.message || 'Upload failed');
         setError(response.message || 'Upload failed');
       }
     } catch (err: any) {
