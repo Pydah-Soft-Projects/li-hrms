@@ -19,10 +19,15 @@ const admsRawLogSchema = new mongoose.Schema({
         type: Object
     },
     body: {
-        type: String
+        type: mongoose.Schema.Types.Mixed, // Accept both String and Object
+        default: ''
     },
     method: {
         type: String
+    },
+    ipAddress: {
+        type: String,
+        index: true
     },
     receivedAt: {
         type: Date,

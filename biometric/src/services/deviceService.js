@@ -65,6 +65,20 @@ class DeviceService {
                 const attendances = await zkInstance.getAttendances();
                 logger.info(`Fetched ${attendances.data.length} logs from ${device.name}`);
 
+                // ==========================================
+                // CONSOLE LOG: Complete Raw Data from Device
+                // ==========================================
+                console.log('\n');
+                console.log('═'.repeat(80));
+                console.log(`TCP SYNC COMPLETED - Device: ${device.name} (${device.ip}:${device.port})`);
+                console.log('═'.repeat(80));
+                console.log(`Total Records Fetched: ${attendances.data.length}`);
+                console.log('─'.repeat(80));
+                console.log('COMPLETE RAW DATA FROM DEVICE:');
+                console.log(JSON.stringify(attendances.data, null, 2));
+                console.log('═'.repeat(80));
+                console.log('\n');
+
                 // Get the last log timestamp for this device to perform incremental sync
                 const deviceDoc = await Device.findOne({ deviceId: device.deviceId });
                 const lastLogTimestamp = deviceDoc ? deviceDoc.lastLogTimestamp : null;
@@ -154,6 +168,26 @@ class DeviceService {
                         const result = await AttendanceLog.bulkWrite(bulkOps, { ordered: false });
                         logger.info(`Synced ${device.name}: Inserted ${result.insertedCount} new logs.`);
                         savedLogs.length = result.insertedCount;
+
+                        // ==========================================
+                        // CONSOLE LOG: Processed Records Details
+                        // ==========================================
+                        console.log('\n');
+                        console.log('═'.repeat(80));
+                        console.log(`PROCESSED ATTENDANCE LOGS - Device: ${device.name}`);
+                        console.log('═'.repeat(80));
+                        console.log(`Total Processed: ${bulkOps.length}`);
+                        console.log(`New Logs Inserted: ${result.insertedCount}`);
+                        console.log('─'.repeat(80));
+                        console.log('PROCESSED RECORDS DETAILS:');
+                        bulkOps.forEach((op, index) => {
+                            const doc = op.insertOne.document;
+                            console.log(`\n[${index + 1}] Employee: ${doc.employeeId} | Time: ${doc.timestamp.toISOString()} | Type: ${doc.logType}`);
+                            console.log(`    Raw Type: ${doc.rawType} | Device: ${doc.deviceName} (${doc.deviceId})`);
+                            console.log(`    Raw Data: ${JSON.stringify(doc.rawData)}`);
+                        });
+                        console.log('\n' + '═'.repeat(80));
+                        console.log('\n');
                     } catch (bulkError) {
                         if (bulkError.writeErrors) {
                             const inserted = bulkError.result.insertedCount;
@@ -166,6 +200,22 @@ class DeviceService {
                 }
 
                 logger.info(`Synced ${savedLogs.length} new logs from ${device.name}`);
+
+                // ==========================================
+                // CONSOLE LOG: Sync Summary
+                // ==========================================
+                console.log('\n');
+                console.log('═'.repeat(80));
+                console.log(`TCP SYNC SUMMARY - Device: ${device.name}`);
+                console.log('═'.repeat(80));
+                console.log(`Device ID: ${device.deviceId}`);
+                console.log(`Device IP: ${device.ip}:${device.port}`);
+                console.log(`Total Records Fetched: ${attendances.data.length}`);
+                console.log(`New Logs Saved: ${savedLogs.length}`);
+                console.log(`Last Log Timestamp: ${newestLogTimestamp ? newestLogTimestamp.toISOString() : 'N/A'}`);
+                console.log(`Sync Completed At: ${new Date().toISOString()}`);
+                console.log('═'.repeat(80));
+                console.log('\n');
 
                 // Update device sync status and track the latest log timestamp
                 await Device.findOneAndUpdate(

@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Biometric ADMS Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-glow: rgba(99, 102, 241, 0.4);
+            --bg-dark: #0f172a;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --text-main: #f8fafc;
+            --text-dim: #94a3b8;
+            --border: rgba(255, 255, 255, 0.1);
+            --accent: #10b981;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            height: 100vh;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 320px;
+            background: rgba(15, 23, 42, 0.9);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            padding: 24px;
+        }
+
+        .sidebar h2 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 32px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: linear-gradient(to right, #818cf8, #c084fc);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .device-list {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .device-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            padding: 16px;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .device-card:hover {
+            transform: translateY(-2px);
+            border-color: var(--primary);
+            box-shadow: 0 0 20px var(--primary-glow);
+        }
+
+        .device-card.active {
+            background: var(--primary);
+            border-color: transparent;
+        }
+
+        .device-card .name {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .device-card .serial {
+            font-size: 0.8rem;
+            color: var(--text-dim);
+        }
+
+        .device-card.active .serial {
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            padding: 40px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            overflow-y: auto;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 8px;
+            background: rgba(30, 41, 59, 0.5);
+            padding: 6px;
+            border-radius: 12px;
+            width: fit-content;
+        }
+
+        .tab {
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 0.9rem;
+            color: var(--text-dim);
+        }
+
+        .tab:hover {
+            color: var(--text-main);
+        }
+
+        .tab.active {
+            background: var(--primary);
+            color: white;
+            box-shadow: 0 4px 12px var(--primary-glow);
+        }
+
+        /* Data View */
+        .data-viewer {
+            flex: 1;
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 24px;
+            backdrop-filter: blur(10px);
+            display: flex;
+            flex-direction: column;
+            min-height: 400px;
+        }
+
+        .data-header {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 16px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        #data-container {
+            flex: 1;
+            overflow: auto;
+            position: relative;
+        }
+
+        pre {
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 0.85rem;
+            color: #ecefad;
+            line-height: 1.5;
+            white-space: pre-wrap;
+        }
+
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: var(--text-dim);
+            gap: 16px;
+        }
+
+        .btn-refresh {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-refresh:hover {
+            background: var(--primary);
+            border-color: transparent;
+        }
+
+        /* Loading */
+        .loader {
+            width: 48px;
+            height: 48px;
+            border: 5px solid #FFF;
+            border-bottom-color: var(--primary);
+            border-radius: 50%;
+            display: inline-block;
+            box-sizing: border-box;
+            animation: rotation 1s linear infinite;
+        }
+
+        @keyframes rotation {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .status-pill {
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-online {
+            background: rgba(16, 185, 129, 0.2);
+            color: #10b981;
+        }
+
+        .status-offline {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="sidebar">
+        <h2>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+            </svg>
+            Biometric Link
+        </h2>
+        <div class="device-list" id="device-list">
+            <!-- Devices will be injected here -->
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div class="header">
+            <div>
+                <h1 id="selected-device-name">Select a Device</h1>
+                <p id="selected-device-sn" style="color: var(--text-dim); font-size: 0.9rem;">To view data pulls</p>
+            </div>
+            <button class="btn-refresh" onclick="refreshData()">Refresh Data</button>
+        </div>
+
+        <!-- NEW: Command Actions Section -->
+        <div id="device-actions"
+            style="display: none; background: rgba(99, 102, 241, 0.1); border: 1px dashed var(--primary); padding: 16px; border-radius: 12px; display: flex; align-items: center; gap: 16px;">
+            <span style="font-weight: 600; font-size: 0.9rem; color: var(--primary);">FORCE PULL:</span>
+            <button class="btn-refresh" onclick="sendDeviceCommand('DATA QUERY USERINFO')">Sync All Users</button>
+            <button class="btn-refresh" onclick="sendDeviceCommand('DATA QUERY FINGERTMP')">Sync Fingerprints</button>
+            <button class="btn-refresh" onclick="sendDeviceCommand('DATA QUERY FACE')">Sync Face Data</button>
+            <button class="btn-refresh" onclick="sendDeviceCommand('DATA QUERY ATTLOG')">Sync All Attendance</button>
+            <div id="command-status" style="margin-left: auto; font-size: 0.8rem; color: var(--accent);"></div>
+        </div>
+
+        <div class="tabs">
+            <div class="tab active" data-table="USERINFO" onclick="switchTab(this)">User Info</div>
+            <div class="tab" data-table="FINGERTMP" onclick="switchTab(this)">Fingerprints</div>
+            <div class="tab" data-table="FACE" onclick="switchTab(this)">Face Data</div>
+            <div class="tab" data-table="ATTLOG" onclick="switchTab(this)">Attendance Logs</div>
+            <div class="tab" data-table="OPERLOG" onclick="switchTab(this)">Operation Logs</div>
+        </div>
+
+        <div class="data-viewer">
+            <div class="data-header">
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                    <span id="view-title">User Profile Data</span>
+                    <span id="record-count" style="color: var(--primary); font-size: 0.8rem;">0 Records</span>
+                </div>
+
+                <div style="position: relative; flex: 1; max-width: 400px; margin-left: auto;">
+                    <input type="text" id="dashboard-search" placeholder="Search by ID or Name..."
+                        style="width: 100%; padding: 10px 16px 10px 40px; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 8px; color: white; font-size: 0.9rem;"
+                        onkeyup="handleSearch()">
+                    <svg style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-dim);"
+                        width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                </div>
+            </div>
+            <div id="data-container">
+                <div class="empty-state">
+                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                        <line x1="8" y1="21" x2="16" y2="21"></line>
+                        <line x1="12" y1="17" x2="12" y2="21"></line>
+                    </svg>
+                    <p>Select a device from the left to start viewing data.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let selectedSN = null;
+        let activeTable = 'USERINFO';
+        let lastFetchedData = [];
+        let allDevices = [];
+
+        // Load devices on startup
+        async function loadDevices() {
+            const container = document.getElementById('device-list');
+            try {
+                const res = await fetch('/api/devices');
+                const data = await res.json();
+
+                if (data.success && data.data.length > 0) {
+                    allDevices = data.data;
+                    container.innerHTML = data.data.map(dev => {
+                        const health = dev.status || {};
+                        return `
+                        <div class="device-card ${selectedSN === dev.deviceId ? 'active' : ''}" onclick="selectDevice('${dev.deviceId}', '${dev.name}')">
+                            <div class="name">${dev.name}</div>
+                            <div class="serial">${dev.deviceId}</div>
+                            
+                            <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.05); font-size: 0.7rem; color: var(--text-dim);">
+                                <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                                    <span>Users: <b>${health.userCount || 0}</b></span>
+                                    <span>Fingers: <b>${health.fingerCount || 0}</b></span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between;">
+                                    <span>Logs: <b>${health.attCount || 0}</b></span>
+                                    <span>${dev.ip}</span>
+                                </div>
+                            </div>
+
+                            <div style="margin-top: 8px; display: flex; align-items: center; justify-content: space-between;">
+                                <span class="status-pill ${dev.enabled ? 'status-online' : 'status-offline'}">
+                                    ${dev.enabled ? 'Active' : 'Connected'}
+                                </span>
+                                <span style="font-size: 0.6rem;">${new Date(dev.updatedAt).toLocaleTimeString()}</span>
+                            </div>
+                        </div>
+                    `}).join('');
+                } else {
+                    container.innerHTML = '<p style="color: var(--text-dim); text-align: center; margin-top: 20px;">No devices found.</p>';
+                }
+            } catch (err) {
+                console.error('Failed to load devices:', err);
+            }
+        }
+
+        async function selectDevice(sn, name) {
+            selectedSN = sn;
+            document.getElementById('selected-device-name').innerText = name;
+            document.getElementById('selected-device-sn').innerText = `Serial Number: ${sn}`;
+
+            // Show action bar
+            document.getElementById('device-actions').style.display = 'flex';
+
+            // Re-render list to show active state
+            loadDevices();
+            fetchTableData();
+        }
+
+        async function cloneUser(userId, targetSN) {
+            const statusEl = document.getElementById('command-status');
+            statusEl.innerText = `⏳ Cloning User ${userId}...`;
+            statusEl.style.color = "var(--primary)";
+
+            try {
+                const res = await fetch('/api/adms/clone-user', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId, targetDeviceId: targetSN })
+                });
+                const result = await res.json();
+
+                if (result.success) {
+                    statusEl.innerText = `✅ Success! User ${userId} queued for ${targetSN}`;
+                    statusEl.style.color = "var(--accent)";
+                } else {
+                    statusEl.innerText = "❌ Clone Failed: " + result.error;
+                    statusEl.style.color = "#ef4444";
+                }
+                setTimeout(() => { statusEl.innerText = ""; }, 5000);
+            } catch (err) {
+                statusEl.innerText = "❌ Error: " + err.message;
+            }
+        }
+
+        async function sendDeviceCommand(command) {
+            if (!selectedSN) return;
+
+            const statusEl = document.getElementById('command-status');
+            statusEl.innerText = "⏳ Queuing command...";
+            statusEl.style.color = "var(--primary)";
+
+            try {
+                const res = await fetch('/api/adms/command', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ deviceId: selectedSN, command: command })
+                });
+                const result = await res.json();
+
+                if (result.success) {
+                    statusEl.innerText = "✅ Command Queued! Device will pick it up on next heartbeat.";
+                    statusEl.style.color = "var(--accent)";
+                    setTimeout(() => { statusEl.innerText = ""; }, 5000);
+                } else {
+                    statusEl.innerText = "❌ Failed: " + result.error;
+                    statusEl.style.color = "#ef4444";
+                }
+            } catch (err) {
+                statusEl.innerText = "❌ Error: " + err.message;
+            }
+        }
+
+        function switchTab(el) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            el.classList.add('active');
+            activeTable = el.dataset.table;
+            document.getElementById('view-title').innerText = el.innerText;
+            fetchTableData();
+        }
+
+        async function fetchTableData() {
+            if (!selectedSN) return;
+
+            const container = document.getElementById('data-container');
+            const countEl = document.getElementById('record-count');
+
+            container.innerHTML = '<div class="empty-state"><span class="loader"></span><p>Fetching data from server...</p></div>';
+
+            try {
+                let url = '';
+                if (['USERINFO', 'FINGERTMP', 'FACE'].includes(activeTable)) {
+                    url = `/api/adms/users?sn=${selectedSN}`;
+                } else {
+                    url = `/api/adms/logs?sn=${selectedSN}&table=${activeTable}&limit=100`;
+                }
+
+                const res = await fetch(url);
+                const result = await res.json();
+
+                lastFetchedData = result.data || [];
+                renderData(lastFetchedData);
+            } catch (err) {
+                container.innerHTML = `<p style="color: #ef4444;">Error fetching data: ${err.message}</p>`;
+            }
+        }
+
+        function handleSearch() {
+            const term = document.getElementById('dashboard-search').value.toLowerCase().trim();
+            if (!term) {
+                renderData(lastFetchedData);
+                return;
+            }
+
+            const filtered = lastFetchedData.filter(item => {
+                if (['USERINFO', 'FINGERTMP', 'FACE'].includes(activeTable)) {
+                    return (item.userId && item.userId.includes(term)) ||
+                        (item.name && item.name.toLowerCase().includes(term));
+                } else {
+                    const body = item.body || '';
+                    return body.toLowerCase().includes(term);
+                }
+            });
+
+            renderData(filtered);
+        }
+
+        function renderData(dataList) {
+            const container = document.getElementById('data-container');
+            const countEl = document.getElementById('record-count');
+            const isStructured = ['USERINFO', 'FINGERTMP', 'FACE'].includes(activeTable);
+
+            if (dataList.length > 0) {
+                countEl.innerText = `${dataList.length} Records Found`;
+
+                if (isStructured) {
+                    const content = dataList.map(user => {
+                        const fpCount = user.fingerprints?.length || 0;
+                        const fids = user.fingerprints?.map(f => f.fingerIndex).sort((a, b) => a - b).join(', ') || 'None';
+                        const hasFace = user.face?.templateData ? '✅' : '❌';
+
+                        const hasName = user.name && user.name.trim() && !['unknown', 'staff', 'anonymous'].includes(user.name.trim().toLowerCase());
+                        const displayName = hasName ? user.name : `Staff member #${user.userId}`;
+                        const subText = hasName ? `Staff ID: ${user.userId}` : `<i>(Name not set on device)</i>`;
+
+                        // Generate target devices for cloning
+                        const otherDevices = allDevices.filter(d => d.deviceId !== selectedSN);
+                        const cloneOptions = otherDevices.map(d => `<option value="${d.deviceId}">${d.name}</option>`).join('');
+
+                        return `
+                        <div class="card" style="margin-bottom: 12px; padding: 20px; border: 1px solid var(--border); background: rgba(30, 41, 59, 0.3);">
+                            <div style="display: flex; justify-content: space-between; align-items: start;">
+                                <div style="flex: 1;">
+                                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+                                        <span style="background: var(--primary); color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; letter-spacing: 1px;">ID: ${user.userId}</span>
+                                        <h3 style="margin: 0; font-size: 1.1rem; color: var(--text-main);">${displayName}</h3>
+                                    </div>
+                                    <div style="font-size: 0.85rem; color: var(--text-dim); display: flex; flex-direction: column; gap: 4px;">
+                                        <div>${subText}</div>
+                                        <div style="display: flex; gap: 12px; margin-top: 4px;">
+                                            <span><b>Card:</b> ${user.card || 'None'}</span>
+                                            <span><b>Role:</b> ${user.role === 14 ? 'Administrator' : 'User'}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div style="text-align: right;">
+                                    <div style="margin-bottom: 4px; font-size: 0.75rem; color: var(--text-dim);">Clone to...</div>
+                                    <select onchange="if(this.value) cloneUser('${user.userId}', this.value)" style="background: rgba(0,0,0,0.2); border: 1px solid var(--border); color: white; font-size: 0.75rem; padding: 4px 8px; border-radius: 4px; outline: none; cursor: pointer;">
+                                        <option value="">Select Device</option>
+                                        ${cloneOptions}
+                                    </select>
+                                    <div style="margin-top: 8px; font-size: 0.65rem; color: var(--text-dim);">
+                                        Synced: ${new Date(user.lastSyncedAt).toLocaleDateString()}
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div style="margin-top: 16px; display: flex; gap: 24px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.05);">
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                                    <span style="font-size: 0.9rem;"><b>${fpCount}</b> Fingers <span style="color: var(--text-dim); font-size: 0.8rem;">(Indices: ${fids})</span></span>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${user.face?.templateData ? '#10b981' : '#ef4444'}" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                                    <span style="font-size: 0.9rem;">Face Support: <b>${hasFace}</b></span>
+                                </div>
+                            </div>
+                        </div>
+                        `;
+                    }).join('');
+                    container.innerHTML = content;
+                } else {
+                    const content = dataList.map((log, index) => {
+                        let extractedId = '';
+                        if (activeTable === 'ATTLOG' && log.body) {
+                            const firstPart = log.body.split('\t')[0];
+                            if (firstPart && !firstPart.includes('=')) {
+                                extractedId = firstPart;
+                            }
+                        }
+
+                        return `
+                        <div style="margin-bottom: 24px; border-bottom: 1px solid var(--border); padding-bottom: 16px;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.8rem; color: var(--accent);">
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <span>#${dataList.length - index} | Received: ${new Date(log.receivedAt).toLocaleString()}</span>
+                                    ${extractedId ? `<span style="background: var(--primary); color: white; padding: 1px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: bold;">STAFF ID: ${extractedId}</span>` : ''}
+                                </div>
+                                <span>Source IP: ${log.ipAddress || 'unknown'}</span>
+                            </div>
+                            <pre>${log.body || JSON.stringify(log.query, null, 2)}</pre>
+                        </div>
+                        `;
+                    }).join('');
+                    container.innerHTML = content;
+                }
+            } else {
+                countEl.innerText = `0 Records Found`;
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                        <p>No records matching search found for <b>${activeTable}</b>.</p>
+                    </div>
+                `;
+            }
+        }
+
+        function refreshData() {
+            loadDevices();
+            fetchTableData();
+        }
+
+        // Initial Load
+        loadDevices();
+
+        // Auto-refresh every 30 seconds
+        setInterval(loadDevices, 30000);
+
+    </script>
+</body>
+
+</html>

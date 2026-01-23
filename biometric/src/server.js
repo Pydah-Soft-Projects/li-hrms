@@ -19,8 +19,24 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
+app.use(express.static(path.join(__dirname, '../public')));
+
+// Root redirect to dashboard
+app.get('/', (req, res, next) => {
+    if (req.accepts('html')) {
+        return res.redirect('/dashboard.html');
+    }
+    next();
+});
+
+
+// CRITICAL: ADMS routes must use text parser, NOT JSON parser
+// ICLOCK990 sends data as text/plain, must be parsed BEFORE express.json()
+app.use('/iclock', express.text({ type: 'text/plain', limit: '100mb' }));
+app.use('/iclock', admsRoutes);
+
+// General API routes use JSON parser
 app.use(express.json());
-app.use(express.text({ type: 'text/plain', limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // Initialize services (will load devices from database)
@@ -37,12 +53,7 @@ app.set('deviceService', deviceService);
 app.use('/api', apiRoutes);
 app.use('/api/devices', deviceRoutes);
 app.use('/api/user-sync', userSyncRoutes); // Added: Use userSyncRoutes
-app.use('/api/adms/raw', (req, res, next) => {
-    // Forward to the adms router's internally defined /api/raw endpoint
-    req.url = '/api/raw';
-    next();
-}, admsRoutes);
-app.use('/iclock', admsRoutes);
+app.use('/api/adms', admsRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

@@ -6,17 +6,17 @@ const logger = require('../src/utils/logger');
 // Initial devices to seed
 const initialDevices = [
     {
-        deviceId: "DEVICE_003",
+        deviceId: "DEVICE_005",
         name: "Main Gate",
-        ip: "192.168.3.84",
+        ip: "192.168.0.185",
         port: 4370,
         enabled: true,
         location: "Main Entrance"
     },
     {
-        deviceId: "DEVICE_004",
+        deviceId: "DEVICE_006",
         name: "Office Entrance",
-        ip: "192.168.3.85",
+        ip: "192.168.0.186",
         port: 4370,
         enabled: true,
         location: "Office Building"

@@ -39,6 +39,20 @@ const deviceSchema = new mongoose.Schema({
     lastLogTimestamp: {
         type: Date,
         default: null
+    },
+    lastSeenAt: {
+        type: Date,
+        default: Date.now
+    },
+    // Device metrics (Health)
+    status: {
+        userCount: { type: Number, default: 0 },
+        fingerCount: { type: Number, default: 0 },
+        attCount: { type: Number, default: 0 },
+        faceCount: { type: Number, default: 0 },
+        firmware: { type: String },
+        platform: { type: String },
+        rawStatus: { type: String } // Store the original raw string for safety
     }
 }, {
     timestamps: true
