@@ -37,6 +37,12 @@ const DeviceUserSchema = new mongoose.Schema({
         updatedAt: { type: Date }
     },
     // Metadata for sync tracking
+    photo: {
+        content: { type: String }, // Base64 content
+        fileName: { type: String },
+        size: { type: Number },
+        updatedAt: { type: Date }
+    },
     lastSyncedAt: { type: Date, default: Date.now },
     lastDeviceId: { type: String, index: true }
 }, {
