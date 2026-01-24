@@ -31,13 +31,26 @@ function calculateBasicPay(employee, attendanceSummary) {
   // Calculate per day basic pay
   const perDayBasicPay = totalDaysInMonth > 0 ? basicPay / totalDaysInMonth : 0;
 
-  // 1. Earned Salary for "Physical/Credit" days
-  // Includes Present, OD, Paid Leaves, and Holidays/Weekoffs
-  const physicalUnits = totalPresentDays + totalODDays + totalPaidLeaveDays + totalWeeklyOffs + totalHolidays;
-  const basePayForWork = physicalUnits * perDayBasicPay;
+  // 1. Calculate Total Paid Days (User Formula)
+  // Formula: total paid days = payable shifts + paid leaves + holidays + weekoffs
+  // Note: we use the pre-calculated adjustedPayableShifts passed via totalPayableShifts
+  const calculatedPaidDays = attendanceSummary.totalPayableShifts || 0;
 
-  // 2. Extra Days Pay (Incentive for system-added or manually uploaded units)
-  const incentive = manualExtraDays * perDayBasicPay;
+  let totalPaidDays = calculatedPaidDays;
+  let extraDays = manualExtraDays; // Direct extra days from upload
+
+  // 2. Capping Logic (User Request)
+  if (totalPaidDays > totalDaysInMonth) {
+    extraDays += (totalPaidDays - totalDaysInMonth);
+    totalPaidDays = totalDaysInMonth;
+  }
+
+  // 3. Base Pay Calculation (User Formula)
+  // Base Pay = Total Paid Days * Daily Rate
+  const basePayForWork = totalPaidDays * perDayBasicPay;
+
+  // 4. Extra Days Pay (Incentive)
+  const incentive = extraDays * perDayBasicPay;
 
   // Final payable amount (Sum of both)
   const payableAmount = basePayForWork + incentive;
@@ -49,9 +62,9 @@ function calculateBasicPay(employee, attendanceSummary) {
     incentive: Math.round(incentive * 100) / 100,
     basePayForWork: Math.round(basePayForWork * 100) / 100,
     totalDaysInMonth,
-    totalPayableShifts: physicalUnits + manualExtraDays,
-    incentiveDays: manualExtraDays,
-    physicalUnits
+    totalPaidDays,
+    extraDays,
+    calculatedPaidDays
   };
 }
 

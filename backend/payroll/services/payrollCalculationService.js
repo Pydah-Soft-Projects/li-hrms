@@ -654,9 +654,9 @@ async function calculatePayroll(employeeId, month, userId) {
       holidays: attendanceSummary.totalHolidays || 0,
       absentDays: attendanceSummary.totalAbsentDays || 0,
       payableShifts: Number(adjustedPayableShifts) || 0,
-      extraDays: extraDaysValue,
+      extraDays: basicPayResult.extraDays || 0, // Using capped extra days
       paidDays: calcPaidDays,
-      totalPaidDays: Number(adjustedPayableShifts),
+      totalPaidDays: basicPayResult.totalPaidDays || 0, // Using capped total paid days
       otHours: attendanceSummary.totalOTHours || 0,
       earnedSalary: basicPayResult.basePayForWork || 0,
     });
