@@ -589,6 +589,38 @@ async function processAdmsPost(req, res, SN, table, clientIp) {
             return res.send(ADMS_OK);
         }
 
+        // Handle User Photos (USERPIC)
+        if (table === 'USERPIC') {
+            const lines = rawBody.split('\n');
+            for (const line of lines) {
+                const data = admsParser.parseKeyValueLine(line);
+                if (data && (data.PIN || data.USERID)) {
+                    const userId = data.PIN || data.USERID;
+                    await DeviceUser.findOneAndUpdate(
+                        { userId: userId },
+                        {
+                            $set: {
+                                userId: userId,
+                                photo: {
+                                    content: data.CONTENT || '',
+                                    fileName: data.FILENAME || '',
+                                    size: parseInt(data.SIZE) || 0,
+                                    updatedAt: new Date()
+                                },
+                                lastSyncedAt: new Date(),
+                                lastDeviceId: SN
+                            }
+                        },
+                        { upsert: true }
+                    );
+                    // Trigger Auto-Sync for new photo
+                    autoCloneUser(userId, SN);
+                }
+            }
+            logger.info(`ADMS: Parsed and updated User Photos from SN: ${SN}`);
+            return res.send(ADMS_OK);
+        }
+
         // Generic support for other tables (OPERLOG, etc.)
         if (['OPERLOG', 'ERRORLOG'].includes(table)) {
             logger.info(`ADMS Data [${table}] received from SN: ${SN}. Storing in Raw Logs.`);
@@ -694,6 +726,16 @@ router.post('/clone-user', async (req, res) => {
             }
         }
 
+        // 4. Queue Photo Command
+        if (user.photo && user.photo.content) {
+            const photoCmd = `DATA UPDATE USERPIC PIN=${user.userId}${sep}FileName=${user.photo.fileName || (user.userId + '.jpg')}${sep}Size=${user.photo.content.length}${sep}Content=${user.photo.content}`;
+            await DeviceCommand.create({
+                deviceId: targetDeviceId,
+                command: photoCmd,
+                status: 'PENDING'
+            });
+        }
+
         // 4. Queue Face Data if exists
         if (user.face && user.face.templateData) {
             const faceCmd = `DATA UPDATE FACE PIN=${user.userId}\tFID=0\tSize=${user.face.length}\tValid=1\tTMP=${user.face.templateData}`;
@@ -783,6 +825,12 @@ async function autoCloneUser(userId, sourceSN) {
                     const fpCmd = `DATA UPDATE FINGERTMP PIN=${user.userId}${sep}FID=${fp.fingerIndex}${sep}Size=${fp.templateData.length}${sep}Valid=1${sep}TMP=${fp.templateData}`;
                     await DeviceCommand.create({ deviceId: device.deviceId, command: fpCmd, status: 'PENDING' });
                 }
+            }
+
+            // Queue Photo
+            if (user.photo && user.photo.content) {
+                const photoCmd = `DATA UPDATE USERPIC PIN=${user.userId}${sep}FileName=${user.photo.fileName || (user.userId + '.jpg')}${sep}Size=${user.photo.content.length}${sep}Content=${user.photo.content}`;
+                await DeviceCommand.create({ deviceId: device.deviceId, command: photoCmd, status: 'PENDING' });
             }
         }
     } catch (err) {
