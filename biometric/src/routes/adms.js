@@ -116,16 +116,27 @@ router.get('/cdata.aspx', async (req, res) => {
             ipAddress: clientIp
         });
 
-        // If device asks for options (ICLOCK990 specific)
+        // If device asks for options (ICLOCK990 specific handshake)
         if (options === 'all') {
+            // Update device with handshake metadata
+            await Device.findOneAndUpdate(
+                { deviceId: SN },
+                {
+                    $set: {
+                        'protocol.pushVersion': pushver,
+                        'protocol.language': language,
+                        lastSeenAt: new Date()
+                    }
+                },
+                { upsert: true }
+            );
+
             console.log('\n');
             console.log('═'.repeat(80));
-            console.log(`✅ ICLOCK990 HANDSHAKE DETECTED - Device SN: ${SN}`);
+            console.log(`✅ ICLOCK HANDSHAKE - SN: ${SN}`);
             console.log('═'.repeat(80));
-            console.log(`Push Version: ${pushver}`);
-            console.log(`Language: ${language}`);
-            console.log(`IP: ${getClientIp(req)}`);
-            console.log('Sending configuration...');
+            console.log(`PushVer: ${pushver} | Lang: ${language}`);
+            console.log('Sending optimized configuration...');
             console.log('═'.repeat(80));
             console.log('\n');
 
@@ -137,8 +148,11 @@ router.get('/cdata.aspx', async (req, res) => {
                 'TransFlag=1111111111',
                 'Realtime=1',
                 'Encrypt=0',
-                'ServerVer=3.0.0',
-                'PushProtVer=2.4.0'
+                'ServerVer=3.4.1',
+                'PushProtVer=2.4.1',
+                'ErrorDelay=3',
+                'Delay=10',
+                'TransTimes=00:00;23:59'
             ].join('\n');
             return res.send(config);
         }
@@ -449,6 +463,23 @@ async function processAdmsPost(req, res, SN, table, clientIp) {
                                 platform: statusData.Platform,
                                 rawStatus: rawBody
                             },
+                            // Auto-Discover Capabilities
+                            capabilities: {
+                                hasFingerprint: statusData.FingerFunOn === '1',
+                                hasFace: statusData.FaceFunOn === '1',
+                                hasPalm: statusData.PvFunOn === '1',
+                                hasCard: !!statusData.CARD,
+                                fpVersion: statusData.FPVersion || '10',
+                                faceVersion: statusData.FaceVersion,
+                                maxUsers: parseInt(statusData.MaxUserCount),
+                                maxFingers: parseInt(statusData.MaxFingerCount),
+                                maxAttLogs: parseInt(statusData.MaxAttLogCount)
+                            },
+                            protocol: {
+                                pushVersion: statusData.PushVersion,
+                                // Adjust protocol based on hardware platform if needed
+                                separator: statusData.Platform?.includes('ZMM100') ? ',' : '\t'
+                            },
                             lastSeenAt: new Date()
                         }
                     },
@@ -640,9 +671,10 @@ router.post('/clone-user', async (req, res) => {
         }
 
         // 2. Queue User Profile Command
-        // Format: DATA UPDATE USERINFO PIN=1	Name=John	Password=...	Group=1	Card=...
-        // Note: We use \t (tab) as the separator which is standard for ADMS
-        const userCmd = `DATA UPDATE USERINFO PIN=${user.userId}\tName=${user.name || ''}\tPassword=${user.password || ''}\tGroup=1\tCard=${user.card || ''}\tRole=${user.role || 0}`;
+        const targetDevice = await Device.findOne({ deviceId: targetDeviceId });
+        const sep = targetDevice?.protocol?.separator || '\t';
+
+        const userCmd = `DATA UPDATE USERINFO PIN=${user.userId}${sep}Name=${user.name || ''}${sep}Password=${user.password || ''}${sep}Group=1${sep}Card=${user.card || ''}${sep}Role=${user.role || 0}`;
 
         await DeviceCommand.create({
             deviceId: targetDeviceId,
@@ -653,8 +685,7 @@ router.post('/clone-user', async (req, res) => {
         // 3. Queue Fingerprint Commands
         if (user.fingerprints && user.fingerprints.length > 0) {
             for (const fp of user.fingerprints) {
-                // Format: DATA UPDATE FINGERTMP PIN=1	FID=0	Size=...	Valid=1	TMP=...
-                const fpCmd = `DATA UPDATE FINGERTMP PIN=${user.userId}\tFID=${fp.fingerIndex}\tSize=${fp.templateData.length}\tValid=1\tTMP=${fp.templateData}`;
+                const fpCmd = `DATA UPDATE FINGERTMP PIN=${user.userId}${sep}FID=${fp.fingerIndex}${sep}Size=${fp.templateData.length}${sep}Valid=1${sep}TMP=${fp.templateData}`;
                 await DeviceCommand.create({
                     deviceId: targetDeviceId,
                     command: fpCmd,
@@ -741,14 +772,15 @@ async function autoCloneUser(userId, sourceSN) {
         logger.info(`ADMS Auto-Sync: Distributing user ${userId} to ${devices.length} other devices.`);
 
         for (const device of devices) {
+            const sep = device.protocol?.separator || '\t';
             // Queue Profile
-            const userCmd = `DATA UPDATE USERINFO PIN=${user.userId}\tName=${user.name || ''}\tPassword=${user.password || ''}\tGroup=1\tCard=${user.card || ''}\tRole=${user.role || 0}`;
+            const userCmd = `DATA UPDATE USERINFO PIN=${user.userId}${sep}Name=${user.name || ''}${sep}Password=${user.password || ''}${sep}Group=1${sep}Card=${user.card || ''}${sep}Role=${user.role || 0}`;
             await DeviceCommand.create({ deviceId: device.deviceId, command: userCmd, status: 'PENDING' });
 
             // Queue Fingerprints
             if (user.fingerprints && user.fingerprints.length > 0) {
                 for (const fp of user.fingerprints) {
-                    const fpCmd = `DATA UPDATE FINGERTMP PIN=${user.userId}\tFID=${fp.fingerIndex}\tSize=${fp.templateData.length}\tValid=1\tTMP=${fp.templateData}`;
+                    const fpCmd = `DATA UPDATE FINGERTMP PIN=${user.userId}${sep}FID=${fp.fingerIndex}${sep}Size=${fp.templateData.length}${sep}Valid=1${sep}TMP=${fp.templateData}`;
                     await DeviceCommand.create({ deviceId: device.deviceId, command: fpCmd, status: 'PENDING' });
                 }
             }

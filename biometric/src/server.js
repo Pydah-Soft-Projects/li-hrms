@@ -12,6 +12,7 @@ const apiRoutes = require('./routes/api');
 const deviceRoutes = require('./routes/devices');
 const admsRoutes = require('./routes/adms');
 const userSyncRoutes = require('./routes/userSync');
+const AdmsRawLog = require('./models/AdmsRawLog'); // Import for discovery logging
 
 // Initialize Express app
 const app = express();
@@ -87,6 +88,37 @@ app.get('/', (req, res) => {
             }
         }
     });
+});
+
+// ==========================================
+// REQUEST DISCOVERY MIDDLEWARE (Catch-All)
+// ==========================================
+// Log ANY request that doesn't match a route above
+app.all('*', async (req, res) => {
+    const clientIp = req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress;
+    const bodyStr = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+
+    logger.info(`🔍 DISCOVERY: Unmatched ${req.method} request to ${req.originalUrl} from ${clientIp}`);
+
+    try {
+        await AdmsRawLog.create({
+            serialNumber: req.query.SN || 'DISCOVERY',
+            table: 'CATCH_ALL_DISCOVERY',
+            query: req.query,
+            body: {
+                url: req.originalUrl,
+                headers: req.headers,
+                payload: req.body
+            },
+            method: req.method,
+            ipAddress: clientIp
+        });
+    } catch (err) {
+        logger.error(`Discovery Logging Failed: ${err.message}`);
+    }
+
+    // Respond with a generic OK (standard for ADMS devices)
+    res.send('OK');
 });
 
 // Connect to MongoDB

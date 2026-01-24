@@ -52,7 +52,24 @@ const deviceSchema = new mongoose.Schema({
         faceCount: { type: Number, default: 0 },
         firmware: { type: String },
         platform: { type: String },
-        rawStatus: { type: String } // Store the original raw string for safety
+        rawStatus: { type: String }
+    },
+    // Universal Compatibility Profile
+    capabilities: {
+        hasFingerprint: { type: Boolean, default: true },
+        hasFace: { type: Boolean, default: false },
+        hasPalm: { type: Boolean, default: false },
+        hasCard: { type: Boolean, default: true },
+        fpVersion: { type: String, default: '10' }, // 9 or 10
+        faceVersion: { type: String },
+        maxUsers: { type: Number },
+        maxFingers: { type: Number },
+        maxAttLogs: { type: Number }
+    },
+    protocol: {
+        pushVersion: { type: String },
+        encoding: { type: String, default: 'UTF-8' },
+        separator: { type: String, default: '\t' } // Some old ones use comma
     }
 }, {
     timestamps: true
