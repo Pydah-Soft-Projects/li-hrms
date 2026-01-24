@@ -45,6 +45,7 @@ const initialFormState: Partial<Employee> = {
   doj: '',
   dob: '',
   gross_salary: undefined,
+  second_salary: undefined,
   paidLeaves: 0,
   allottedLeaves: 0,
   gender: '',
@@ -64,6 +65,7 @@ const initialFormState: Partial<Employee> = {
   bank_name: '',
   bank_place: '',
   ifsc_code: '',
+  salary_mode: 'Bank',
   is_active: true,
   employeeAllowances: [],
   employeeDeductions: [],
@@ -1105,6 +1107,17 @@ export default function EmployeesPage() {
         ctcSalary: salarySummary.ctcSalary,
         calculatedSalary: salarySummary.netSalary,
       };
+
+      // Consolidate 'reporting_to' and 'reporting_to_' - ensure we use 'reporting_to' only
+      // If reporting_to_ has data and reporting_to is empty, use the data from reporting_to_
+      if ((submitData as any).reporting_to_ && Array.isArray((submitData as any).reporting_to_) && (submitData as any).reporting_to_.length > 0) {
+        if (!(submitData as any).reporting_to || !Array.isArray((submitData as any).reporting_to) || (submitData as any).reporting_to.length === 0) {
+          (submitData as any).reporting_to = (submitData as any).reporting_to_;
+        }
+      }
+      // Remove the redundant underscores field from payload
+      delete (submitData as any).reporting_to_;
+      delete (submitData as any).dynamicFields?.reporting_to_;
 
       const enumFields = ['gender', 'marital_status', 'blood_group'];
       enumFields.forEach(field => {
@@ -3048,6 +3061,15 @@ export default function EmployeesPage() {
                         </p>
                       </div>
 
+                      {selectedApplication.second_salary !== undefined && (
+                        <div>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Second Salary</p>
+                          <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                            ₹{selectedApplication.second_salary.toLocaleString()}
+                          </p>
+                        </div>
+                      )}
+
                       {/* Approved Salary Input */}
                       <div>
                         <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -3744,7 +3766,7 @@ export default function EmployeesPage() {
                     };
 
                     // Handle dynamic fields based on form settings
-                    const coreFields = ['emp_no', 'employee_name', 'proposedSalary', 'gross_salary', 'division_id', 'department_id', 'designation_id', 'division_name', 'department_name', 'designation_name', 'doj', 'dob', 'gender', 'marital_status', 'blood_group', 'qualifications', 'experience', 'address', 'location', 'aadhar_number', 'phone_number', 'alt_phone_number', 'email', 'pf_number', 'esi_number', 'bank_account_no', 'bank_name', 'bank_place', 'ifsc_code'];
+                    const coreFields = ['emp_no', 'employee_name', 'proposedSalary', 'gross_salary', 'second_salary', 'division_id', 'department_id', 'designation_id', 'division_name', 'department_name', 'designation_name', 'doj', 'dob', 'gender', 'marital_status', 'blood_group', 'qualifications', 'experience', 'address', 'location', 'aadhar_number', 'phone_number', 'alt_phone_number', 'email', 'pf_number', 'esi_number', 'bank_account_no', 'bank_name', 'bank_place', 'ifsc_code', 'salary_mode'];
 
                     if (formSettings?.groups) {
                       const dynamicFields: any = {};
@@ -3890,6 +3912,10 @@ export default function EmployeesPage() {
                       <div>
                         <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Gross Salary</label>
                         <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.gross_salary ? `₹${viewingEmployee.gross_salary.toLocaleString()}` : '-'}</p>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Second Salary</label>
+                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.second_salary ? `₹${viewingEmployee.second_salary.toLocaleString()}` : '-'}</p>
                       </div>
                       <div>
                         <label className="text-xs font-medium text-slate-500 dark:text-slate-400">CTC Salary</label>
@@ -4088,6 +4114,10 @@ export default function EmployeesPage() {
                       <div>
                         <label className="text-xs font-medium text-slate-500 dark:text-slate-400">IFSC Code</label>
                         <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.ifsc_code || '-'}</p>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Salary Mode</label>
+                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.salary_mode || 'Bank'}</p>
                       </div>
                     </div>
                   </div>
@@ -4304,47 +4334,7 @@ export default function EmployeesPage() {
                     </div>
                   )}
 
-                  {/* Dynamic Fields */}
-                  {viewingEmployee.dynamicFields && Object.keys(viewingEmployee.dynamicFields).length > 0 && (
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                      <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Additional Information</h3>
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                        {Object.entries(viewingEmployee.dynamicFields)
-                          .filter(([key]) => key !== 'reporting_to' && key !== 'reporting_to_' && key !== 'qualifications')
-                          .map(([key, value]) => {
-                            if (value === null || value === undefined || value === '') {
-                              return null;
-                            }
-                            const underscoreRegex = new RegExp('_', 'g');
-                            const wordBoundaryRegex = new RegExp('\\b\\w', 'g');
-                            const displayKey = key.replace(underscoreRegex, ' ').replace(wordBoundaryRegex, (l: string) => l.toUpperCase());
 
-                            let displayValue: string = '';
-                            if (Array.isArray(value)) {
-                              displayValue = value.length > 0 ? JSON.stringify(value) : '-';
-                            } else if (typeof value === 'object') {
-                              displayValue = JSON.stringify(value, null, 2);
-                            } else {
-                              displayValue = String(value);
-                            }
-
-                            const isComplexType = Array.isArray(value) || typeof value === 'object';
-                            const colSpanClass = isComplexType ? 'sm:col-span-2 lg:col-span-3' : '';
-                            const whitespaceClass = isComplexType ? 'whitespace-pre-wrap' : '';
-                            const paragraphClassName = 'mt-1 text-sm font-medium text-slate-900 dark:text-slate-100 ' + whitespaceClass;
-
-                            return (
-                              <div key={key} className={colSpanClass}>
-                                <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{displayKey}</label>
-                                <p className={paragraphClassName}>
-                                  {displayValue}
-                                </p>
-                              </div>
-                            );
-                          })}
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
             </div>
@@ -4448,7 +4438,7 @@ export default function EmployeesPage() {
           )
         }
       </div>
-    </div>
+    </div >
   );
 }
 

@@ -136,6 +136,11 @@ const employeeSchema = new mongoose.Schema(
       uppercase: true,
       default: null,
     },
+    salary_mode: {
+      type: String,
+      enum: ['Bank', 'Cash'],
+      default: 'Bank',
+    },
     paidLeaves: {
       type: Number,
       default: 0,

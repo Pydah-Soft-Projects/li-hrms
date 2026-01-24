@@ -74,6 +74,23 @@ exports.getSettings = async (req, res) => {
         }
       });
 
+      // Ensure second_salary is present in basic_info
+      if (!basicInfoGroup.fields.some((f) => f.id === 'second_salary')) {
+        const secondSalaryField = {
+          id: 'second_salary',
+          label: 'Second Salary',
+          type: 'number',
+          dataType: 'number',
+          isRequired: false,
+          isSystem: true,
+          placeholder: '0.00',
+          validation: { min: 0 },
+          order: 8,
+          isEnabled: true,
+        };
+        basicInfoGroup.fields.push(secondSalaryField);
+      }
+
       basicInfoGroup.fields.sort((a, b) => (a.order || 0) - (b.order || 0));
     }
 
@@ -93,6 +110,28 @@ exports.getSettings = async (req, res) => {
       };
       contactInfoGroup.fields.push(emailField);
       contactInfoGroup.fields.sort((a, b) => (a.order || 0) - (b.order || 0));
+    }
+
+    // Ensure Salary Mode is present in bank_details for existing settings
+    const bankDetailsGroup = settingsObj.groups.find((g) => g.id === 'bank_details');
+    if (bankDetailsGroup && !bankDetailsGroup.fields.some((f) => f.id === 'salary_mode')) {
+      const salaryModeField = {
+        id: 'salary_mode',
+        label: 'Salary Mode',
+        type: 'select',
+        dataType: 'string',
+        isRequired: true,
+        isSystem: true,
+        defaultValue: 'Bank',
+        options: [
+          { label: 'Bank', value: 'Bank' },
+          { label: 'Cash', value: 'Cash' },
+        ],
+        order: 5,
+        isEnabled: true,
+      };
+      bankDetailsGroup.fields.push(salaryModeField);
+      bankDetailsGroup.fields.sort((a, b) => (a.order || 0) - (b.order || 0));
     }
 
     res.status(200).json({

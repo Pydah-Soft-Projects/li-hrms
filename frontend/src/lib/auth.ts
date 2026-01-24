@@ -49,6 +49,9 @@ export const auth = {
       localStorage.removeItem('user');
       // Clear workspace data on logout
       clearWorkspaceData();
+
+      // Dispatch custom event to notify React contexts to clear memory state
+      window.dispatchEvent(new CustomEvent('auth-logout'));
     }
   },
 

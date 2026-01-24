@@ -311,13 +311,25 @@ const transformEmployeeForResponse = async (employee, populateUsers = true) => {
   };
 
   // Normalize reporting_to_ to reporting_to (handle field name inconsistency)
-  if (merged.reporting_to_ && !merged.reporting_to) {
-    merged.reporting_to = merged.reporting_to_;
+  // Ensure we move data if standard field is present but empty
+  if (merged.reporting_to_) {
+    if (!merged.reporting_to || !Array.isArray(merged.reporting_to) || merged.reporting_to.length === 0) {
+      if (Array.isArray(merged.reporting_to_) && merged.reporting_to_.length > 0) {
+        merged.reporting_to = merged.reporting_to_;
+      }
+    }
     delete merged.reporting_to_;
   }
-  if (merged.dynamicFields?.reporting_to_ && !merged.dynamicFields?.reporting_to) {
-    merged.dynamicFields.reporting_to = merged.dynamicFields.reporting_to_;
-    delete merged.dynamicFields.reporting_to_;
+
+  if (merged.dynamicFields) {
+    if (merged.dynamicFields.reporting_to_) {
+      if (!merged.dynamicFields.reporting_to || !Array.isArray(merged.dynamicFields.reporting_to) || merged.dynamicFields.reporting_to.length === 0) {
+        if (Array.isArray(merged.dynamicFields.reporting_to_) && merged.dynamicFields.reporting_to_.length > 0) {
+          merged.dynamicFields.reporting_to = merged.dynamicFields.reporting_to_;
+        }
+      }
+      delete merged.dynamicFields.reporting_to_;
+    }
   }
 
   // Also populate reporting_to if it exists at root level (from previous merge)
@@ -596,11 +608,46 @@ exports.createEmployee = async (req, res) => {
     const results = { mongodb: false, mssql: false };
 
     // Separate permanent fields and dynamicFields
-    // Separate permanent fields and dynamicFields
     const permanentFields = extractPermanentFields(employeeData);
-    const dynamicFields = employeeData.dynamicFields ?
-      (typeof employeeData.dynamicFields === 'string' ? JSON.parse(employeeData.dynamicFields) : employeeData.dynamicFields)
-      : extractDynamicFields(employeeData, permanentFields);
+
+    // 1. Extract dynamic fields from root level
+    const extractedDynamic = extractDynamicFields(employeeData, permanentFields);
+
+    // 2. Parse dynamicFields object if present
+    let dynamicFields = {};
+    if (employeeData.dynamicFields) {
+      try {
+        const nested = typeof employeeData.dynamicFields === 'string'
+          ? JSON.parse(employeeData.dynamicFields)
+          : employeeData.dynamicFields;
+        dynamicFields = { ...nested };
+      } catch (e) {
+        console.warn('Failed to parse dynamicFields in createEmployee:', e.message);
+      }
+    }
+
+    // 3. Merge: root-level fields take precedence
+    dynamicFields = { ...dynamicFields, ...extractedDynamic };
+
+    // 4. Parse specific Fields that should be arrays
+    const arrayFields = ['reporting_to', 'reporting_to_'];
+    arrayFields.forEach(field => {
+      if (dynamicFields[field] && typeof dynamicFields[field] === 'string') {
+        try {
+          dynamicFields[field] = JSON.parse(dynamicFields[field]);
+        } catch (e) {
+          console.warn(`Failed to parse ${field} in dynamicFields:`, e.message);
+        }
+      }
+    });
+
+    // 5. Normalize: Always use 'reporting_to', eliminate 'reporting_to_'
+    if (dynamicFields.reporting_to_ && Array.isArray(dynamicFields.reporting_to_) && dynamicFields.reporting_to_.length > 0) {
+      if (!dynamicFields.reporting_to || !Array.isArray(dynamicFields.reporting_to) || dynamicFields.reporting_to.length === 0) {
+        dynamicFields.reporting_to = dynamicFields.reporting_to_;
+      }
+    }
+    delete dynamicFields.reporting_to_;
 
     const normalizeOverrides = (list) => {
       try {
@@ -808,11 +855,46 @@ exports.updateEmployee = async (req, res) => {
     }
 
     // Separate permanent fields and dynamicFields
-    // Separate permanent fields and dynamicFields
     const permanentFields = extractPermanentFields(employeeData);
-    const dynamicFields = employeeData.dynamicFields ?
-      (typeof employeeData.dynamicFields === 'string' ? JSON.parse(employeeData.dynamicFields) : employeeData.dynamicFields)
-      : extractDynamicFields(employeeData, permanentFields);
+
+    // 1. Extract dynamic fields from root level
+    const extractedDynamic = extractDynamicFields(employeeData, permanentFields);
+
+    // 2. Parse dynamicFields object if present
+    let dynamicFields = {};
+    if (employeeData.dynamicFields) {
+      try {
+        const nested = typeof employeeData.dynamicFields === 'string'
+          ? JSON.parse(employeeData.dynamicFields)
+          : employeeData.dynamicFields;
+        dynamicFields = { ...nested };
+      } catch (e) {
+        console.warn('Failed to parse dynamicFields in updateEmployee:', e.message);
+      }
+    }
+
+    // 3. Merge: root-level fields take precedence
+    dynamicFields = { ...dynamicFields, ...extractedDynamic };
+
+    // 4. Parse specific Fields that should be arrays
+    const arrayFields = ['reporting_to', 'reporting_to_'];
+    arrayFields.forEach(field => {
+      if (dynamicFields[field] && typeof dynamicFields[field] === 'string') {
+        try {
+          dynamicFields[field] = JSON.parse(dynamicFields[field]);
+        } catch (e) {
+          console.warn(`Failed to parse ${field} in dynamicFields:`, e.message);
+        }
+      }
+    });
+
+    // 5. Normalize: Always use 'reporting_to', eliminate 'reporting_to_'
+    if (dynamicFields.reporting_to_ && Array.isArray(dynamicFields.reporting_to_) && dynamicFields.reporting_to_.length > 0) {
+      if (!dynamicFields.reporting_to || !Array.isArray(dynamicFields.reporting_to) || dynamicFields.reporting_to.length === 0) {
+        dynamicFields.reporting_to = dynamicFields.reporting_to_;
+      }
+    }
+    delete dynamicFields.reporting_to_;
 
     // Normalize employee allowances and deductions
     const normalizeOverrides = (list) => {

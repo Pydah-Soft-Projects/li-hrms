@@ -24,6 +24,7 @@ export const EMPLOYEE_TEMPLATE_HEADERS = [
   'doj',
   'dob',
   'proposedSalary',
+  'second_salary',
   'gender',
   'marital_status',
   'blood_group',
@@ -41,6 +42,7 @@ export const EMPLOYEE_TEMPLATE_HEADERS = [
   'bank_name',
   'bank_place',
   'ifsc_code',
+  'salary_mode',
 ];
 
 export const EMPLOYEE_TEMPLATE_SAMPLE = [
@@ -53,6 +55,7 @@ export const EMPLOYEE_TEMPLATE_SAMPLE = [
     doj: '2024-01-15',
     dob: '1990-05-20',
     proposedSalary: 50000,
+    second_salary: 0,
     gender: 'Male',
     marital_status: 'Single',
     blood_group: 'O+',
@@ -70,6 +73,7 @@ export const EMPLOYEE_TEMPLATE_SAMPLE = [
     bank_name: 'State Bank',
     bank_place: 'Hyderabad',
     ifsc_code: 'SBIN0001234',
+    salary_mode: 'Bank',
   },
 ];
 
@@ -501,6 +505,12 @@ export const validateEmployeeRow = (
   if (row.blood_group && !['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].includes(row.blood_group as string)) {
     errors.push('Invalid blood group');
     fieldErrors.blood_group = 'Invalid group';
+  }
+
+  // Validate salary mode
+  if (row.salary_mode && !['Bank', 'Cash'].includes(row.salary_mode as string)) {
+    errors.push('Salary Mode must be Bank or Cash');
+    fieldErrors.salary_mode = 'Invalid mode';
   }
 
   return {

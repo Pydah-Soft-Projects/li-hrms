@@ -450,6 +450,7 @@ export interface Employee {
   doj?: string;
   dob?: string;
   gross_salary?: number;
+  second_salary?: number;
   gender?: string;
   marital_status?: string;
   blood_group?: string;
@@ -467,6 +468,7 @@ export interface Employee {
   bank_name?: string;
   bank_place?: string;
   ifsc_code?: string;
+  salary_mode?: 'Bank' | 'Cash';
   paidLeaves?: number;
   allottedLeaves?: number;
   employeeAllowances?: any[];

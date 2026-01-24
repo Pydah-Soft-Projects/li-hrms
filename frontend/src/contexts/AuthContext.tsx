@@ -29,10 +29,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setLoading(false);
     };
 
-    useEffect(() => {
-        checkAuth();
-    }, []);
-
     const login = (token: string, userData: User) => {
         auth.setToken(token);
         auth.setUser(userData);
@@ -43,6 +39,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         auth.logout();
         setUser(null);
     };
+
+    useEffect(() => {
+        checkAuth();
+
+        // Listen for global logout events (e.g. from 401 handlers in api.ts)
+        const handleGlobalLogout = () => {
+            console.log('[AuthContext] Global logout event received');
+            logout();
+        };
+
+        window.addEventListener('auth-logout', handleGlobalLogout);
+        return () => window.removeEventListener('auth-logout', handleGlobalLogout);
+    }, []);
 
     return (
         <AuthContext.Provider value={{ user, loading, login, logout, checkAuth }}>
