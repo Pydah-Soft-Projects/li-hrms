@@ -38,6 +38,7 @@ interface PayrollRecord {
     payableShifts: number;
     extraDays: number;
     totalPaidDays: number;
+    paidDays: number;
     otHours: number;
     otDays: number;
     earnedSalary: number;
@@ -189,7 +190,8 @@ export default function PayslipDetailPage() {
         ['Absents', payroll.attendance?.absentDays || 0],
         ['Payable Shifts', payroll.attendance?.payableShifts || 0],
         ['Extra Days', payroll.attendance?.extraDays || 0],
-        ['Total Paid Days', payroll.attendance?.totalPaidDays || 0],
+        ['Paid Days', payroll.attendance?.paidDays || 0],
+        ['Total units Paid', payroll.attendance?.totalPaidDays || 0],
         ['OT Hours', payroll.attendance?.otHours || 0],
         ['OT Days', payroll.attendance?.otDays || 0],
       ];
@@ -231,7 +233,7 @@ export default function PayslipDetailPage() {
         ['Per Day Salary', `₹ ${payroll.earnings.perDayBasicPay.toFixed(2)}`],
         ['Earned Salary', `₹ ${(payroll.attendance?.earnedSalary || 0).toFixed(2)}`],
         ...(payroll.earnings.allowances || []).map(a => [a.name, `₹ ${a.amount.toFixed(2)}`]),
-        ['Incentive', `₹ ${payroll.earnings.incentive.toFixed(2)}`],
+        ['Extra Days Pay', `₹ ${payroll.earnings.incentive.toFixed(2)}`],
         ['OT Pay', `₹ ${payroll.earnings.otPay.toFixed(2)}`],
         ['Arrears', `₹ ${(payroll.arrearsAmount || 0).toFixed(2)}`],
       ];
@@ -463,7 +465,8 @@ export default function PayslipDetailPage() {
               { label: 'Absents', value: payroll.attendance?.absentDays || 0 },
               { label: 'Payable Shifts', value: payroll.attendance?.payableShifts || 0 },
               { label: 'Extra Days', value: payroll.attendance?.extraDays || 0 },
-              { label: 'Total Paid Days', value: payroll.attendance?.totalPaidDays || 0, highlight: true },
+              { label: 'Paid Days', value: payroll.attendance?.paidDays || 0, highlight: true },
+              { label: 'Total units Paid', value: payroll.attendance?.totalPaidDays || 0, highlight: true },
               { label: 'OT Hours', value: payroll.attendance?.otHours || 0 },
               { label: 'OT Days', value: payroll.attendance?.otDays || 0 },
             ].map((item, idx) => (
@@ -504,7 +507,7 @@ export default function PayslipDetailPage() {
                   </div>
                 ))}
                 <div className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-700">
-                  <span className="text-slate-600 dark:text-slate-400">Incentive</span>
+                  <span className="text-slate-600 dark:text-slate-400">Extra Days Pay</span>
                   <span className="font-semibold text-slate-800 dark:text-white">₹{payroll.earnings.incentive.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                 </div>
                 <div className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-700">

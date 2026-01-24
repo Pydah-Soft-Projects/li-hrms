@@ -87,9 +87,9 @@ async function buildPayslipData(employeeId, month) {
     0;
   const monthDays = payrollRecord.totalDaysInMonth;
   const incentiveDays =
-    presentDays !== null && paidLeaveDays !== null
-      ? Math.max(0, payableShifts - presentDays - paidLeaveDays - (odDays || 0))
-      : null;
+    presentDays !== null
+      ? (payableShifts - presentDays)
+      : (payrollRecord.attendance?.extraDays || 0);
 
   const earnedSalary =
     presentDays !== null ? perDay * presentDays : payrollRecord.earnings.payableAmount;
@@ -164,7 +164,8 @@ async function buildPayslipData(employeeId, month) {
     },
     netSalary: payrollRecord.netSalary,
     totalPayableShifts: payrollRecord.totalPayableShifts,
-    paidDays: payrollRecord.totalPayableShifts,
+    paidDays: payrollRecord.attendance?.paidDays || (presentDays + (payRegisterSummary?.totals?.totalWeeklyOffs || 0) + (payRegisterSummary?.totals?.totalHolidays || 0) + (odDays || 0) + (paidLeaveDays || 0)),
+    roundOff: payrollRecord.roundOff || 0,
     status: payrollRecord.status,
   };
 
@@ -211,10 +212,10 @@ function buildPayslipExcelRowsNormalized(payslip, allAllowanceNames, allDeductio
   row['Paid Leaves'] = payslip.attendance?.paidLeaveDays || 0;
   row['OD Days'] = payslip.attendance?.odDays || 0;
   row['Absents'] = payslip.attendance?.absentDays || 0;
-  row['LOP\'s'] = 0;
+  row['LOP\'s'] = payRegisterSummary?.totals?.totalLopDays || 0;
   row['Payable Shifts'] = payslip.attendance?.payableShifts || 0;
   row['Extra Days'] = payslip.attendance?.extraDays || 0;
-  row['Total Paid Days'] = payslip.attendance?.totalPaidDays || 0;
+  row['Total Paid Days'] = payslip.paidDays || 0;
 
   // Net earnings
   row['Net Basic'] = payslip.attendance?.earnedSalary || payslip.earnings.earnedSalary || 0;
@@ -247,17 +248,17 @@ function buildPayslipExcelRowsNormalized(payslip, allAllowanceNames, allDeductio
   row['OT Days'] = payslip.attendance?.otDays || 0;
   row['OT Hours'] = payslip.attendance?.otHours || 0;
   row['OT Amount'] = payslip.earnings?.otPay || 0;
-  row['Incentives'] = payslip.earnings?.incentive || 0;
+  row['Incentives'] = (payslip.earnings?.incentive || 0) + (payslip.extraDaysPay || 0);
   row['Other Amount'] = 0;
-  row['Total Other Earnings'] = (payslip.earnings?.otPay || 0) + (payslip.earnings?.incentive || 0);
+  row['Total Other Earnings'] = (row['OT Amount']) + (row['Incentives']);
 
   // Arrears
   row['Arrears'] = payslip.arrears?.arrearsAmount || 0;
 
   // Final
   row['NET SALARY'] = payslip.netSalary || 0;
-  row['Round Off'] = 0;
-  row['FINAL SALARY'] = Math.round(payslip.netSalary || 0);
+  row['Round Off'] = payslip.roundOff || 0;
+  row['FINAL SALARY'] = payslip.netSalary || 0;
 
   return row;
 }

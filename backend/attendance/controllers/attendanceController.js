@@ -11,6 +11,7 @@ const Leave = require('../../leaves/model/Leave');
 const OD = require('../../leaves/model/OD');
 const MonthlyAttendanceSummary = require('../model/MonthlyAttendanceSummary');
 const { calculateMonthlySummary } = require('../services/summaryCalculationService');
+const Settings = require('../../settings/model/Settings');
 
 /**
  * Format date to YYYY-MM-DD
@@ -385,6 +386,9 @@ exports.updateOutTime = async (req, res) => {
     const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
     const { detectAndAssignShift } = require('../../shifts/services/shiftDetectionService');
 
+    // Fetch global general settings
+    const generalConfig = await Settings.getSettingsByCategory('general');
+
     if (!outTime) {
       return res.status(400).json({
         success: false,
@@ -463,7 +467,8 @@ exports.updateOutTime = async (req, res) => {
       employeeNumber.toUpperCase(),
       date,
       attendanceRecord.inTime,
-      outTimeDate
+      outTimeDate,
+      generalConfig
     );
 
     if (detectionResult.success && detectionResult.assignedShift) {
@@ -636,10 +641,15 @@ exports.assignShift = async (req, res) => {
 
     // Calculate late-in and early-out with the assigned shift
     const { calculateLateIn, calculateEarlyOut } = require('../../shifts/services/shiftDetectionService');
+    // Fetch global general settings
+    const generalConfig = await Settings.getSettingsByCategory('general');
+    const globalLateInGrace = generalConfig.late_in_grace_time ?? null;
+    const globalEarlyOutGrace = generalConfig.early_out_grace_time ?? null;
+
     // Pass the date parameter for proper overnight shift handling
-    const lateInMinutes = calculateLateIn(attendanceRecord.inTime, shift.startTime, shift.gracePeriod || 15, date);
+    const lateInMinutes = calculateLateIn(attendanceRecord.inTime, shift.startTime, shift.gracePeriod || 15, date, globalLateInGrace);
     const earlyOutMinutes = attendanceRecord.outTime
-      ? calculateEarlyOut(attendanceRecord.outTime, shift.endTime, shift.startTime, date)
+      ? calculateEarlyOut(attendanceRecord.outTime, shift.endTime, shift.startTime, date, globalEarlyOutGrace)
       : null;
 
     // Update attendance record

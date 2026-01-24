@@ -94,7 +94,7 @@ const normalizeOverrides = (list, fallbackCategory) => {
 async function calculatePayroll(employeeId, month, userId) {
   try {
     // Step 1: Fetch required data
-    const employee = await Employee.findById(employeeId).populate('department_id designation_id');
+    const employee = await Employee.findById(employeeId).populate('department_id designation_id division_id');
     if (!employee) {
       throw new Error('Employee not found');
     }
@@ -146,26 +146,39 @@ async function calculatePayroll(employeeId, month, userId) {
       attendanceSummary = {
         totalPayableShifts: payRegisterSummary.totals.totalPayableShifts || 0,
         totalOTHours: payRegisterSummary.totals.totalOTHours || 0,
-        totalLeaves: payRegisterSummary.totals.totalLeaveDays || 0,
-        totalODs: payRegisterSummary.totals.totalODDays || 0,
+        totalLeaveDays: payRegisterSummary.totals.totalLeaveDays || 0,
+        totalODDays: payRegisterSummary.totals.totalODDays || 0,
         totalPresentDays: payRegisterSummary.totals.totalPresentDays || 0,
         totalDaysInMonth: payRegisterSummary.totalDaysInMonth,
-        // For backward compatibility, we'll use these from pay register
-        paidLeaves: payRegisterSummary.totals.totalPaidLeaveDays || 0,
-        unpaidLeaves: payRegisterSummary.totals.totalUnpaidLeaveDays || 0,
-        lopLeaves: payRegisterSummary.totals.totalLopDays || 0,
+        totalPaidLeaveDays: payRegisterSummary.totals.totalPaidLeaveDays || 0,
+        totalUnpaidLeaveDays: payRegisterSummary.totals.totalUnpaidLeaveDays || 0,
+        totalLopDays: payRegisterSummary.totals.totalLopDays || 0,
+        totalWeeklyOffs: payRegisterSummary.totals.totalWeeklyOffs || 0,
+        totalHolidays: payRegisterSummary.totals.totalHolidays || 0,
+        extraDays: payRegisterSummary.totals.extraDays || 0,
       };
     } else {
       // Fall back to MonthlyAttendanceSummary
       console.log('Using MonthlyAttendanceSummary (PayRegisterSummary not found)');
-      attendanceSummary = await MonthlyAttendanceSummary.findOne({
+      const doc = await MonthlyAttendanceSummary.findOne({
         employeeId,
         month,
       });
-
-      if (!attendanceSummary) {
+      if (!doc) {
         throw new Error(`Attendance summary not found for month ${month}`);
       }
+      attendanceSummary = {
+        totalPayableShifts: doc.totalPayableShifts || 0,
+        totalOTHours: doc.totalOTHours || 0,
+        totalLeaveDays: doc.totalLeaves || 0,
+        totalODDays: doc.totalODs || 0,
+        totalPresentDays: doc.totalPresentDays || 0,
+        totalDaysInMonth: doc.totalDaysInMonth || 30,
+        totalPaidLeaveDays: doc.totalLeaves || 0, // Fallback assumption
+        totalWeeklyOffs: 0,
+        totalHolidays: 0,
+        extraDays: 0,
+      };
     }
 
     const departmentId = employee.department_id?._id || employee.department_id;
@@ -209,7 +222,11 @@ async function calculatePayroll(employeeId, month, userId) {
     // If employee has remaining paid leaves, add them to payable shifts
     const totalLeaves = attendanceSummary.totalLeaves || 0;
     const remainingPaidLeaves = Math.max(0, paidLeaves - totalLeaves);
-    const adjustedPayableShifts = (attendanceSummary.totalPayableShifts || 0) + remainingPaidLeaves;
+    const adjustedPayableShifts =
+      (attendanceSummary.totalPayableShifts || 0) +
+      (attendanceSummary.totalWeeklyOffs || 0) +
+      (attendanceSummary.totalHolidays || 0) +
+      remainingPaidLeaves;
 
     console.log('\n--- Paid Leaves Calculation ---');
     console.log(`Total Paid Leaves Available: ${paidLeaves}`);
@@ -220,15 +237,15 @@ async function calculatePayroll(employeeId, month, userId) {
 
     // Create a modified attendance summary with adjusted payable shifts
     const modifiedAttendanceSummary = {
-      ...attendanceSummary.toObject(),
+      ...attendanceSummary,
       totalPayableShifts: adjustedPayableShifts,
     };
 
     // Prepare attendance data for proration
     const attendanceDataForProration = {
       presentDays: modifiedAttendanceSummary.totalPresentDays || 0,
-      paidLeaveDays: modifiedAttendanceSummary.paidLeaves || 0,
-      odDays: modifiedAttendanceSummary.totalODs || 0,
+      paidLeaveDays: modifiedAttendanceSummary.totalPaidLeaveDays || 0,
+      odDays: modifiedAttendanceSummary.totalODDays || 0,
       monthDays: modifiedAttendanceSummary.totalDaysInMonth || 30,
     };
 
@@ -279,13 +296,13 @@ async function calculatePayroll(employeeId, month, userId) {
       console.log(`  [${idx + 1}] ${allow.name}: ${allow.amount} (${allow.type}, base: ${allow.base})`);
     });
 
-    // Step 5: Calculate Gross Salary (First Pass)
+    // Step 5: Base Gross Salary (for Deductions)
+    // Formula: Base Gross = Earned Salary (Physical) + OT + Allowances
     let grossSalary =
-      basicPayResult.basicPay +
-      basicPayResult.incentive +
+      basicPayResult.basePayForWork +
       otPayResult.otPay +
       allowanceService.calculateTotalAllowances(allowances);
-    console.log(`Gross Salary (First Pass): ${grossSalary}`);
+    console.log(`Base Gross Salary (for deductions): ${grossSalary}`);
 
     // Step 6: Recalculate Allowances (Second Pass - if any use 'gross' base)
     console.log('\n--- Step 6: Allowances Calculation (Gross Salary Base) ---');
@@ -331,13 +348,12 @@ async function calculatePayroll(employeeId, month, userId) {
     const totalAllowances = allowanceService.calculateTotalAllowances(mergedAllowances);
     console.log(`Total Allowances: ${totalAllowances}`);
 
-    // Recalculate Gross Salary (Final)
+    // Recalculate Base Gross Salary (Final for deductions)
     grossSalary =
-      basicPayResult.basicPay +
-      basicPayResult.incentive +
+      basicPayResult.basePayForWork +
       otPayResult.otPay +
       totalAllowances;
-    console.log(`Gross Salary (Final): ${grossSalary}`);
+    console.log(`Base Gross Salary (Final): ${grossSalary}`);
 
     // Step 7: Calculate Deductions
     console.log('\n========== DEDUCTIONS CALCULATION START ==========');
@@ -540,10 +556,14 @@ async function calculatePayroll(employeeId, month, userId) {
     }
 
     // Step 11: Calculate Net Salary
-    const netSalary = Math.max(0, payableAmountBeforeAdvance - advanceResult.advanceDeduction);
+    const baseNet = Math.max(0, payableAmountBeforeAdvance - advanceResult.advanceDeduction);
+
+    // Final Net Salary (Add Incentive Pay here)
+    const netSalary = baseNet + basicPayResult.incentive;
+
     console.log(`\n--- Step 11: Net Salary Calculation ---`);
-    console.log(`Payable Amount Before Advance: ${payableAmountBeforeAdvance}`);
-    console.log(`Advance Deduction: ${advanceResult.advanceDeduction}`);
+    console.log(`Base Net before Incentive: ${baseNet}`);
+    console.log(`Incentive Pay (Extra Days): ${basicPayResult.incentive}`);
     console.log(`NET SALARY: ${netSalary}`);
 
     // Final Summary
@@ -585,7 +605,7 @@ async function calculatePayroll(employeeId, month, userId) {
 
     // Update payroll record - ensure all required fields are set
     // Calculate all values first and ensure they're numbers
-    const finalBasicPay = Number(basicPayResult.basicPay) || 0;
+    const finalBasicPay = Number(basicPayResult.basePayForWork) || 0;
     const finalPerDayBasicPay = Number(basicPayResult.perDayBasicPay) || 0;
     const finalPayableAmount = Number(basicPayResult.payableAmount) || 0;
     const finalIncentive = Number(basicPayResult.incentive) || 0;
@@ -612,9 +632,34 @@ async function calculatePayroll(employeeId, month, userId) {
     payrollRecord.set('totalPayableShifts', Number(adjustedPayableShifts) || 0);
     payrollRecord.set('netSalary', Number(finalNetSalary) || 0);
     payrollRecord.set('payableAmountBeforeAdvance', Number(finalPayableAmountBeforeAdvance) || 0);
+    payrollRecord.set('arrearsAmount', Number(payrollRecord.arrearsAmount) || 0);
+    payrollRecord.set('extraDaysPay', Number(basicPayResult.incentive) || 0);
     payrollRecord.set('status', 'calculated');
     payrollRecord.set('division_id', employee.division_id);
     payrollRecord.set('attendanceSummaryId', attendanceSummary._id);
+
+    const extraDaysValue = attendanceSummary.extraDays || 0;
+    const calcPaidDays = (attendanceSummary.totalPresentDays || 0) +
+      (attendanceSummary.totalODDays || 0) +
+      (attendanceSummary.totalPaidLeaveDays || 0) +
+      (attendanceSummary.totalHolidays || 0) +
+      (attendanceSummary.totalWeeklyOffs || 0);
+
+    payrollRecord.set('attendance', {
+      totalDaysInMonth: attendanceSummary.totalDaysInMonth || 30,
+      presentDays: attendanceSummary.totalPresentDays || 0,
+      paidLeaveDays: attendanceSummary.totalPaidLeaveDays || 0,
+      odDays: attendanceSummary.totalODDays || 0,
+      weeklyOffs: attendanceSummary.totalWeeklyOffs || 0,
+      holidays: attendanceSummary.totalHolidays || 0,
+      absentDays: attendanceSummary.totalAbsentDays || 0,
+      payableShifts: Number(adjustedPayableShifts) || 0,
+      extraDays: extraDaysValue,
+      paidDays: calcPaidDays,
+      totalPaidDays: Number(adjustedPayableShifts),
+      otHours: attendanceSummary.totalOTHours || 0,
+      earnedSalary: basicPayResult.basePayForWork || 0,
+    });
 
     // Set earnings fields using set() with dot notation - REQUIRED for nested schemas
     payrollRecord.set('earnings.basicPay', Number(finalBasicPay) || 0);
@@ -626,7 +671,7 @@ async function calculatePayroll(employeeId, month, userId) {
     payrollRecord.set('earnings.otRatePerHour', Number(finalOTRatePerHour) || 0);
     payrollRecord.set('earnings.totalAllowances', Number(finalTotalAllowances) || 0);
     payrollRecord.set('earnings.allowances', Array.isArray(mergedAllowances) ? mergedAllowances : []);
-    payrollRecord.set('earnings.grossSalary', Number(finalGrossSalary) || 0);
+    payrollRecord.set('earnings.grossSalary', Number(finalGrossSalary + finalIncentive) || 0);
 
     // Set deductions fields using set() with dot notation
     payrollRecord.set('deductions.attendanceDeduction', Number(finalAttendanceDeduction) || 0);
@@ -726,12 +771,10 @@ async function calculatePayroll(employeeId, month, userId) {
         );
 
         const addedArrearsAmount = payrollRecord.arrearsAmount || 0;
-        const newGrossSalary = finalGrossSalary + addedArrearsAmount;
-        const newPayableAmountBeforeAdvance = newGrossSalary - finalTotalDeductions - finalTotalEMI;
-        const newNetSalary = Math.max(0, newPayableAmountBeforeAdvance - finalAdvanceDeduction);
+        const totalGrossSalary = finalGrossSalary + finalIncentive + addedArrearsAmount;
+        const newNetSalary = netSalary + addedArrearsAmount; // netSalary already has finalIncentive
 
-        payrollRecord.set('earnings.grossSalary', Number(newGrossSalary) || 0);
-        payrollRecord.set('payableAmountBeforeAdvance', Number(newPayableAmountBeforeAdvance) || 0);
+        payrollRecord.set('earnings.grossSalary', Number(totalGrossSalary) || 0);
         payrollRecord.set('netSalary', Number(newNetSalary) || 0);
 
         // Mark modified
@@ -822,7 +865,7 @@ async function calculatePayroll(employeeId, month, userId) {
  */
 async function calculatePayrollNew(employeeId, month, userId, options = { source: 'payregister', arrearsSettlements: [] }) {
   try {
-    const employee = await Employee.findById(employeeId).populate('department_id designation_id');
+    const employee = await Employee.findById(employeeId).populate('department_id designation_id division_id');
     if (!employee) throw new Error('Employee not found');
     if (!employee.gross_salary || employee.gross_salary <= 0) throw new Error('Employee gross salary is missing or invalid');
 
@@ -838,17 +881,17 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
         totalPayableShifts: payRegisterSummary.totals.totalPayableShifts || 0,
         totalOTHours: payRegisterSummary.totals.totalOTHours || 0,
         totalLeaveDays: payRegisterSummary.totals.totalLeaveDays || 0,
-        totalLeaves: payRegisterSummary.totals.totalLeaveDays || 0,
-        totalODs: payRegisterSummary.totals.totalODDays || 0,
+        totalODDays: payRegisterSummary.totals.totalODDays || 0,
         totalPresentDays: payRegisterSummary.totals.totalPresentDays || 0,
         totalDaysInMonth: payRegisterSummary.totalDaysInMonth,
-        paidLeaves: payRegisterSummary.totals.totalPaidLeaveDays || 0,
-        holidays: payRegisterSummary.holidays || 0,
-        weeklyOffs: payRegisterSummary.weeklyOffs || 0,
+        totalPaidLeaveDays: payRegisterSummary.totals.totalPaidLeaveDays || 0,
+        totalWeeklyOffs: payRegisterSummary.totals.totalWeeklyOffs || 0,
+        totalHolidays: payRegisterSummary.totals.totalHolidays || 0, // Using field if exists or fallback
+        extraDays: payRegisterSummary.totals.extraDays || 0,
       };
     } else {
-      attendanceSummary = await MonthlyAttendanceSummary.findOne({ employeeId, month });
-      if (!attendanceSummary) {
+      const doc = await MonthlyAttendanceSummary.findOne({ employeeId, month });
+      if (!doc) {
         // Fallback to pay register if attendance summary missing
         payRegisterSummary = await PayRegisterSummary.findOne({ employeeId, month });
         if (!payRegisterSummary) throw new Error(`Attendance summary not found for month ${month}`);
@@ -856,13 +899,26 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
           totalPayableShifts: payRegisterSummary.totals.totalPayableShifts || 0,
           totalOTHours: payRegisterSummary.totals.totalOTHours || 0,
           totalLeaveDays: payRegisterSummary.totals.totalLeaveDays || 0,
-          totalLeaves: payRegisterSummary.totals.totalLeaveDays || 0,
-          totalODs: payRegisterSummary.totals.totalODDays || 0,
+          totalODDays: payRegisterSummary.totals.totalODDays || 0,
           totalPresentDays: payRegisterSummary.totals.totalPresentDays || 0,
           totalDaysInMonth: payRegisterSummary.totalDaysInMonth,
-          paidLeaves: payRegisterSummary.totals.totalPaidLeaveDays || 0,
-          holidays: payRegisterSummary.holidays || 0,
-          weeklyOffs: payRegisterSummary.weeklyOffs || 0,
+          totalPaidLeaveDays: payRegisterSummary.totals.totalPaidLeaveDays || 0,
+          totalWeeklyOffs: payRegisterSummary.totals.totalWeeklyOffs || 0,
+          totalHolidays: payRegisterSummary.totals.totalHolidays || 0,
+          extraDays: payRegisterSummary.totals.extraDays || 0,
+        };
+      } else {
+        attendanceSummary = {
+          totalPayableShifts: doc.totalPayableShifts || 0,
+          totalOTHours: doc.totalOTHours || 0,
+          totalLeaveDays: doc.totalLeaves || 0,
+          totalODDays: doc.totalODs || 0,
+          totalPresentDays: doc.totalPresentDays || 0,
+          totalDaysInMonth: doc.totalDaysInMonth || 30,
+          totalPaidLeaveDays: doc.totalLeaves || 0,
+          totalWeeklyOffs: 0,
+          totalHolidays: 0,
+          extraDays: 0,
         };
       }
     }
@@ -891,21 +947,12 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
 
     // Step 1: Get attendance data
     const monthDays = attendanceSummary.totalDaysInMonth;
-    const holidays = attendanceSummary.holidays || 0;
-    const weeklyOffs = attendanceSummary.weeklyOffs || 0;
+    const holidays = attendanceSummary.totalHolidays || 0;
+    const weeklyOffs = attendanceSummary.totalWeeklyOffs || 0;
     const presentDays = attendanceSummary.totalPresentDays || 0;
-    const paidLeaveDays =
-      attendanceSummary.paidLeaves !== undefined
-        ? attendanceSummary.paidLeaves
-        : attendanceSummary.totalPaidLeaveDays || 0;
-    const totalLeaveDays =
-      attendanceSummary.totalLeaveDays !== undefined
-        ? attendanceSummary.totalLeaveDays
-        : attendanceSummary.totalLeaves || 0;
-    const odDays =
-      attendanceSummary.totalODs !== undefined
-        ? attendanceSummary.totalODs
-        : 0;
+    const paidLeaveDays = attendanceSummary.totalPaidLeaveDays || 0;
+    const totalLeaveDays = attendanceSummary.totalLeaveDays || 0;
+    const odDays = attendanceSummary.totalODDays || 0;
     const payableShifts = attendanceSummary.totalPayableShifts || 0;
 
     console.log('Attendance Data:');
@@ -936,46 +983,17 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
       console.log(`✓ Days validation passed: ${calculatedTotal} = ${monthDays}`);
     }
 
-    // Step 4: Calculate Extra Days (Incentive Units)
-    // Formula: Extra Days = Payable Units - (Worked Days + Paid Leave Units)
-    // This represents the shift-based bonus (e.g. Double Shift = 1.0 extra)
-    const extraDays = Math.max(0, payableShifts - (presentDays + odDays + paidLeaveDays));
-    console.log(`\nExtra Days Calculation (Incentive):`);
-    console.log(`  Extra Days = ${payableShifts} - (${presentDays} + ${odDays} + ${paidLeaveDays}) = ${extraDays}`);
+    // Step 4: Calculate Basic Pay Components (Unifed Logic)
+    console.log('\n--- Step 4: Basic Pay Calculation (Unified) ---');
+    const basicPayResult = basicPayService.calculateBasicPay(employee, attendanceSummary);
+    console.log('Basic Pay Result:', JSON.stringify(basicPayResult, null, 2));
 
-    // Step 5: Calculate Total Paid Days
-    // Formula: Total Paid Days = Present + Week Offs + Paid Leave + Extra + OD
-    // Note: Week offs inclusion can be made configurable per department if needed
-    const includeWeekOffsInPaid = true; // Make this configurable if needed
-    const totalPaidDays = presentDays +
-      (includeWeekOffsInPaid ? weeklyOffs : 0) +
-      paidLeaveDays +
-      extraDays +
-      odDays;
-    console.log(`\nTotal Paid Days Calculation:`);
-    console.log(`  Total Paid Days = ${presentDays} + ${weeklyOffs} + ${paidLeaveDays} + ${extraDays} + ${odDays} = ${totalPaidDays}`);
-
-    // Step 6: Calculate Working Days and Per Day Salary
-    // divisor = monthDays (standard month pay)
-    const basicPay = employee.gross_salary;
-    const perDaySalary = basicPay / monthDays;
-    console.log(`\nSalary Calculation:`);
-    console.log(`  Basic Pay: ₹${basicPay}`);
-    console.log(`  Month Days (Divisor): ${monthDays}`);
-    console.log(`  Per Day Salary: ₹${perDaySalary.toFixed(2)}`);
-
-    // Step 7: Calculate Earned Salary (Base Days)
-    // Formula: Base Paid Days = Month Days - Absent Days
-    // This includes Present + Weekly Offs + Holidays + Paid Leave + OD
-    const basePaidDays = Math.max(0, monthDays - absentDays);
-    const earnedSalary = basePaidDays * perDaySalary;
-    console.log(`\nEarned Salary Calculation:`);
-    console.log(`  Base Paid Days = ${monthDays} - ${absentDays} = ${basePaidDays}`);
-    console.log(`  Earned Salary = ${basePaidDays} × ₹${perDaySalary.toFixed(2)} = ₹${earnedSalary.toFixed(2)}`);
-
-    // Step 8: Calculate Incentive Amount (Extra Shifts)
-    const incentiveAmount = extraDays * perDaySalary;
-    console.log(`  Incentive Amount = ${extraDays.toFixed(2)} × ₹${perDaySalary.toFixed(2)} = ₹${incentiveAmount.toFixed(2)}`);
+    const basicPay = basicPayResult.basicPay || 0;
+    const extraDays = basicPayResult.incentiveDays || 0;
+    const totalPaidDays = basicPayResult.physicalUnits + extraDays;
+    const perDaySalary = basicPayResult.perDayBasicPay;
+    const earnedSalary = basicPayResult.basePayForWork;
+    const incentiveAmount = basicPayResult.incentive;
 
     // Step 9: Calculate OT Pay
     const otPayResult = await otPayService.calculateOTPay(
@@ -991,11 +1009,11 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     console.log(`  OT Days: ${otDays}`);
     console.log(`  OT Pay: ₹${otPay.toFixed(2)}`);
 
-    // Step 10: Initial Gross Salary (before allowances)
-    // Formula: Gross = Earned Salary (Base) + Incentive (Extra Shifts) + OT Pay
-    let grossAmountSalary = earnedSalary + incentiveAmount + otPay;
-    console.log(`\nInitial Gross Salary (before allowances):`);
-    console.log(`  ₹${earnedSalary.toFixed(2)} + ₹${incentiveAmount.toFixed(2)} + ₹${otPay.toFixed(2)} = ₹${grossAmountSalary.toFixed(2)}`);
+    // Step 10: Base Gross Salary (for Deductions)
+    // Formula: Base Gross = Earned Salary (Base) + OT Pay
+    let grossAmountSalary = earnedSalary + otPay;
+    console.log(`\nBase Gross Salary (for deductions):`);
+    console.log(`  ₹${earnedSalary.toFixed(2)} + ₹${otPay.toFixed(2)} = ₹${grossAmountSalary.toFixed(2)}`);
     console.log('========================================\n');
 
     // Get includeMissing setting (whether to include non-overridden base items)
@@ -1017,7 +1035,8 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     const { allowances: baseAllowances, deductions: baseDeductions } = await buildBaseComponents(
       departmentId,
       basicPay,
-      attendanceData
+      attendanceData,
+      employee.division_id
     );
 
     // Log base components for debugging
@@ -1040,7 +1059,8 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
       .filter(allowance => allowance && allowance.name) // Filter out invalid entries
       .map((allowance) => {
         try {
-          const baseAmount = allowance.base === 'BASIC_PAY' ? earnedSalary : grossAmountSalary;
+          const allowanceBase = (allowance.base || '').toLowerCase();
+          const baseAmount = (allowanceBase === 'basic' || allowanceBase === 'basic_pay') ? earnedSalary : grossAmountSalary;
           const amount = allowanceService.calculateAllowanceAmount(allowance, baseAmount, grossAmountSalary, attendanceData);
 
           if (isNaN(amount)) {
@@ -1054,7 +1074,7 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
             name: allowance.name,
             code: allowance.code || allowance.name.replace(/\s+/g, '_').toUpperCase(),
             amount,
-            base: allowance.base === 'BASIC_PAY' ? 'basic' : 'gross',
+            base: (allowance.base || '').toLowerCase() === 'gross' ? 'gross' : 'basic',
             type: allowance.type || 'fixed',
             source: allowance.source || (allowance.isEmployeeOverride ? 'employee_override' : 'default'),
             isEmployeeOverride: !!allowance.isEmployeeOverride,
@@ -1083,7 +1103,8 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
       .filter(deduction => deduction && deduction.name) // Filter out invalid entries
       .map((deduction) => {
         try {
-          const baseAmount = deduction.base === 'BASIC_PAY' ? earnedSalary : grossAmountSalary;
+          const deductionBase = (deduction.base || '').toLowerCase();
+          const baseAmount = (deductionBase === 'basic' || deductionBase === 'basic_pay') ? earnedSalary : grossAmountSalary;
           const amount = deductionService.calculateDeductionAmount(deduction, baseAmount, grossAmountSalary, attendanceData);
 
           if (isNaN(amount)) {
@@ -1097,7 +1118,7 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
             name: deduction.name,
             code: deduction.code || deduction.name.replace(/\s+/g, '_').toUpperCase(),
             amount,
-            base: deduction.base === 'BASIC_PAY' ? 'basic' : 'gross',
+            base: (deduction.base || '').toLowerCase() === 'gross' ? 'gross' : 'basic',
             type: deduction.type || 'fixed',
             source: deduction.source || (deduction.isEmployeeOverride ? 'employee_override' : 'default'),
             isEmployeeOverride: !!deduction.isEmployeeOverride,
@@ -1134,7 +1155,12 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     const loanAdvanceResult = await loanAdvanceService.calculateLoanAdvance(employeeId, month);
     totalDeductions += (loanAdvanceResult.totalEMI || 0) + (loanAdvanceResult.totalAdvanceDeduction || 0);
 
-    const netSalary = Math.max(0, grossAmountSalary - totalDeductions);
+    // Base Net Salary (Earnings - Deductions - Loans)
+    const baseNet = Math.max(0, grossAmountSalary - totalDeductions);
+
+    // Final Net Salary (Add Incentive and handle Arrears later)
+    // We add incentive pay at the very end so it doesn't inflate base deductions.
+    let netSalary = baseNet + incentiveAmount;
 
     // Upsert payroll record (mapped to existing schema)
     let payrollRecord = await PayrollRecord.findOne({ employeeId, month });
@@ -1259,14 +1285,12 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
         const arrearsAmount = payrollRecord.arrearsAmount || 0;
         const newGrossSalary = grossAmountSalary + arrearsAmount;
 
-        // Recalculate net salary with arrears
-        const netSalaryWithArrears = Math.max(0, newGrossSalary - totalDeductions);
+        // Recalculate net salary with arrears (Added at the very end)
+        const netSalaryWithArrears = netSalary + arrearsAmount;
 
         // Update payroll record with new values
-        payrollRecord.set('earnings.grossSalary', Number(newGrossSalary) || 0);
+        payrollRecord.set('earnings.grossSalary', Number(grossAmountSalary + incentiveAmount + arrearsAmount) || 0);
         payrollRecord.set('netSalary', Number(netSalaryWithArrears) || 0);
-        payrollRecord.markModified('earnings');
-        payrollRecord.markModified('netSalary');
 
         console.log(`  Original Gross Salary: ₹${grossAmountSalary}`);
         console.log(`  Arrears Amount: ₹${arrearsAmount}`);

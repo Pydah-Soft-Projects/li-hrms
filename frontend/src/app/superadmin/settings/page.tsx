@@ -284,7 +284,54 @@ export default function SettingsPage() {
   const [payslipDownloadLimit, setPayslipDownloadLimit] = useState<number>(5);
   const [payrollLoading, setPayrollLoading] = useState(false);
 
-  // Bulk Release state
+  // General settings state
+  const [lateInGrace, setLateInGrace] = useState<number>(15);
+  const [earlyOutGrace, setEarlyOutGrace] = useState<number>(15);
+  const [generalSettingsLoading, setGeneralSettingsLoading] = useState(false);
+
+  const loadGeneralSettings = async () => {
+    try {
+      setGeneralSettingsLoading(true);
+      const resLate = await api.getSetting('late_in_grace_time');
+      const resEarly = await api.getSetting('early_out_grace_time');
+
+      if (resLate.success && resLate.data) setLateInGrace(Number(resLate.data.value));
+      if (resEarly.success && resEarly.data) setEarlyOutGrace(Number(resEarly.data.value));
+    } catch (err) {
+      console.error('Failed to load general settings', err);
+    } finally {
+      setGeneralSettingsLoading(false);
+    }
+  };
+
+  const saveGeneralSettings = async () => {
+    try {
+      setSaving(true);
+      const resLate = await api.upsertSetting({
+        key: 'late_in_grace_time',
+        value: lateInGrace,
+        category: 'general',
+        description: 'Global Late In Grace Period (Minutes)'
+      });
+      const resEarly = await api.upsertSetting({
+        key: 'early_out_grace_time',
+        value: earlyOutGrace,
+        category: 'general',
+        description: 'Global Early Out Grace Period (Minutes)'
+      });
+
+      if (resLate.success && resEarly.success) {
+        setMessage({ type: 'success', text: 'General settings saved successfully' });
+      } else {
+        setMessage({ type: 'error', text: 'Failed to save general settings' });
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: 'An error occurred while saving' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const [releaseMonth, setReleaseMonth] = useState<string>(new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' }));
   const [releasing, setReleasing] = useState(false);
 
@@ -441,6 +488,8 @@ export default function SettingsPage() {
       loadCommunicationSettings();
     } else if (activeTab === 'feature_control') {
       loadFeatureControlSettings();
+    } else if (activeTab === 'general') {
+      loadGeneralSettings();
     }
   }, [activeTab]);
 
@@ -5415,9 +5464,87 @@ export default function SettingsPage() {
         )}
 
         {activeTab === 'general' && (
-          <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg dark:border-slate-800 dark:bg-slate-950/95 sm:p-8">
-            <h2 className="mb-2 text-xl font-semibold text-slate-900 dark:text-slate-100">General Settings</h2>
-            <p className="text-sm text-slate-600 dark:text-slate-400">General system settings will be configured here.</p>
+          <div className="space-y-6">
+            {generalSettingsLoading ? (
+              <div className="flex items-center justify-center rounded-3xl border border-slate-200 bg-white/95 py-16 shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
+              </div>
+            ) : (
+              <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg dark:border-slate-800 dark:bg-slate-950/95 sm:p-8">
+                <h2 className="mb-2 text-xl font-semibold text-slate-900 dark:text-slate-100">General System Settings</h2>
+                <p className="mb-8 text-sm text-slate-600 dark:text-slate-400">
+                  Global configurations for attendance, payroll, and system-wide defaults.
+                </p>
+
+                {message && activeTab === 'general' && (
+                  <div
+                    className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${message.type === 'success'
+                      ? 'border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-900/20 dark:text-green-200'
+                      : 'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200'
+                      }`}
+                  >
+                    {message.text}
+                  </div>
+                )}
+
+                <div className="space-y-8">
+                  {/* Grace Period Section */}
+                  <section>
+                    <div className="mb-4 flex items-center gap-2">
+                      <div className="h-5 w-1 rounded-full bg-blue-500"></div>
+                      <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Attendance Grace Periods</h3>
+                    </div>
+
+                    <div className="grid gap-6 sm:grid-cols-2">
+                      {/* Late In Grace */}
+                      <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-blue-900/10">
+                        <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                          Late In Grace Period (Minutes)
+                        </label>
+                        <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
+                          Minutes allowed after shift start before being marked as late.
+                        </p>
+                        <input
+                          type="number"
+                          min="0"
+                          value={lateInGrace}
+                          onChange={(e) => setLateInGrace(Number(e.target.value))}
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                        />
+                      </div>
+
+                      {/* Early Out Grace */}
+                      <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-blue-900/10">
+                        <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                          Early Out Grace Period (Minutes)
+                        </label>
+                        <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
+                          Minutes allowed before shift end without recording an early exit.
+                        </p>
+                        <input
+                          type="number"
+                          min="0"
+                          value={earlyOutGrace}
+                          onChange={(e) => setEarlyOutGrace(Number(e.target.value))}
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                        />
+                      </div>
+                    </div>
+                  </section>
+
+                  {/* Save Button */}
+                  <div className="flex justify-end pt-4">
+                    <button
+                      onClick={saveGeneralSettings}
+                      disabled={saving}
+                      className="rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-600 px-8 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/25 transition-all hover:scale-[1.02] hover:shadow-blue-500/40 active:scale-95 disabled:opacity-50"
+                    >
+                      {saving ? 'Saving...' : 'Save General Settings'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

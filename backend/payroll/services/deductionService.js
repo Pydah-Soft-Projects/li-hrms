@@ -93,25 +93,25 @@ async function getResolvedAttendanceDeductionRules(departmentId, divisionId = nu
  * @param {String} calculationMode - 'proportional' or 'floor'
  * @returns {Number} Days to deduct
  */
-function calculateDaysToDeduct(multiplier, remainder, deductionType, customAmount, perDayBasicPay, calculationMode) {
+function calculateDaysToDeduct(multiplier, remainder, threshold, deductionType, customAmount, perDayBasicPay, calculationMode) {
   let days = 0;
 
   if (deductionType === 'half_day') {
     days = multiplier * 0.5;
-    if (calculationMode === 'proportional' && remainder > 0) {
-      days += (remainder / (multiplier === 0 ? 1 : multiplier)) * 0.5;
+    if (calculationMode === 'proportional' && remainder > 0 && threshold > 0) {
+      days += (remainder / threshold) * 0.5;
     }
   } else if (deductionType === 'full_day') {
     days = multiplier * 1;
-    if (calculationMode === 'proportional' && remainder > 0) {
-      days += (remainder / (multiplier === 0 ? 1 : multiplier)) * 1;
+    if (calculationMode === 'proportional' && remainder > 0 && threshold > 0) {
+      days += (remainder / threshold) * 1;
     }
   } else if (deductionType === 'custom_amount' && customAmount && perDayBasicPay > 0) {
     // Convert custom amount to days
     const amountPerThreshold = customAmount;
     days = (multiplier * amountPerThreshold) / perDayBasicPay;
-    if (calculationMode === 'proportional' && remainder > 0) {
-      days += ((remainder / (multiplier === 0 ? 1 : multiplier)) * amountPerThreshold) / perDayBasicPay;
+    if (calculationMode === 'proportional' && remainder > 0 && threshold > 0) {
+      days += ((remainder / threshold) * amountPerThreshold) / perDayBasicPay;
     }
   }
 
@@ -184,6 +184,7 @@ async function calculateAttendanceDeduction(employeeId, month, departmentId, per
       daysDeducted = calculateDaysToDeduct(
         multiplier,
         remainder,
+        rules.combinedCountThreshold,
         rules.deductionType,
         rules.deductionAmount,
         perDayBasicPay,
@@ -280,6 +281,7 @@ async function calculatePermissionDeduction(employeeId, month, departmentId, per
       daysDeducted = calculateDaysToDeduct(
         multiplier,
         remainder,
+        rules.countThreshold,
         rules.deductionType,
         rules.deductionAmount,
         perDayBasicPay,
@@ -421,6 +423,10 @@ async function calculateOtherDeductions(departmentId, basicPay, grossSalary = nu
             amount,
             type: 'fixed',
             base: null,
+            percentage: rule.percentage,
+            percentageBase: rule.percentageBase,
+            minAmount: rule.minAmount,
+            maxAmount: rule.maxAmount,
             basedOnPresentDays: rule.basedOnPresentDays || false,
           });
         }
@@ -448,6 +454,10 @@ async function calculateOtherDeductions(departmentId, basicPay, grossSalary = nu
           amount,
           type: 'percentage',
           base: 'basic',
+          percentage: deduction.rule.percentage,
+          percentageBase: deduction.rule.percentageBase,
+          minAmount: deduction.rule.minAmount,
+          maxAmount: deduction.rule.maxAmount,
           basedOnPresentDays: deduction.rule.basedOnPresentDays || false,
         });
       }
@@ -465,6 +475,10 @@ async function calculateOtherDeductions(departmentId, basicPay, grossSalary = nu
             amount,
             type: 'percentage',
             base: 'gross',
+            percentage: deduction.rule.percentage,
+            percentageBase: deduction.rule.percentageBase,
+            minAmount: deduction.rule.minAmount,
+            maxAmount: deduction.rule.maxAmount,
             basedOnPresentDays: deduction.rule.basedOnPresentDays || false,
           });
         }

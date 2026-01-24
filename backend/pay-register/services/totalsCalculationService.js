@@ -33,6 +33,8 @@ function calculateTotals(dailyRecords) {
     totalPayableShifts: 0,
     totalWeeklyOffs: 0,
     totalHolidays: 0,
+    lateCount: 0,
+    earlyOutCount: 0,
   };
 
   if (!dailyRecords || dailyRecords.length === 0) {
@@ -136,6 +138,10 @@ function calculateTotals(dailyRecords) {
 
     // Add OT hours (total for the day)
     totals.totalOTHours += record.otHours || 0;
+
+    // Add Lates and Early Outs
+    if (record.isLate) totals.lateCount++;
+    if (record.isEarlyOut) totals.earlyOutCount++;
   }
 
   // Calculate totals (full days + half days * 0.5)

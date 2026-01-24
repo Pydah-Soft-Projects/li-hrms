@@ -12,6 +12,7 @@ const Shift = require('../model/Shift');
 const PreScheduledShift = require('../model/PreScheduledShift');
 const ConfusedShift = require('../model/ConfusedShift');
 const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
+const Settings = require('../../settings/model/Settings');
 
 /**
  * Convert time string (HH:mm) to minutes from midnight
@@ -600,12 +601,16 @@ const findMatchingShiftsByOutTime = (outTime, shifts, toleranceMinutes = 30) => 
  * Calculate late-in minutes (handles overnight shifts correctly)
  * @param {Date} inTime - Actual in-time
  * @param {String} shiftStartTime - Shift start time (HH:mm)
- * @param {Number} gracePeriodMinutes - Grace period in minutes
+ * @param {Number} shiftGracePeriod - Grace period from shift definition
  * @param {String} date - Date string (YYYY-MM-DD) - the attendance date (shift start date)
+ * @param {Number} globalGracePeriod - Global grace period from settings
  * @returns {Number} - Minutes late (0 if on time or within grace period)
  */
-const calculateLateIn = (inTime, shiftStartTime, gracePeriodMinutes = 15, date = null) => {
+const calculateLateIn = (inTime, shiftStartTime, shiftGracePeriod = 15, date = null, globalGracePeriod = null) => {
   if (!inTime) return 0;
+
+  // Priority: Global Settings (dynamic) > Shift Setting > Default 15
+  const effectiveGrace = globalGracePeriod !== null ? globalGracePeriod : (shiftGracePeriod || 15);
 
   const inTimeDate = new Date(inTime);
   const [shiftStartHour, shiftStartMin] = shiftStartTime.split(':').map(Number);
@@ -657,11 +662,11 @@ const calculateLateIn = (inTime, shiftStartTime, gracePeriodMinutes = 15, date =
     }
 
     // Apply grace period
-    if (diffMinutes <= gracePeriodMinutes) {
+    if (diffMinutes <= effectiveGrace) {
       return 0; // On time or within grace period
     }
 
-    const lateIn = Math.round((diffMinutes - gracePeriodMinutes) * 100) / 100;
+    const lateIn = Math.round((diffMinutes - effectiveGrace) * 100) / 100;
     console.log(`[LateIn] Overnight: Start=${shiftStartTime}, InTime=${inTimeDate.toISOString()}, Date=${date}, Diff=${diffMinutes.toFixed(2)}min, LateIn=${lateIn}min`);
     return lateIn;
   }
@@ -687,11 +692,11 @@ const calculateLateIn = (inTime, shiftStartTime, gracePeriodMinutes = 15, date =
   }
 
   // Apply grace period
-  if (diffMinutes <= gracePeriodMinutes) {
+  if (diffMinutes <= effectiveGrace) {
     return 0; // On time or within grace period
   }
 
-  return Math.round((diffMinutes - gracePeriodMinutes) * 100) / 100; // Round to 2 decimals
+  return Math.round((diffMinutes - effectiveGrace) * 100) / 100; // Round to 2 decimals
 };
 
 /**
@@ -700,10 +705,13 @@ const calculateLateIn = (inTime, shiftStartTime, gracePeriodMinutes = 15, date =
  * @param {String} shiftEndTime - Shift end time (HH:mm)
  * @param {String} shiftStartTime - Shift start time (HH:mm) - needed to detect overnight
  * @param {String} date - Date string (YYYY-MM-DD) - the attendance date (shift start date)
+ * @param {Number} globalGracePeriod - Global grace period from settings
  * @returns {Number} - Minutes early (0 if on time or late), null if outTime not provided
  */
-const calculateEarlyOut = (outTime, shiftEndTime, shiftStartTime = null, date = null) => {
+const calculateEarlyOut = (outTime, shiftEndTime, shiftStartTime = null, date = null, globalGracePeriod = 15) => {
   if (!outTime) return null;
+
+  const effectiveGrace = globalGracePeriod !== null ? globalGracePeriod : 15;
 
   const outTimeDate = new Date(outTime);
   const [shiftEndHour, shiftEndMin] = shiftEndTime.split(':').map(Number);
@@ -755,11 +763,12 @@ const calculateEarlyOut = (outTime, shiftEndTime, shiftStartTime = null, date = 
   const diffMs = shiftEndDate.getTime() - outTimeDate.getTime();
   const diffMinutes = diffMs / (1000 * 60);
 
-  if (diffMinutes <= 0) {
-    return 0; // On time or late out
+  // Apply grace period
+  if (diffMinutes <= effectiveGrace) {
+    return 0; // On time or within grace
   }
 
-  const earlyOut = Math.round(diffMinutes * 100) / 100;
+  const earlyOut = Math.round((diffMinutes - effectiveGrace) * 100) / 100;
   if (isOvernight && date) {
     console.log(`[EarlyOut] Overnight: Start=${shiftStartTime}, End=${shiftEndTime}, OutTime=${outTimeDate.toISOString()}, ShiftEndDate=${shiftEndDate.toISOString()}, Date=${date}, Diff=${diffMinutes.toFixed(2)}min, EarlyOut=${earlyOut}min`);
   }
@@ -820,12 +829,14 @@ const checkNextDayOutTime = async (employeeNumber, date, shift) => {
  * NEW LOGIC: Always match to closest shift unless ambiguous
  * ConfusedShift only when: same start time with no out-time, or ambiguous arrival
  * @param {String} employeeNumber - Employee number
- * @param {String} date - Date (YYYY-MM-DD)
  * @param {Date} inTime - In-time
  * @param {Date} outTime - Out-time (optional)
+ * @param {Object} globalConfig - Global settings (optional)
  * @returns {Object} - Detection result
  */
-const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null) => {
+const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null, globalConfig = {}) => {
+  const globalLateInGrace = globalConfig.late_in_grace_time ?? null;
+  const globalEarlyOutGrace = globalConfig.early_out_grace_time ?? null;
   try {
     if (!inTime) {
       return {
@@ -904,8 +915,8 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
           }
         }
 
-        const lateInMinutes = calculateLateIn(inTime, nearestShift.startTime, nearestShift.gracePeriod || 15, date);
-        const earlyOutMinutes = actualOutTime ? calculateEarlyOut(actualOutTime, nearestShift.endTime, nearestShift.startTime, date) : null;
+        const lateInMinutes = calculateLateIn(inTime, nearestShift.startTime, nearestShift.gracePeriod || 15, date, globalLateInGrace);
+        const earlyOutMinutes = actualOutTime ? calculateEarlyOut(actualOutTime, nearestShift.endTime, nearestShift.startTime, date, globalEarlyOutGrace) : null;
 
         await updateRosterTracking(nearestShift._id);
 
@@ -948,8 +959,8 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
         }
       }
 
-      const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod || 15, date);
-      const earlyOutMinutes = outTime ? calculateEarlyOut(outTime, shift.endTime, shift.startTime, date) : null;
+      const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod || 15, date, globalLateInGrace);
+      const earlyOutMinutes = outTime ? calculateEarlyOut(outTime, shift.endTime, shift.startTime, date, globalEarlyOutGrace) : null;
 
       await updateRosterTracking(shift._id);
 
@@ -1014,8 +1025,8 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
           if (bestMatch) {
             const shift = shifts.find(s => s._id.toString() === bestMatch.shiftId.toString());
             if (shift) {
-              const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod || 15, date);
-              const earlyOutMinutes = calculateEarlyOut(outTime, shift.endTime, shift.startTime, date);
+              const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod || 15, date, globalLateInGrace);
+              const earlyOutMinutes = calculateEarlyOut(outTime, shift.endTime, shift.startTime, date, globalEarlyOutGrace);
 
               await updateRosterTracking(shift._id);
 
@@ -1078,8 +1089,8 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
             if (bestMatch) {
               const shift = shifts.find(s => s._id.toString() === bestMatch.shiftId.toString());
               if (shift) {
-                const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod || 15, date);
-                const earlyOutMinutes = calculateEarlyOut(outTime, shift.endTime, shift.startTime, date);
+                const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod || 15, date, globalLateInGrace);
+                const earlyOutMinutes = calculateEarlyOut(outTime, shift.endTime, shift.startTime, date, globalEarlyOutGrace);
 
                 await updateRosterTracking(shift._id);
 
@@ -1138,8 +1149,8 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
           const shift = shifts.find(s => s._id.toString() === bestMatch.shiftId.toString());
 
           if (shift) {
-            const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod || 15, date);
-            const earlyOutMinutes = outTime ? calculateEarlyOut(outTime, shift.endTime, shift.startTime, date) : null;
+            const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod || 15, date, globalLateInGrace);
+            const earlyOutMinutes = outTime ? calculateEarlyOut(outTime, shift.endTime, shift.startTime, date, globalEarlyOutGrace) : null;
 
             await updateRosterTracking(shift._id);
 
@@ -1225,9 +1236,14 @@ const resolveConfusedShift = async (confusedShiftId, shiftId, userId, comments =
     });
 
     if (attendanceRecord) {
-      const lateInMinutes = calculateLateIn(confusedShift.inTime, shift.startTime, shift.gracePeriod || 15, confusedShift.date);
+      // Fetch global general settings
+      const generalConfig = await Settings.getSettingsByCategory('general');
+      const globalLateInGrace = generalConfig.late_in_grace_time ?? null;
+      const globalEarlyOutGrace = generalConfig.early_out_grace_time ?? null;
+
+      const lateInMinutes = calculateLateIn(confusedShift.inTime, shift.startTime, shift.gracePeriod || 15, confusedShift.date, globalLateInGrace);
       const earlyOutMinutes = confusedShift.outTime
-        ? calculateEarlyOut(confusedShift.outTime, shift.endTime, shift.startTime, confusedShift.date)
+        ? calculateEarlyOut(confusedShift.outTime, shift.endTime, shift.startTime, confusedShift.date, globalEarlyOutGrace)
         : null;
 
       attendanceRecord.shiftId = shiftId;
@@ -1282,6 +1298,9 @@ const syncShiftsForExistingRecords = async (startDate = null, endDate = null) =>
     // Get all attendance records without shifts
     const records = await AttendanceDaily.find(query).sort({ date: -1 });
 
+    // Fetch global general settings
+    const generalConfig = await Settings.getSettingsByCategory('general');
+
     stats.processed = records.length;
 
     for (const record of records) {
@@ -1296,7 +1315,8 @@ const syncShiftsForExistingRecords = async (startDate = null, endDate = null) =>
           record.employeeNumber,
           record.date,
           record.inTime,
-          record.outTime || null
+          record.outTime || null,
+          generalConfig
         );
 
         if (result.success && result.assignedShift) {
@@ -1386,9 +1406,14 @@ const autoAssignNearestShift = async (employeeNumber, date, inTime, outTime = nu
       };
     }
 
+    // Fetch global general settings
+    const generalConfig = await Settings.getSettingsByCategory('general');
+    const globalLateInGrace = generalConfig.late_in_grace_time ?? null;
+    const globalEarlyOutGrace = generalConfig.early_out_grace_time ?? null;
+
     // Calculate late-in and early-out
-    const lateInMinutes = calculateLateIn(inTime, nearestShift.startTime, nearestShift.gracePeriod || 15, date);
-    const earlyOutMinutes = outTime ? calculateEarlyOut(outTime, nearestShift.endTime, nearestShift.startTime, date) : null;
+    const lateInMinutes = calculateLateIn(inTime, nearestShift.startTime, nearestShift.gracePeriod || 15, date, globalLateInGrace);
+    const earlyOutMinutes = outTime ? calculateEarlyOut(outTime, nearestShift.endTime, nearestShift.startTime, date, globalEarlyOutGrace) : null;
 
     return {
       success: true,

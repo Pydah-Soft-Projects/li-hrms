@@ -70,6 +70,16 @@ const payrollRecordSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    // Combined arrears from Arrears Settlement
+    arrearsAmount: {
+      type: Number,
+      default: 0,
+    },
+    // Pay for extra days specifically
+    extraDaysPay: {
+      type: Number,
+      default: 0,
+    },
 
     // ATTENDANCE BREAKDOWN (NEW - Enhanced tracking)
     attendance: {
@@ -133,6 +143,11 @@ const payrollRecordSchema = new mongoose.Schema(
         type: Number,
         default: 0,
         min: 0,
+      },
+      // Paid days for display (Present + WeekOffs + PaidLeave + OD + Holidays)
+      paidDays: {
+        type: Number,
+        default: 0,
       },
       // OT hours
       otHours: {

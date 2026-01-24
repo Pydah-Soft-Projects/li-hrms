@@ -13,6 +13,7 @@ const Employee = require('../../employees/model/Employee');
 const OD = require('../../leaves/model/OD');
 const { detectAndAssignShift } = require('../../shifts/services/shiftDetectionService');
 const { detectExtraHours } = require('./extraHoursService');
+const Settings = require('../../settings/model/Settings');
 
 const MAX_PAIRING_WINDOW_HOURS = 25; // Maximum allowed duration for a shift (prevents multi-day jumps)
 
@@ -41,6 +42,9 @@ const processAndAggregateLogs = async (rawLogs, previousDayLinking = false, skip
   };
 
   try {
+    // Fetch global general settings (for grace periods, etc.)
+    const generalConfig = await Settings.getSettingsByCategory('general');
+
     // First, insert all raw logs (Duplicate prevention)
     // SKIP if explicitly requested (e.g. from RealTime Controller which already saves)
     if (!skipInsertion) {
@@ -274,7 +278,7 @@ const processAndAggregateLogs = async (rawLogs, previousDayLinking = false, skip
             let shiftAssignment = null;
             if (inTime) {
               try {
-                shiftAssignment = await detectAndAssignShift(employeeNumber, shiftDate, inTime, outTime);
+                shiftAssignment = await detectAndAssignShift(employeeNumber, shiftDate, inTime, outTime, generalConfig);
               } catch (shiftError) {
                 console.error(`Error detecting shift for ${employeeNumber} on ${shiftDate}:`, shiftError);
               }

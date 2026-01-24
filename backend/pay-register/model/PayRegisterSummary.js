@@ -80,7 +80,7 @@ const payRegisterSummarySchema = new mongoose.Schema(
         firstHalf: {
           status: {
             type: String,
-            enum: ['present', 'absent', 'leave', 'od'],
+            enum: ['present', 'absent', 'leave', 'od', 'holiday', 'week_off'],
             default: 'absent',
           },
           leaveType: {
@@ -117,7 +117,7 @@ const payRegisterSummarySchema = new mongoose.Schema(
         secondHalf: {
           status: {
             type: String,
-            enum: ['present', 'absent', 'leave', 'od'],
+            enum: ['present', 'absent', 'leave', 'od', 'holiday', 'week_off'],
             default: 'absent',
           },
           leaveType: {
@@ -126,12 +126,7 @@ const payRegisterSummarySchema = new mongoose.Schema(
           },
           leaveNature: {
             type: String,
-            enum: ['paid', 'lop', null],
-            default: null,
-          },
-          leaveNature: {
-            type: String,
-            enum: ['paid', 'lop', null],
+            enum: ['paid', 'lop', 'without_pay', null],
             default: null,
           },
           isOD: {
@@ -158,7 +153,7 @@ const payRegisterSummarySchema = new mongoose.Schema(
         // FULL DAY FIELDS (for quick access when not split)
         status: {
           type: String,
-          enum: ['present', 'absent', 'leave', 'od', null],
+          enum: ['present', 'absent', 'leave', 'od', 'holiday', 'week_off', null],
           default: null, // Only set if firstHalf.status === secondHalf.status
         },
         leaveType: {
@@ -233,6 +228,16 @@ const payRegisterSummarySchema = new mongoose.Schema(
           type: String,
           trim: true,
           default: null,
+        },
+
+        // Late/Early status (from attendance source)
+        isLate: {
+          type: Boolean,
+          default: false,
+        },
+        isEarlyOut: {
+          type: Boolean,
+          default: false,
         },
       },
     ],
@@ -352,6 +357,13 @@ const payRegisterSummarySchema = new mongoose.Schema(
         min: 0,
       },
 
+      // EXTRA DAYS (Manually added units for incentives)
+      extraDays: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+
       // PAYABLE SHIFTS
       totalPayableShifts: {
         type: Number,
@@ -364,6 +376,18 @@ const payRegisterSummarySchema = new mongoose.Schema(
         min: 0,
       },
       totalHolidays: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+
+      // Lates and Early Outs
+      lateCount: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      earlyOutCount: {
         type: Number,
         default: 0,
         min: 0,
@@ -552,6 +576,9 @@ payRegisterSummarySchema.methods.recalculateTotals = function () {
     totalPayableShifts: 0,
     totalWeeklyOffs: 0,
     totalHolidays: 0,
+    lateCount: 0,
+    earlyOutCount: 0,
+    extraDays: this.totals.extraDays || 0,
   };
 
   if (!this.dailyRecords || this.dailyRecords.length === 0) {
@@ -656,6 +683,10 @@ payRegisterSummarySchema.methods.recalculateTotals = function () {
 
     // Add OT hours
     totals.totalOTHours += record.otHours || 0;
+
+    // Add Lates and Early Outs
+    if (record.isLate) totals.lateCount++;
+    if (record.isEarlyOut) totals.earlyOutCount++;
   }
 
   // Calculate totals (full days + half days * 0.5)
@@ -667,12 +698,13 @@ payRegisterSummarySchema.methods.recalculateTotals = function () {
   totals.totalLeaveDays = totals.totalPaidLeaveDays + totals.totalLopDays;
   totals.totalODDays = totals.odDays + totals.odHalfDays * 0.5;
 
-  // Calculate payable shifts = present + OD + paid leaves
-  totals.totalPayableShifts = totals.totalPresentDays + totals.totalODDays + totals.totalPaidLeaveDays;
+  // Calculate payable shifts = present + OD + paid leaves + manual extra days
+  totals.totalPayableShifts = totals.totalPresentDays + totals.totalODDays + totals.totalPaidLeaveDays + (totals.extraDays || 0);
   // This is where we will also use the shift-based payable units if implemented here
   // But for now, let's keep it consistent with the service fix I just did
 
   this.totals = totals;
+  this.markModified('totals');
   return totals;
 };
 

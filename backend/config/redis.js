@@ -16,7 +16,8 @@ redisConnection.on('connect', () => {
 });
 
 redisConnection.on('error', (err) => {
-    console.error('Redis connection error:', err);
+    // Silence persistent connection logs as per user request
+    // console.error('Redis connection error:', err);
 });
 
 module.exports = {

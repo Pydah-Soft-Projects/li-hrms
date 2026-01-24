@@ -21,26 +21,37 @@ function calculateBasicPay(employee, attendanceSummary) {
 
   const basicPay = employee.gross_salary || 0;
   const totalDaysInMonth = attendanceSummary.totalDaysInMonth;
-  const totalPayableShifts = attendanceSummary.totalPayableShifts || 0;
+  const totalPresentDays = attendanceSummary.totalPresentDays || 0;
+  const totalODDays = attendanceSummary.totalODDays || 0;
+  const totalPaidLeaveDays = attendanceSummary.totalPaidLeaveDays || 0;
+  const totalWeeklyOffs = attendanceSummary.totalWeeklyOffs || 0;
+  const totalHolidays = attendanceSummary.totalHolidays || 0;
+  const manualExtraDays = attendanceSummary.extraDays || 0;
 
   // Calculate per day basic pay
   const perDayBasicPay = totalDaysInMonth > 0 ? basicPay / totalDaysInMonth : 0;
 
-  // Calculate payable amount based on shifts
-  const payableAmount = perDayBasicPay * totalPayableShifts;
+  // 1. Earned Salary for "Physical/Credit" days
+  // Includes Present, OD, Paid Leaves, and Holidays/Weekoffs
+  const physicalUnits = totalPresentDays + totalODDays + totalPaidLeaveDays + totalWeeklyOffs + totalHolidays;
+  const basePayForWork = physicalUnits * perDayBasicPay;
 
-  // Calculate incentive
-  // Incentive = Payable Amount - Basic Pay
-  // Can be positive (extra shifts) or negative (less shifts)
-  const incentive = payableAmount - basicPay;
+  // 2. Extra Days Pay (Incentive for system-added or manually uploaded units)
+  const incentive = manualExtraDays * perDayBasicPay;
+
+  // Final payable amount (Sum of both)
+  const payableAmount = basePayForWork + incentive;
 
   return {
     basicPay,
-    perDayBasicPay: Math.round(perDayBasicPay * 100) / 100, // Round to 2 decimals
+    perDayBasicPay: Math.round(perDayBasicPay * 100) / 100,
     payableAmount: Math.round(payableAmount * 100) / 100,
     incentive: Math.round(incentive * 100) / 100,
+    basePayForWork: Math.round(basePayForWork * 100) / 100,
     totalDaysInMonth,
-    totalPayableShifts,
+    totalPayableShifts: physicalUnits + manualExtraDays,
+    incentiveDays: manualExtraDays,
+    physicalUnits
   };
 }
 

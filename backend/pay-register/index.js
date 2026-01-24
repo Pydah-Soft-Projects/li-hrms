@@ -18,6 +18,9 @@ router.use((req, res, next) => {
 });
 
 // IMPORTANT: More specific routes must come before parameterized routes
+// Bulk upload monthly summary
+router.post('/upload-summary/:month', payRegisterController.uploadSummaryBulk);
+
 // Get all employees with pay registers for a month (must come before /:employeeId routes)
 router.get('/employees/:month', payRegisterController.getEmployeesWithPayRegister);
 

@@ -438,6 +438,8 @@ async function populatePayRegisterFromSources(employeeId, emp_no, year, monthNum
       leaveSplitIds: leave?.leaveSplitIds || [],
       odIds: od?.odIds || [],
       otIds: ot?.otIds || [],
+      isLate: attendance?.isLateIn || false,
+      isEarlyOut: attendance?.isEarlyOut || false,
       remarks: null,
     };
 

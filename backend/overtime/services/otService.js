@@ -13,6 +13,7 @@ const { calculateMonthlySummary } = require('../../attendance/services/summaryCa
 const { validateOTRequest } = require('../../shared/services/conflictValidationService');
 const { checkJurisdiction } = require('../../shared/middleware/dataScopeMiddleware');
 const OvertimeSettings = require('../model/OvertimeSettings');
+const Settings = require('../../settings/model/Settings');
 
 /**
  * Create OT request
@@ -114,12 +115,16 @@ const createOTRequest = async (data, userId) => {
       finalShiftId = shiftId || attendanceRecord.shiftId;
 
       if (!finalShiftId) {
+        // Fetch global general settings
+        const generalConfig = await Settings.getSettingsByCategory('general');
+
         // Try to detect shift if not assigned
         const detectionResult = await detectAndAssignShift(
           employeeNumber,
           date,
           attendanceRecord.inTime,
-          attendanceRecord.outTime || otOutTime
+          attendanceRecord.outTime || otOutTime,
+          generalConfig
         );
 
         if (detectionResult.success && detectionResult.assignedShift) {
@@ -255,12 +260,16 @@ const createOTRequest = async (data, userId) => {
       // Update attendance record with shift
       attendanceRecord.shiftId = finalShiftId;
 
+      // Fetch global general settings
+      const generalConfig = await Settings.getSettingsByCategory('general');
+
       // Re-run shift detection to update late-in/early-out
       const detectionResult = await detectAndAssignShift(
         employeeNumber,
         date,
         attendanceRecord.inTime,
-        attendanceRecord.outTime || otOutTimeDate
+        attendanceRecord.outTime || otOutTimeDate,
+        generalConfig
       );
 
       if (detectionResult.success) {

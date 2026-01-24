@@ -27,6 +27,16 @@ const settingsSchema = new mongoose.Schema(
   }
 );
 
+// Statics
+settingsSchema.statics.getSettingsByCategory = async function (category) {
+  const settings = await this.find({ category });
+  const config = {};
+  settings.forEach((s) => {
+    config[s.key] = s.value;
+  });
+  return config;
+};
+
 // Index for faster lookups
 // Note: key already has unique:true which creates an index
 settingsSchema.index({ category: 1 });

@@ -1,4 +1,4 @@
-const { redis } = require('../jobs/queueManager'); // Reuse the redis instance from queueManager
+const { redisConnection } = require('../../config/redis');
 
 /**
  * Cache Service
@@ -11,10 +11,12 @@ const cacheService = {
      */
     async get(key) {
         try {
-            const data = await redis.get(key);
+            if (redisConnection.status !== 'ready') return null;
+            const data = await redisConnection.get(key);
             return data ? JSON.parse(data) : null;
         } catch (error) {
-            console.error(`[Cache] Error getting key ${key}:`, error.message);
+            // Silence cache logs as per user request
+            // console.error(`[Cache] Error getting key ${key}:`, error.message);
             return null;
         }
     },
@@ -27,11 +29,13 @@ const cacheService = {
      */
     async set(key, value, ttlInSeconds = 3600) {
         try {
+            if (redisConnection.status !== 'ready') return false;
             const stringValue = JSON.stringify(value);
-            await redis.set(key, stringValue, 'EX', ttlInSeconds);
+            await redisConnection.set(key, stringValue, 'EX', ttlInSeconds);
             return true;
         } catch (error) {
-            console.error(`[Cache] Error setting key ${key}:`, error.message);
+            // Silence cache logs as per user request
+            // console.error(`[Cache] Error setting key ${key}:`, error.message);
             return false;
         }
     },
@@ -42,10 +46,12 @@ const cacheService = {
      */
     async del(key) {
         try {
-            await redis.del(key);
+            if (redisConnection.status !== 'ready') return false;
+            await redisConnection.del(key);
             return true;
         } catch (error) {
-            console.error(`[Cache] Error deleting key ${key}:`, error.message);
+            // Silence cache logs as per user request
+            // console.error(`[Cache] Error deleting key ${key}:`, error.message);
             return false;
         }
     },
@@ -56,13 +62,15 @@ const cacheService = {
      */
     async delByPattern(pattern) {
         try {
-            const keys = await redis.keys(pattern);
+            if (redisConnection.status !== 'ready') return false;
+            const keys = await redisConnection.keys(pattern);
             if (keys.length > 0) {
-                await redis.del(...keys);
+                await redisConnection.del(...keys);
             }
             return true;
         } catch (error) {
-            console.error(`[Cache] Error deleting pattern ${pattern}:`, error.message);
+            // Silence cache logs as per user request
+            // console.error(`[Cache] Error deleting pattern ${pattern}:`, error.message);
             return false;
         }
     }

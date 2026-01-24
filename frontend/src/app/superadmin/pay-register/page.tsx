@@ -6,6 +6,7 @@ import { api, apiRequest, Employee, Division } from '@/lib/api';
 import { toast, ToastContainer } from 'react-toastify';
 import ArrearsPayrollSection from '@/components/Arrears/ArrearsPayrollSection';
 import Spinner from '@/components/Spinner';
+import * as XLSX from 'xlsx';
 import 'react-toastify/dist/ReactToastify.css';
 
 
@@ -41,6 +42,8 @@ interface DailyRecord {
   otHours: number;
   remarks: string | null;
   isManuallyEdited?: boolean;
+  isLate?: boolean;
+  isEarlyOut?: boolean;
 }
 
 interface PayRegisterSummary {
@@ -77,6 +80,8 @@ interface PayRegisterSummary {
     totalPayableShifts: number;
     totalWeeklyOffs?: number;
     totalHolidays?: number;
+    lateCount?: number;
+    earlyOutCount?: number;
   };
   status: 'draft' | 'in_review' | 'finalized';
   lastAutoSyncedAt: string | null;
@@ -116,6 +121,11 @@ export default function PayRegisterPage() {
   const [showPermissionModal, setShowPermissionModal] = useState(false);
   const [pendingBatchId, setPendingBatchId] = useState<string | null>(null);
   const [permissionReason, setPermissionReason] = useState('');
+
+  // Bulk Summary Upload State
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadingSummary, setUploadingSummary] = useState(false);
+  const [uploadResults, setUploadResults] = useState<{ success: number; failed: number; total: number; errors: string[] } | null>(null);
 
   // Department Batch Status State (Map of DeptID -> Batch Info)
   const [departmentBatchStatus, setDepartmentBatchStatus] = useState<Map<string, { status: string, permissionGranted: boolean, batchId: string }>>(new Map());
@@ -421,13 +431,17 @@ export default function PayRegisterPage() {
       const leave = getLeaveTotal(totals);
       const od = totals.totalODDays || 0;
       const ot = totals.totalOTHours || 0;
-      const extra = Math.max(0, (totals.totalPayableShifts || 0) - (totals.totalPresentDays || 0) - (totals.totalODDays || 0));
+      const extra = (totals.totalPayableShifts || 0) - (totals.totalPresentDays || 0);
       const weeklyOffs = totals.totalWeeklyOffs || 0;
       const holidays = totals.totalHolidays || 0;
-      const totalPaidDays = (totals.totalPayableShifts || 0) + weeklyOffs + holidays;
+      const lop = totals.totalLopDays || 0;
+      const paidLeave = totals.totalPaidLeaveDays || 0;
+      const lateCount = totals.lateCount || 0;
+      const holidayAndWeekoffs = (totals.totalWeeklyOffs || 0) + (totals.totalHolidays || 0);
 
+      const totalPaidDays = present + weeklyOffs + holidays + od + paidLeave;
       const monthDays = pr.totalDaysInMonth || daysInMonth;
-      const countedDays = present + absent + leave + od + weeklyOffs + holidays;
+      const countedDays = totalPaidDays + absent + lop;
       const matchesMonth = Math.abs(countedDays - monthDays) < 0.001;
       return {
         pr,
@@ -440,6 +454,10 @@ export default function PayRegisterPage() {
         weeklyOffs,
         holidays,
         totalPaidDays,
+        lop,
+        paidLeave,
+        lateCount,
+        holidayAndWeekoffs,
         monthDays,
         countedDays,
         matchesMonth,
@@ -963,6 +981,16 @@ export default function PayRegisterPage() {
                   </button>
 
                   <button
+                    onClick={() => setShowUploadModal(true)}
+                    className="h-9 px-4 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-sm transition-all"
+                  >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                    </svg>
+                    Upload Summary
+                  </button>
+
+                  <button
                     onClick={async () => {
                       const listedEmployeeIds = payRegisters.map((pr) =>
                         typeof pr.employeeId === 'object' ? pr.employeeId._id : pr.employeeId
@@ -982,6 +1010,183 @@ export default function PayRegisterPage() {
             })()}
           </div>
         </div>
+
+        {/* Bulk Summary Upload Modal */}
+        {showUploadModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl max-w-xl w-full p-6 border border-slate-200 dark:border-slate-700">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-bold text-slate-900 dark:text-white">Bulk Summary Upload</h3>
+                <button
+                  onClick={() => {
+                    setShowUploadModal(false);
+                    setUploadResults(null);
+                  }}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                >
+                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {!uploadResults ? (
+                <>
+                  <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800">
+                    <p className="text-sm text-blue-700 dark:text-blue-300 flex items-start gap-2">
+                      <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      Upload an Excel file with monthly totals. The system will match employees by code and distribute counts across working days.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col items-center justify-center border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-10 hover:border-blue-500 transition-colors bg-slate-50 dark:bg-slate-900/50 mb-6">
+                    <input
+                      type="file"
+                      id="summaryExcel"
+                      className="hidden"
+                      accept=".xlsx, .xls"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+
+                        setUploadingSummary(true);
+                        try {
+                          const reader = new FileReader();
+                          reader.onload = async (evt) => {
+                            try {
+                              const bstr = evt.target?.result;
+                              const wb = XLSX.read(bstr, { type: 'binary' });
+                              const wsname = wb.SheetNames[0];
+                              const ws = wb.Sheets[wsname];
+                              const data = XLSX.utils.sheet_to_json(ws);
+
+                              const monthStr = currentDate.toISOString().slice(0, 7);
+                              const response = await apiRequest<{ success: number; failed: number; total: number; errors: string[] }>(
+                                `/pay-register/upload-summary/${monthStr}`,
+                                {
+                                  method: 'POST',
+                                  body: JSON.stringify({ data })
+                                }
+                              );
+
+                              if (response.success && response.data) {
+                                setUploadResults(response.data);
+                                toast.success("Upload processed successfully!");
+                                loadPayRegisters(); // Refresh table
+                              } else {
+                                toast.error(response.error || "Failed to process upload");
+                              }
+                            } catch (err: any) {
+                              toast.error(err.message || "Error parsing file");
+                            } finally {
+                              setUploadingSummary(false);
+                            }
+                          };
+                          reader.readAsBinaryString(file);
+                        } catch (err) {
+                          setUploadingSummary(false);
+                        }
+                      }}
+                    />
+                    <label htmlFor="summaryExcel" className="cursor-pointer flex flex-col items-center gap-3">
+                      <div className="h-12 w-12 flex items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
+                        {uploadingSummary ? (
+                          <svg className="w-6 h-6 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                        ) : (
+                          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                          </svg>
+                        )}
+                      </div>
+                      <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                        {uploadingSummary ? "Processing file..." : "Click to select Excel file"}
+                      </span>
+                    </label>
+                  </div>
+
+                  <div className="flex justify-between items-center">
+                    <button
+                      onClick={() => {
+                        const headers = ["Employee Code", "Employee Name", "Department", "Division", "Total Present", "Total Absent", "Paid Leaves", "LOP Count", "Total OD", "Total Extra Days", "Total OT Hours", "Holidays", "Lates"];
+                        const sampleData = payRegisters.map(pr => ({
+                          "Employee Code": typeof pr.employeeId === 'object' ? pr.employeeId.emp_no : pr.emp_no,
+                          "Employee Name": typeof pr.employeeId === 'object' ? pr.employeeId.employee_name : '',
+                          "Department": (typeof pr.employeeId === 'object' && pr.employeeId.department_id) ? (pr.employeeId.department_id as any).name : '',
+                          "Division": (typeof pr.employeeId === 'object' && pr.employeeId.division_id) ? (pr.employeeId.division_id as any).name : '',
+                          "Total Present": 0,
+                          "Total Absent": 0,
+                          "Paid Leaves": 0,
+                          "LOP Count": 0,
+                          "Total OD": 0,
+                          "Total Extra Days": 0,
+                          "Total OT Hours": 0,
+                          "Holidays": 0,
+                          "Lates": 0
+                        }));
+
+                        const ws = XLSX.utils.json_to_sheet(sampleData);
+                        const wb = XLSX.utils.book_new();
+                        XLSX.utils.book_append_sheet(wb, ws, "Attendance Summary");
+                        XLSX.writeFile(wb, `Payroll_Summary_Template_${currentDate.toISOString().slice(0, 7)}.xlsx`);
+                      }}
+                      className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                      Download Template
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="animate-fade-in">
+                  <div className="grid grid-cols-3 gap-4 mb-6">
+                    <div className="bg-slate-50 dark:bg-slate-900 p-4 rounded-lg text-center border border-slate-200 dark:border-slate-700">
+                      <div className="text-2xl font-bold text-slate-800 dark:text-white">{uploadResults.total}</div>
+                      <div className="text-xs text-slate-500 uppercase">Total Rows</div>
+                    </div>
+                    <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg text-center border border-green-100 dark:border-green-800">
+                      <div className="text-2xl font-bold text-green-600">{uploadResults.success}</div>
+                      <div className="text-xs text-green-500 uppercase tracking-wider">Success</div>
+                    </div>
+                    <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg text-center border border-red-100 dark:border-red-800">
+                      <div className="text-2xl font-bold text-red-600">{uploadResults.failed}</div>
+                      <div className="text-xs text-red-500 uppercase tracking-wider">Failed</div>
+                    </div>
+                  </div>
+
+                  {uploadResults.errors.length > 0 && (
+                    <div className="mb-6">
+                      <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Error Details:</h4>
+                      <div className="max-h-40 overflow-y-auto bg-slate-50 dark:bg-slate-900 p-3 rounded-lg border border-slate-200 dark:border-slate-700">
+                        <ul className="space-y-1">
+                          {uploadResults.errors.map((err, i) => (
+                            <li key={i} className="text-xs text-red-500">• {err}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => {
+                      setShowUploadModal(false);
+                      setUploadResults(null);
+                    }}
+                    className="w-full py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold transition-all shadow-lg"
+                  >
+                    Done
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Permission Request Modal */}
         {showPermissionModal && (
@@ -1050,9 +1255,13 @@ export default function PayRegisterPage() {
                     'Total Present',
                     'Total Absent',
                     'Total Leaves',
+                    'Paid Leaves',
+                    'LOP Count',
                     'Total OD',
                     'Total OT Hours',
                     'Total Extra Days',
+                    'Lates',
+                    'Holidays & Weekoffs',
                     'Paid Days',
                     'Month Days',
                     'Counted Days',
@@ -1092,9 +1301,13 @@ export default function PayRegisterPage() {
                       <td className="text-center px-2 py-2">{row.present.toFixed(1)}</td>
                       <td className="text-center px-2 py-2">{row.absent.toFixed(1)}</td>
                       <td className="text-center px-2 py-2">{row.leave.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2 font-medium text-green-600 dark:text-green-400">{row.paidLeave.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2 font-medium text-red-600 dark:text-red-400">{row.lop.toFixed(1)}</td>
                       <td className="text-center px-2 py-2">{row.od.toFixed(1)}</td>
                       <td className="text-center px-2 py-2">{row.ot.toFixed(1)}</td>
                       <td className="text-center px-2 py-2">{row.extra.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2 font-bold text-amber-600 dark:text-amber-400">{row.lateCount}</td>
+                      <td className="text-center px-2 py-2">{row.holidayAndWeekoffs.toFixed(1)}</td>
                       <td className="text-center px-2 py-2 font-bold text-blue-600 dark:text-blue-400">{row.totalPaidDays.toFixed(1)}</td>
                       <td className="text-center px-2 py-2">{row.monthDays}</td>
                       <td
@@ -1423,7 +1636,7 @@ export default function PayRegisterPage() {
                           {/* Dynamic columns based on active tab */}
                           {activeTable === 'present' && (
                             <td className="border-r-0 border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:border-slate-700 dark:bg-green-900/20 dark:text-green-300">
-                              {pr.totals.totalPresentDays.toFixed(1)}
+                              {(pr.totals.totalPresentDays + pr.totals.totalODDays).toFixed(1)}
                             </td>
                           )}
                           {activeTable === 'absent' && (

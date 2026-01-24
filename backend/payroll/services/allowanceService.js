@@ -174,6 +174,10 @@ async function calculateAllowances(departmentId, basicPay, grossSalary = null, u
           amount,
           type: rule.type,
           base: rule.percentageBase || null,
+          percentage: rule.percentage,
+          percentageBase: rule.percentageBase,
+          minAmount: rule.minAmount,
+          maxAmount: rule.maxAmount,
           basedOnPresentDays: rule.basedOnPresentDays || false,
         });
       }

@@ -98,7 +98,6 @@ const payrollBatchSchema = new mongoose.Schema({
     division: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Division',
-        required: [true, 'Division is required for payroll batch'], // Enforce Division context
         index: true
     },
     department: {

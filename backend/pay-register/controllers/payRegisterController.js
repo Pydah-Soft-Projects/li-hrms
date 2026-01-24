@@ -5,6 +5,7 @@ const { populatePayRegisterFromSources } = require('../services/autoPopulationSe
 const { calculateTotals } = require('../services/totalsCalculationService');
 const { updateDailyRecord } = require('../services/dailyRecordUpdateService');
 const { manualSyncPayRegister } = require('../services/autoSyncService');
+const { processSummaryBulkUpload } = require('../services/summaryUploadService');
 
 /**
  * Pay Register Controller
@@ -536,6 +537,36 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
     res.status(500).json({
       success: false,
       error: error.message || 'Failed to get employees with pay register',
+    });
+  }
+};
+
+// @desc    Bulk upload monthly summary
+// @route   POST /api/pay-register/upload-summary/:month
+// @access  Private (exclude employee)
+exports.uploadSummaryBulk = async (req, res) => {
+  try {
+    const { month } = req.params;
+    const { data } = req.body;
+
+    if (!month || !data || !Array.isArray(data)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Month and data array are required',
+      });
+    }
+
+    const result = await processSummaryBulkUpload(month, data, req.user._id);
+
+    res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    console.error('Error bulk uploading summary:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to bulk upload summary',
     });
   }
 };
