@@ -32,21 +32,32 @@ function calculateBasicPay(employee, attendanceSummary) {
   const perDayBasicPay = totalDaysInMonth > 0 ? basicPay / totalDaysInMonth : 0;
 
   // 1. Calculate Total Paid Days (User Formula)
-  // Formula: total paid days = payable shifts + paid leaves + holidays + weekoffs
-  // Note: we use the pre-calculated adjustedPayableShifts passed via totalPayableShifts
-  const calculatedPaidDays = attendanceSummary.totalPayableShifts || 0;
+  // Formula: Calculated Paid Days = Payable Shifts + Paid Leaves + Holidays + Weekly Offs
+  // Note: totalPayableShifts already includes Present Days + OD Days from attendance processing
+  // We add Paid Leaves, Holidays, and Weekly Offs to get the complete calculation
+  const physicalUnits = (attendanceSummary.totalPayableShifts || 0) +
+    (attendanceSummary.totalPaidLeaveDays || 0) +
+    (attendanceSummary.totalWeeklyOffs || 0) +
+    (attendanceSummary.totalHolidays || 0);
 
-  let totalPaidDays = calculatedPaidDays;
-  let extraDays = manualExtraDays; // Direct extra days from upload
+  const rawTotalDays = physicalUnits + manualExtraDays;
+
+  let totalPaidDays = rawTotalDays;
+  let extraDays = 0;
 
   // 2. Capping Logic (User Request)
-  if (totalPaidDays > totalDaysInMonth) {
-    extraDays += (totalPaidDays - totalDaysInMonth);
+  // If Calculated Paid Days <= Total Days in Month: Total Paid Days = Calculated Paid Days, Extra Days = 0
+  // If Calculated Paid Days > Total Days in Month: Extra Days = Calculated Paid Days - Total Days, Total Paid Days = Total Days (Capped)
+  if (rawTotalDays > totalDaysInMonth) {
+    extraDays = rawTotalDays - totalDaysInMonth;
     totalPaidDays = totalDaysInMonth;
+  } else {
+    extraDays = 0;
+    totalPaidDays = rawTotalDays;
   }
 
   // 3. Base Pay Calculation (User Formula)
-  // Base Pay = Total Paid Days * Daily Rate
+  // Base Pay = Total Paid Days * Daily Rate (Always capped at month's max days)
   const basePayForWork = totalPaidDays * perDayBasicPay;
 
   // 4. Extra Days Pay (Incentive)
@@ -63,8 +74,9 @@ function calculateBasicPay(employee, attendanceSummary) {
     basePayForWork: Math.round(basePayForWork * 100) / 100,
     totalDaysInMonth,
     totalPaidDays,
-    extraDays,
-    calculatedPaidDays
+    extraDays: Math.round(extraDays * 100) / 100,
+    calculatedPaidDays: rawTotalDays,
+    physicalUnits
   };
 }
 
