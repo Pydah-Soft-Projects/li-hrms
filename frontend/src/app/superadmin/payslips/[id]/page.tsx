@@ -55,7 +55,22 @@ interface PayrollRecord {
   };
   deductions: {
     attendanceDeduction: number;
+    attendanceDeductionBreakdown?: {
+      lateInsCount: number;
+      earlyOutsCount: number;
+      combinedCount: number;
+      daysDeducted: number;
+      deductionType: string | null;
+      calculationMode: string | null;
+    };
     permissionDeduction: number;
+    permissionDeductionBreakdown?: {
+      permissionCount: number;
+      eligiblePermissionCount: number;
+      daysDeducted: number;
+      deductionType: string | null;
+      calculationMode: string | null;
+    };
     leaveDeduction: number;
     totalOtherDeductions: number;
     otherDeductions: Array<{ name: string; amount: number; type?: string; base?: string }>;
@@ -191,7 +206,9 @@ export default function PayslipDetailPage() {
         ['Payable Shifts', payroll.attendance?.payableShifts || 0],
         ['Extra Days', payroll.attendance?.extraDays || 0],
         ['Paid Days', payroll.attendance?.paidDays || 0],
-        ['Total units Paid', payroll.attendance?.totalPaidDays || 0],
+        ['Total Paid Days', payroll.attendance?.totalPaidDays || 0],
+        ['Late-Ins Count', payroll.deductions?.attendanceDeductionBreakdown?.lateInsCount || 0],
+        ['Permissions Count', payroll.deductions?.permissionDeductionBreakdown?.permissionCount || 0],
         ['OT Hours', payroll.attendance?.otHours || 0],
         ['OT Days', payroll.attendance?.otDays || 0],
       ];
@@ -466,7 +483,9 @@ export default function PayslipDetailPage() {
               { label: 'Payable Shifts', value: payroll.attendance?.payableShifts || 0 },
               { label: 'Extra Days', value: payroll.attendance?.extraDays || 0 },
               { label: 'Paid Days', value: payroll.attendance?.paidDays || 0, highlight: true },
-              { label: 'Total units Paid', value: payroll.attendance?.totalPaidDays || 0, highlight: true },
+              { label: 'Total Paid Days', value: payroll.attendance?.totalPaidDays || 0, highlight: true },
+              { label: 'Late-Ins Count', value: payroll.deductions?.attendanceDeductionBreakdown?.lateInsCount || 0 },
+              { label: 'Permissions Count', value: payroll.deductions?.permissionDeductionBreakdown?.permissionCount || 0 },
               { label: 'OT Hours', value: payroll.attendance?.otHours || 0 },
               { label: 'OT Days', value: payroll.attendance?.otDays || 0 },
             ].map((item, idx) => (
