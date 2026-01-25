@@ -19,6 +19,84 @@ const attendanceDailySchema = new mongoose.Schema(
       required: [true, 'Date is required'],
       index: true,
     },
+    // ========== MULTI-SHIFT SUPPORT ==========
+    // Array to store multiple shifts per day (up to 3)
+    shifts: [{
+      shiftNumber: {
+        type: Number,
+        required: true,
+        min: 1,
+        max: 3,
+      },
+      inTime: {
+        type: Date,
+        required: true,
+      },
+      outTime: {
+        type: Date,
+        default: null,
+      },
+      duration: {
+        type: Number, // in minutes
+        default: null,
+      },
+      workingHours: {
+        type: Number, // actual working hours for this shift
+        default: null,
+      },
+      otHours: {
+        type: Number, // OT hours for this shift
+        default: 0,
+      },
+      matchedShiftId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Shift',
+        default: null,
+      },
+      shiftName: {
+        type: String,
+        default: null,
+      },
+      lateInMinutes: {
+        type: Number,
+        default: null,
+      },
+      earlyOutMinutes: {
+        type: Number,
+        default: null,
+      },
+      isLateIn: {
+        type: Boolean,
+        default: false,
+      },
+      isEarlyOut: {
+        type: Boolean,
+        default: false,
+      },
+      status: {
+        type: String,
+        enum: ['complete', 'incomplete'],
+        default: 'incomplete',
+      },
+    }],
+    // Aggregate fields for multi-shift
+    totalShifts: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 3,
+    },
+    totalWorkingHours: {
+      type: Number, // Sum of all shift working hours
+      default: 0,
+    },
+    totalOTHours: {
+      type: Number, // Sum of all shift OT hours
+      default: 0,
+    },
+    // ========== BACKWARD COMPATIBILITY FIELDS ==========
+    // Keep existing fields for backward compatibility
+    // These will represent first shift IN and last shift OUT
     inTime: {
       type: Date,
       default: null,
@@ -38,7 +116,7 @@ const attendanceDailySchema = new mongoose.Schema(
     },
     source: {
       type: [String],
-      enum: ['mssql', 'excel', 'manual'],
+      enum: ['mssql', 'excel', 'manual', 'biometric-realtime'],
       default: [],
     },
     lastSyncedAt: {
@@ -54,7 +132,7 @@ const attendanceDailySchema = new mongoose.Schema(
       trim: true,
       default: null,
     },
-    // Shift-related fields
+    // Shift-related fields (for primary/first shift)
     shiftId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Shift',
