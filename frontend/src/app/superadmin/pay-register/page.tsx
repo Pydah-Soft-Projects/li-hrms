@@ -485,9 +485,15 @@ export default function PayRegisterPage() {
       const lateCount = totals.lateCount || 0;
       const holidayAndWeekoffs = (totals.totalWeeklyOffs || 0) + (totals.totalHolidays || 0);
 
-      const totalPaidDays = present + weeklyOffs + holidays + od + paidLeave;
+      // User Definition:
+      // Paid Days = Present + Paid Leaves + Holidays + Weekoffs
+      const totalPaidDays = present + paidLeave + holidays + weeklyOffs;
+
       const monthDays = pr.totalDaysInMonth || daysArray.length || daysInMonth;
-      const countedDays = totalPaidDays + absent + lop;
+
+      // User Definition:
+      // Counted Days = Present + Absent + Holidays + Weekoffs + Total Leaves
+      const countedDays = present + absent + holidays + weeklyOffs + leave;
       const matchesMonth = Math.abs(countedDays - monthDays) < 0.001;
       return {
         pr,

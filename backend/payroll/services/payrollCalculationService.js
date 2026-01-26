@@ -873,7 +873,10 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
   try {
     const employee = await Employee.findById(employeeId).populate('department_id designation_id division_id');
     if (!employee) throw new Error('Employee not found');
-    if (!employee.gross_salary || employee.gross_salary <= 0) throw new Error('Employee gross salary is missing or invalid');
+    // if (!employee.gross_salary || employee.gross_salary <= 0) throw new Error('Employee gross salary is missing or invalid');
+    if (!employee.gross_salary || employee.gross_salary <= 0) {
+      console.warn(`[Payroll] Warning: Employee ${employee.emp_no} has invalid gross salary (${employee.gross_salary}). Proceeding with 0.`);
+    }
 
     // Source selection: payregister-only or all-related
     const source = options.source || 'payregister';
@@ -1103,9 +1106,39 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
       includeMissing
     );
 
+    // Step 11: Calculate Attendance Deductions (Lates / Early Outs)
+    // Explicit call to ensure it's processed regardless of master settings
+    console.log(`\n--- Step 11: Attendance Deductions ---`);
+    const attendanceDeductionResult = await deductionService.calculateAttendanceDeduction(
+      employeeId,
+      month,
+      departmentId,
+      perDaySalary,
+      employee.division_id // Pass division ID for granular rules
+    );
+
+    let totalAttendanceDeduction = attendanceDeductionResult.attendanceDeduction || 0;
+    console.log(`Attendance Deduction Result:`, JSON.stringify(attendanceDeductionResult, null, 2));
+
     // Process deductions
-    let totalDeductions = 0;
-    const deductionBreakdown = resolvedDeductions
+    let totalDeductions = totalAttendanceDeduction; // Start with attendance deduction
+
+    // Add Attendance Deduction to breakdown if amount > 0
+    const deductionBreakdown = [];
+
+    if (totalAttendanceDeduction > 0) {
+      deductionBreakdown.push({
+        name: 'Attendance Deduction (Late/Early)',
+        code: 'ATT_DEDUC',
+        amount: attendanceDeductionResult.attendanceDeduction,
+        base: 'basic',
+        type: 'fixed',
+        source: 'attendance_policy',
+        details: attendanceDeductionResult.breakdown
+      });
+    }
+
+    const otherDeductionBreakdown = resolvedDeductions
       .filter(deduction => deduction && deduction.name) // Filter out invalid entries
       .map((deduction) => {
         try {
@@ -1136,6 +1169,9 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
         }
       })
       .filter(Boolean); // Remove any null entries from failed processing
+
+    // Combine breakdowns
+    deductionBreakdown.push(...otherDeductionBreakdown);
 
     // Absent deduction
     let absentDeductionAmount = 0;
@@ -1229,7 +1265,7 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     payrollRecord.set('earnings.grossSalary', Number(grossAmountSalary) || 0);
 
     // Deductions
-    payrollRecord.set('deductions.attendanceDeduction', 0);
+    payrollRecord.set('deductions.attendanceDeduction', Number(totalAttendanceDeduction) || 0);
     payrollRecord.set('deductions.permissionDeduction', 0);
     payrollRecord.set('deductions.leaveDeduction', 0);
     payrollRecord.set(
@@ -1587,6 +1623,7 @@ async function createTransactionLogs(payrollRecordId, employeeId, emp_no, month,
     transactionType: 'net_salary',
     category: 'earning',
     description: `Net Salary for ${month}`,
+    attendanceDeductionDetails: calculationResults.deductions.attendanceDeductionResult?.breakdown || {},
     amount: calculationResults.netSalary,
     details: {
       grossSalary: calculationResults.grossSalary,
