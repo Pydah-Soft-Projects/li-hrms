@@ -638,6 +638,12 @@ async function calculatePayroll(employeeId, month, userId) {
     payrollRecord.set('division_id', employee.division_id);
     payrollRecord.set('attendanceSummaryId', attendanceSummary._id);
 
+    // Set payroll cycle range from attendance summary (PayRegisterSummary)
+    if (payRegisterSummary) {
+      payrollRecord.set('startDate', payRegisterSummary.startDate);
+      payrollRecord.set('endDate', payRegisterSummary.endDate);
+    }
+
     const extraDaysValue = attendanceSummary.extraDays || 0;
     const calcPaidDays = (attendanceSummary.totalPresentDays || 0) +
       (attendanceSummary.totalODDays || 0) +

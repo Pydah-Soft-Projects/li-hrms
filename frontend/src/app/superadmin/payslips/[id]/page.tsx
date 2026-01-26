@@ -84,6 +84,8 @@ interface PayrollRecord {
   status: string;
   arrearsAmount?: number;
   roundOff?: number;
+  startDate?: string;
+  endDate?: string;
 }
 
 export default function PayslipDetailPage() {
@@ -147,7 +149,13 @@ export default function PayslipDetailPage() {
 
       doc.setFontSize(11);
       doc.setFont('helvetica', 'normal');
-      doc.text(`For the month of ${payroll.monthName}`, pageWidth / 2, 25, { align: 'center' });
+      let periodLabel = `For the month of ${payroll.monthName}`;
+      if (payroll.startDate && payroll.endDate) {
+        const startStr = new Date(payroll.startDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+        const endStr = new Date(payroll.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+        periodLabel += ` (${startStr} to ${endStr})`;
+      }
+      doc.text(periodLabel, pageWidth / 2, 25, { align: 'center' });
 
       doc.setTextColor(0, 0, 0);
 
@@ -413,7 +421,14 @@ export default function PayslipDetailPage() {
         {/* Payslip Header */}
         <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-t-xl p-6 shadow-lg">
           <h1 className="text-3xl font-bold text-center mb-2">SALARY SLIP</h1>
-          <p className="text-center text-blue-100">For the month of {payroll.monthName}</p>
+          <p className="text-center text-blue-100 italic">
+            For the month of {payroll.monthName}
+            {payroll.startDate && payroll.endDate && (
+              <span className="ml-1 text-sm opacity-90">
+                ({new Date(payroll.startDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} to {new Date(payroll.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })})
+              </span>
+            )}
+          </p>
         </div>
 
         {/* Employee Information */}

@@ -81,6 +81,8 @@ interface PayrollRecord {
   totalDaysInMonth?: number;
   totalPayableShifts?: number;
   roundOff?: number;
+  startDate?: string;
+  endDate?: string;
 }
 
 export default function PayslipsPage() {
@@ -265,7 +267,13 @@ export default function PayslipsPage() {
 
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Month: ${record.monthName}`, pageWidth / 2, 28, { align: 'center' });
+    let monthLabel = `Month: ${record.monthName}`;
+    if (record.startDate && record.endDate) {
+      const startStr = new Date(record.startDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+      const endStr = new Date(record.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+      monthLabel += ` (${startStr} to ${endStr})`;
+    }
+    doc.text(monthLabel, pageWidth / 2, 28, { align: 'center' });
 
     // Employee Details Box
     doc.setFontSize(10);

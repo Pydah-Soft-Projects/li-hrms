@@ -60,12 +60,24 @@ const payRegisterSummarySchema = new mongoose.Schema(
       max: 12,
     },
 
-    // Total days in the month (28/29/30/31)
+    // Total days in the month (28-32)
     totalDaysInMonth: {
       type: Number,
       required: [true, 'Total days in month is required'],
-      min: 28,
-      max: 31,
+      min: 1,
+      max: 40,
+    },
+
+    // Payroll Cycle Start Date (YYYY-MM-DD)
+    startDate: {
+      type: String,
+      index: true,
+    },
+
+    // Payroll Cycle End Date (YYYY-MM-DD)
+    endDate: {
+      type: String,
+      index: true,
     },
 
     // DAILY RECORDS - One record per date in the month
@@ -517,15 +529,15 @@ payRegisterSummarySchema.index({ 'dailyRecords.date': 1 });
 
 // Static method to get or create pay register
 payRegisterSummarySchema.statics.getOrCreate = async function (employeeId, emp_no, year, monthNumber) {
+  const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+  const { startDate, endDate, totalDays, startDay } = await getPayrollDateRange(year, monthNumber);
+
   const monthStr = `${year}-${String(monthNumber).padStart(2, '0')}`;
   const monthNames = [
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
   const monthName = `${monthNames[monthNumber - 1]} ${year}`;
-
-  // Get total days in month
-  const totalDaysInMonth = new Date(year, monthNumber, 0).getDate();
 
   let payRegister = await this.findOne({ employeeId, month: monthStr });
 
@@ -537,13 +549,17 @@ payRegisterSummarySchema.statics.getOrCreate = async function (employeeId, emp_n
       monthName,
       year,
       monthNumber,
-      totalDaysInMonth,
+      totalDaysInMonth: totalDays,
+      startDate,
+      endDate,
       status: 'draft',
     });
   } else {
-    // Update month name and total days in case month/year changed
+    // Update month name and range in case settings changed
     payRegister.monthName = monthName;
-    payRegister.totalDaysInMonth = totalDaysInMonth;
+    payRegister.totalDaysInMonth = totalDays;
+    payRegister.startDate = startDate;
+    payRegister.endDate = endDate;
     await payRegister.save();
   }
 
