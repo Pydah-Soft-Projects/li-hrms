@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from 'next/link';
 import { toast } from "react-toastify";
 import { api, PayrollBatch, PayrollBatchStatus, Department } from "@/lib/api";
 import { auth } from "@/lib/auth";
@@ -303,13 +304,13 @@ export default function PaymentsPage() {
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-center">
                                             <div className="flex justify-center items-center space-x-1" onClick={(e) => e.stopPropagation()}>
-                                                <button
-                                                    onClick={() => router.push(`/payments/${batch._id}`)}
+                                                <Link
+                                                    href={`/payments/${batch._id}`}
                                                     className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                                                     title="View Details"
                                                 >
                                                     <VisibilityIcon className="w-5 h-5" />
-                                                </button>
+                                                </Link>
 
                                                 {batch.status === 'pending' && (
                                                     <button

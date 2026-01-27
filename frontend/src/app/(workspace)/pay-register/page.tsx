@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from "next/navigation";
+import Link from 'next/link';
 import { api, apiRequest, Employee, Division } from '@/lib/api';
 import { toast } from 'react-toastify';
 import ArrearsPayrollSection from '@/components/Arrears/ArrearsPayrollSection';
@@ -541,7 +542,9 @@ export default function PayRegisterPage() {
 
   const handleViewPayslip = (employee: Employee) => {
     // Navigate to payslip or open payslip modal
-    window.location.href = `/superadmin/payroll-transactions?employeeId=${employee._id}&month=${monthStr}`;
+    // Use emp_no for search as per PayrollTransactionsPage filter logic
+    const searchParam = employee.emp_no || employee._id;
+    router.push(`/payroll-transactions?search=${searchParam}&month=${monthStr}`);
   };
 
   const handleCalculatePayroll = async (employee: Employee) => {
@@ -1255,25 +1258,27 @@ export default function PayRegisterPage() {
                                   )}
                                 </div>
                                 <div className="flex gap-2">
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation(); // Prevent row click
-                                      if (employee) {
-                                        if (isPastMonth && !pr.payrollId) {
-                                          handleCalculatePayroll(employee);
-                                        } else {
-                                          handleViewPayslip(employee);
-                                        }
-                                      }
-                                    }}
-                                    className={`rounded-md px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:shadow-md ${isPastMonth && !pr.payrollId
-                                      ? 'bg-amber-500 hover:bg-amber-600'
-                                      : 'bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700'
-                                      }`}
-                                    title={isPastMonth && !pr.payrollId ? "Calculate Payroll" : "View Payslip"}
-                                  >
-                                    {isPastMonth && !pr.payrollId ? 'Calculate' : 'Payslip'}
-                                  </button>
+                                  {isPastMonth && !pr.payrollId ? (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (employee) handleCalculatePayroll(employee);
+                                      }}
+                                      className="rounded-md px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:shadow-md bg-amber-500 hover:bg-amber-600"
+                                      title="Calculate Payroll"
+                                    >
+                                      Calculate
+                                    </button>
+                                  ) : (
+                                    <Link
+                                      href={`/payroll-transactions?search=${employee?.emp_no || employeeId}&month=${monthStr}`}
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="rounded-md px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:shadow-md bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 inline-block"
+                                      title="View Payslip"
+                                    >
+                                      Payslip
+                                    </Link>
+                                  )}
 
                                   {!isFrozenOrComplete && (
                                     <div />
