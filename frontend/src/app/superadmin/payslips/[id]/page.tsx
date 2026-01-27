@@ -423,7 +423,8 @@ export default function PayslipDetailPage() {
             <h1 className="text-2xl md:text-3xl font-extrabold mb-1 tracking-tight">SALARY SLIP</h1>
             <div className="flex flex-col items-center gap-1">
               <p className="text-base md:text-lg text-indigo-100 font-medium">
-                {payroll.monthName} {payroll.year}
+                {payroll.monthName} 
+                {/* {payroll.year} */}
               </p>
               {payroll.startDate && payroll.endDate && (
                 <p className="text-[10px] text-indigo-200/80 bg-black/10 px-3 py-0.5 rounded-full">
@@ -474,6 +475,7 @@ export default function PayslipDetailPage() {
                 <StatusCard label="Late-Ins" value={payroll.deductions?.attendanceDeductionBreakdown?.lateInsCount} color="amber" />
                 <StatusCard label="Permissions" value={payroll.deductions?.permissionDeductionBreakdown?.permissionCount} color="blue" />
                 <StatusCard label="OT Days" value={payroll.attendance?.otDays} color="amber" />
+                <StatusCard label="Extra Days" value={(payroll.attendance?.payableShifts - payroll.attendance?.totalPaidDays) > 0 ? (payroll.attendance?.payableShifts - payroll.attendance?.totalPaidDays) : 0} color="gold" />
                 <StatusCard label="Net Paid Days" value={payroll.attendance?.totalPaidDays} highlight />
               </div>
             </section>
@@ -518,7 +520,7 @@ export default function PayslipDetailPage() {
                   <div className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Subtractive</div>
                 </div>
                 <div className="space-y-1.5">
-                  <SalaryRow label="Attendance Deduct" value={payroll.deductions.attendanceDeduction} isDeduction />
+                  {/* <SalaryRow label="Attendance Deduct" value={payroll.deductions.attendanceDeduction} isDeduction /> */}
                   {payroll.deductions.permissionDeduction > 0 && <SalaryRow label="Permission Deduct" value={payroll.deductions.permissionDeduction} isDeduction />}
                   {payroll.deductions.leaveDeduction > 0 && <SalaryRow label="Leave Deduction" value={payroll.deductions.leaveDeduction} isDeduction />}
                   {payroll.deductions.otherDeductions?.map((d, i) => (
