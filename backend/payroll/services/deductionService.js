@@ -20,6 +20,7 @@ async function getResolvedPermissionDeductionRules(departmentId, divisionId = nu
   try {
     const cacheKey = `settings:deduction:permission:dept:${departmentId}:div:${divisionId || 'none'}`;
     let resolved = await cacheService.get(cacheKey);
+    console.log('resolved', resolved);
     if (resolved) return resolved;
 
     const deptSettings = await DepartmentSettings.getByDeptAndDiv(departmentId, divisionId);
@@ -34,6 +35,7 @@ async function getResolvedPermissionDeductionRules(departmentId, divisionId = nu
     };
 
     await cacheService.set(cacheKey, resolved, 300);
+    console.log(' after cache resolved', resolved);
     return resolved;
   } catch (error) {
     console.error('Error getting resolved permission deduction rules:', error);
@@ -56,6 +58,7 @@ async function getResolvedAttendanceDeductionRules(departmentId, divisionId = nu
   try {
     const cacheKey = `settings:deduction:attendance:dept:${departmentId}:div:${divisionId || 'none'}`;
     let resolved = await cacheService.get(cacheKey);
+    console.log('resolved', resolved);
     if (resolved) return resolved;
 
     const deptSettings = await DepartmentSettings.getByDeptAndDiv(departmentId, divisionId);
@@ -70,6 +73,7 @@ async function getResolvedAttendanceDeductionRules(departmentId, divisionId = nu
     };
 
     await cacheService.set(cacheKey, resolved, 300);
+    console.log(' after cache resolved', resolved);
     return resolved;
   } catch (error) {
     console.error('Error getting resolved attendance deduction rules:', error);
@@ -132,7 +136,6 @@ async function calculateAttendanceDeduction(employeeId, month, departmentId, per
     const PayRegisterSummary = require('../../pay-register/model/PayRegisterSummary');
     // Using lean() to bypass strict mode filtering if fields are missing from schema but present in DB
     let payRegister = await PayRegisterSummary.findOne({ employeeId, month }).lean();
-
     let lateInsCount = 0;
     let earlyOutsCount = 0;
     let source = 'attendance_logs';
@@ -155,7 +158,6 @@ async function calculateAttendanceDeduction(employeeId, month, departmentId, per
       // (We fetch rules here just to get minimumDuration, even if we don't deduct later)
       const rulesTemp = await getResolvedAttendanceDeductionRules(departmentId, divisionId);
       const minimumDuration = rulesTemp.minimumDuration || 0;
-
       // Parse month string (YYYY-MM) to get start and end dates
       const [year, monthNum] = month.split('-').map(Number);
       const startDate = new Date(year, monthNum - 1, 1);
@@ -183,7 +185,6 @@ async function calculateAttendanceDeduction(employeeId, month, departmentId, per
 
     // 2. Fetch Rules and Calculate Deduction
     const rules = await getResolvedAttendanceDeductionRules(departmentId, divisionId);
-    console.log(`[Deduction] Rules found for Dept ${departmentId} Div ${divisionId}:`, JSON.stringify(rules));
 
     // If no rules configured, return counts but zero deduction result
     if (!rules.combinedCountThreshold || !rules.deductionType || !rules.calculationMode) {
