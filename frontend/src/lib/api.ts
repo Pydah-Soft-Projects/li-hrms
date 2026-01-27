@@ -1280,6 +1280,39 @@ export const api = {
     return apiRequest<any>('/employees/settings', { method: 'GET' });
   },
 
+  // Second Salary Update
+  updateSecondSalaryBulk: async (formData: FormData) => {
+    return apiRequest<any>('/salary-updates/second-salary/upload', {
+      method: 'POST',
+      body: formData,
+    });
+  },
+
+  downloadSecondSalaryTemplate: async () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const response = await fetch(`${API_BASE_URL}/salary-updates/second-salary/template`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to download template');
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'SecondSalaryTemplate.xlsx';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+    return { success: true };
+  },
+
   // Workspaces
   getMyWorkspaces: async () => {
     return apiRequest<any>('/workspaces/my-workspaces', { method: 'GET' });

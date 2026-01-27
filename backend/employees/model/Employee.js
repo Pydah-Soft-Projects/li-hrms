@@ -48,6 +48,10 @@ const employeeSchema = new mongoose.Schema(
       type: Number,
       default: null,
     },
+    second_salary: {
+      type: Number,
+      default: null,
+    },
     gender: {
       type: String,
       enum: ['Male', 'Female', 'Other', null],

@@ -563,327 +563,347 @@ export default function PayslipsPage() {
         </div>
 
         {/* Filters Section */}
-        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 mb-6 border border-slate-200 dark:border-slate-700">
-          <h2 className="text-lg font-semibold text-slate-800 dark:text-white mb-4">
-            🔍 Filters & Search
-          </h2>
+        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm p-6 mb-6 border border-slate-200 dark:border-slate-700">
+          <div className="flex flex-col lg:flex-row lg:items-end gap-4">
+            <div className="flex-1 grid grid-cols-1 md:grid-cols-4 lg:grid-cols-7 gap-4">
+              {/* Month Filter */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                  Month
+                </label>
+                <input
+                  type="month"
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all dark:text-white text-sm"
+                  required
+                />
+              </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {/* Month Filter */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                Month *
-              </label>
-              <input
-                type="month"
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
-                className="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-slate-700 dark:text-white"
-                required
-              />
-            </div>
-
-            {/* Division Filter */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                Division
-              </label>
-              <select
-                value={selectedDivision}
-                onChange={(e) => {
-                  setSelectedDivision(e.target.value);
-                  setSelectedDepartment(''); // Reset department
-                  setSelectedDesignation(''); // Reset designation
-                }}
-                className="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-slate-700 dark:text-white"
-              >
-                <option value="">All Divisions</option>
-                {divisions.map(div => (
-                  <option key={div._id} value={div._id}>{div.name}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Department Filter */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                Department
-              </label>
-              <select
-                value={selectedDepartment}
-                onChange={(e) => setSelectedDepartment(e.target.value)}
-                className="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-slate-700 dark:text-white"
-              >
-                <option value="">All Departments</option>
-                {departments
-                  .filter(dept => {
-                    if (!selectedDivision) return true;
-                    // Find selected division and check if department is in its list
-                    const currentDiv = divisions.find(d => d._id === selectedDivision);
-                    return currentDiv?.departments?.some((d: any) => d === dept._id || d._id === dept._id);
-                  })
-                  .map(dept => (
-                    <option key={dept._id} value={dept._id}>{dept.name}</option>
+              {/* Division Filter */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                  Division
+                </label>
+                <select
+                  value={selectedDivision}
+                  onChange={(e) => {
+                    setSelectedDivision(e.target.value);
+                    setSelectedDepartment(''); // Reset department
+                    setSelectedDesignation(''); // Reset designation
+                  }}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all dark:text-white text-sm appearance-none cursor-pointer"
+                >
+                  <option value="">All Divisions</option>
+                  {divisions.map(div => (
+                    <option key={div._id} value={div._id}>{div.name}</option>
                   ))}
-              </select>
-            </div>
+                </select>
+              </div>
 
-            {/* Designation Filter */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                Designation
-              </label>
-              <select
-                value={selectedDesignation}
-                onChange={(e) => setSelectedDesignation(e.target.value)}
-                className="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-slate-700 dark:text-white"
-              >
-                <option value="">All Designations</option>
-                {designations.map(desig => (
-                  <option key={desig._id} value={desig._id}>{desig.name}</option>
-                ))}
-              </select>
-            </div>
+              {/* Department Filter */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                  Department
+                </label>
+                <select
+                  value={selectedDepartment}
+                  onChange={(e) => setSelectedDepartment(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all dark:text-white text-sm appearance-none cursor-pointer"
+                >
+                  <option value="">All Departments</option>
+                  {departments
+                    .filter(dept => {
+                      if (!selectedDivision) return true;
+                      const currentDiv = divisions.find(d => d._id === selectedDivision);
+                      return currentDiv?.departments?.some((d: any) => d === dept._id || d._id === dept._id);
+                    })
+                    .map(dept => (
+                      <option key={dept._id} value={dept._id}>{dept.name}</option>
+                    ))}
+                </select>
+              </div>
 
-            {/* Employee Filter */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                Employee
-              </label>
-              <select
-                value={selectedEmployee}
-                onChange={(e) => setSelectedEmployee(e.target.value)}
-                className="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-slate-700 dark:text-white"
-              >
-                <option value="">All Employees</option>
-                {employees.map(emp => (
-                  <option key={emp._id} value={emp._id}>
-                    {emp.emp_no} - {emp.employee_name}
-                  </option>
-                ))}
-              </select>
-            </div>
+              {/* Designation Filter */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                  Designation
+                </label>
+                <select
+                  value={selectedDesignation}
+                  onChange={(e) => setSelectedDesignation(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all dark:text-white text-sm appearance-none cursor-pointer"
+                >
+                  <option value="">All Designations</option>
+                  {designations.map(desig => (
+                    <option key={desig._id} value={desig._id}>{desig.name}</option>
+                  ))}
+                </select>
+              </div>
 
-            {/* Status Filter */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                Status
-              </label>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-slate-700 dark:text-white"
-              >
-                <option value="">All Status</option>
-                <option value="calculated">Calculated</option>
-                <option value="approved">Approved</option>
-                <option value="processed">Processed</option>
-              </select>
-            </div>
+              {/* Employee Filter */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                  Employee
+                </label>
+                <select
+                  value={selectedEmployee}
+                  onChange={(e) => setSelectedEmployee(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all dark:text-white text-sm appearance-none cursor-pointer"
+                >
+                  <option value="">All Employees</option>
+                  {employees.map(emp => (
+                    <option key={emp._id} value={emp._id}>
+                      {emp.emp_no} - {emp.employee_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            {/* Search Bar */}
-            <div className="md:col-span-2 lg:col-span-3">
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                Search
-              </label>
-              <input
-                type="text"
-                placeholder="Search by employee code or name..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-slate-700 dark:text-white"
-              />
-            </div>
-          </div>
+              {/* Status Filter */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                  Status
+                </label>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all dark:text-white text-sm appearance-none cursor-pointer"
+                >
+                  <option value="">All Status</option>
+                  <option value="calculated">Calculated</option>
+                  <option value="approved">Approved</option>
+                  <option value="processed">Processed</option>
+                </select>
+              </div>
 
-          {/* Action Buttons */}
-          <div className="flex flex-wrap gap-3 mt-6">
-            <button
-              onClick={fetchPayrollRecords}
-              disabled={!selectedMonth || loading}
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg transition-all duration-200 flex items-center gap-2 transform hover:scale-105"
-            >
-              {loading ? (
-                <>
-                  <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  <span>Loading...</span>
-                </>
-              ) : (
-                <>
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              {/* Search Bar */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                  Search
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Emp ID or Name"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all dark:text-white text-sm"
+                  />
+                  <svg className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                   </svg>
-                  <span>Search Payslips</span>
-                </>
-              )}
-            </button>
+                </div>
+              </div>
+            </div>
 
-            <button
-              onClick={generateBulkPayslipsPDF}
-              disabled={selectedRecords.size === 0 || generatingBulkPDF}
-              className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg transition-all duration-200 flex items-center gap-2 transform hover:scale-105"
-            >
-              {generatingBulkPDF ? (
-                <>
-                  <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+            {/* Action Buttons */}
+            <div className="flex gap-2 min-w-fit">
+              <button
+                onClick={fetchPayrollRecords}
+                disabled={!selectedMonth || loading}
+                className="h-10 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-sm hover:shadow-md transition-all flex items-center gap-2 text-sm font-medium disabled:opacity-50"
+              >
+                {loading ? (
+                  <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
-                  <span>Generating...</span>
-                </>
-              ) : (
-                <>
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                )}
+                Fetch
+              </button>
+
+              <button
+                onClick={generateBulkPayslipsPDF}
+                disabled={selectedRecords.size === 0 || generatingBulkPDF}
+                className="h-10 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-sm hover:shadow-md transition-all flex items-center gap-2 text-sm font-medium disabled:opacity-50"
+              >
+                {generatingBulkPDF ? (
+                  <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
-                  <span>Export Selected ({selectedRecords.size})</span>
-                </>
-              )}
-            </button>
+                )}
+                Export ({selectedRecords.size})
+              </button>
 
-            <button
-              onClick={() => {
-                setSearchQuery('');
-                setSelectedDepartment('');
-                setSelectedDesignation('');
-                setSelectedEmployee('');
-                setStatusFilter('');
-              }}
-              className="px-6 py-2 bg-slate-500 text-white rounded-lg hover:bg-slate-600 shadow-md hover:shadow-lg transition-all duration-200 flex items-center gap-2 transform hover:scale-105"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-              <span>Clear Filters</span>
-            </button>
+              <button
+                onClick={() => {
+                  setSearchQuery('');
+                  setSelectedDivision('');
+                  setSelectedDepartment('');
+                  setSelectedDesignation('');
+                  setSelectedEmployee('');
+                  setStatusFilter('');
+                }}
+                className="h-10 w-10 flex items-center justify-center bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 rounded-xl transition-all"
+                title="Clear Filters"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Results Summary */}
         {filteredRecords.length > 0 && (
-          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-4 mb-6 border border-slate-200 dark:border-slate-700">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <input
-                  type="checkbox"
-                  checked={selectedRecords.size === filteredRecords.length && filteredRecords.length > 0}
-                  onChange={toggleSelectAll}
-                  className="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-                />
-                <span className="text-slate-700 dark:text-slate-300">
-                  Found <strong>{filteredRecords.length}</strong> payslip(s) |
-                  Selected <strong>{selectedRecords.size}</strong>
-                </span>
+          <div className="bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm rounded-xl p-4 mb-6 border border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg">
+                <svg className="w-5 h-5 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
               </div>
-              <div className="text-sm text-slate-600 dark:text-slate-400">
-                Page {currentPage} of {totalPages}
-              </div>
+              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                Found {filteredRecords.length} payslip(s) • {selectedRecords.size} selected
+              </span>
+            </div>
+            <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest">
+              Page {currentPage} of {totalPages}
             </div>
           </div>
         )}
 
         {/* Payslips Table */}
-        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg overflow-hidden border border-slate-200 dark:border-slate-700">
+        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm overflow-hidden border border-slate-200 dark:border-slate-700">
           <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white">
-                <tr>
-                  <th className="px-4 py-3 text-left text-sm font-semibold">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
+                  <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                     <input
                       type="checkbox"
                       checked={selectedRecords.size === currentRecords.length && currentRecords.length > 0}
                       onChange={toggleSelectAll}
-                      className="w-5 h-5 rounded focus:ring-2 focus:ring-white"
+                      className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
                     />
                   </th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold">Emp Code</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold">Employee Name</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold">Department / Designation</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold">Month</th>
-                  <th className="px-4 py-3 text-right text-sm font-semibold">Gross Salary</th>
-                  <th className="px-4 py-3 text-right text-sm font-semibold">Deductions</th>
-                  <th className="px-4 py-3 text-right text-sm font-semibold">Net Salary</th>
-                  <th className="px-4 py-3 text-center text-sm font-semibold">Status</th>
-                  <th className="px-4 py-3 text-center text-sm font-semibold">Actions</th>
+                  <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Employee</th>
+                  <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Dept / Desig</th>
+                  <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Month</th>
+                  <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Earnings</th>
+                  <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Deductions</th>
+                  <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Net Salary</th>
+                  <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-center">Status</th>
+                  <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-center">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-700/50">
                 {loading ? (
                   <tr>
-                    <td colSpan={10} className="px-4 py-8 text-center text-slate-500">
-                      Loading payslips...
+                    <td colSpan={10} className="px-6 py-12 text-center text-slate-400">
+                      <div className="flex flex-col items-center gap-2">
+                        <svg className="animate-spin h-8 w-8 text-indigo-500" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <span>Loading records...</span>
+                      </div>
                     </td>
                   </tr>
                 ) : currentRecords.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="px-4 py-8 text-center text-slate-500">
-                      {selectedMonth ? 'No payslips found. Try adjusting your filters.' : 'Please select a month to view payslips.'}
+                    <td colSpan={10} className="px-6 py-12 text-center text-slate-400">
+                      <div className="flex flex-col items-center gap-2">
+                        <svg className="w-12 h-12 text-slate-200 dark:text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        <span>{selectedMonth ? 'No payslips found.' : 'Select a month to begin.'}</span>
+                      </div>
                     </td>
                   </tr>
                 ) : (
                   currentRecords.map((record) => {
                     const employee = typeof record.employeeId === 'object' ? record.employeeId : null;
-                    const department = typeof employee?.department_id === 'object' ? employee.department_id.name : '';
-
                     return (
-                      <tr key={record._id} className="hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
-                        <td className="px-4 py-3">
+                      <tr key={record._id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors group">
+                        <td className="px-6 py-4">
                           <input
                             type="checkbox"
                             checked={selectedRecords.has(record._id)}
                             onChange={() => toggleSelectRecord(record._id)}
-                            className="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                            className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
                           />
                         </td>
-                        <td className="px-4 py-3 text-sm font-medium text-slate-900 dark:text-white">
-                          {record.emp_no}
+                        <td className="px-6 py-4">
+                          <div className="flex flex-col">
+                            <span className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                              {employee?.employee_name || 'N/A'}
+                            </span>
+                            <span className="text-xs text-slate-500 font-mono tracking-tighter">
+                              {record.emp_no}
+                            </span>
+                          </div>
                         </td>
-                        <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-300">
-                          {employee?.employee_name || 'N/A'}
+                        <td className="px-6 py-4">
+                          <div className="flex flex-col">
+                            <span className="text-sm text-slate-700 dark:text-slate-300 font-medium">
+                              {getDeptName(employee?.department_id)}
+                            </span>
+                            <span className="text-xs text-slate-500">
+                              {getDesigName(employee?.designation_id)}
+                            </span>
+                          </div>
                         </td>
-                        <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-300">
-                          <div className="font-medium">{getDeptName(employee?.department_id)}</div>
-                          <div className="text-xs text-slate-500">{getDesigName(employee?.designation_id)}</div>
+                        <td className="px-6 py-4">
+                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                            {record.monthName} {record.year}
+                          </span>
                         </td>
-                        <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-300">
-                          {record.monthName}
+                        <td className="px-6 py-4 text-right">
+                          <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+                            Rs.{record.earnings.grossSalary.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </span>
                         </td>
-                        <td className="px-4 py-3 text-sm text-right font-medium text-green-600 dark:text-green-400">
-                          Rs.{record.earnings.grossSalary.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        <td className="px-6 py-4 text-right">
+                          <span className="text-sm font-semibold text-rose-600 dark:text-rose-400">
+                            Rs.{record.deductions.totalDeductions.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </span>
                         </td>
-                        <td className="px-4 py-3 text-sm text-right font-medium text-red-600 dark:text-red-400">
-                          Rs.{record.deductions.totalDeductions.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        <td className="px-6 py-4 text-right text-indigo-600 dark:text-indigo-400">
+                          <span className="text-sm font-bold">
+                            Rs.{record.netSalary.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </span>
                         </td>
-                        <td className="px-4 py-3 text-sm text-right font-bold text-blue-600 dark:text-blue-400">
-                          Rs.{record.netSalary.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <span className={`px-3 py-1 rounded-full text-xs font-semibold ${record.status === 'processed' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
-                            record.status === 'approved' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
-                              'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
+                        <td className="px-6 py-4 text-center">
+                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${record.status === 'processed' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
+                              record.status === 'approved' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' :
+                                'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
                             }`}>
                             {record.status}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-center">
+                        <td className="px-6 py-4">
                           <div className="flex items-center justify-center gap-2">
                             <button
                               onClick={() => router.push(`/superadmin/payslips/${record._id}`)}
-                              className="px-3 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-xs font-medium transition-all duration-200 hover:shadow-md transform hover:scale-105"
+                              className="p-2 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 rounded-lg transition-all"
                               title="View Details"
                             >
-                              👁️ View
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                              </svg>
                             </button>
                             <button
                               onClick={() => generatePayslipPDF(record)}
                               disabled={generatingPDF}
-                              className="px-3 py-1 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 text-xs font-medium transition-all duration-200 hover:shadow-md transform hover:scale-105"
-                              title="Export PDF"
+                              className="p-2 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/40 rounded-lg transition-all"
+                              title="Download PDF"
                             >
-                              📄 PDF
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                              </svg>
                             </button>
                           </div>
                         </td>
@@ -897,21 +917,32 @@ export default function PayslipsPage() {
 
           {/* Pagination */}
           {totalPages > 1 && (
-            <div className="bg-slate-50 dark:bg-slate-900 px-4 py-3 flex items-center justify-between border-t border-slate-200 dark:border-slate-700">
+            <div className="bg-slate-50 dark:bg-slate-900/50 px-6 py-4 flex items-center justify-between border-t border-slate-200 dark:border-slate-700">
               <button
                 onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                 disabled={currentPage === 1}
-                className="px-4 py-2 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed border border-slate-300 dark:border-slate-600"
+                className="px-4 py-2 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed border border-slate-200 dark:border-slate-700 shadow-sm text-sm font-medium transition-all"
               >
                 Previous
               </button>
-              <span className="text-sm text-slate-700 dark:text-slate-300">
-                Page {currentPage} of {totalPages}
-              </span>
+              <div className="flex gap-1 md:gap-2">
+                {[...Array(totalPages)].map((_, i) => (
+                  <button
+                    key={i + 1}
+                    onClick={() => setCurrentPage(i + 1)}
+                    className={`min-w-[40px] h-10 px-2 rounded-xl text-sm font-medium transition-all ${currentPage === i + 1
+                        ? 'bg-indigo-600 text-white shadow-md'
+                        : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
+                      }`}
+                  >
+                    {i + 1}
+                  </button>
+                ))}
+              </div>
               <button
                 onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                 disabled={currentPage === totalPages}
-                className="px-4 py-2 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed border border-slate-300 dark:border-slate-600"
+                className="px-4 py-2 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed border border-slate-200 dark:border-slate-700 shadow-sm text-sm font-medium transition-all"
               >
                 Next
               </button>

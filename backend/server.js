@@ -142,6 +142,10 @@ app.use('/api/leaves', leaveRoutes);
 const loanRoutes = require('./loans/index.js');
 app.use('/api/loans', loanRoutes);
 
+// Salary Updates routes
+const salaryUpdateRoutes = require('./salary-updates/index.js');
+app.use('/api/salary-updates', salaryUpdateRoutes);
+
 // Attendance routes
 const attendanceRoutes = require('./attendance/index.js');
 

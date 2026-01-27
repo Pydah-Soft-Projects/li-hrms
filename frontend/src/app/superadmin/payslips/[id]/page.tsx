@@ -380,262 +380,236 @@ export default function PayslipDetailPage() {
   const employee = payroll.employeeId;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 p-6">
-      <div className="max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 p-6 md:p-8">
+      <div className="max-w-5xl mx-auto">
+        {/* Top Navigation */}
+        <div className="flex items-center justify-between mb-8">
           <button
             onClick={() => router.push('/superadmin/payslips')}
-            className="flex items-center gap-2 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400"
+            className="group flex items-center gap-2 px-4 py-2 bg-white/80 dark:bg-slate-800/80 backdrop-blur-md border border-slate-200 dark:border-slate-700 rounded-2xl text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all hover:shadow-md"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5 transition-transform group-hover:-translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
-            Back to Payslips
+            <span className="font-medium">Back to List</span>
           </button>
 
           <button
             onClick={generateDetailedPDF}
             disabled={generatingPDF}
-            className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 shadow-md hover:shadow-lg transition-all duration-200 flex items-center gap-2 transform hover:scale-105"
+            className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl disabled:opacity-50 shadow-lg hover:shadow-emerald-500/30 transition-all duration-300 flex items-center gap-2 transform hover:scale-[1.02]"
           >
             {generatingPDF ? (
-              <>
-                <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                <span>Generating PDF...</span>
-              </>
+              <svg className="animate-spin w-5 h-5 text-white" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
             ) : (
-              <>
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <span>📄 Export PDF</span>
-              </>
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
             )}
+            <span className="font-semibold">{generatingPDF ? 'Generating...' : 'Download PDF'}</span>
           </button>
         </div>
 
-        {/* Payslip Header */}
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-t-xl p-6 shadow-lg">
-          <h1 className="text-3xl font-bold text-center mb-2">SALARY SLIP</h1>
-          <p className="text-center text-blue-100 italic">
-            For the month of {payroll.monthName}
-            {payroll.startDate && payroll.endDate && (
-              <span className="ml-1 text-sm opacity-90">
-                ({new Date(payroll.startDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} to {new Date(payroll.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })})
-              </span>
-            )}
-          </p>
-        </div>
-
-        {/* Employee Information */}
-        <div className="bg-white dark:bg-slate-800 p-6 border-x border-slate-200 dark:border-slate-700">
-          <h2 className="text-xl font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
-            <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-            </svg>
-            Employee Information
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-700">
-              <span className="font-semibold text-slate-600 dark:text-slate-400">Employee Code:</span>
-              <span className="text-slate-800 dark:text-white">{employee.emp_no}</span>
+        {/* Main Payslip Card */}
+        <div className="bg-white dark:bg-slate-800 rounded-[2.5rem] shadow-2xl shadow-indigo-200/50 dark:shadow-none overflow-hidden border border-slate-100 dark:border-slate-700">
+          {/* Payslip Header Banner */}
+          <div className="bg-gradient-to-r from-indigo-600 via-blue-600 to-indigo-700 p-10 text-white text-center">
+            <div className="inline-block px-4 py-1.5 bg-white/20 backdrop-blur-md rounded-full text-xs font-bold uppercase tracking-widest mb-4">
+              Private & Confidential
             </div>
-            <div className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-700">
-              <span className="font-semibold text-slate-600 dark:text-slate-400">Name:</span>
-              <span className="text-slate-800 dark:text-white">{employee.employee_name}</span>
-            </div>
-            <div className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-700">
-              <span className="font-semibold text-slate-600 dark:text-slate-400">Department:</span>
-              <span className="text-slate-800 dark:text-white">
-                {typeof employee.department_id === 'object' ? employee.department_id.name : (employee.department_id || 'N/A')}
-              </span>
-            </div>
-            <div className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-700">
-              <span className="font-semibold text-slate-600 dark:text-slate-400">Designation:</span>
-              <span className="text-slate-800 dark:text-white">
-                {typeof employee.designation_id === 'object' ? employee.designation_id.name : (employee.designation_id || 'N/A')}
-              </span>
-            </div>
-            <div className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-700">
-              <span className="font-semibold text-slate-600 dark:text-slate-400">Location:</span>
-              <span className="text-slate-800 dark:text-white">{employee.location || 'N/A'}</span>
-            </div>
-            <div className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-700">
-              <span className="font-semibold text-slate-600 dark:text-slate-400">Bank Account:</span>
-              <span className="text-slate-800 dark:text-white">{employee.bank_account_no || 'N/A'}</span>
-            </div>
-            <div className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-700">
-              <span className="font-semibold text-slate-600 dark:text-slate-400">PF Number:</span>
-              <span className="text-slate-800 dark:text-white">{employee.pf_number || 'N/A'}</span>
-            </div>
-            <div className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-700">
-              <span className="font-semibold text-slate-600 dark:text-slate-400">ESI Number:</span>
-              <span className="text-slate-800 dark:text-white">{employee.esi_number || 'N/A'}</span>
+            <h1 className="text-4xl font-extrabold mb-3 tracking-tight">SALARY SLIP</h1>
+            <div className="flex flex-col items-center gap-2">
+              <p className="text-xl text-indigo-100 font-medium">
+                {payroll.monthName} {payroll.year}
+              </p>
+              {payroll.startDate && payroll.endDate && (
+                <p className="text-sm text-indigo-200/80 bg-black/10 px-4 py-1 rounded-full">
+                  Period: {new Date(payroll.startDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} — {new Date(payroll.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </p>
+              )}
             </div>
           </div>
-        </div>
 
-        {/* Attendance Details */}
-        <div className="bg-white dark:bg-slate-800 p-6 border-x border-t border-slate-200 dark:border-slate-700">
-          <h2 className="text-xl font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
-            <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            Attendance Details
-          </h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {[
-              { label: 'Month Days', value: payroll.attendance?.totalDaysInMonth || 0 },
-              { label: 'Present Days', value: payroll.attendance?.presentDays || 0 },
-              { label: 'Week Offs', value: payroll.attendance?.weeklyOffs || 0 },
-              { label: 'Paid Leaves', value: payroll.attendance?.paidLeaveDays || 0 },
-              { label: 'OD Days', value: payroll.attendance?.odDays || 0 },
-              { label: 'Absents', value: payroll.attendance?.absentDays || 0 },
-              { label: 'Payable Shifts', value: payroll.attendance?.payableShifts || 0 },
-              { label: 'Extra Days', value: payroll.attendance?.extraDays || 0 },
-              { label: 'Paid Days', value: payroll.attendance?.paidDays || 0, highlight: true },
-              { label: 'Total Paid Days', value: payroll.attendance?.totalPaidDays || 0, highlight: true },
-              { label: 'Late-Ins Count', value: payroll.deductions?.attendanceDeductionBreakdown?.lateInsCount || 0 },
-              { label: 'Permissions Count', value: payroll.deductions?.permissionDeductionBreakdown?.permissionCount || 0 },
-              { label: 'OT Hours', value: payroll.attendance?.otHours || 0 },
-              { label: 'OT Days', value: payroll.attendance?.otDays || 0 },
-            ].map((item, idx) => (
-              <div key={idx} className={`p-4 rounded-lg ${item.highlight ? 'bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-600' : 'bg-slate-50 dark:bg-slate-700'}`}>
-                <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">{item.label}</p>
-                <p className={`text-2xl font-bold ${item.highlight ? 'text-blue-600' : 'text-slate-800 dark:text-white'}`}>{item.value}</p>
+          <div className="p-8 md:p-12 space-y-12">
+            {/* Employee Section */}
+            <section>
+              <div className="flex items-center gap-3 mb-6">
+                <div className="p-2.5 bg-indigo-50 dark:bg-indigo-900/40 rounded-xl">
+                  <svg className="w-6 h-6 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                </div>
+                <h2 className="text-xl font-bold text-slate-800 dark:text-white uppercase tracking-tight">Employee Details</h2>
               </div>
-            ))}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-12 gap-y-6">
+                <DetailRow label="Employee Name" value={employee.employee_name} />
+                <DetailRow label="Employee ID" value={employee.emp_no} />
+                <DetailRow label="Department" value={typeof employee.department_id === 'object' ? employee.department_id.name : (employee.department_id || 'N/A')} />
+                <DetailRow label="Designation" value={typeof employee.designation_id === 'object' ? employee.designation_id.name : (employee.designation_id || 'N/A')} />
+                <DetailRow label="Bank Account" value={employee.bank_account_no || 'N/A'} />
+                <DetailRow label="Location" value={employee.location || 'N/A'} />
+                <DetailRow label="PF Number" value={employee.pf_number || 'N/A'} />
+                <DetailRow label="ESI Number" value={employee.esi_number || 'N/A'} />
+              </div>
+            </section>
+
+            {/* Attendance Section */}
+            <section>
+              <div className="flex items-center gap-3 mb-6">
+                <div className="p-2.5 bg-amber-50 dark:bg-amber-900/40 rounded-xl">
+                  <svg className="w-6 h-6 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                </div>
+                <h2 className="text-xl font-bold text-slate-800 dark:text-white uppercase tracking-tight">Attendance Summary</h2>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+                <StatusCard label="Month Days" value={payroll.attendance?.totalDaysInMonth} />
+                <StatusCard label="Present" value={payroll.attendance?.presentDays} color="indigo" />
+                <StatusCard label="Absents" value={payroll.attendance?.absentDays} color="rose" />
+                <StatusCard label="Week Offs" value={payroll.attendance?.weeklyOffs} />
+                <StatusCard label="Paid Leaves" value={payroll.attendance?.paidLeaveDays} color="emerald" />
+                <StatusCard label="OT Days" value={payroll.attendance?.otDays} color="amber" />
+                <StatusCard label="Net Paid Days" value={payroll.attendance?.totalPaidDays} highlight />
+              </div>
+            </section>
+
+            {/* Salary Breakdown Section */}
+            <section className="grid grid-cols-1 lg:grid-cols-2 gap-8 pt-4">
+              {/* Earnings Column */}
+              <div className="bg-slate-50 dark:bg-slate-900/50 rounded-3xl p-8 border border-slate-100 dark:border-slate-700/50">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-lg font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-2">
+                    <div className="w-2 h-6 bg-emerald-500 rounded-full" />
+                    EARNINGS
+                  </h3>
+                  <div className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Additive</div>
+                </div>
+                <div className="space-y-4">
+                  <SalaryRow label="Basic Salary" value={payroll.earnings.basicPay} />
+                  <SalaryRow label="Earned Salary" value={payroll.attendance?.earnedSalary || 0} />
+                  {payroll.earnings.allowances?.map((a, i) => (
+                    <SalaryRow key={i} label={a.name} value={a.amount} />
+                  ))}
+                  <SalaryRow label="Extra Days Pay" value={payroll.earnings.incentive} />
+                  <SalaryRow label="OT Allowance" value={payroll.earnings.otPay} />
+                  {payroll.arrearsAmount ? <SalaryRow label="Arrears" value={payroll.arrearsAmount} /> : null}
+
+                  <div className="pt-6 mt-6 border-t border-slate-200 dark:border-slate-700">
+                    <div className="flex justify-between items-center text-emerald-700 dark:text-emerald-400">
+                      <span className="font-black text-sm uppercase tracking-wider">Gross Earnings</span>
+                      <span className="text-2xl font-black">₹{payroll.earnings.grossSalary.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Deductions Column */}
+              <div className="bg-slate-50 dark:bg-slate-900/50 rounded-3xl p-8 border border-slate-100 dark:border-slate-700/50">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-lg font-bold text-rose-600 dark:text-rose-400 flex items-center gap-2">
+                    <div className="w-2 h-6 bg-rose-500 rounded-full" />
+                    DEDUCTIONS
+                  </h3>
+                  <div className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Subtractive</div>
+                </div>
+                <div className="space-y-4">
+                  <SalaryRow label="Attendance Deduct" value={payroll.deductions.attendanceDeduction} isDeduction />
+                  {payroll.deductions.permissionDeduction > 0 && <SalaryRow label="Permission Deduct" value={payroll.deductions.permissionDeduction} isDeduction />}
+                  {payroll.deductions.leaveDeduction > 0 && <SalaryRow label="Leave Deduction" value={payroll.deductions.leaveDeduction} isDeduction />}
+                  {payroll.deductions.otherDeductions?.map((d, i) => (
+                    <SalaryRow key={i} label={d.name} value={d.amount} isDeduction />
+                  ))}
+                  {payroll.loanAdvance.totalEMI > 0 && <SalaryRow label="EMI (Loans)" value={payroll.loanAdvance.totalEMI} isDeduction />}
+                  {payroll.loanAdvance.advanceDeduction > 0 && <SalaryRow label="Advance Recovery" value={payroll.loanAdvance.advanceDeduction} isDeduction />}
+
+                  <div className="pt-6 mt-6 border-t border-slate-200 dark:border-slate-700">
+                    <div className="flex justify-between items-center text-rose-700 dark:text-rose-400">
+                      <span className="font-black text-sm uppercase tracking-wider">Total Deductions</span>
+                      <span className="text-2xl font-black">₹{payroll.deductions.totalDeductions.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
           </div>
-        </div>
 
-        {/* Salary Breakdown */}
-        <div className="bg-white dark:bg-slate-800 p-6 border border-slate-200 dark:border-slate-700">
-          <h2 className="text-xl font-bold text-slate-800 dark:text-white mb-4">Salary Breakdown</h2>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Earnings */}
-            <div>
-              <h3 className="text-lg font-semibold text-green-600 dark:text-green-400 mb-3 flex items-center gap-2">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                Earnings
-              </h3>
-              <div className="space-y-2">
-                <div className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-700">
-                  <span className="text-slate-600 dark:text-slate-400">Basic Pay</span>
-                  <span className="font-semibold text-slate-800 dark:text-white">₹{payroll.earnings.basicPay.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+          {/* Net Salary Highlight Footer */}
+          <div className="bg-slate-900 dark:bg-slate-950 p-10 text-white">
+            <div className="max-w-3xl mx-auto flex flex-col md:flex-row items-center justify-between gap-8">
+              <div className="text-center md:text-left">
+                <h4 className="text-indigo-400 text-xs font-black uppercase tracking-[0.2em] mb-2">Net Payable Amount</h4>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-4xl md:text-6xl font-black tracking-tighter">₹{payroll.netSalary.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                  <span className="text-indigo-400/60 font-medium">INR</span>
                 </div>
-                <div className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-700">
-                  <span className="text-slate-600 dark:text-slate-400">Earned Salary</span>
-                  <span className="font-semibold text-slate-800 dark:text-white">₹{(payroll.attendance?.earnedSalary || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                </div>
-                {payroll.earnings.allowances?.map((allowance, idx) => (
-                  <div key={idx} className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-700">
-                    <span className="text-slate-600 dark:text-slate-400">{allowance.name}</span>
-                    <span className="font-semibold text-slate-800 dark:text-white">₹{allowance.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                  </div>
-                ))}
-                <div className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-700">
-                  <span className="text-slate-600 dark:text-slate-400">Extra Days Pay</span>
-                  <span className="font-semibold text-slate-800 dark:text-white">₹{payroll.earnings.incentive.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                </div>
-                <div className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-700">
-                  <span className="text-slate-600 dark:text-slate-400">OT Pay</span>
-                  <span className="font-semibold text-slate-800 dark:text-white">₹{payroll.earnings.otPay.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                </div>
-                {payroll.arrearsAmount && payroll.arrearsAmount > 0 && (
-                  <div className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-700">
-                    <span className="text-slate-600 dark:text-slate-400">Arrears</span>
-                    <span className="font-semibold text-slate-800 dark:text-white">₹{payroll.arrearsAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                  </div>
+                {payroll.roundOff !== 0 && (
+                  <p className="text-slate-400 text-xs mt-2 italic font-medium">
+                    Adjusted by ₹{payroll.roundOff?.toFixed(2)} round-off
+                  </p>
                 )}
-                <div className="flex justify-between py-3 bg-green-50 dark:bg-green-900/20 px-3 rounded-lg mt-2">
-                  <span className="font-bold text-green-700 dark:text-green-400">GROSS SALARY</span>
-                  <span className="font-bold text-green-700 dark:text-green-400">₹{payroll.earnings.grossSalary.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                </div>
               </div>
-            </div>
 
-            {/* Deductions */}
-            <div>
-              <h3 className="text-lg font-semibold text-red-600 dark:text-red-400 mb-3 flex items-center gap-2">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-                </svg>
-                Deductions
-              </h3>
-              <div className="space-y-2">
-                {/* {payroll.deductions.permissionDeduction > 0 && (
-                  <div className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-700">
-                    <span className="text-slate-600 dark:text-slate-400">Permission Deduction</span>
-                    <span className="font-semibold text-slate-800 dark:text-white">₹{payroll.deductions.permissionDeduction.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                  </div>
-                )} */}
-                {payroll.deductions.leaveDeduction > 0 && (
-                  <div className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-700">
-                    <span className="text-slate-600 dark:text-slate-400">Leave Deduction</span>
-                    <span className="font-semibold text-slate-800 dark:text-white">₹{payroll.deductions.leaveDeduction.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                  </div>
-                )}
-                {payroll.deductions.otherDeductions?.map((deduction, idx) => (
-                  <div key={idx} className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-700">
-                    <span className="text-slate-600 dark:text-slate-400">{deduction.name}</span>
-                    <span className="font-semibold text-slate-800 dark:text-white">₹{deduction.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                  </div>
-                ))}
-                {payroll.loanAdvance.totalEMI > 0 && (
-                  <div className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-700">
-                    <span className="text-slate-600 dark:text-slate-400">EMI Deduction</span>
-                    <span className="font-semibold text-slate-800 dark:text-white">₹{payroll.loanAdvance.totalEMI.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                  </div>
-                )}
-                {payroll.loanAdvance.advanceDeduction > 0 && (
-                  <div className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-700">
-                    <span className="text-slate-600 dark:text-slate-400">Advance Deduction</span>
-                    <span className="font-semibold text-slate-800 dark:text-white">₹{payroll.loanAdvance.advanceDeduction.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                  </div>
-                )}
-                <div className="flex justify-between py-3 bg-red-50 dark:bg-red-900/20 px-3 rounded-lg mt-2">
-                  <span className="font-bold text-red-700 dark:text-red-400">TOTAL DEDUCTIONS</span>
-                  <span className="font-bold text-red-700 dark:text-red-400">₹{payroll.deductions.totalDeductions.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+              <div className="flex flex-col items-center md:items-end gap-3">
+                <div className={`px-6 py-2 rounded-2xl text-xs font-black uppercase tracking-widest ${payroll.status === 'processed' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                    payroll.status === 'approved' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
+                      'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                  }`}>
+                  Status: {payroll.status}
+                </div>
+                <div className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter">
+                  Computer Generated Document • No Signature Required
                 </div>
               </div>
             </div>
           </div>
-        </div>
-
-        {/* Net Salary */}
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-b-xl p-6 shadow-lg">
-          <div className="space-y-2">
-            {payroll.roundOff !== undefined && payroll.roundOff !== 0 && (
-              <div className="flex items-center justify-between text-blue-100 text-sm">
-                <span>Round Off</span>
-                <span>₹{payroll.roundOff.toFixed(2)}</span>
-              </div>
-            )}
-            <div className="flex items-center justify-between">
-              <h2 className="text-2xl font-bold">NET SALARY (Take Home)</h2>
-              <p className="text-4xl font-bold">₹{payroll.netSalary.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
-            </div>
-          </div>
-          <p className="text-blue-100 text-sm mt-2">This is a computer-generated payslip</p>
-        </div>
-
-        {/* Status Badge */}
-        <div className="mt-6 text-center">
-          <span className={`inline-block px-6 py-2 rounded-full text-sm font-semibold ${payroll.status === 'processed' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
-            payroll.status === 'approved' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
-              'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
-            }`}>
-            Status: {payroll.status.toUpperCase()}
-          </span>
         </div>
       </div>
     </div>
   );
 }
+
+// Reusable UI Components
+function DetailRow({ label, value }: { label: string; value: any }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 tracking-wider font-mono">{label}</span>
+      <span className="text-sm font-bold text-slate-800 dark:text-white truncate">{value}</span>
+    </div>
+  );
+}
+
+function StatusCard({ label, value, color = 'slate', highlight = false }: { label: string; value: any; color?: string; highlight?: boolean }) {
+  const colors: Record<string, string> = {
+    slate: 'text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/40',
+    indigo: 'text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/40',
+    rose: 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-900/40',
+    emerald: 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/40',
+    amber: 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/40',
+  };
+
+  return (
+    <div className={`p-4 rounded-2xl flex flex-col items-center justify-center transition-all ${highlight ? 'bg-indigo-600 text-white shadow-lg ring-4 ring-indigo-500/10 scale-105' : colors[color] || colors.slate
+      }`}>
+      <span className={`text-[10px] font-bold uppercase tracking-tighter mb-1 opacity-70`}>{label}</span>
+      <span className="text-xl font-black">{value || 0}</span>
+    </div>
+  );
+}
+
+function SalaryRow({ label, value, isDeduction = false }: { label: string; value: number; isDeduction?: boolean }) {
+  if (value === 0 && !['Basic Salary', 'Earned Salary', 'Attendance Deduct'].includes(label)) return null;
+
+  return (
+    <div className="flex justify-between items-center group">
+      <span className="text-sm font-semibold text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">{label}</span>
+      <span className={`text-sm font-bold ${isDeduction ? 'text-rose-500' : 'text-slate-800 dark:text-slate-200'}`}>
+        {isDeduction ? '-' : ''}₹{value.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+      </span>
+    </div>
+  );
+}
+
