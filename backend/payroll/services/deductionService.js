@@ -12,14 +12,23 @@ const cacheService = require('../../shared/services/cacheService');
  */
 
 /**
- * Get resolved permission deduction rules
- * @param {String} departmentId - Department ID
- * @returns {Object} Resolved rules
+ * Retrieve resolved permission deduction rules for a department or division.
+ *
+ * Resolves fields by preferring department/division-specific settings and falling back to global active settings.
+ * @param {String} departmentId - Department identifier.
+ * @param {String|null} [divisionId=null] - Optional division identifier; when provided resolution prefers division-specific settings.
+ * @returns {{countThreshold: (number|null), deductionType: (string|null), deductionAmount: (number|null), minimumDuration: (number|null), calculationMode: (string|null)}} An object with resolved rule values: 
+ *  - countThreshold: number of permissions required to trigger a deduction, or `null` if not configured.
+ *  - deductionType: deduction mode such as `'half_day'`, `'full_day'`, or `'custom_amount'`, or `null`.
+ *  - deductionAmount: numeric amount used for deductions when applicable, or `null`.
+ *  - minimumDuration: minimum permission duration (in minutes) to consider for deduction, or `null`.
+ *  - calculationMode: how proportional calculations are applied (e.g., `'proportional'`), or `null`.
  */
 async function getResolvedPermissionDeductionRules(departmentId, divisionId = null) {
   try {
     const cacheKey = `settings:deduction:permission:dept:${departmentId}:div:${divisionId || 'none'}`;
     let resolved = await cacheService.get(cacheKey);
+    console.log('resolved', resolved);
     if (resolved) return resolved;
 
     const deptSettings = await DepartmentSettings.getByDeptAndDiv(departmentId, divisionId);
@@ -34,6 +43,7 @@ async function getResolvedPermissionDeductionRules(departmentId, divisionId = nu
     };
 
     await cacheService.set(cacheKey, resolved, 300);
+    console.log(' after cache resolved', resolved);
     return resolved;
   } catch (error) {
     console.error('Error getting resolved permission deduction rules:', error);
@@ -48,14 +58,21 @@ async function getResolvedPermissionDeductionRules(departmentId, divisionId = nu
 }
 
 /**
- * Get resolved attendance deduction rules
- * @param {String} departmentId - Department ID
- * @returns {Object} Resolved rules
+ * Resolve attendance deduction rules for a department and optional division, preferring department-specific values and falling back to global settings while using a cached result when available.
+ * @param {String} departmentId - Department identifier to resolve rules for.
+ * @param {String|null} [divisionId=null] - Optional division identifier to resolve division-scoped overrides.
+ * @returns {{combinedCountThreshold: number|null, deductionType: string|null, deductionAmount: number|null, minimumDuration: number|null, calculationMode: string|null}} An object containing resolved rule values: 
+ * - `combinedCountThreshold`: threshold of combined late/early occurrences to trigger deductions, or `null` if not configured.
+ * - `deductionType`: deduction unit/type (e.g., "half_day", "full_day", "custom_amount"), or `null`.
+ * - `deductionAmount`: numeric amount used when `deductionType` requires a monetary value, or `null`.
+ * - `minimumDuration`: minimum minutes that classify an instance as late/early for counting, or `null`.
+ * - `calculationMode`: mode controlling proportional vs fixed calculation behaviour, or `null`.
  */
 async function getResolvedAttendanceDeductionRules(departmentId, divisionId = null) {
   try {
     const cacheKey = `settings:deduction:attendance:dept:${departmentId}:div:${divisionId || 'none'}`;
     let resolved = await cacheService.get(cacheKey);
+    console.log('resolved', resolved);
     if (resolved) return resolved;
 
     const deptSettings = await DepartmentSettings.getByDeptAndDiv(departmentId, divisionId);
@@ -70,6 +87,7 @@ async function getResolvedAttendanceDeductionRules(departmentId, divisionId = nu
     };
 
     await cacheService.set(cacheKey, resolved, 300);
+    console.log(' after cache resolved', resolved);
     return resolved;
   } catch (error) {
     console.error('Error getting resolved attendance deduction rules:', error);
@@ -119,25 +137,88 @@ function calculateDaysToDeduct(multiplier, remainder, threshold, deductionType, 
 }
 
 /**
- * Calculate attendance deduction (late-ins + early-outs)
- * @param {String} employeeId - Employee ID
- * @param {String} month - Month in YYYY-MM format
- * @param {String} departmentId - Department ID
- * @param {Number} perDayBasicPay - Per day basic pay
- * @returns {Object} Attendance deduction result
+ * Compute an employee's attendance deduction for a given month based on late-ins and early-outs.
+ *
+ * @param {String} employeeId - Employee identifier.
+ * @param {String} month - Month in "YYYY-MM" format to evaluate.
+ * @param {String} departmentId - Department identifier used to resolve deduction rules.
+ * @param {Number} perDayBasicPay - Per-day basic pay used to convert deducted days to monetary amount.
+ * @param {String|null} [divisionId=null] - Optional division identifier used when resolving rules.
+ * @returns {Object} An object containing:
+ *  - attendanceDeduction {Number} — deduction amount rounded to 2 decimals.
+ *  - breakdown {Object} — detailed calculation data:
+ *      - lateInsCount {Number} — count of late-ins used.
+ *      - earlyOutsCount {Number} — count of early-outs used.
+ *      - combinedCount {Number} — sum of lateInsCount and earlyOutsCount.
+ *      - daysDeducted {Number} — total days to deduct (rounded to 2 decimals).
+ *      - deductionType {String|null} — resolved deduction type (e.g., 'half_day', 'full_day', 'custom_amount') or null if no rule.
+ *      - calculationMode {String|null} — resolved calculation mode (e.g., 'proportional', 'per_threshold') or null if no rule.
  */
 async function calculateAttendanceDeduction(employeeId, month, departmentId, perDayBasicPay, divisionId = null) {
   try {
+    // 1. Fetch counts FIRST (so we can return them even if no deduction rules apply)
+    const PayRegisterSummary = require('../../pay-register/model/PayRegisterSummary');
+    // Using lean() to bypass strict mode filtering if fields are missing from schema but present in DB
+    let payRegister = await PayRegisterSummary.findOne({ employeeId, month }).lean();
+    let lateInsCount = 0;
+    let earlyOutsCount = 0;
+    let source = 'attendance_logs';
+
+    // Priority 1: Check Pay Register Summary
+    if (payRegister && payRegister.totals) {
+      const prLates = payRegister.totals.lateCount || 0;
+      const prEarly = payRegister.totals.earlyOutCount || 0;
+
+      if (prLates > 0 || prEarly > 0) {
+        lateInsCount = prLates;
+        earlyOutsCount = prEarly;
+        source = 'pay_register_summary';
+      }
+    }
+
+    // Priority 2: Fallback to Raw Attendance Logs if Pay Register has 0
+    if (lateInsCount === 0 && earlyOutsCount === 0) {
+      // Find minimum duration threshold from settings just for counting purposes
+      // (We fetch rules here just to get minimumDuration, even if we don't deduct later)
+      const rulesTemp = await getResolvedAttendanceDeductionRules(departmentId, divisionId);
+      const minimumDuration = rulesTemp.minimumDuration || 0;
+      // Parse month string (YYYY-MM) to get start and end dates
+      const [year, monthNum] = month.split('-').map(Number);
+      const startDate = new Date(year, monthNum - 1, 1);
+      const endDate = new Date(year, monthNum, 0, 23, 59, 59, 999);
+
+      const attendanceRecords = await AttendanceDaily.find({
+        employeeId,
+        date: {
+          $gte: startDate,
+          $lte: endDate,
+        },
+      }).select('lateInMinutes earlyOutMinutes');
+
+      for (const record of attendanceRecords) {
+        if (record.lateInMinutes !== null && record.lateInMinutes !== undefined && record.lateInMinutes >= minimumDuration) {
+          lateInsCount++;
+        }
+        if (record.earlyOutMinutes !== null && record.earlyOutMinutes !== undefined && record.earlyOutMinutes >= minimumDuration) {
+          earlyOutsCount++;
+        }
+      }
+    }
+
+    console.log(`[Deduction] Employee ${employeeId} - Lates: ${lateInsCount}, Early: ${earlyOutsCount} (Source: ${source})`);
+
+    // 2. Fetch Rules and Calculate Deduction
     const rules = await getResolvedAttendanceDeductionRules(departmentId, divisionId);
 
-    // If no rules configured, return zero
+    // If no rules configured, return counts but zero deduction result
     if (!rules.combinedCountThreshold || !rules.deductionType || !rules.calculationMode) {
+      console.log('[Deduction] No valid rules configured. Returning counts with 0 deduction.');
       return {
         attendanceDeduction: 0,
         breakdown: {
-          lateInsCount: 0,
-          earlyOutsCount: 0,
-          combinedCount: 0,
+          lateInsCount,
+          earlyOutsCount,
+          combinedCount: lateInsCount + earlyOutsCount,
           daysDeducted: 0,
           deductionType: null,
           calculationMode: null,
@@ -145,36 +226,7 @@ async function calculateAttendanceDeduction(employeeId, month, departmentId, per
       };
     }
 
-    // Fetch attendance records for the month
-    // Parse month string (YYYY-MM) to get start and end dates
-    const [year, monthNum] = month.split('-').map(Number);
-    const startDate = new Date(year, monthNum - 1, 1);
-    const endDate = new Date(year, monthNum, 0, 23, 59, 59, 999);
-
-    const attendanceRecords = await AttendanceDaily.find({
-      employeeId,
-      date: {
-        $gte: startDate,
-        $lte: endDate,
-      },
-    }).select('lateInMinutes earlyOutMinutes');
-
-    let lateInsCount = 0;
-    let earlyOutsCount = 0;
-
-    const minimumDuration = rules.minimumDuration || 0;
-
-    for (const record of attendanceRecords) {
-      if (record.lateInMinutes !== null && record.lateInMinutes !== undefined && record.lateInMinutes >= minimumDuration) {
-        lateInsCount++;
-      }
-      if (record.earlyOutMinutes !== null && record.earlyOutMinutes !== undefined && record.earlyOutMinutes >= minimumDuration) {
-        earlyOutsCount++;
-      }
-    }
-
     const combinedCount = lateInsCount + earlyOutsCount;
-
     let daysDeducted = 0;
 
     if (combinedCount >= rules.combinedCountThreshold) {
@@ -190,6 +242,9 @@ async function calculateAttendanceDeduction(employeeId, month, departmentId, per
         perDayBasicPay,
         rules.calculationMode
       );
+      console.log(`[Deduction] Calculated deduction: ${daysDeducted} days based on ${combinedCount} combined lates/early.`);
+    } else {
+      console.log(`[Deduction] Combined count ${combinedCount} is below threshold ${rules.combinedCountThreshold}`);
     }
 
     const attendanceDeduction = daysDeducted * perDayBasicPay;
@@ -632,4 +687,3 @@ module.exports = {
   calculateDeductionAmount,
   calculateTotalOtherDeductions,
 };
-

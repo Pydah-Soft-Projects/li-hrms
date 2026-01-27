@@ -101,6 +101,13 @@ const CloseIcon = () => (
   </svg>
 );
 
+/**
+ * Render the settings UI with grouped tabs for configuring shifts, employees, leaves, loans/salary advances, attendance, overtime, permission & attendance deduction rules, payroll, communications, feature control, and general system settings.
+ *
+ * The component manages loading, editing, and saving of many domain-specific settings, handles workspace and workflow management, file upload for attendance, bulk payroll release, and displays contextual messages and loading states across different sub-sections.
+ *
+ * @returns A React element containing the complete settings page UI with tabbed navigation and associated controls.
+ */
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<TabType>('shift');
   const [shiftDurations, setShiftDurations] = useState<ShiftDuration[]>([]);
@@ -282,6 +289,8 @@ export default function SettingsPage() {
   const [payslipReleaseRequired, setPayslipReleaseRequired] = useState<boolean>(true);
   const [payslipHistoryMonths, setPayslipHistoryMonths] = useState<number>(6);
   const [payslipDownloadLimit, setPayslipDownloadLimit] = useState<number>(5);
+  const [payrollCycleStartDay, setPayrollCycleStartDay] = useState<number>(1);
+  const [payrollCycleEndDay, setPayrollCycleEndDay] = useState<number>(31);
   const [payrollLoading, setPayrollLoading] = useState(false);
 
   // General settings state
@@ -392,10 +401,14 @@ export default function SettingsPage() {
       const resRelease = await api.getSetting('payslip_release_required');
       const resHistory = await api.getSetting('payslip_history_months');
       const resLimit = await api.getSetting('payslip_download_limit');
+      const resStartDay = await api.getSetting('payroll_cycle_start_day');
+      const resEndDay = await api.getSetting('payroll_cycle_end_day');
 
       if (resRelease.success && resRelease.data) setPayslipReleaseRequired(!!resRelease.data.value);
       if (resHistory.success && resHistory.data) setPayslipHistoryMonths(Number(resHistory.data.value));
       if (resLimit.success && resLimit.data) setPayslipDownloadLimit(Number(resLimit.data.value));
+      if (resStartDay.success && resStartDay.data) setPayrollCycleStartDay(Number(resStartDay.data.value));
+      if (resEndDay.success && resEndDay.data) setPayrollCycleEndDay(Number(resEndDay.data.value));
     } catch (err) {
       console.error('Failed to load payroll settings', err);
     } finally {
@@ -424,8 +437,20 @@ export default function SettingsPage() {
         category: 'payroll',
         description: 'Maximum number of times an employee can download a single payslip'
       });
+      const resStartDay = await api.upsertSetting({
+        key: 'payroll_cycle_start_day',
+        value: payrollCycleStartDay,
+        category: 'payroll',
+        description: 'The day of the month when the payroll cycle starts. Default is 1 (calendar month).'
+      });
+      const resEndDay = await api.upsertSetting({
+        key: 'payroll_cycle_end_day',
+        value: payrollCycleEndDay,
+        category: 'payroll',
+        description: 'The day of the month when the payroll cycle ends. Default is 31 (end of month).'
+      });
 
-      if (resRelease.success && resHistory.success && resLimit.success) {
+      if (resRelease.success && resHistory.success && resLimit.success && resStartDay.success && resEndDay.success) {
         setMessage({ type: 'success', text: 'Payroll settings saved successfully' });
       } else {
         setMessage({ type: 'error', text: 'Failed to save payroll settings' });
@@ -4305,6 +4330,67 @@ export default function SettingsPage() {
                       />
                       <p className="mt-1 text-[10px] text-slate-500">Maximum times an employee can download a single payslip</p>
                     </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-indigo-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-indigo-900/10">
+                <div className="mb-4">
+                  <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Payroll Cycle Definition</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Configure the start and end dates of your monthly payroll cycle</p>
+                </div>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                        Cycle Start Day
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="31"
+                        value={payrollCycleStartDay}
+                        onChange={(e) => setPayrollCycleStartDay(parseInt(e.target.value) || 1)}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-400/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                      />
+                      <p className="mt-1 text-[10px] text-slate-500">Day of month when cycle starts (e.g., 26)</p>
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                        Cycle End Day
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="31"
+                        value={payrollCycleEndDay}
+                        onChange={(e) => setPayrollCycleEndDay(parseInt(e.target.value) || 31)}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-400/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                      />
+                      <p className="mt-1 text-[10px] text-slate-500">Day of month when cycle ends (e.g., 25)</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 rounded-xl bg-white/50 p-3 dark:bg-slate-800/50">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Approximate Cycle Duration:</span>
+                      <span className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
+                        {(() => {
+                          if (payrollCycleStartDay < payrollCycleEndDay) {
+                            return `${payrollCycleEndDay - payrollCycleStartDay + 1} Days`;
+                          } else {
+                            // Spans months - calculate based on a 30-day month average for visualization
+                            const duration = (31 - payrollCycleStartDay) + payrollCycleEndDay;
+                            return `~${duration} Days (Spans Months)`;
+                          }
+                        })()}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-[10px] italic text-slate-500">
+                      {payrollCycleStartDay >= payrollCycleEndDay
+                        ? `Note: Cycle starts on day ${payrollCycleStartDay} of the previous month and ends on day ${payrollCycleEndDay} of the current month.`
+                        : `Note: Cycle starts on day ${payrollCycleStartDay} and ends on day ${payrollCycleEndDay} within the same month.`}
+                    </p>
                   </div>
                 </div>
               </div>

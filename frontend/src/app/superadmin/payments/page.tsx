@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from 'next/link';
 import { toast } from "react-toastify";
 import { api, PayrollBatch, PayrollBatchStatus, Department, Division } from "@/lib/api";
 import { auth } from "@/lib/auth";
@@ -23,6 +24,13 @@ const statusLabels: Record<PayrollBatchStatus, string> = {
 
 
 
+/**
+ * Render the Payroll Payments management page with filters, batch list, status actions, and pagination.
+ *
+ * Displays controls to filter payroll batches by month, division, department, and status; lists batches with summary details; provides per-batch actions (approve, freeze, complete) with confirmation dialog and optional reason; and includes client-side pagination and refresh capability.
+ *
+ * @returns A JSX element containing the payroll payments management UI.
+ */
 export default function PaymentsPage() {
     const router = useRouter();
     const user = auth.getUser();
@@ -355,13 +363,13 @@ export default function PaymentsPage() {
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-center">
                                             <div className="flex justify-center items-center space-x-1" onClick={(e) => e.stopPropagation()}>
-                                                <button
-                                                    onClick={() => router.push(`/superadmin/payments/${batch._id}`)}
+                                                <Link
+                                                    href={`/superadmin/payments/${batch._id}`}
                                                     className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                                                     title="View Details"
                                                 >
                                                     <VisibilityIcon className="w-5 h-5" />
-                                                </button>
+                                                </Link>
 
                                                 {batch.status === 'pending' && (
                                                     <button

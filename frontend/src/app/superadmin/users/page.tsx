@@ -104,6 +104,19 @@ const getRoleLabel = (role: string) => {
   return ROLES.find((r) => r.value === role)?.label || role;
 };
 
+/**
+ * Render the Users management page including listing, filters, stats, and full workflows for creating, editing, viewing, deleting, and resetting user credentials.
+ *
+ * Provides UI and state for:
+ * - Displaying user stats and a searchable, filterable users table
+ * - Creating users (including provisioning from existing employees) with scoped division/department mappings and feature controls
+ * - Editing user properties, scoping, and feature privileges
+ * - Resetting passwords (auto-generated or manual) with strength feedback
+ * - Toggling account status and deleting users
+ * - Viewing detailed user profile, assignments, and effective feature access
+ *
+ * @returns The Users management page component as a JSX element.
+ */
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -1044,7 +1057,7 @@ export default function UsersPage() {
   return (
     <div className="relative min-h-screen bg-slate-50 p-6 dark:bg-slate-950/50">
       {/* Background Decorations */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-64 bg-gradient-to-b from-blue-500/5 to-transparent dark:from-blue-500/10" />
+      <div className="pointer-events-none absolute " />
 
       <div className="relative mx-auto max-w-7xl">
         {/* Header */}

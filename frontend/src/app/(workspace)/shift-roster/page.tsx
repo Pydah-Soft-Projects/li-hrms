@@ -6,7 +6,7 @@ import { toast } from 'react-hot-toast';
 
 type Shift = { _id: string; name: string; code?: string; color?: string };
 type Employee = { _id: string; employee_name?: string; emp_no: string; department?: { name: string; _id: string } };
-type RosterCell = { shiftId?: string | null; status?: 'WO' };
+type RosterCell = { shiftId?: string | null; status?: 'WO' | 'HOL' };
 type RosterState = Map<string, Record<string, RosterCell>>;
 
 const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -34,6 +34,15 @@ function shiftLabel(shift?: Shift | null) {
   return shift.name || '';
 }
 
+/**
+ * Render the Shift Roster page for assigning and managing employee shifts for a selected month.
+ *
+ * Loads shifts, employees, divisions, departments and roster entries; provides UI and handlers
+ * to view and edit per-employee per-day shift assignments, apply bulk assignments and weekly offs,
+ * and save changes back to the server.
+ *
+ * @returns The JSX element for the roster management UI.
+ */
 function RosterPage() {
   const [month, setMonth] = useState(formatMonthInput(new Date()));
   const [strict, setStrict] = useState(false);
@@ -117,12 +126,12 @@ function RosterPage() {
         if (!emp) return;
         if (!map.has(emp)) map.set(emp, {});
         const row = map.get(emp)!;
-        // Backend now explicitly returns status: 'WO' for week offs
+        // Backend now explicitly returns status: 'WO' or 'HOL'
         // Also handle legacy data where shiftId is null (fallback)
-        const isWeekOff = e.status === 'WO' || (!e.shiftId && !e.shift);
+        const status = e.status || ((!e.shiftId && !e.shift) ? 'WO' : undefined);
         row[e.date] = {
           shiftId: e.shiftId || null,
-          status: isWeekOff ? 'WO' : undefined
+          status: status as any
         };
       });
 
@@ -195,17 +204,17 @@ function RosterPage() {
           if (!cell) return;
 
           // Skip if neither shiftId nor status is set
-          if (!cell.shiftId && cell.status !== 'WO') return;
+          if (!cell.shiftId && cell.status !== 'WO' && cell.status !== 'HOL') return;
 
           const entry: any = {
             employeeNumber: empNo,
             date,
           };
 
-          // Handle week off
-          if (cell.status === 'WO') {
+          // Handle non-working status
+          if (cell.status === 'WO' || cell.status === 'HOL') {
             entry.shiftId = null;
-            entry.status = 'WO';
+            entry.status = cell.status;
           } else {
             // Regular shift - must have shiftId
             if (!cell.shiftId) {
@@ -309,13 +318,13 @@ function RosterPage() {
       const shiftMap = new Map<string | null, { label: string; dates: string[] }>();
 
       Object.entries(row).forEach(([date, cell]) => {
-        // Check for week off: either status is 'WO' or shiftId is null with status 'WO'
-        const isWeekOff = cell?.status === 'WO';
-        const shiftId = isWeekOff ? 'WO' : (cell?.shiftId || null);
-        const label = isWeekOff ? 'Week Off' : (shiftId ? shiftLabel(shifts.find((s) => s._id === shiftId)) : 'Unassigned');
+        // Check for non-working status: either status exists or shiftId is null (default WO)
+        const isNonWorking = cell?.status === 'WO' || cell?.status === 'HOL';
+        const shiftId = isNonWorking ? cell?.status : (cell?.shiftId || null);
+        const label = cell?.status === 'WO' ? 'Week Off' : (cell?.status === 'HOL' ? 'Holiday' : (shiftId ? shiftLabel(shifts.find((s) => s._id === shiftId)) : 'Unassigned'));
 
-        // Use a consistent key for week offs
-        const mapKey = isWeekOff ? 'WO' : shiftId;
+        // Use a consistent key for grouping
+        const mapKey = isNonWorking ? cell?.status : shiftId;
 
         if (!shiftMap.has(mapKey)) {
           shiftMap.set(mapKey, { label, dates: [] });
@@ -335,7 +344,9 @@ function RosterPage() {
           // Sort to show week offs first, then other shifts
           .sort((a, b) => {
             if (a.shiftId === 'WO') return -1;
+            if (a.shiftId === 'HOL') return -1;
             if (b.shiftId === 'WO') return 1;
+            if (b.shiftId === 'HOL') return 1;
             return 0;
           });
 
@@ -372,6 +383,10 @@ function RosterPage() {
             <div className="flex items-center gap-1.5">
               <div className="w-2.5 h-2.5 rounded-full border border-orange-200 bg-orange-100 shadow-sm"></div>
               <span className="text-xs text-slate-600 dark:text-slate-700">WO</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-2.5 h-2.5 rounded-full border border-red-200 bg-red-100 shadow-sm"></div>
+              <span className="text-xs text-slate-600 dark:text-slate-700">HOL</span>
             </div>
             {shifts.map(shift => (
               <div key={shift._id} className="flex items-center gap-1.5">
@@ -558,6 +573,7 @@ function RosterPage() {
                           >
                             <option value="">Apply to all days...</option>
                             <option value="WO">Set Week Off</option>
+                            <option value="HOL">Set Holiday</option>
                             {shifts.map((s) => (
                               <option key={s._id} value={s._id}>
                                 Set {shiftLabel(s)}
@@ -568,7 +584,7 @@ function RosterPage() {
                       </td>
                       {days.map((d) => {
                         const cell = row[d];
-                        const current = cell?.status === 'WO' ? 'WO' : cell?.shiftId || '';
+                        const current = cell?.status || cell?.shiftId || '';
                         const isWeekend = new Date(d).getDay() === 0 || new Date(d).getDay() === 6;
                         return (
                           <td
@@ -576,9 +592,9 @@ function RosterPage() {
                             className={`p-0.5 text-center relative h-10 border-r border-black dark:border-slate-500 last:border-r-0 ${isWeekend ? 'bg-slate-50/50 dark:bg-slate-800/30' : ''
                               }`}
                             style={
-                              current && current !== 'WO'
+                              current && current !== 'WO' && current !== 'HOL'
                                 ? { backgroundColor: `${shifts.find(s => s._id === current)?.color || '#3b82f6'}30` }
-                                : current === 'WO' ? { backgroundColor: '#ffedd5' } : {}
+                                : current === 'WO' ? { backgroundColor: '#ffedd5' } : current === 'HOL' ? { backgroundColor: '#fee2e2' } : {}
                             }
                           >
                             {/* Removed solid bar */}
@@ -586,19 +602,20 @@ function RosterPage() {
                               value={current}
                               onChange={(e) => {
                                 const val = e.target.value;
-                                if (val === 'WO') {
-                                  updateCell(emp.emp_no, d, { shiftId: null, status: 'WO' });
+                                if (val === 'WO' || val === 'HOL') {
+                                  updateCell(emp.emp_no, d, { shiftId: null, status: val as any });
                                 } else {
                                   updateCell(emp.emp_no, d, { shiftId: val || null, status: undefined });
                                 }
                               }}
                               className="w-full h-full text-[10px] font-medium rounded bg-transparent px-1 py-1 focus:ring-0 focus:outline-none appearance-none text-center cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
                               style={{
-                                color: current === 'WO' ? '#c2410c' : 'inherit',
+                                color: current === 'WO' ? '#c2410c' : (current === 'HOL' ? '#b91c1c' : 'inherit'),
                               }}
                             >
                               <option value="">-</option>
                               <option value="WO">WO</option>
+                              <option value="HOL">HOL</option>
                               {shifts.map((s) => (
                                 <option key={s._id} value={s._id} style={{ color: s.color }}>
                                   {shiftLabel(s)}
@@ -693,7 +710,9 @@ function RosterPage() {
                               </span>
                               <span className={`text-xs font-medium px-2 py-0.5 rounded ${shift.shiftId === 'WO'
                                 ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300'
-                                : 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
+                                : shift.shiftId === 'HOL'
+                                  ? 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300'
+                                  : 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
                                 }`}>
                                 {shift.days} {shift.days === 1 ? 'day' : 'days'}
                               </span>

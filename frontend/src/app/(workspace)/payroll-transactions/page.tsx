@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import toast from 'react-hot-toast';
 
@@ -29,16 +30,26 @@ interface Analytics {
   totalTransactions: number;
 }
 
+/**
+ * Render the payroll transactions page with month selection, search and category filters, analytics cards, and a transactions table.
+ *
+ * Fetches payroll transactions and aggregated analytics for the selected month, displays loading and error states, and provides client-side filtering and search over employee name, ID, and description.
+ *
+ * @returns The JSX element for the payroll transactions dashboard.
+ */
 export default function PayrollTransactionsPage() {
+  const searchParams = useSearchParams();
   const [transactions, setTransactions] = useState<PayrollTransaction[]>([]);
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(() => {
+    const paramMonth = searchParams.get('month');
+    if (paramMonth) return paramMonth;
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   });
   const [filterType, setFilterType] = useState<string>('all');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || '');
 
   useEffect(() => {
     loadTransactions();
@@ -170,31 +181,28 @@ export default function PayrollTransactionsPage() {
           <div className="flex gap-2">
             <button
               onClick={() => setFilterType('all')}
-              className={`rounded-md px-4 py-2 text-sm font-medium ${
-                filterType === 'all'
+              className={`rounded-md px-4 py-2 text-sm font-medium ${filterType === 'all'
                   ? 'bg-indigo-600 text-white'
                   : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600'
-              }`}
+                }`}
             >
               All
             </button>
             <button
               onClick={() => setFilterType('earnings')}
-              className={`rounded-md px-4 py-2 text-sm font-medium ${
-                filterType === 'earnings'
+              className={`rounded-md px-4 py-2 text-sm font-medium ${filterType === 'earnings'
                   ? 'bg-green-600 text-white'
                   : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600'
-              }`}
+                }`}
             >
               Earnings
             </button>
             <button
               onClick={() => setFilterType('deductions')}
-              className={`rounded-md px-4 py-2 text-sm font-medium ${
-                filterType === 'deductions'
+              className={`rounded-md px-4 py-2 text-sm font-medium ${filterType === 'deductions'
                   ? 'bg-red-600 text-white'
                   : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600'
-              }`}
+                }`}
             >
               Deductions
             </button>
@@ -403,13 +411,12 @@ export default function PayrollTransactionsPage() {
                     </td>
                     <td className="whitespace-nowrap px-6 py-4 text-right">
                       <span
-                        className={`text-sm font-semibold ${
-                          transaction.category === 'earning'
+                        className={`text-sm font-semibold ${transaction.category === 'earning'
                             ? 'text-green-600 dark:text-green-400'
                             : transaction.category === 'deduction'
-                            ? 'text-red-600 dark:text-red-400'
-                            : 'text-blue-600 dark:text-blue-400'
-                        }`}
+                              ? 'text-red-600 dark:text-red-400'
+                              : 'text-blue-600 dark:text-blue-400'
+                          }`}
                       >
                         {transaction.category === 'earning' ? '+' : '-'}
                         {formatCurrency(Math.abs(transaction.amount))}
@@ -432,4 +439,3 @@ export default function PayrollTransactionsPage() {
     </div>
   );
 }
-

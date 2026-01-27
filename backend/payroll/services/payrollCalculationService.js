@@ -85,11 +85,16 @@ const normalizeOverrides = (list, fallbackCategory) => {
  */
 
 /**
- * Calculate payroll for an employee for a specific month
- * @param {String} employeeId - Employee ID
+ * Compute and persist payroll for an employee for a given month.
+ *
+ * Performs full payroll calculation (attendance, basic pay, OT, allowances, deductions,
+ * loan EMI, advances and arrears), creates or updates the corresponding PayrollRecord,
+ * applies rounding, persists the record, and creates transaction logs.
+ *
+ * @param {String} employeeId - Employee identifier
  * @param {String} month - Month in YYYY-MM format
- * @param {String} userId - User ID who triggered the calculation
- * @returns {Object} Payroll calculation result
+ * @param {String} userId - User identifier who initiated the calculation
+ * @returns {Object} An object containing `success: true` and the created or updated `payrollRecord` document
  */
 async function calculatePayroll(employeeId, month, userId) {
   try {
@@ -638,6 +643,12 @@ async function calculatePayroll(employeeId, month, userId) {
     payrollRecord.set('division_id', employee.division_id);
     payrollRecord.set('attendanceSummaryId', attendanceSummary._id);
 
+    // Set payroll cycle range from attendance summary (PayRegisterSummary)
+    if (payRegisterSummary) {
+      payrollRecord.set('startDate', payRegisterSummary.startDate);
+      payrollRecord.set('endDate', payRegisterSummary.endDate);
+    }
+
     const extraDaysValue = attendanceSummary.extraDays || 0;
     const calcPaidDays = (attendanceSummary.totalPresentDays || 0) +
       (attendanceSummary.totalODDays || 0) +
@@ -855,19 +866,30 @@ async function calculatePayroll(employeeId, month, userId) {
 }
 
 /**
- * New payroll calculation flow (non-destructive; used when strategy=new)
- * @param {String} employeeId - Employee ID
- * @param {String} month - Month in YYYY-MM format
- * @param {String} userId - User ID who triggered the calculation
- * @param {Object} options - Options object
- * @param {String} options.source - Data source ('payregister' or 'all')
- * @param {Array} options.arrearsSettlements - Array of arrears settlements {id, amount}
+ * Calculate payroll for an employee using the new non-destructive "new" strategy.
+ *
+ * Performs a full payroll computation for the given month using either payregister or attendance source,
+ * applies allowances, deductions, loans, arrears integration, rounds final net salary, persists a PayrollRecord,
+ * and (optionally) attaches the record to a PayrollBatch.
+ *
+ * @param {String} employeeId - Employee identifier.
+ * @param {String} month - Month in "YYYY-MM" format.
+ * @param {String} userId - Identifier of the user triggering the calculation.
+ * @param {Object} options - Calculation options.
+ * @param {String} [options.source='payregister'] - Data source to use: 'payregister' (strict) or 'all' (fallback to attendance).
+ * @param {Array<Object>} [options.arrearsSettlements=[]] - Optional arrears settlements to apply; each item should include identifiers and amounts (e.g., { arrearId, amount }).
+ * @returns {Object} Result object containing success status, the persisted payrollRecord, and the batchId when payroll was added to a batch:
+ *                   { success: true, payrollRecord, batchId }.
+ * @throws {Error} If the employee or required attendance/pay register is not found, or if the payroll batch is locked without recalculation permission (error.code === 'BATCH_LOCKED').
  */
 async function calculatePayrollNew(employeeId, month, userId, options = { source: 'payregister', arrearsSettlements: [] }) {
   try {
     const employee = await Employee.findById(employeeId).populate('department_id designation_id division_id');
     if (!employee) throw new Error('Employee not found');
-    if (!employee.gross_salary || employee.gross_salary <= 0) throw new Error('Employee gross salary is missing or invalid');
+    // if (!employee.gross_salary || employee.gross_salary <= 0) throw new Error('Employee gross salary is missing or invalid');
+    if (!employee.gross_salary || employee.gross_salary <= 0) {
+      console.warn(`[Payroll] Warning: Employee ${employee.emp_no} has invalid gross salary (${employee.gross_salary}). Proceeding with 0.`);
+    }
 
     // Source selection: payregister-only or all-related
     const source = options.source || 'payregister';
@@ -888,6 +910,8 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
         totalWeeklyOffs: payRegisterSummary.totals.totalWeeklyOffs || 0,
         totalHolidays: payRegisterSummary.totals.totalHolidays || 0, // Using field if exists or fallback
         extraDays: payRegisterSummary.totals.extraDays || 0,
+        lateCount: (payRegisterSummary.totals.lateCount || 0) + (payRegisterSummary.totals.earlyOutCount || 0) || 0,
+
       };
     } else {
       const doc = await MonthlyAttendanceSummary.findOne({ employeeId, month });
@@ -906,6 +930,7 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
           totalWeeklyOffs: payRegisterSummary.totals.totalWeeklyOffs || 0,
           totalHolidays: payRegisterSummary.totals.totalHolidays || 0,
           extraDays: payRegisterSummary.totals.extraDays || 0,
+          lateCount: (payRegisterSummary.totals.lateCount || 0) + (payRegisterSummary.totals.earlyOutCount || 0) || 0,
         };
       } else {
         attendanceSummary = {
@@ -919,11 +944,13 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
           totalWeeklyOffs: 0,
           totalHolidays: 0,
           extraDays: 0,
+          lateCount: (doc.lateCount || 0) + (doc.earlyOutCount || 0) || 0,
         };
       }
     }
 
     const departmentId = employee.department_id?._id || employee.department_id;
+    const divisionId = employee.division_id?._id || employee.division_id;
     if (!departmentId) throw new Error('Employee department not found');
 
     // BATCH VALIDATION: Check if payroll batch is locked
@@ -954,6 +981,8 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     const totalLeaveDays = attendanceSummary.totalLeaveDays || 0;
     const odDays = attendanceSummary.totalODDays || 0;
     const payableShifts = attendanceSummary.totalPayableShifts || 0;
+    const lateCount = attendanceSummary.lateCount || 0;
+    const earlyOutCount = attendanceSummary.earlyOutCount || 0;
 
     console.log('Attendance Data:');
     console.log(`  Month Days: ${monthDays}`);
@@ -963,6 +992,8 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     console.log(`  Weekly Offs: ${weeklyOffs}`);
     console.log(`  Holidays: ${holidays}`);
     console.log(`  Payable Shifts: ${payableShifts}`);
+    console.log(`  Late Count: ${lateCount}`);
+    console.log(`  Early Out Count: ${earlyOutCount}`);
 
     // Step 2: Calculate Absent Days
     // Formula: Absent Days = Month Days - Present - Week Offs - Holidays - Paid Leaves - OD
@@ -1017,7 +1048,7 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     console.log('========================================\n');
 
     // Get includeMissing setting (whether to include non-overridden base items)
-    const includeMissing = await getIncludeMissingFlag(departmentId);
+    const includeMissing = await getIncludeMissingFlag(departmentId, divisionId);
 
     // Log the setting for debugging
     console.log(`[Payroll] Include missing allowances/deductions: ${includeMissing}`);
@@ -1097,9 +1128,39 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
       includeMissing
     );
 
+    // Step 11: Calculate Attendance Deductions (Lates / Early Outs)
+    // Explicit call to ensure it's processed regardless of master settings
+    console.log(`\n--- Step 11: Attendance Deductions ---`);
+    const attendanceDeductionResult = await deductionService.calculateAttendanceDeduction(
+      employeeId,
+      month,
+      departmentId,
+      perDaySalary,
+      employee.division_id // Pass division ID for granular rules
+    );
+
+    let totalAttendanceDeduction = attendanceDeductionResult.attendanceDeduction || 0;
+    console.log(`Attendance Deduction Result:`, JSON.stringify(attendanceDeductionResult, null, 2));
+
     // Process deductions
-    let totalDeductions = 0;
-    const deductionBreakdown = resolvedDeductions
+    let totalDeductions = totalAttendanceDeduction; // Start with attendance deduction
+
+    // Add Attendance Deduction to breakdown if amount > 0
+    const deductionBreakdown = [];
+
+    if (totalAttendanceDeduction > 0) {
+      deductionBreakdown.push({
+        name: 'Attendance Deduction (Late/Early)',
+        code: 'ATT_DEDUC',
+        amount: attendanceDeductionResult.attendanceDeduction,
+        base: 'basic',
+        type: 'fixed',
+        source: 'attendance_policy',
+        details: attendanceDeductionResult.breakdown
+      });
+    }
+
+    const otherDeductionBreakdown = resolvedDeductions
       .filter(deduction => deduction && deduction.name) // Filter out invalid entries
       .map((deduction) => {
         try {
@@ -1130,6 +1191,9 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
         }
       })
       .filter(Boolean); // Remove any null entries from failed processing
+
+    // Combine breakdowns
+    deductionBreakdown.push(...otherDeductionBreakdown);
 
     // Absent deduction
     let absentDeductionAmount = 0;
@@ -1197,6 +1261,8 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     payrollRecord.set('attendance.otHours', Number(otHours) || 0);
     payrollRecord.set('attendance.otDays', Number(otDays) || 0);
     payrollRecord.set('attendance.earnedSalary', Number(earnedSalary) || 0);
+    payrollRecord.set('attendance.lateIns', Number(lateCount) || 0);
+    payrollRecord.set('attendance.earlyOuts', Number(earlyOutCount) || 0);
     payrollRecord.markModified('attendance');
     console.log('✓ Attendance breakdown saved');
 
@@ -1222,8 +1288,16 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     );
     payrollRecord.set('earnings.grossSalary', Number(grossAmountSalary) || 0);
 
-    // Deductions
-    payrollRecord.set('deductions.attendanceDeduction', 0);
+    // DeductionslateDays
+    payrollRecord.set('deductions.attendanceDeduction', Number(totalAttendanceDeduction) || 0);
+    payrollRecord.set('deductions.attendanceDeductionBreakdown', attendanceDeductionResult.breakdown || {
+      lateInsCount: 0,
+      earlyOutsCount: 0,
+      combinedCount: 0,
+      daysDeducted: 0,
+      deductionType: null,
+      calculationMode: null,
+    });
     payrollRecord.set('deductions.permissionDeduction', 0);
     payrollRecord.set('deductions.leaveDeduction', 0);
     payrollRecord.set(
@@ -1380,13 +1454,31 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
 }
 
 /**
- * Create transaction logs for audit trail
- * @param {ObjectId} payrollRecordId - Payroll record ID
- * @param {String} employeeId - Employee ID
- * @param {String} emp_no - Employee number
- * @param {String} month - Month
- * @param {String} userId - User ID
- * @param {Object} calculationResults - All calculation results
+ * Create and persist detailed payroll transaction records for audit and accounting.
+ *
+ * Builds transactions for earnings, deductions, loan EMIs, salary advances, and the final net salary
+ * using values from the provided calculation results, then inserts them in bulk.
+ *
+ * @param {ObjectId} payrollRecordId - The payroll record MongoDB ObjectId this set of transactions belongs to.
+ * @param {String} employeeId - The internal employee identifier.
+ * @param {String} emp_no - The employee number displayed in payroll reports.
+ * @param {String} month - The payroll month label (e.g., "2025-01" or "Jan 2025").
+ * @param {String} userId - The ID of the user who initiated the calculation (used as createdBy).
+ * @param {Object} calculationResults - Aggregated calculation results used to create transactions.
+ *   Expected shape (partial):
+ *   {
+ *     basicPayResult: { basicPay, perDayBasicPay, totalDaysInMonth, incentive, totalPayableShifts, payableAmount },
+ *     otPayResult: { otPay, otHours, otPayPerHour },
+ *     allAllowances: [{ name, amount, type, base }, ...],
+ *     attendanceDeductionResult: { attendanceDeduction, breakdown },
+ *     permissionDeductionResult: { permissionDeduction, breakdown },
+ *     leaveDeductionResult: { leaveDeduction, breakdown },
+ *     allOtherDeductions: [{ name, amount, type, base }, ...],
+ *     emiResult: { totalEMI, emiBreakdown: [{ loanId, emiAmount }, ...] },
+ *     advanceResult: { advanceDeduction, advanceBreakdown: [{ advanceId, advanceAmount, carriedForward }, ...] },
+ *     deductions: { attendanceDeductionResult?: { breakdown } },
+ *     grossSalary, totalDeductions, netSalary
+ *   }
  */
 async function createTransactionLogs(payrollRecordId, employeeId, emp_no, month, userId, calculationResults) {
   const transactions = [];
@@ -1581,6 +1673,7 @@ async function createTransactionLogs(payrollRecordId, employeeId, emp_no, month,
     transactionType: 'net_salary',
     category: 'earning',
     description: `Net Salary for ${month}`,
+    attendanceDeductionDetails: calculationResults.deductions.attendanceDeductionResult?.breakdown || {},
     amount: calculationResults.netSalary,
     details: {
       grossSalary: calculationResults.grossSalary,
@@ -1650,4 +1743,3 @@ module.exports = {
   calculatePayrollNew,
   processPayroll,
 };
-

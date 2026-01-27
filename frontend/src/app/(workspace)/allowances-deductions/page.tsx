@@ -52,6 +52,16 @@ interface AllowanceDeduction {
   updatedAt?: string;
 }
 
+/**
+ * Render the Allowances & Deductions management UI with tabs, creation/editing, and department/division overrides.
+ *
+ * Renders a client-side interface for listing, filtering (All / Allowances / Deductions), creating and editing salary components,
+ * and managing global rules and department/division-specific overrides. Handles data loading (items, departments, divisions),
+ * in-component form state for creating/editing components and department rules, validation, and calls to the API with user-facing
+ * alerts for success or failure.
+ *
+ * @returns The JSX element for the allowances and deductions management page.
+ */
 export default function AllowancesDeductionsPage() {
   const { user } = useAuth();  // NEW: Get current user for role checking
   const [activeTab, setActiveTab] = useState<'all' | 'allowances' | 'deductions'>('all');
@@ -571,57 +581,57 @@ export default function AllowancesDeductionsPage() {
     <div className="relative min-h-screen">
       {/* Background Pattern */}
       <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(to_right,#e2e8f01f_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f01f_1px,transparent_1px)] bg-[size:28px_28px] dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.12)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.12)_1px,transparent_1px)]" />
-      <div className="pointer-events-none fixed inset-0 bg-gradient-to-br from-green-50/40 via-green-50/35 to-transparent dark:from-slate-900/60 dark:via-slate-900/65 dark:to-slate-900/80" />
+      <div className="pointer-events-none fixed inset-0 bg-gradient-to-br from-slate-50/40 via-emerald-50/35 to-transparent dark:from-slate-900/60 dark:via-slate-900/65 dark:to-slate-900/80" />
 
-      <div className="relative z-10 p-6 sm:p-8 lg:p-10">
+      <div className="relative z-10 p-4 sm:p-6 lg:p-8">
         {/* Header Section */}
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white/95 px-4 py-3 shadow-[0_8px_26px_rgba(16,185,129,0.08)] backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/90 sm:px-5">
-          <div>
-            <h1 className="text-lg font-semibold text-slate-900 dark:text-slate-100 sm:text-xl">
-              Allowances & Deductions
-            </h1>
-            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-              Manage salary components with global rules and department-specific overrides
-            </p>
+        <div className="mb-8 flex flex-col gap-4 rounded-3xl border border-slate-200/60 bg-white/80 p-6 shadow-[0_20px_50px_rgba(148,163,184,0.1)] backdrop-blur-xl dark:border-slate-800/60 dark:bg-slate-950/80 sm:flex-row sm:items-center sm:justify-between sm:p-8">
+          <div className="flex items-center gap-5">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 shadow-lg shadow-emerald-500/20">
+              <svg className="h-7 w-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+                Allowances & <span className="text-emerald-600 dark:text-emerald-400">Deductions</span>
+              </h1>
+              <p className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">
+                Manage salary components with global rules and department overrides
+              </p>
+            </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {/* Tabs */}
-            <div className="flex gap-1.5 rounded-xl border border-slate-200 bg-white/80 p-0.5 shadow-sm dark:border-slate-700 dark:bg-slate-900/80">
-              <button
-                onClick={() => setActiveTab('all')}
-                className={`rounded-lg px-3 py-1.5 text-[10px] font-semibold transition-all ${activeTab === 'all'
-                  ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-md'
-                  : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
-                  }`}
-              >
-                All
-              </button>
-              <button
-                onClick={() => setActiveTab('allowances')}
-                className={`rounded-lg px-3 py-1.5 text-[10px] font-semibold transition-all ${activeTab === 'allowances'
-                  ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-md'
-                  : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
-                  }`}
-              >
-                Allowances
-              </button>
-              <button
-                onClick={() => setActiveTab('deductions')}
-                className={`rounded-lg px-3 py-1.5 text-[10px] font-semibold transition-all ${activeTab === 'deductions'
-                  ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-md'
-                  : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
-                  }`}
-              >
-                Deductions
-              </button>
+
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Premium Tabs */}
+            <div className="flex gap-1 rounded-2xl bg-slate-100/80 p-1.5 dark:bg-slate-900/80">
+              {[
+                { id: 'all', label: 'All' },
+                { id: 'allowances', label: 'Allowances' },
+                { id: 'deductions', label: 'Deductions' }
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id as any)}
+                  className={`relative rounded-xl px-5 py-2.5 text-sm font-bold transition-all duration-300 ${activeTab === tab.id
+                    ? 'bg-white text-emerald-600 shadow-md ring-1 ring-slate-200/50 dark:bg-slate-800 dark:text-emerald-400 dark:ring-slate-700'
+                    : 'text-slate-500 hover:bg-white/50 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800/50 dark:hover:text-slate-200'
+                    }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
             </div>
 
             <button
               onClick={handleCreate}
-              className="group relative inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-green-500 to-green-600 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-700 hover:shadow-xl hover:shadow-green-500/40 focus:outline-none focus:ring-2 focus:ring-green-400 focus:ring-offset-2"
+              className="group relative inline-flex items-center gap-2 overflow-hidden rounded-2xl bg-emerald-600 px-6 py-3 text-sm font-bold text-white shadow-xl shadow-emerald-500/30 transition-all hover:bg-emerald-700 hover:shadow-emerald-500/40 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2 active:scale-95"
             >
-              <span className="text-sm">+</span>
-              <span>Create New</span>
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-700" />
+              <svg className="h-5 w-5 transition-transform group-hover:rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+              <span>Create Component</span>
             </button>
           </div>
         </div>
@@ -645,11 +655,12 @@ export default function AllowancesDeductionsPage() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {filteredItems.map((item) => (
               <div
                 key={item._id}
-                className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-lg shadow-green-100/40 transition-all hover:border-green-300 hover:shadow-xl hover:shadow-green-200/50 dark:border-slate-800 dark:bg-slate-950/95 dark:shadow-none dark:hover:border-slate-700"
+                onClick={() => handleEdit(item)}
+                className="group relative cursor-pointer overflow-hidden rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-lg shadow-slate-200/40 transition-all hover:-translate-y-1 hover:border-blue-400 hover:shadow-xl hover:shadow-blue-200/50 dark:border-slate-800 dark:bg-slate-950/95 dark:shadow-none dark:hover:border-blue-500/50"
               >
                 {/* Gradient accent */}
                 <div className={`absolute top-0 left-0 h-1 w-full ${item.category === 'allowance'
@@ -790,7 +801,7 @@ export default function AllowancesDeductionsPage() {
                                       e.stopPropagation();
                                       handleEditDeptRule(item, deptId);
                                     }}
-                                    className="rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 text-[9px] font-semibold text-blue-700 transition-all hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-300 dark:hover:bg-blue-900/50"
+                                    className="rounded-md border border-blue-200 bg-white px-3 py-0.5 text-[9px] font-bold text-blue-600 transition-all hover:bg-blue-50 dark:border-blue-800 dark:bg-slate-900 dark:text-blue-400 dark:hover:bg-slate-800"
                                     title="Edit this override"
                                   >
                                     Edit
@@ -800,7 +811,7 @@ export default function AllowancesDeductionsPage() {
                                       e.stopPropagation();
                                       handleDeleteDeptRule(item._id, deptId, divId);
                                     }}
-                                    className="rounded-md border border-red-200 bg-red-50 px-2 py-0.5 text-[9px] font-semibold text-red-700 transition-all hover:bg-red-100 dark:border-red-800 dark:bg-red-900/30 dark:text-red-300 dark:hover:bg-red-900/50"
+                                    className="rounded-md border border-red-200 bg-white px-2 py-0.5 text-[9px] font-bold text-red-600 transition-all hover:bg-red-50 dark:border-red-800 dark:bg-slate-900 dark:text-red-400 dark:hover:bg-slate-800"
                                     title="Delete this override"
                                   >
                                     Del
@@ -821,22 +832,31 @@ export default function AllowancesDeductionsPage() {
                 )}
 
                 {/* Action Buttons */}
-                <div className="flex flex-wrap gap-1.5 border-t border-slate-200 pt-3 dark:border-slate-800">
+                <div className="flex flex-wrap gap-2 border-t border-slate-200 pt-3 dark:border-slate-800">
                   <button
-                    onClick={() => handleEdit(item)}
-                    className="group flex-1 rounded-xl border border-green-200 bg-gradient-to-r from-green-50 to-green-50 px-3 py-1.5 text-xs font-semibold text-green-700 transition-all hover:from-green-100 hover:to-green-100 hover:shadow-md dark:border-green-800 dark:from-green-900/20 dark:to-green-900/20 dark:text-green-300 dark:hover:from-green-900/30 dark:hover:to-green-900/30"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleEdit(item);
+                    }}
+                    className="group flex-1 rounded-xl border border-blue-200 bg-white px-3 py-1.5 text-xs font-bold text-blue-600 transition-all hover:bg-blue-50 hover:shadow-md dark:border-blue-800 dark:bg-slate-900 dark:text-blue-400 dark:hover:bg-slate-800"
                   >
                     Edit
                   </button>
                   <button
-                    onClick={() => handleAddDeptRule(item)}
-                    className="group flex-1 rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 px-3 py-1.5 text-xs font-semibold text-blue-700 transition-all hover:from-blue-100 hover:to-indigo-100 hover:shadow-md dark:border-blue-800 dark:from-blue-900/20 dark:to-indigo-900/20 dark:text-blue-300 dark:hover:from-blue-900/30 dark:hover:to-indigo-900/30"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleAddDeptRule(item);
+                    }}
+                    className="group flex-1 rounded-xl border border-blue-200 bg-white px-3 py-1.5 text-xs font-bold text-blue-600 transition-all hover:bg-blue-50 hover:shadow-md dark:border-blue-800 dark:bg-slate-900 dark:text-blue-400 dark:hover:bg-slate-800"
                   >
                     Override
                   </button>
                   <button
-                    onClick={() => handleDelete(item._id)}
-                    className="rounded-xl border border-red-200 bg-gradient-to-r from-red-50 to-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition-all hover:from-red-100 hover:to-red-100 hover:shadow-md dark:border-red-800 dark:from-red-900/20 dark:to-red-900/20 dark:text-red-300 dark:hover:from-red-900/30 dark:hover:to-red-900/30"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete(item._id);
+                    }}
+                    className="rounded-xl border border-red-200 bg-white px-3 py-1.5 text-xs font-bold text-red-600 transition-all hover:bg-red-50 hover:shadow-md dark:border-red-800 dark:bg-slate-900 dark:text-red-400 dark:hover:bg-slate-800"
                   >
                     Delete
                   </button>
@@ -908,7 +928,7 @@ export default function AllowancesDeductionsPage() {
                   <select
                     value={formData.category}
                     onChange={(e) => setFormData({ ...formData, category: e.target.value as 'allowance' | 'deduction' })}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                   >
                     <option value="allowance">Allowance</option>
                     <option value="deduction">Deduction</option>
@@ -963,7 +983,7 @@ export default function AllowancesDeductionsPage() {
                     step="0.01"
                     value={formData.amount ?? ''}
                     onChange={(e) => setFormData({ ...formData, amount: e.target.value ? parseFloat(e.target.value) : null })}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     placeholder="e.g., 2000"
                   />
                 </div>
@@ -998,7 +1018,7 @@ export default function AllowancesDeductionsPage() {
                       step="0.01"
                       value={formData.percentage ?? ''}
                       onChange={(e) => setFormData({ ...formData, percentage: e.target.value ? parseFloat(e.target.value) : null })}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                       placeholder="e.g., 12, 40"
                     />
                   </div>
@@ -1010,7 +1030,7 @@ export default function AllowancesDeductionsPage() {
                     <select
                       value={formData.percentageBase}
                       onChange={(e) => setFormData({ ...formData, percentageBase: e.target.value as 'basic' | 'gross' })}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     >
                       <option value="basic">Basic Salary</option>
                       <option value="gross">Gross Salary</option>
@@ -1077,7 +1097,7 @@ export default function AllowancesDeductionsPage() {
               <button
                 type="button"
                 onClick={handleSave}
-                className="flex-1 rounded-xl bg-gradient-to-r from-green-500 to-green-600 px-3 py-2 text-xs font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-700 hover:shadow-xl hover:shadow-green-500/40 focus:outline-none focus:ring-2 focus:ring-green-400 focus:ring-offset-2"
+                className="flex-1 rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:bg-blue-700 hover:shadow-xl hover:shadow-blue-500/40 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
               >
                 {selectedItem ? 'Update' : 'Create'}
               </button>
@@ -1130,7 +1150,7 @@ export default function AllowancesDeductionsPage() {
                 <select
                   value={deptRuleForm.divisionId}
                   onChange={(e) => setDeptRuleForm({ ...deptRuleForm, divisionId: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                 >
                   <option value="">All Divisions (Department-wide)</option>
                   {divisions
@@ -1190,7 +1210,7 @@ export default function AllowancesDeductionsPage() {
                       percentage: newType === 'percentage' ? deptRuleForm.percentage : null,
                     });
                   }}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                 >
                   <option value="fixed">Fixed Amount</option>
                   <option value="percentage">Percentage</option>
@@ -1209,7 +1229,7 @@ export default function AllowancesDeductionsPage() {
                     step="0.01"
                     value={deptRuleForm.amount ?? ''}
                     onChange={(e) => setDeptRuleForm({ ...deptRuleForm, amount: e.target.value ? parseFloat(e.target.value) : null })}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     placeholder="e.g., 5000"
                   />
                 </div>
@@ -1244,7 +1264,7 @@ export default function AllowancesDeductionsPage() {
                       step="0.01"
                       value={deptRuleForm.percentage ?? ''}
                       onChange={(e) => setDeptRuleForm({ ...deptRuleForm, percentage: e.target.value ? parseFloat(e.target.value) : null })}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                       placeholder="e.g., 30"
                     />
                   </div>
@@ -1256,7 +1276,7 @@ export default function AllowancesDeductionsPage() {
                     <select
                       value={deptRuleForm.percentageBase}
                       onChange={(e) => setDeptRuleForm({ ...deptRuleForm, percentageBase: e.target.value as 'basic' | 'gross' })}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     >
                       <option value="basic">Basic Salary</option>
                       <option value="gross">Gross Salary</option>
@@ -1309,7 +1329,7 @@ export default function AllowancesDeductionsPage() {
               <button
                 type="button"
                 onClick={handleSaveDeptRule}
-                className="flex-1 rounded-xl bg-gradient-to-r from-green-500 to-green-600 px-3 py-2 text-xs font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-700 hover:shadow-xl hover:shadow-green-500/40 focus:outline-none focus:ring-2 focus:ring-green-400 focus:ring-offset-2"
+                className="flex-1 rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:bg-blue-700 hover:shadow-xl hover:shadow-blue-500/40 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
               >
                 {selectedDeptForRule ? 'Update' : 'Add'} Override
               </button>
@@ -1320,4 +1340,3 @@ export default function AllowancesDeductionsPage() {
     </div>
   );
 }
-

@@ -104,6 +104,19 @@ interface Designation {
   department: string;
 }
 
+/**
+ * Renders the Attendance Management page with UI and logic for viewing, filtering,
+ * and managing monthly employee attendance, shifts, leaves, OD, OT, and payslips.
+ *
+ * The component provides controls for month/year navigation, searching and filtering
+ * by division/department/designation, multiple table views (complete, present/absent,
+ * in/out, leaves, OD, OT), infinite scrolling, upload/download of attendance Excel,
+ * shift synchronization, detailed per-day attendance dialogs (including leave/OD
+ * information, conflict resolution, shift assignment and out-time editing), converting
+ * extra hours to OT, and viewing/printing monthly summaries and payslips.
+ *
+ * @returns The JSX element for the attendance management page.
+ */
 export default function AttendancePage() {
   const [tableType, setTableType] = useState<'complete' | 'present_absent' | 'in_out' | 'leaves' | 'od' | 'ot'>('complete');
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -989,6 +1002,8 @@ export default function AttendancePage() {
     if (record.status === 'PRESENT') return 'bg-green-50 border-green-200 text-green-800 dark:bg-green-900/10 dark:border-green-800 dark:text-green-400';
     if (record.status === 'PARTIAL') return 'bg-yellow-50 border-yellow-200 text-yellow-800 dark:bg-yellow-900/10 dark:border-yellow-800 dark:text-yellow-400';
     if (record.status === 'HALF_DAY') return 'bg-orange-50 border-orange-200 text-orange-800 dark:bg-orange-900/10 dark:border-orange-800 dark:text-orange-400';
+    if (record.status === 'HOLIDAY') return 'bg-red-50 border-red-200 text-red-800 dark:bg-red-900/10 dark:border-red-800 dark:text-red-400';
+    if (record.status === 'WEEK_OFF') return 'bg-orange-50 border-orange-200 text-orange-800 dark:bg-orange-900/10 dark:border-orange-800 dark:text-orange-400';
     return '';
   };
 
@@ -1013,6 +1028,12 @@ export default function AttendancePage() {
     }
     if (record.status === 'ABSENT' || record.status === 'LEAVE' || record.status === 'OD' || record.status === 'HALF_DAY') {
       return 'bg-slate-100 dark:bg-slate-800';
+    }
+    if (record.status === 'HOLIDAY') {
+      return 'bg-red-100 dark:bg-red-900/20 border-red-300 dark:border-red-700';
+    }
+    if (record.status === 'WEEK_OFF') {
+      return 'bg-orange-100 dark:bg-orange-900/20 border-orange-300 dark:border-orange-700';
     }
     return '';
   };
@@ -1262,6 +1283,32 @@ export default function AttendancePage() {
           </div>
         </div>
 
+
+        {/* Status Legend */}
+        <div className="mb-6 flex flex-wrap items-center gap-4 px-4 py-3 rounded-2xl bg-white/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 backdrop-blur-sm shadow-sm animate-in fade-in slide-in-from-top-2 duration-500">
+          <span className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mr-2">Status Key</span>
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+            {[
+              { label: 'P', name: 'Present', color: 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800' },
+              { label: 'H', name: 'Holiday', color: 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800' },
+              { label: 'WO', name: 'Week Off', color: 'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-800' },
+              { label: 'L', name: 'Leave', color: 'bg-orange-50 text-orange-600 border-orange-100 dark:bg-orange-900/10 dark:text-orange-400 dark:border-orange-900/30' },
+              { label: 'OD', name: 'On Duty', color: 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800' },
+              { label: 'PT', name: 'Partial', color: 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-800' },
+              { label: 'HD', name: 'Half Day', color: 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/10 dark:text-orange-400 dark:border-orange-900/30' },
+              { label: 'A', name: 'Absent', color: 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700' },
+              { label: '!', name: 'Conflict', color: 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800' },
+            ].map((item) => (
+              <div key={item.label} className="flex items-center gap-2 group cursor-help">
+                <div className={`w-6 h-6 flex items-center justify-center rounded text-[10px] font-bold border shadow-sm transition-all duration-200 group-hover:scale-110 group-hover:shadow-md ${item.color}`}>
+                  {item.label}
+                </div>
+                <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">{item.name}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* Messages */}
         {error && (
           <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
@@ -1489,6 +1536,8 @@ export default function AttendancePage() {
                           if (record.status === 'PRESENT') displayStatus = 'P';
                           else if (record.status === 'HALF_DAY') displayStatus = 'HD';
                           else if (record.status === 'PARTIAL') displayStatus = 'PT';
+                          else if (record.status === 'HOLIDAY') displayStatus = 'H';
+                          else if (record.status === 'WEEK_OFF') displayStatus = 'WO';
                           else if (record.status === 'LEAVE' || record.hasLeave) displayStatus = 'L';
                           else if (record.status === 'OD' || record.hasOD) displayStatus = 'OD';
                           else if (record.status === '-') displayStatus = '-';
@@ -1982,6 +2031,25 @@ export default function AttendancePage() {
                           <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Permission Hours</label>
                           <div className="mt-1 text-sm font-semibold text-cyan-600 dark:text-cyan-400">
                             {attendanceDetail.permissionHours.toFixed(2)} hrs ({attendanceDetail.permissionCount || 0} permissions)
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Remarks / Notes */}
+                      {attendanceDetail.notes && (
+                        <div className="col-span-2 rounded-xl bg-blue-50/50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-800/50 p-4 mt-2">
+                          <div className="flex items-start gap-3">
+                            <div className="mt-0.5 text-blue-600 dark:text-blue-400">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black uppercase tracking-widest text-blue-600/70 dark:text-blue-400/70">System Remarks</label>
+                              <div className="mt-1 text-sm font-bold text-blue-900 dark:text-blue-100 leading-relaxed italic">
+                                &quot;{attendanceDetail.notes}&quot;
+                              </div>
+                            </div>
                           </div>
                         </div>
                       )}
@@ -2769,7 +2837,6 @@ function numberToWords(num: number): string {
 
   return words + ' Rupees Only';
 }
-
 
 
 

@@ -82,6 +82,13 @@ interface Arrears {
   createdAt: string;
 }
 
+/**
+ * Render the Arrears Management page that displays arrears statistics, a tabbed list of arrears, and dialogs for creating and viewing arrears.
+ *
+ * The component loads arrears and active employees on mount, provides filtering by status, and exposes actions to create a new arrears record and view arrears details.
+ *
+ * @returns The page's JSX element.
+ */
 export default function ArrearsPage() {
   const [arrears, setArrears] = useState<Arrears[]>([]);
   const [loading, setLoading] = useState(true);
@@ -170,7 +177,7 @@ export default function ArrearsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 p-6">
+    <div className="min-h-screen p-6">
       <ToastContainer position="top-right" autoClose={3000} />
 
       {/* Header */}
