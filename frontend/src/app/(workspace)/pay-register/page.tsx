@@ -1005,7 +1005,7 @@ export default function PayRegisterPage() {
 
       {/* Summary Table */}
       {!loading && payRegisters.length > 0 && (
-        <div className="mt-4 rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-lg dark:border-slate-700 dark:bg-slate-900/80 overflow-x-auto">
+        <div className="mt-4 mb-8 rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-lg dark:border-slate-700 dark:bg-slate-900/80 overflow-x-auto">
           <div className="p-4">
             <h3 className="text-base font-semibold text-slate-900 dark:text-white mb-3">Monthly Summary</h3>
             <table className="w-full border-collapse text-xs">
@@ -1081,7 +1081,7 @@ export default function PayRegisterPage() {
       )}
 
       {/* Table Tabs */}
-      <div className="bg-white dark:bg-slate-800 rounded-lg shadow">
+      <div className="bg-white dark:bg-slate-800 rounded-lg shadow mb-8">
         <div className="border-b border-slate-200 dark:border-slate-700">
           <nav className="flex -mb-px">
             {[

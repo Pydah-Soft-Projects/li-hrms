@@ -88,6 +88,24 @@ const processSecondSalaryUpload = async (fileBuffer) => {
     }
 };
 
+/**
+ * Generates data for the salary update template by fetching all active employees.
+ */
+const generateSalaryUpdateTemplateData = async () => {
+    try {
+        const employees = await Employee.find({ is_active: true }, 'emp_no').sort({ emp_no: 1 });
+
+        return employees.map(emp => ({
+            'Employee ID': emp.emp_no,
+            'Second Salary': ''
+        }));
+    } catch (error) {
+        console.error('Error fetching employees for template:', error);
+        throw new Error('Failed to fetch employees for template: ' + error.message);
+    }
+};
+
 module.exports = {
-    processSecondSalaryUpload
+    processSecondSalaryUpload,
+    generateSalaryUpdateTemplateData
 };

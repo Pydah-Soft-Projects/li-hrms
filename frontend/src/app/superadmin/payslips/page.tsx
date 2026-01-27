@@ -550,12 +550,12 @@ export default function PayslipsPage() {
   const totalPages = Math.ceil(filteredRecords.length / recordsPerPage);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 p-6">
-      <div className="max-w-7xl mx-auto">
+    <div className="min-h-screen p-6">
+      <div className="w-full">
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-4xl font-bold text-slate-800 dark:text-white mb-2">
-            📄 Employee Payslips
+            Employee Payslips
           </h1>
           <p className="text-slate-600 dark:text-slate-300">
             View, search, and export employee payslips
@@ -826,12 +826,19 @@ export default function PayslipsPage() {
                   currentRecords.map((record) => {
                     const employee = typeof record.employeeId === 'object' ? record.employeeId : null;
                     return (
-                      <tr key={record._id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors group">
+                      <tr
+                        key={record._id}
+                        onClick={() => router.push(`/superadmin/payslips/${record._id}`)}
+                        className="hover:bg-indigo-50/50 dark:hover:bg-slate-700/30 transition-colors group cursor-pointer"
+                      >
                         <td className="px-6 py-4">
                           <input
                             type="checkbox"
                             checked={selectedRecords.has(record._id)}
-                            onChange={() => toggleSelectRecord(record._id)}
+                            onChange={(e) => {
+                              e.stopPropagation(); // Prevent row click when clicking checkbox
+                              toggleSelectRecord(record._id);
+                            }}
                             className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
                           />
                         </td>
@@ -877,8 +884,8 @@ export default function PayslipsPage() {
                         </td>
                         <td className="px-6 py-4 text-center">
                           <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${record.status === 'processed' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
-                              record.status === 'approved' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' :
-                                'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                            record.status === 'approved' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' :
+                              'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
                             }`}>
                             {record.status}
                           </span>
@@ -896,7 +903,10 @@ export default function PayslipsPage() {
                               </svg>
                             </button>
                             <button
-                              onClick={() => generatePayslipPDF(record)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                generatePayslipPDF(record);
+                              }}
                               disabled={generatingPDF}
                               className="p-2 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/40 rounded-lg transition-all"
                               title="Download PDF"
@@ -931,8 +941,8 @@ export default function PayslipsPage() {
                     key={i + 1}
                     onClick={() => setCurrentPage(i + 1)}
                     className={`min-w-[40px] h-10 px-2 rounded-xl text-sm font-medium transition-all ${currentPage === i + 1
-                        ? 'bg-indigo-600 text-white shadow-md'
-                        : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
+                      ? 'bg-indigo-600 text-white shadow-md'
+                      : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
                       }`}
                   >
                     {i + 1}

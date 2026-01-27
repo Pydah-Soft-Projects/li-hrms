@@ -1,4 +1,4 @@
-const { processSecondSalaryUpload } = require('../services/salaryUpdateService');
+const { processSecondSalaryUpload, generateSalaryUpdateTemplateData } = require('../services/salaryUpdateService');
 const xlsx = require('xlsx');
 
 // Bulk update second salary
@@ -29,19 +29,10 @@ const bulkUpdateSecondSalary = async (req, res) => {
 };
 
 // Download template
-const downloadTemplate = (req, res) => {
+const downloadTemplate = async (req, res) => {
     try {
         const wb = xlsx.utils.book_new();
-        const data = [
-            {
-                'Employee ID': 'EMP001',
-                'Second Salary': 50000
-            },
-            {
-                'Employee ID': 'EMP002',
-                'Second Salary': 60000
-            }
-        ];
+        const data = await generateSalaryUpdateTemplateData();
 
         const ws = xlsx.utils.json_to_sheet(data);
 
