@@ -390,7 +390,7 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
     // Parse month
     const [year, monthNum] = month.split('-').map(Number);
     const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
-    const { startDate, endDate } = await getPayrollDateRange(year, monthNum);
+    const { startDate, endDate, totalDays } = await getPayrollDateRange(year, monthNum);
 
     const pageNum = parseInt(page) || 1;
     const limitNum = parseInt(limit) || 50; // Default limit 50
