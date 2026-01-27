@@ -570,18 +570,12 @@ export default function PayslipDetailPage() {
                 Deductions
               </h3>
               <div className="space-y-2">
-                {payroll.deductions.attendanceDeduction > 0 && (
-                  <div className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-700">
-                    <span className="text-slate-600 dark:text-slate-400">Attendance Deduction</span>
-                    <span className="font-semibold text-slate-800 dark:text-white">₹{payroll.deductions.attendanceDeduction.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                  </div>
-                )}
-                {payroll.deductions.permissionDeduction > 0 && (
+                {/* {payroll.deductions.permissionDeduction > 0 && (
                   <div className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-700">
                     <span className="text-slate-600 dark:text-slate-400">Permission Deduction</span>
                     <span className="font-semibold text-slate-800 dark:text-white">₹{payroll.deductions.permissionDeduction.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                   </div>
-                )}
+                )} */}
                 {payroll.deductions.leaveDeduction > 0 && (
                   <div className="flex justify-between py-2 border-b border-slate-200 dark:border-slate-700">
                     <span className="text-slate-600 dark:text-slate-400">Leave Deduction</span>

@@ -897,6 +897,8 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
         totalWeeklyOffs: payRegisterSummary.totals.totalWeeklyOffs || 0,
         totalHolidays: payRegisterSummary.totals.totalHolidays || 0, // Using field if exists or fallback
         extraDays: payRegisterSummary.totals.extraDays || 0,
+        lateCount: (payRegisterSummary.totals.lateCount || 0) + (payRegisterSummary.totals.earlyOutCount || 0) || 0,
+
       };
     } else {
       const doc = await MonthlyAttendanceSummary.findOne({ employeeId, month });
@@ -915,6 +917,7 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
           totalWeeklyOffs: payRegisterSummary.totals.totalWeeklyOffs || 0,
           totalHolidays: payRegisterSummary.totals.totalHolidays || 0,
           extraDays: payRegisterSummary.totals.extraDays || 0,
+          lateCount: (payRegisterSummary.totals.lateCount || 0) + (payRegisterSummary.totals.earlyOutCount || 0) || 0,
         };
       } else {
         attendanceSummary = {
@@ -928,11 +931,13 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
           totalWeeklyOffs: 0,
           totalHolidays: 0,
           extraDays: 0,
+          lateCount: (doc.lateCount || 0) + (doc.earlyOutCount || 0) || 0,
         };
       }
     }
 
     const departmentId = employee.department_id?._id || employee.department_id;
+    const divisionId = employee.division_id?._id || employee.division_id;
     if (!departmentId) throw new Error('Employee department not found');
 
     // BATCH VALIDATION: Check if payroll batch is locked
@@ -963,6 +968,8 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     const totalLeaveDays = attendanceSummary.totalLeaveDays || 0;
     const odDays = attendanceSummary.totalODDays || 0;
     const payableShifts = attendanceSummary.totalPayableShifts || 0;
+    const lateCount = attendanceSummary.lateCount || 0;
+    const earlyOutCount = attendanceSummary.earlyOutCount || 0;
 
     console.log('Attendance Data:');
     console.log(`  Month Days: ${monthDays}`);
@@ -972,6 +979,8 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     console.log(`  Weekly Offs: ${weeklyOffs}`);
     console.log(`  Holidays: ${holidays}`);
     console.log(`  Payable Shifts: ${payableShifts}`);
+    console.log(`  Late Count: ${lateCount}`);
+    console.log(`  Early Out Count: ${earlyOutCount}`);
 
     // Step 2: Calculate Absent Days
     // Formula: Absent Days = Month Days - Present - Week Offs - Holidays - Paid Leaves - OD
@@ -1026,7 +1035,7 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     console.log('========================================\n');
 
     // Get includeMissing setting (whether to include non-overridden base items)
-    const includeMissing = await getIncludeMissingFlag(departmentId);
+    const includeMissing = await getIncludeMissingFlag(departmentId, divisionId);
 
     // Log the setting for debugging
     console.log(`[Payroll] Include missing allowances/deductions: ${includeMissing}`);
@@ -1239,6 +1248,8 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     payrollRecord.set('attendance.otHours', Number(otHours) || 0);
     payrollRecord.set('attendance.otDays', Number(otDays) || 0);
     payrollRecord.set('attendance.earnedSalary', Number(earnedSalary) || 0);
+    payrollRecord.set('attendance.lateIns', Number(lateCount) || 0);
+    payrollRecord.set('attendance.earlyOuts', Number(earlyOutCount) || 0);
     payrollRecord.markModified('attendance');
     console.log('✓ Attendance breakdown saved');
 
@@ -1264,8 +1275,16 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     );
     payrollRecord.set('earnings.grossSalary', Number(grossAmountSalary) || 0);
 
-    // Deductions
+    // DeductionslateDays
     payrollRecord.set('deductions.attendanceDeduction', Number(totalAttendanceDeduction) || 0);
+    payrollRecord.set('deductions.attendanceDeductionBreakdown', attendanceDeductionResult.breakdown || {
+      lateInsCount: 0,
+      earlyOutsCount: 0,
+      combinedCount: 0,
+      daysDeducted: 0,
+      deductionType: null,
+      calculationMode: null,
+    });
     payrollRecord.set('deductions.permissionDeduction', 0);
     payrollRecord.set('deductions.leaveDeduction', 0);
     payrollRecord.set(
