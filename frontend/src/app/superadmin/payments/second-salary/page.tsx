@@ -127,7 +127,7 @@ export default function SecondSalaryPaymentsPage() {
             });
 
             if (res.success) {
-                const { successCount, failCount } = res;
+                const { successCount, failCount } = res.data || res;
                 if (failCount === 0) {
                     toast.success(`Success: 2nd Salary calculated for ${successCount} employees.`);
                 } else {
@@ -162,7 +162,7 @@ export default function SecondSalaryPaymentsPage() {
             });
 
             if (res.success) {
-                const { successCount, failCount } = res;
+                const { successCount, failCount } = res.data || res;
                 if (failCount === 0) {
                     toast.success(`Global success: 2nd Salary calculated for ${successCount} employees.`);
                 } else {
@@ -239,8 +239,8 @@ export default function SecondSalaryPaymentsPage() {
                     <button
                         onClick={() => setViewMode(viewMode === 'batches' ? 'comparison' : 'batches')}
                         className={`inline-flex items-center px-4 py-2 text-sm font-medium rounded-xl transition-all shadow-sm ${viewMode === 'comparison'
-                                ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 ring-2 ring-indigo-500/20'
-                                : 'text-slate-700 bg-white border border-slate-200 hover:bg-slate-50'
+                            ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 ring-2 ring-indigo-500/20'
+                            : 'text-slate-700 bg-white border border-slate-200 hover:bg-slate-50'
                             }`}
                     >
                         <ArrowLeftRight className="w-4 h-4 mr-2" />

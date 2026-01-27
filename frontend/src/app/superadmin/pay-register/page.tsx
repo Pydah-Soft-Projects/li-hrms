@@ -313,8 +313,8 @@ export default function PayRegisterPage() {
         const payRegisterList = response.data || [];
         console.log('[Pay Register] Loaded page', pageToLoad, 'count:', payRegisterList.length);
 
-        if (response.startDate) setPayrollStartDate(response.startDate);
-        if (response.endDate) setPayrollEndDate(response.endDate);
+        if ((response as any).startDate) setPayrollStartDate((response as any).startDate);
+        if ((response as any).endDate) setPayrollEndDate((response as any).endDate);
 
         if (append) {
           setPayRegisters(prev => [...prev, ...payRegisterList]);

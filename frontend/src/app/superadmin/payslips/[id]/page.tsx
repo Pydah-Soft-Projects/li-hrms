@@ -423,7 +423,7 @@ export default function PayslipDetailPage() {
             <h1 className="text-2xl md:text-3xl font-extrabold mb-1 tracking-tight">SALARY SLIP</h1>
             <div className="flex flex-col items-center gap-1">
               <p className="text-base md:text-lg text-indigo-100 font-medium">
-                {payroll.monthName} 
+                {payroll.monthName}
                 {/* {payroll.year} */}
               </p>
               {payroll.startDate && payroll.endDate && (
@@ -475,7 +475,7 @@ export default function PayslipDetailPage() {
                 <StatusCard label="Late-Ins" value={payroll.deductions?.attendanceDeductionBreakdown?.lateInsCount} color="amber" />
                 <StatusCard label="Permissions" value={payroll.deductions?.permissionDeductionBreakdown?.permissionCount} color="blue" />
                 <StatusCard label="OT Days" value={payroll.attendance?.otDays} color="amber" />
-                <StatusCard label="Extra Days" value={(payroll.attendance?.payableShifts - payroll.attendance?.totalPaidDays) > 0 ? (payroll.attendance?.payableShifts - payroll.attendance?.totalPaidDays) : 0} color="gold" />
+                <StatusCard label="Extra Days" value={((payroll.attendance?.payableShifts || 0) - (payroll.attendance?.totalPaidDays || 0)) > 0 ? ((payroll.attendance?.payableShifts || 0) - (payroll.attendance?.totalPaidDays || 0)) : 0} color="gold" />
                 <StatusCard label="Net Paid Days" value={payroll.attendance?.totalPaidDays} highlight />
               </div>
             </section>
