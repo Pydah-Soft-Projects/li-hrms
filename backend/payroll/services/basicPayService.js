@@ -40,7 +40,7 @@ function calculateBasicPay(employee, attendanceSummary) {
     (attendanceSummary.totalWeeklyOffs || 0) +
     (attendanceSummary.totalHolidays || 0);
 
-  const rawTotalDays = physicalUnits + manualExtraDays;
+  const rawTotalDays = physicalUnits;
 
   let totalPaidDays = rawTotalDays;
   let extraDays = 0;
