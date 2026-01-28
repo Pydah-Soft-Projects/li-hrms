@@ -305,6 +305,19 @@ exports.applyLeave = async (req, res) => {
       employeeId, // Legacy - for backward compatibility
     } = req.body;
 
+    // Validate Date (Must be today or future)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const checkFromDate = new Date(fromDate);
+    checkFromDate.setHours(0, 0, 0, 0);
+
+    if (checkFromDate < today) {
+      return res.status(400).json({
+        success: false,
+        error: 'Applications are restricted to current or future dates only.'
+      });
+    }
+
     // Get employee - either from request body (HR applying for someone) or from user
     let employee;
 

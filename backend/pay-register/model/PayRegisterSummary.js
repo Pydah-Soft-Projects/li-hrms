@@ -251,6 +251,12 @@ const payRegisterSummarySchema = new mongoose.Schema(
           type: Boolean,
           default: false,
         },
+
+        // Manual Edit Flag
+        isManuallyEdited: {
+          type: Boolean,
+          default: false,
+        },
       },
     ],
 
