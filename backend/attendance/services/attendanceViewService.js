@@ -245,8 +245,9 @@ exports.getMonthlyTableViewData = async (employees, year, month) => {
     employeeNumber: { $in: empNos },
     date: { $gte: startDate, $lte: endDateStr },
   })
-    .select('employeeNumber date status inTime outTime totalHours lateInMinutes earlyOutMinutes isLateIn isEarlyOut shiftId expectedHours otHours extraHours permissionHours permissionCount notes earlyOutDeduction')
+    .select('employeeNumber date status inTime outTime totalHours lateInMinutes earlyOutMinutes isLateIn isEarlyOut shiftId shifts expectedHours otHours extraHours permissionHours permissionCount notes earlyOutDeduction')
     .populate('shiftId', 'name startTime endTime duration payableShifts')
+    .populate('shifts.shiftId', 'name startTime endTime')
     .sort({ employeeNumber: 1, date: 1 })
     .lean();
 
@@ -402,6 +403,7 @@ exports.getMonthlyTableViewData = async (employees, year, month) => {
         isLateIn: record?.isLateIn || false,
         isEarlyOut: record?.isEarlyOut || false,
         shiftId: record?.shiftId || null,
+        shifts: record?.shifts || [],
         expectedHours: record?.expectedHours || 0,
         otHours: record?.otHours || 0,
         extraHours: record?.extraHours || 0,

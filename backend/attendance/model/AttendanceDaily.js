@@ -41,20 +41,36 @@ const attendanceDailySchema = new mongoose.Schema(
         default: null,
       },
       workingHours: {
-        type: Number, // actual working hours for this shift
+        type: Number, // actual working hours for this shift (punch + od)
         default: null,
+      },
+      punchHours: {
+        type: Number, // working hours from actual punches
+        default: 0,
+      },
+      odHours: {
+        type: Number, // working hours added from OD gap filling
+        default: 0,
       },
       otHours: {
         type: Number, // OT hours for this shift
         default: 0,
       },
-      matchedShiftId: {
+      shiftId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Shift',
         default: null,
       },
       shiftName: {
         type: String,
+        default: null,
+      },
+      shiftStartTime: {
+        type: String, // HH:MM
+        default: null,
+      },
+      shiftEndTime: {
+        type: String, // HH:MM
         default: null,
       },
       lateInMinutes: {
@@ -75,8 +91,12 @@ const attendanceDailySchema = new mongoose.Schema(
       },
       status: {
         type: String,
-        enum: ['complete', 'incomplete'],
+        enum: ['complete', 'incomplete', 'PRESENT', 'ABSENT', 'PARTIAL', 'HALF_DAY'],
         default: 'incomplete',
+      },
+      payableShift: {
+        type: Number,
+        default: 0, // 0, 0.5, 1
       },
     }],
     // Aggregate fields for multi-shift
@@ -92,6 +112,10 @@ const attendanceDailySchema = new mongoose.Schema(
     },
     totalOTHours: {
       type: Number, // Sum of all shift OT hours
+      default: 0,
+    },
+    payableShifts: {
+      type: Number, // Sum of payable shifts (e.g. 1.5)
       default: 0,
     },
     // ========== BACKWARD COMPATIBILITY FIELDS ==========
@@ -166,7 +190,7 @@ const attendanceDailySchema = new mongoose.Schema(
     },
     extraHours: {
       type: Number,
-      default: 0, // Extra hours worked without OT request (auto-detected)
+      default: 0, // Sum of extra hours from all shifts
     },
     // Permission fields
     permissionHours: {
@@ -285,16 +309,46 @@ attendanceDailySchema.methods.calculateTotalHours = function () {
   return null;
 };
 
-// Pre-save hook to calculate total hours, status, and early-out deduction
+// Pre-save hook to calculate aggregates from shifts array
 attendanceDailySchema.pre('save', async function () {
-  if (this.inTime && this.outTime) {
-    this.calculateTotalHours();
+  if (this.shifts && this.shifts.length > 0) {
+    // 1. Calculate Aggregate Totals
+    let totalWorking = 0;
+    let totalOT = 0;
+    let totalExtra = 0;
+    let firstIn = null;
+    let lastOut = null;
 
-    // Determine status based on total hours + OD hours vs shift duration
-    // Threshold: 70% of expected hours (Working + OD)
-    if (this.expectedHours) {
-      const effectiveHours = (this.totalHours || 0) + (this.odHours || 0);
-      const threshold = this.expectedHours * 0.7;
+    this.shifts.forEach((shift, index) => {
+      totalWorking += shift.workingHours || 0;
+      totalOT += shift.otHours || 0;
+      totalExtra += shift.extraHours || 0;
+
+      if (!firstIn || (shift.inTime && shift.inTime < firstIn)) {
+        firstIn = shift.inTime;
+      }
+
+      if (shift.outTime) {
+        if (!lastOut || shift.outTime > lastOut) {
+          lastOut = shift.outTime;
+        }
+      }
+    });
+
+    this.totalWorkingHours = Math.round(totalWorking * 100) / 100;
+    this.totalOTHours = Math.round(totalOT * 100) / 100;
+    this.extraHours = Math.round(totalExtra * 100) / 100;
+
+    // 2. Metrics (Backward Compatibility)
+    this.inTime = firstIn;
+    this.outTime = lastOut;
+    this.totalHours = this.totalWorkingHours;
+
+    // 3. Status Determination
+    if (this.shifts.some(s => s.status === 'complete')) {
+      const effectiveHours = this.totalWorkingHours + (this.odHours || 0);
+      const totalExpected = this.expectedHours || (this.shifts.length * 9); // Fallback to 9h if unknown
+      const threshold = totalExpected * 0.7;
 
       if (effectiveHours < threshold) {
         this.status = 'HALF_DAY';
@@ -302,15 +356,32 @@ attendanceDailySchema.pre('save', async function () {
         this.status = 'PRESENT';
       }
     } else {
-      // Default to PRESENT if we have both punches but no expectedHours
-      if (this.status !== 'HALF_DAY') {
+      this.status = 'PARTIAL';
+    }
+
+    // Set primary lookup fields from first shift
+    if (this.shifts.length > 0 && this.shifts[0].shiftId) {
+      this.shiftId = this.shifts[0].shiftId;
+      this.isLateIn = this.shifts[0].isLateIn;
+      this.lateInMinutes = this.shifts[0].lateInMinutes;
+    }
+
+  } else {
+    // Legacy mapping for direct updates without shifts array
+    if (this.inTime && this.outTime) {
+      this.calculateTotalHours();
+      if (this.expectedHours) {
+        const effectiveHours = (this.totalHours || 0) + (this.odHours || 0);
+        const threshold = this.expectedHours * 0.7;
+        this.status = effectiveHours < threshold ? 'HALF_DAY' : 'PRESENT';
+      } else if (this.status !== 'HALF_DAY') {
         this.status = 'PRESENT';
       }
+    } else if (this.inTime || this.outTime) {
+      this.status = 'PARTIAL';
+    } else {
+      this.status = 'ABSENT';
     }
-  } else if (this.inTime || this.outTime) {
-    this.status = 'PARTIAL';
-  } else {
-    this.status = 'ABSENT';
   }
 
   // Calculate early-out deduction if earlyOutMinutes exists

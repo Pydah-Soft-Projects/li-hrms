@@ -2264,10 +2264,10 @@ export const api = {
   },
 
   // Update outTime for attendance
-  updateAttendanceOutTime: async (employeeNumber: string, date: string, outTime: string) => {
+  updateAttendanceOutTime: async (employeeNumber: string, date: string, outTime: string, shiftRecordId?: string) => {
     return apiRequest<any>(`/attendance/${employeeNumber}/${date}/outtime`, {
       method: 'PUT',
-      body: JSON.stringify({ outTime }),
+      body: JSON.stringify({ outTime, shiftRecordId }),
     });
   },
 
@@ -2279,10 +2279,10 @@ export const api = {
   },
 
   // Assign shift to attendance record
-  assignShiftToAttendance: async (employeeNumber: string, date: string, shiftId: string) => {
+  assignShiftToAttendance: async (employeeNumber: string, date: string, shiftId: string, shiftRecordId?: string) => {
     return apiRequest<any>(`/attendance/${employeeNumber}/${date}/shift`, {
       method: 'PUT',
-      body: JSON.stringify({ shiftId }),
+      body: JSON.stringify({ shiftId, shiftRecordId }),
     });
   },
 

@@ -162,8 +162,8 @@ async function processSmartINDetection(newPunch, existingShifts, assignedShifts,
     };
 
     // Get assigned shift for the last shift
-    const assignedShift = lastShift.matchedShiftId ?
-        assignedShifts.find(s => s._id.toString() === lastShift.matchedShiftId.toString()) :
+    const assignedShift = lastShift.shiftId ?
+        assignedShifts.find(s => s._id.toString() === lastShift.shiftId.toString()) :
         null;
 
     // Run smart detection
