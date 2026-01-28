@@ -39,6 +39,19 @@ exports.createOT = async (req, res) => {
       });
     }
 
+    // Validate Date (Must be today or future)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const checkDate = new Date(date);
+    checkDate.setHours(0, 0, 0, 0);
+
+    if (checkDate < today) {
+      return res.status(400).json({
+        success: false,
+        message: 'OT requests are restricted to current or future dates only.'
+      });
+    }
+
     // --- SCOPING & AUTHORIZATION (New Logic) ---
 
     // Determine if applying for self
