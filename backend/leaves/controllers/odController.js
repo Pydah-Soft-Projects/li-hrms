@@ -286,6 +286,19 @@ exports.applyOD = async (req, res) => {
       geoLocation, // ADDED
     } = req.body;
 
+    // Validate Date (Must be today or future)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const checkFromDate = new Date(fromDate);
+    checkFromDate.setHours(0, 0, 0, 0);
+
+    if (checkFromDate < today) {
+      return res.status(400).json({
+        success: false,
+        error: 'OD applications are restricted to current or future dates only.'
+      });
+    }
+
     // Get employee
     let employee;
 
