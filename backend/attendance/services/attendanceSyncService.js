@@ -485,6 +485,26 @@ const syncAttendanceFromMSSQL = async (fromDate = null, toDate = null) => {
     stats.success = true;
     stats.message = `Successfully synced ${stats.rawLogsInserted} logs, created ${stats.dailyRecordsCreated} daily records, updated ${stats.dailyRecordsUpdated} records`;
 
+    // NEW: Run Absenteeism Check (Auto-deactivation)
+    try {
+      const { ensureDailyRecordsExist, checkConsecutiveAbsences } = require('./absenteeismService');
+      const checkDate = toDate instanceof Date ? toDate : new Date(toDate);
+      const checkDateStr = formatDate(checkDate);
+
+      console.log(`[AttendanceSync] Running absenteeism check for ${checkDateStr}...`);
+
+      // 1. Ensure records exist for today (or sync end date)
+      // We also check previous few days just in case, but primary focus is current sync window
+      await ensureDailyRecordsExist(checkDateStr);
+
+      // 2. Check for 3 consecutive absences
+      await checkConsecutiveAbsences(checkDateStr);
+
+    } catch (absentError) {
+      console.error('[AttendanceSync] Error in absenteeism check:', absentError);
+      // We don't fail the sync stats if this auxiliary task fails, but we log it
+    }
+
   } catch (error) {
     stats.success = false;
     stats.errors.push(error.message);

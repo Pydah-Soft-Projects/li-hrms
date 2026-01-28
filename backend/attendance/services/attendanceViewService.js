@@ -189,6 +189,7 @@ exports.getCalendarViewData = async (employee, year, month) => {
       hasOD: hasOD,
       odInfo: odMap[record.date] || null,
       isConflict: isConflict,
+      source: record.source || []
     };
   });
 
@@ -245,7 +246,7 @@ exports.getMonthlyTableViewData = async (employees, year, month) => {
     employeeNumber: { $in: empNos },
     date: { $gte: startDate, $lte: endDateStr },
   })
-    .select('employeeNumber date status inTime outTime totalHours lateInMinutes earlyOutMinutes isLateIn isEarlyOut shiftId expectedHours otHours extraHours permissionHours permissionCount notes earlyOutDeduction')
+    .select('employeeNumber date status inTime outTime totalHours lateInMinutes earlyOutMinutes isLateIn isEarlyOut shiftId expectedHours otHours extraHours permissionHours permissionCount notes earlyOutDeduction source')
     .populate('shiftId', 'name startTime endTime duration payableShifts')
     .sort({ employeeNumber: 1, date: 1 })
     .lean();
@@ -260,7 +261,7 @@ exports.getMonthlyTableViewData = async (employees, year, month) => {
     ],
     isActive: true,
   })
-    .select('employeeId fromDate toDate leaveType isHalfDay halfDayType')
+    .select('employeeId fromDate toDate leaveType isHalfDay halfDayType numberOfDays')
     .populate('employeeId', 'emp_no')
     .lean();
 
@@ -298,6 +299,7 @@ exports.getMonthlyTableViewData = async (employees, year, month) => {
           leaveType: leave.leaveType,
           isHalfDay: leave.isHalfDay,
           halfDayType: leave.halfDayType,
+          numberOfDays: leave.numberOfDays,
         };
       }
       currentDate.setDate(currentDate.getDate() + 1);
@@ -413,7 +415,8 @@ exports.getMonthlyTableViewData = async (employees, year, month) => {
         leaveInfo,
         hasOD,
         odInfo,
-        isConflict
+        isConflict,
+        source: record?.source || []
       };
     }
 

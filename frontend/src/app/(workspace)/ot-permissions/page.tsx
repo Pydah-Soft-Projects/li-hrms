@@ -1475,6 +1475,7 @@ export default function OTAndPermissionsPage() {
                     <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Date *</label>
                     <input
                       type="date"
+                      min={new Date().toISOString().split('T')[0]}
                       value={otFormData.date}
                       onChange={(e) => {
                         setOTFormData(prev => ({ ...prev, date: e.target.value }));
@@ -1800,6 +1801,7 @@ export default function OTAndPermissionsPage() {
                     <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Date *</label>
                     <input
                       type="date"
+                      min={new Date().toISOString().split('T')[0]}
                       value={permissionFormData.date}
                       onChange={async (e) => {
                         setPermissionFormData(prev => ({ ...prev, date: e.target.value }));

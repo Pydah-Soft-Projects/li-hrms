@@ -556,6 +556,10 @@ export default function PayRegisterPage() {
   const getCellBackgroundColor = (record: DailyRecord | null, tableType: TableType): string => {
     if (!record) return '';
 
+    if (record.isManuallyEdited) {
+      return 'bg-amber-100 dark:bg-amber-900/30 ring-inset ring-1 ring-amber-300 dark:ring-amber-700';
+    }
+
     if (tableType === 'present') {
       if (record.status === 'present' || record.firstHalf.status === 'present' || record.secondHalf.status === 'present') {
         return 'bg-green-100 dark:bg-green-900/30';
