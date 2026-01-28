@@ -571,57 +571,57 @@ export default function AllowancesDeductionsPage() {
     <div className="relative min-h-screen">
       {/* Background Pattern */}
       <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(to_right,#e2e8f01f_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f01f_1px,transparent_1px)] bg-[size:28px_28px] dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.12)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.12)_1px,transparent_1px)]" />
-      <div className="pointer-events-none fixed inset-0 bg-gradient-to-br from-slate-50/40 via-blue-50/35 to-transparent dark:from-slate-900/60 dark:via-slate-900/65 dark:to-slate-900/80" />
+      <div className="pointer-events-none fixed inset-0 bg-gradient-to-br from-slate-50/40 via-emerald-50/35 to-transparent dark:from-slate-900/60 dark:via-slate-900/65 dark:to-slate-900/80" />
 
       <div className="relative z-10 p-4 sm:p-6 lg:p-8">
         {/* Header Section */}
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white/95 px-4 py-3 shadow-[0_8px_26px_rgba(148,163,184,0.08)] backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/90 sm:px-5">
-          <div>
-            <h1 className="text-lg font-semibold text-slate-900 dark:text-slate-100 sm:text-xl">
-              Allowances & Deductions
-            </h1>
-            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-              Manage salary components with global rules and department-specific overrides
-            </p>
+        <div className="mb-8 flex flex-col gap-4 rounded-3xl border border-slate-200/60 bg-white/80 p-6 shadow-[0_20px_50px_rgba(148,163,184,0.1)] backdrop-blur-xl dark:border-slate-800/60 dark:bg-slate-950/80 sm:flex-row sm:items-center sm:justify-between sm:p-8">
+          <div className="flex items-center gap-5">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 shadow-lg shadow-emerald-500/20">
+              <svg className="h-7 w-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+                Allowances & <span className="text-emerald-600 dark:text-emerald-400">Deductions</span>
+              </h1>
+              <p className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">
+                Manage salary components with global rules and department overrides
+              </p>
+            </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {/* Tabs */}
-            <div className="flex gap-1.5 rounded-xl border border-slate-200 bg-white/80 p-0.5 shadow-sm dark:border-slate-700 dark:bg-slate-900/80">
-              <button
-                onClick={() => setActiveTab('all')}
-                className={`rounded-lg px-3 py-1.5 text-[10px] font-bold transition-all ${activeTab === 'all'
-                  ? 'bg-blue-600 text-white shadow-md'
-                  : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
-                  }`}
-              >
-                All
-              </button>
-              <button
-                onClick={() => setActiveTab('allowances')}
-                className={`rounded-lg px-3 py-1.5 text-[10px] font-bold transition-all ${activeTab === 'allowances'
-                  ? 'bg-blue-600 text-white shadow-md'
-                  : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
-                  }`}
-              >
-                Allowances
-              </button>
-              <button
-                onClick={() => setActiveTab('deductions')}
-                className={`rounded-lg px-3 py-1.5 text-[10px] font-bold transition-all ${activeTab === 'deductions'
-                  ? 'bg-blue-600 text-white shadow-md'
-                  : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
-                  }`}
-              >
-                Deductions
-              </button>
+
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Premium Tabs */}
+            <div className="flex gap-1 rounded-2xl bg-slate-100/80 p-1.5 dark:bg-slate-900/80">
+              {[
+                { id: 'all', label: 'All' },
+                { id: 'allowances', label: 'Allowances' },
+                { id: 'deductions', label: 'Deductions' }
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id as any)}
+                  className={`relative rounded-xl px-5 py-2.5 text-sm font-bold transition-all duration-300 ${activeTab === tab.id
+                    ? 'bg-white text-emerald-600 shadow-md ring-1 ring-slate-200/50 dark:bg-slate-800 dark:text-emerald-400 dark:ring-slate-700'
+                    : 'text-slate-500 hover:bg-white/50 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800/50 dark:hover:text-slate-200'
+                    }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
             </div>
 
             <button
               onClick={handleCreate}
-              className="group relative inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:bg-blue-700 hover:shadow-xl hover:shadow-blue-500/40 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
+              className="group relative inline-flex items-center gap-2 overflow-hidden rounded-2xl bg-emerald-600 px-6 py-3 text-sm font-bold text-white shadow-xl shadow-emerald-500/30 transition-all hover:bg-emerald-700 hover:shadow-emerald-500/40 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2 active:scale-95"
             >
-              <span className="text-sm">+</span>
-              <span>Create New</span>
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-700" />
+              <svg className="h-5 w-5 transition-transform group-hover:rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+              <span>Create Component</span>
             </button>
           </div>
         </div>
@@ -645,7 +645,7 @@ export default function AllowancesDeductionsPage() {
             </p>
           </div>
         ) : (
-    <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {filteredItems.map((item) => (
               <div
                 key={item._id}

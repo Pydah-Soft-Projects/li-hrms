@@ -939,115 +939,139 @@ export default function LoansPage() {
 
   return (
     <div className="max-w-[1920px] mx-auto">
-      {/* Header */}
-      <div className="mb-5">
-        <div className="flex items-center justify-between">
+      {/* Header Section */}
+      <div className="mb-8 flex flex-col gap-4 rounded-3xl border border-slate-200/60 bg-white/80 p-6 shadow-[0_20px_50px_rgba(148,163,184,0.1)] backdrop-blur-xl dark:border-slate-800/60 dark:bg-slate-950/80 sm:flex-row sm:items-center sm:justify-between sm:p-8">
+        <div className="flex items-center gap-5">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 shadow-lg shadow-emerald-500/20">
+            <svg className="h-7 w-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
           <div>
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Loan & Salary Advance Management</h1>
-            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-              Manage loan and salary advance applications
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+              Loan & Salary <span className="text-emerald-600 dark:text-emerald-400">Advance</span>
+            </h1>
+            <p className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">
+              Manage employee financial assistance requests and repayment tracking
             </p>
           </div>
-          <button
-            onClick={() => openApplyDialog('loan')}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-green-500 to-green-600 text-white text-xs font-semibold shadow-sm hover:shadow-md transition-all"
-          >
-            <PlusIcon />
-            Apply Loan / Salary Advance
-          </button>
         </div>
+
+        <button
+          onClick={() => openApplyDialog('loan')}
+          className="group relative inline-flex items-center gap-2 overflow-hidden rounded-2xl bg-emerald-600 px-6 py-3 text-sm font-bold text-white shadow-xl shadow-emerald-500/30 transition-all hover:bg-emerald-700 hover:shadow-emerald-500/40 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2 active:scale-95"
+        >
+          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-700" />
+          <svg className="h-5 w-5 transition-transform group-hover:rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+          </svg>
+          <span>Apply Request</span>
+        </button>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mb-6">
-        <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center dark:bg-blue-900/20">
-              <LoanIcon />
-            </div>
-            <div>
-              <div className="text-xl font-bold text-slate-900 dark:text-white">{loans.length}</div>
-              <div className="text-[11px] text-slate-500">Total Loans</div>
-            </div>
-          </div>
-        </div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-purple-100 flex items-center justify-center">
-              <AdvanceIcon />
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-slate-900 dark:text-white">{advances.length}</div>
-              <div className="text-sm text-slate-500">Total Advances</div>
-            </div>
-          </div>
-        </div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-yellow-100 flex items-center justify-center">
-              <ClockIcon />
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-yellow-600">{pendingLoans.length + pendingAdvances.length}</div>
-              <div className="text-sm text-slate-500">Pending Approvals</div>
-            </div>
-          </div>
-        </div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-green-100 flex items-center justify-center">
-              <CheckIcon />
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-green-600">
-                {loans.filter(l => l.status === 'approved').length + advances.filter(a => a.status === 'approved').length}
+      {/* Stats Cards */}
+      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {[
+          {
+            label: 'Total Active Loans',
+            value: loans.length,
+            icon: <LoanIcon />,
+            color: 'emerald',
+            gradient: 'from-emerald-500 to-emerald-600',
+            shadow: 'shadow-emerald-500/20'
+          },
+          {
+            label: 'Active Salary Advances',
+            value: advances.length,
+            icon: <AdvanceIcon />,
+            color: 'teal',
+            gradient: 'from-teal-500 to-teal-600',
+            shadow: 'shadow-teal-500/20'
+          },
+          {
+            label: 'Pending Approvals',
+            value: pendingLoans.length + pendingAdvances.length,
+            icon: <ClockIcon />,
+            color: 'amber',
+            gradient: 'from-amber-500 to-amber-600',
+            shadow: 'shadow-amber-500/20',
+            isWarning: true
+          },
+          {
+            label: 'Total Disbursed (Approved)',
+            value: loans.filter(l => l.status === 'approved').length + advances.filter(a => a.status === 'approved').length,
+            icon: <CheckIcon />,
+            color: 'green',
+            gradient: 'from-green-500 to-green-600',
+            shadow: 'shadow-green-500/20'
+          }
+        ].map((stat, idx) => (
+          <div
+            key={idx}
+            className="group relative overflow-hidden rounded-3xl border border-slate-200/60 bg-white/80 p-6 shadow-[0_10px_30px_rgba(148,163,184,0.05)] backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_20px_40px_rgba(148,163,184,0.1)] dark:border-slate-800/60 dark:bg-slate-950/80"
+          >
+            <div className="flex items-center gap-4">
+              <div className={`flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br ${stat.gradient} ${stat.shadow} text-white transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3`}>
+                {stat.icon}
               </div>
-              <div className="text-sm text-slate-500">Approved</div>
+              <div>
+                <div className={`text-2xl font-bold tracking-tight ${stat.isWarning ? 'text-amber-600 dark:text-amber-400' : 'text-slate-900 dark:text-white'}`}>
+                  {stat.value}
+                </div>
+                <div className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  {stat.label}
+                </div>
+              </div>
+            </div>
+            <div className={`absolute -right-4 -bottom-4 h-16 w-16 opacity-[0.03] transition-transform duration-700 group-hover:scale-150 group-hover:rotate-12 dark:opacity-[0.05]`}>
+              {stat.icon}
             </div>
           </div>
-        </div>
+        ))}
       </div>
 
-      {/* Tabs */}
-      <div className="mb-6">
-        <div className="flex gap-2 border-b border-slate-200 dark:border-slate-700">
-          <button
-            onClick={() => setActiveTab('loans')}
-            className={`px-4 py-2.5 font-medium text-sm transition-all border-b-2 -mb-px ${activeTab === 'loans'
-              ? 'border-blue-500 text-blue-600'
-              : 'border-transparent text-slate-500 hover:text-slate-700'
-              }`}
-          >
-            <span className="flex items-center gap-2">
-              <LoanIcon />
-              Loans ({loans.length})
-            </span>
-          </button>
-          <button
-            onClick={() => setActiveTab('advances')}
-            className={`px-4 py-2.5 font-medium text-sm transition-all border-b-2 -mb-px ${activeTab === 'advances'
-              ? 'border-purple-500 text-purple-600'
-              : 'border-transparent text-slate-500 hover:text-slate-700'
-              }`}
-          >
-            <span className="flex items-center gap-2">
-              <AdvanceIcon />
-              Salary Advances ({advances.length})
-            </span>
-          </button>
-          <button
-            onClick={() => setActiveTab('pending')}
-            className={`px-4 py-2.5 font-medium text-sm transition-all border-b-2 -mb-px ${activeTab === 'pending'
-              ? 'border-yellow-500 text-yellow-600'
-              : 'border-transparent text-slate-500 hover:text-slate-700'
-              }`}
-          >
-            <span className="flex items-center gap-2">
-              <ClockIcon />
-              Pending Approvals ({pendingLoans.length + pendingAdvances.length})
-            </span>
-          </button>
+      {/* Premium Tabs */}
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <div className="flex gap-1 rounded-2xl bg-slate-100/80 p-1.5 dark:bg-slate-900/80">
+          {[
+            { id: 'loans', label: 'Loans', count: loans.length },
+            { id: 'advances', label: 'Advances', count: advances.length },
+            { id: 'pending', label: 'Pending Approvals', count: pendingLoans.length + pendingAdvances.length }
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              className={`relative flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold transition-all duration-300 ${activeTab === tab.id
+                ? 'bg-white text-emerald-600 shadow-md ring-1 ring-slate-200/50 dark:bg-slate-800 dark:text-emerald-400 dark:ring-slate-700'
+                : 'text-slate-500 hover:bg-white/50 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800/50 dark:hover:text-slate-200'
+                }`}
+            >
+              <span>{tab.label}</span>
+              <span className={`flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] ${activeTab === tab.id
+                ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-400'
+                : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                }`}>
+                {tab.count}
+              </span>
+            </button>
+          ))}
         </div>
+
+        {/* Search Input Integrated next to tabs if space permits */}
+        {(activeTab === 'loans' || activeTab === 'advances') && (
+          <div className="relative flex-1 min-w-[300px]">
+            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
+              <SearchIcon />
+            </div>
+            <input
+              type="text"
+              placeholder="Search by employee name, ID, or reason..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full rounded-2xl border border-slate-200/60 bg-white/80 py-2.5 pl-11 pr-4 text-sm font-medium transition-all focus:border-emerald-400 focus:outline-none focus:ring-4 focus:ring-emerald-400/10 dark:border-slate-800/60 dark:bg-slate-950/80 dark:text-white"
+            />
+          </div>
+        )}
       </div>
 
       {/* Messages */}
@@ -1061,23 +1085,6 @@ export default function LoansPage() {
         </div>
       )}
 
-      {/* Search - Only show for loans and advances tabs */}
-      {(activeTab === 'loans' || activeTab === 'advances') && (
-        <div className="mb-4">
-          <div className="relative">
-            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-              <SearchIcon />
-            </div>
-            <input
-              type="text"
-              placeholder="Search by employee name, emp no, or reason..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 bg-white pl-10 pr-4 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
-            />
-          </div>
-        </div>
-      )}
 
       {/* Content */}
       <div className="rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800 overflow-hidden">

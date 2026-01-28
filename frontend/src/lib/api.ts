@@ -1280,7 +1280,43 @@ export const api = {
     return apiRequest<any>('/employees/settings', { method: 'GET' });
   },
 
-  // Second Salary Update
+  // Employee Update (Dynamic)
+  updateEmployeeBulk: async (formData: FormData) => {
+    return apiRequest<any>('/salary-updates/bulk-update/upload', {
+      method: 'POST',
+      body: formData,
+    });
+  },
+
+  downloadEmployeeUpdateTemplate: async (fields: string[]) => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const params = new URLSearchParams();
+    fields.forEach(f => params.append('fields', f));
+
+    const response = await fetch(`${API_BASE_URL}/salary-updates/bulk-update/template?${params.toString()}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to download template');
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'EmployeeUpdateTemplate.xlsx';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+    return { success: true };
+  },
+
+  // Second Salary Update (Legacy/Internal)
   updateSecondSalaryBulk: async (formData: FormData) => {
     return apiRequest<any>('/salary-updates/second-salary/upload', {
       method: 'POST',
@@ -2863,5 +2899,32 @@ export const api = {
       body: JSON.stringify(data),
     });
   },
+
+
+
+
+
+
+
+  // Legacy Second Salary Update (Optional - keeping for compatibility if needed)
+  downloadSecondSalaryTemplate: async () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'}/salary-updates/second-salary/template`, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!response.ok) throw new Error('Failed to download template');
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'SecondSalaryTemplate.xlsx');
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  },
+
+
+
 };
 

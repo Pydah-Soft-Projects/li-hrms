@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from "next/navigation";
+import Link from 'next/link';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
 import jsPDF from 'jspdf';
@@ -360,7 +361,7 @@ export default function PayslipsPage() {
       head: [['Attendance Type', 'Days/Hours']],
       body: attendanceData,
       theme: 'grid',
-      headStyles: { fillColor: [66, 139, 202], fontSize: 9 },
+      headStyles: { fillColor: [16, 185, 129], fontSize: 9, fontStyle: 'bold' }, // emerald-500
       bodyStyles: { fontSize: 9 },
       columnStyles: {
         0: { cellWidth: 80 },
@@ -392,7 +393,7 @@ export default function PayslipsPage() {
       head: [['Earnings', 'Amount (₹)']],
       body: earningsData,
       theme: 'grid',
-      headStyles: { fillColor: [92, 184, 92], fontSize: 9 },
+      headStyles: { fillColor: [5, 150, 105], fontSize: 9, fontStyle: 'bold' }, // emerald-600
       bodyStyles: { fontSize: 9 },
       columnStyles: {
         0: { cellWidth: 60 },
@@ -416,7 +417,7 @@ export default function PayslipsPage() {
       head: [['Deductions', 'Amount (₹)']],
       body: deductionsData,
       theme: 'grid',
-      headStyles: { fillColor: [217, 83, 79], fontSize: 9 },
+      headStyles: { fillColor: [225, 29, 72], fontSize: 9, fontStyle: 'bold' }, // rose-600
       bodyStyles: { fontSize: 9 },
       columnStyles: {
         0: { cellWidth: 60 },
@@ -566,7 +567,7 @@ export default function PayslipsPage() {
                   type="month"
                   value={selectedMonth}
                   onChange={(e) => setSelectedMonth(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all dark:text-white text-sm"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all dark:text-white text-sm"
                   required
                 />
               </div>
@@ -579,7 +580,7 @@ export default function PayslipsPage() {
                 <select
                   value={selectedDepartment}
                   onChange={(e) => setSelectedDepartment(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all dark:text-white text-sm appearance-none cursor-pointer"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all dark:text-white text-sm appearance-none cursor-pointer"
                 >
                   <option value="">All Departments</option>
                   {departments.map(dept => (
@@ -596,7 +597,7 @@ export default function PayslipsPage() {
                 <select
                   value={selectedDesignation}
                   onChange={(e) => setSelectedDesignation(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all dark:text-white text-sm appearance-none cursor-pointer"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all dark:text-white text-sm appearance-none cursor-pointer"
                 >
                   <option value="">All Designations</option>
                   {designations.map(desig => (
@@ -613,7 +614,7 @@ export default function PayslipsPage() {
                 <select
                   value={selectedEmployee}
                   onChange={(e) => setSelectedEmployee(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all dark:text-white text-sm appearance-none cursor-pointer"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all dark:text-white text-sm appearance-none cursor-pointer"
                 >
                   <option value="">All Employees</option>
                   {employees.map(emp => (
@@ -632,7 +633,7 @@ export default function PayslipsPage() {
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all dark:text-white text-sm appearance-none cursor-pointer"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all dark:text-white text-sm appearance-none cursor-pointer"
                 >
                   <option value="">All Status</option>
                   <option value="calculated">Calculated</option>
@@ -652,7 +653,7 @@ export default function PayslipsPage() {
                     placeholder="Emp ID or Name"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all dark:text-white text-sm"
+                    className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all dark:text-white text-sm"
                   />
                   <svg className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -666,7 +667,7 @@ export default function PayslipsPage() {
               <button
                 onClick={fetchPayrollRecords}
                 disabled={!selectedMonth || loading}
-                className="h-10 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-sm hover:shadow-md transition-all flex items-center gap-2 text-sm font-medium disabled:opacity-50"
+                className="h-10 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-sm hover:shadow-md transition-all flex items-center gap-2 text-sm font-medium disabled:opacity-50"
               >
                 {loading ? (
                   <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
@@ -722,8 +723,8 @@ export default function PayslipsPage() {
         {filteredRecords.length > 0 && (
           <div className="bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm rounded-xl p-4 mb-6 border border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg">
-                <svg className="w-5 h-5 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="p-2 bg-emerald-50 dark:bg-emerald-900/30 rounded-lg">
+                <svg className="w-5 h-5 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
               </div>
@@ -748,7 +749,7 @@ export default function PayslipsPage() {
                       type="checkbox"
                       checked={selectedRecords.size === currentRecords.length && currentRecords.length > 0}
                       onChange={toggleSelectAll}
-                      className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
+                      className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
                     />
                   </th>
                   <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Employee</th>
@@ -766,7 +767,7 @@ export default function PayslipsPage() {
                   <tr>
                     <td colSpan={10} className="px-6 py-12 text-center text-slate-400">
                       <div className="flex flex-col items-center gap-2">
-                        <svg className="animate-spin h-8 w-8 text-indigo-500" fill="none" viewBox="0 0 24 24">
+                        <svg className="animate-spin h-8 w-8 text-emerald-500" fill="none" viewBox="0 0 24 24">
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                         </svg>
@@ -791,8 +792,8 @@ export default function PayslipsPage() {
                     return (
                       <tr
                         key={record._id}
-                        onClick={() => router.push(`/superadmin/payslips/${record._id}`)}
-                        className="hover:bg-indigo-50/50 dark:hover:bg-slate-700/30 transition-colors group cursor-pointer"
+                        onClick={() => router.push(`/payslips/${record._id}`)}
+                        className="hover:bg-emerald-50/50 dark:hover:bg-slate-700/30 transition-colors group cursor-pointer"
                       >
                         <td className="px-6 py-4">
                           <input
@@ -802,12 +803,12 @@ export default function PayslipsPage() {
                               e.stopPropagation();
                               toggleSelectRecord(record._id);
                             }}
-                            className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
+                            className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
                           />
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex flex-col">
-                            <span className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                            <span className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
                               {employee?.employee_name || 'N/A'}
                             </span>
                             <span className="text-xs text-slate-500 font-mono tracking-tighter">
@@ -840,14 +841,14 @@ export default function PayslipsPage() {
                             ₹{record.deductions.totalDeductions.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                           </span>
                         </td>
-                        <td className="px-6 py-4 text-right text-indigo-600 dark:text-indigo-400">
+                        <td className="px-6 py-4 text-right text-emerald-600 dark:text-emerald-400">
                           <span className="text-sm font-bold">
                             ₹{record.netSalary.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                           </span>
                         </td>
                         <td className="px-6 py-4 text-center">
                           <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${record.status === 'processed' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
-                            record.status === 'approved' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' :
+                            record.status === 'approved' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400' :
                               'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
                             }`}>
                             {record.status}
@@ -855,16 +856,17 @@ export default function PayslipsPage() {
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center justify-center gap-2">
-                            <button
-                              onClick={() => router.push(`/payslips/${record._id}`)}
-                              className="p-2 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 rounded-lg transition-all"
+                            <Link
+                              href={`/payslips/${record._id}`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="p-2 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/40 rounded-lg transition-all"
                               title="View Details"
                             >
                               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                               </svg>
-                            </button>
+                            </Link>
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -904,7 +906,7 @@ export default function PayslipsPage() {
                     key={i + 1}
                     onClick={() => setCurrentPage(i + 1)}
                     className={`w-10 h-10 rounded-xl text-sm font-medium transition-all ${currentPage === i + 1
-                      ? 'bg-indigo-600 text-white shadow-md'
+                      ? 'bg-emerald-600 text-white shadow-md'
                       : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
                       }`}
                   >
