@@ -2901,23 +2901,7 @@ export const api = {
 
 
 
-  // Legacy Second Salary Update (Optional - keeping for compatibility if needed)
-  downloadSecondSalaryTemplate: async () => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'}/salary-updates/second-salary/template`, {
-      method: 'GET',
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (!response.ok) throw new Error('Failed to download template');
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', 'SecondSalaryTemplate.xlsx');
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-  },
+
 
 
 

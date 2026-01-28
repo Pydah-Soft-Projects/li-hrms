@@ -469,8 +469,9 @@ export default function PayslipDetailPage() {
 
           <div className="p-4 md:p-5 space-y-3">
             {/* Reorganized Profile and Attendance sections into side-by-side columns */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <section>
+            <section>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
                 <div className="flex items-center gap-2 mb-3">
                   <div className="p-1 bg-emerald-50 dark:bg-emerald-900/40 rounded-lg">
                     <svg className="w-4 h-4 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -596,7 +597,7 @@ export default function PayslipDetailPage() {
           </div>
         </div>
       </div>
-    </div>
+    </div >
   );
 }
 
