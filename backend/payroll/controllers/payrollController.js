@@ -131,6 +131,7 @@ async function buildPayslipData(employeeId, month) {
       otHours: payrollRecord.attendance?.otHours || otHours,
       otDays: payrollRecord.attendance?.otDays || 0,
       earnedSalary: payrollRecord.attendance?.earnedSalary || earnedSalary,
+      lopDays: payRegisterSummary?.totals?.totalLopDays || 0,
       incentiveDays: incentiveDays, // Keep for backward compatibility
       workingDays: null, // Can be derived if needed
     },
@@ -212,7 +213,7 @@ function buildPayslipExcelRowsNormalized(payslip, allAllowanceNames, allDeductio
   row['Paid Leaves'] = payslip.attendance?.paidLeaveDays || 0;
   row['OD Days'] = payslip.attendance?.odDays || 0;
   row['Absents'] = payslip.attendance?.absentDays || 0;
-  row['LOP\'s'] = payRegisterSummary?.totals?.totalLopDays || 0;
+  row['LOP\'s'] = payslip.attendance?.lopDays || 0;
   row['Payable Shifts'] = payslip.attendance?.payableShifts || 0;
   row['Extra Days'] = payslip.attendance?.extraDays || 0;
   row['Total Paid Days'] = payslip.paidDays || 0;
