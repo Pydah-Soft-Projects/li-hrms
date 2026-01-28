@@ -11,7 +11,7 @@ interface AttendanceRecord {
   inTime: string | null;
   outTime: string | null;
   totalHours: number | null;
-  status: 'PRESENT' | 'ABSENT' | 'PARTIAL' | 'LEAVE' | 'OD';
+  status: 'PRESENT' | 'ABSENT' | 'PARTIAL' | 'LEAVE' | 'OD' | 'HALF_DAY' | 'HOLIDAY' | 'WEEK_OFF';
   shiftId?: { _id: string; name: string; startTime: string; endTime: string; duration: number; payableShifts?: number } | string | null;
   isLateIn?: boolean;
   isEarlyOut?: boolean;

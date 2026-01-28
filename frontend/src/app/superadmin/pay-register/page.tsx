@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from "next/navigation";
+import Link from 'next/link';
 import { api, apiRequest, Employee, Division } from '@/lib/api';
 import { toast, ToastContainer } from 'react-toastify';
 import ArrearsPayrollSection from '@/components/Arrears/ArrearsPayrollSection';
@@ -313,8 +314,8 @@ export default function PayRegisterPage() {
         const payRegisterList = response.data || [];
         console.log('[Pay Register] Loaded page', pageToLoad, 'count:', payRegisterList.length);
 
-        if (response.startDate) setPayrollStartDate(response.startDate);
-        if (response.endDate) setPayrollEndDate(response.endDate);
+        if ((response as any).startDate) setPayrollStartDate((response as any).startDate);
+        if ((response as any).endDate) setPayrollEndDate((response as any).endDate);
 
         if (append) {
           setPayRegisters(prev => [...prev, ...payRegisterList]);
@@ -618,7 +619,7 @@ export default function PayRegisterPage() {
 
   const handleViewPayslip = (employee: Employee) => {
     // Navigate to payslip or open payslip modal
-    window.location.href = `/superadmin/payroll-transactions?employeeId=${employee._id}&month=${monthStr}`;
+    router.push(`/superadmin/payroll-transactions?employeeId=${employee._id}&month=${monthStr}`);
   };
 
   const handleCalculatePayroll = async (employee: Employee) => {
@@ -1560,25 +1561,27 @@ export default function PayRegisterPage() {
                                   )}
                                 </div>
                                 <div className="flex gap-2">
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation(); // Prevent row click
-                                      if (employee) {
-                                        if (isPastMonth && !pr.payrollId) {
-                                          handleCalculatePayroll(employee);
-                                        } else {
-                                          handleViewPayslip(employee);
-                                        }
-                                      }
-                                    }}
-                                    className={`rounded-md px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:shadow-md ${isPastMonth && !pr.payrollId
-                                      ? 'bg-amber-500 hover:bg-amber-600'
-                                      : 'bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700'
-                                      }`}
-                                    title={isPastMonth && !pr.payrollId ? "Calculate Payroll" : "View Payslip"}
-                                  >
-                                    {isPastMonth && !pr.payrollId ? 'Calculate' : 'Payslip'}
-                                  </button>
+                                  {isPastMonth && !pr.payrollId ? (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (employee) handleCalculatePayroll(employee);
+                                      }}
+                                      className="rounded-md px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:shadow-md bg-amber-500 hover:bg-amber-600"
+                                      title="Calculate Payroll"
+                                    >
+                                      Calculate
+                                    </button>
+                                  ) : (
+                                    <Link
+                                      href={`/superadmin/payroll-transactions?employeeId=${employeeId}&month=${monthStr}`}
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="rounded-md px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:shadow-md bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 inline-block"
+                                      title="View Payslip"
+                                    >
+                                      Payslip
+                                    </Link>
+                                  )}
 
                                   {!isFrozenOrComplete && (
                                     <div />
