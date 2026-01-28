@@ -2335,6 +2335,14 @@ export const api = {
     });
   },
 
+  // Update inTime for attendance
+  updateAttendanceInTime: async (employeeNumber: string, date: string, inTime: string) => {
+    return apiRequest<any>(`/attendance/${employeeNumber}/${date}/intime`, {
+      method: 'PUT',
+      body: JSON.stringify({ inTime }),
+    });
+  },
+
   // Get available shifts for an employee
   getAvailableShifts: async (employeeNumber: string, date: string) => {
     return apiRequest<any>(`/attendance/${employeeNumber}/${date}/available-shifts`, {
@@ -2894,16 +2902,6 @@ export const api = {
       body: JSON.stringify(data),
     });
   },
-
-
-
-
-
-
-
-
-
-
 
 };
 
