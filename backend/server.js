@@ -192,6 +192,10 @@ app.use('/api/arrears', arrearsRoutes);
 const payrollBatchRoutes = require('./payroll/routes/payrollBatchRoutes.js');
 app.use('/api/payroll-batch', payrollBatchRoutes);
 
+// Second Salary routes
+const secondSalaryRoutes = require('./payroll/routes/secondSalaryRoutes.js');
+app.use('/api/second-salary', secondSalaryRoutes);
+
 // Bonus routes
 const bonusRoutes = require('./bonus/routes/bonusRoutes.js');
 app.use('/api/bonus', bonusRoutes);

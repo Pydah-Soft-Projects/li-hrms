@@ -315,7 +315,7 @@ function RosterPage() {
         const label = cell?.status === 'WO' ? 'Week Off' : (cell?.status === 'HOL' ? 'Holiday' : (shiftId ? shiftLabel(shifts.find((s) => s._id === shiftId)) : 'Unassigned'));
 
         // Use a consistent key for grouping
-        const mapKey = isNonWorking ? cell?.status : shiftId;
+        const mapKey = (isNonWorking ? cell?.status : shiftId) ?? null;
 
         if (!shiftMap.has(mapKey)) {
           shiftMap.set(mapKey, { label, dates: [] });

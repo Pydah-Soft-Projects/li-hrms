@@ -167,7 +167,7 @@ async function calculateAllowances(departmentId, basicPay, grossSalary = null, u
 
       const amount = calculateAllowanceAmount(rule, basicPay, grossSalary, attendanceData);
 
-      if (amount > 0) {
+      if (amount >= 0) {
         allowances.push({
           masterId: master._id,
           name: master.name,

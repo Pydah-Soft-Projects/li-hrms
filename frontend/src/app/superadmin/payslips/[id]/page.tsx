@@ -489,30 +489,21 @@ export default function PayslipDetailPage() {
                   <DetailRow label="UAN No" value={employee.uan_number || 'N/A'} />
                   <DetailRow label="PAN No" value={employee.pan_number || 'N/A'} />
                 </div>
-              </section>
-
-              <section>
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="p-1 bg-amber-50 dark:bg-amber-900/40 rounded-lg">
-                    <svg className="w-4 h-4 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                  </div>
-                  <h2 className="text-[11px] font-black text-slate-900 dark:text-white uppercase tracking-wider">Attendance Data</h2>
-                </div>
-                <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 bg-slate-50/50 dark:bg-slate-900/30 p-3 rounded-2xl border border-slate-100 dark:border-slate-800">
-                  <StatusCard label="Days" value={payroll.attendance?.totalDaysInMonth} />
-                  <StatusCard label="Present" value={payroll.attendance?.presentDays} color="emerald" />
-                  <StatusCard label="Abs" value={payroll.attendance?.absentDays} color="rose" />
-                  <StatusCard label="Off" value={payroll.attendance?.weeklyOffs} />
-                  <StatusCard label="Leave" value={payroll.attendance?.paidLeaveDays} color="teal" />
-                  <StatusCard label="Late" value={payroll.deductions?.attendanceDeductionBreakdown?.lateInsCount} color="amber" />
-                  <StatusCard label="Perm" value={payroll.deductions?.permissionDeductionBreakdown?.permissionCount} color="emerald" />
-                  <StatusCard label="OT" value={payroll.attendance?.otDays} color="amber" />
-                  <StatusCard label="Paid" value={payroll.attendance?.totalPaidDays} highlight />
-                </div>
-              </section>
-            </div>
+                <h2 className="text-base font-bold text-slate-800 dark:text-white uppercase tracking-tight">Attendance Summary</h2>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-9 gap-2">
+                <StatusCard label="Month Days" value={payroll.attendance?.totalDaysInMonth} />
+                <StatusCard label="Present" value={payroll.attendance?.presentDays} color="indigo" />
+                <StatusCard label="Absents" value={payroll.attendance?.absentDays} color="rose" />
+                <StatusCard label="Week Offs" value={payroll.attendance?.weeklyOffs} />
+                <StatusCard label="Paid Leaves" value={payroll.attendance?.paidLeaveDays} color="emerald" />
+                <StatusCard label="Late-Ins" value={payroll.deductions?.attendanceDeductionBreakdown?.lateInsCount} color="amber" />
+                <StatusCard label="Permissions" value={payroll.deductions?.permissionDeductionBreakdown?.permissionCount} color="blue" />
+                <StatusCard label="OT Days" value={payroll.attendance?.otDays} color="amber" />
+                <StatusCard label="Extra Days" value={((payroll.attendance?.payableShifts || 0) - (payroll.attendance?.totalPaidDays || 0)) > 0 ? ((payroll.attendance?.payableShifts || 0) - (payroll.attendance?.totalPaidDays || 0)) : 0} color="gold" />
+                <StatusCard label="Net Paid Days" value={payroll.attendance?.totalPaidDays} highlight />
+              </div>
+            </section>
 
             {/* Salary Breakdown Section */}
             <section className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 pt-2">
@@ -553,8 +544,8 @@ export default function PayslipDetailPage() {
                   </h3>
                   <div className="text-[9px] font-black text-slate-300 dark:text-slate-600 uppercase tracking-widest">Subtractive</div>
                 </div>
-                <div className="space-y-1">
-                  <SalaryRow label="Attendance Deduct" value={payroll.deductions.attendanceDeduction} isDeduction />
+                <div className="space-y-1.5">
+                  {/* <SalaryRow label="Attendance Deduct" value={payroll.deductions.attendanceDeduction} isDeduction /> */}
                   {payroll.deductions.permissionDeduction > 0 && <SalaryRow label="Permission Deduct" value={payroll.deductions.permissionDeduction} isDeduction />}
                   {payroll.deductions.leaveDeduction > 0 && <SalaryRow label="Leave Deduction" value={payroll.deductions.leaveDeduction} isDeduction />}
                   {payroll.deductions.otherDeductions?.map((d, i) => (

@@ -222,10 +222,9 @@ async function calculatePayroll(employeeId, month, userId) {
     // If employee has remaining paid leaves, add them to payable shifts
     const totalLeaves = attendanceSummary.totalLeaves || 0;
     const remainingPaidLeaves = Math.max(0, paidLeaves - totalLeaves);
+    console.log(`Remaining Paid Leaves: ${remainingPaidLeaves}`);
     const adjustedPayableShifts =
       (attendanceSummary.totalPayableShifts || 0) +
-      (attendanceSummary.totalWeeklyOffs || 0) +
-      (attendanceSummary.totalHolidays || 0) +
       remainingPaidLeaves;
 
     console.log('\n--- Paid Leaves Calculation ---');

@@ -40,16 +40,6 @@ import {
 // Icon Components - Helper type not needed with Lucide, but keeping structure similar
 type IconComponent = React.ComponentType<{ className?: string }>;
 
-const BonusIcon = ({ className, ...props }: React.SVGProps<SVGSVGElement>) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
-    <path d="M20 12v10H4V12" />
-    <path d="M2 7h20v5H2z" />
-    <path d="M12 22V7" />
-    <path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z" />
-    <path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z" />
-  </svg>
-);
-
 export type NavItem = {
   href: string;
   label: string;
@@ -75,8 +65,10 @@ const navItems: NavItem[] = [
   { href: '/superadmin/users', label: 'Users', icon: UserCog, category: 'Administration', moduleCode: 'USERS' },
   { href: '/superadmin/reports', label: 'Reports', icon: BarChart3, category: 'Administration', moduleCode: 'REPORTS' },
   { href: '/superadmin/payments', label: 'Payments', icon: CreditCard, category: 'Finance & Payroll', moduleCode: 'PAYMENTS' },
+  { href: '/superadmin/payments/second-salary', label: '2nd Salary Payments', icon: Banknote, category: 'Finance & Payroll', moduleCode: 'PAYMENTS' },
   { href: '/superadmin/pay-register', label: 'Pay Register', icon: Sheet, category: 'Finance & Payroll', moduleCode: 'PAY_REGISTER' },
   { href: '/superadmin/payslips', label: 'Payslips', icon: Receipt, category: 'Finance & Payroll', moduleCode: 'PAYSLIPS' },
+  { href: '/superadmin/payslips/second-salary', label: '2nd Salary Payslips', icon: Receipt, category: 'Finance & Payroll', moduleCode: 'PAYSLIPS' },
   { href: '/superadmin/arrears', label: 'Arrears', icon: Banknote, category: 'Finance & Payroll', moduleCode: 'ARREARS' },
   { href: '/superadmin/allowances-deductions', label: 'Allowances & Deductions', icon: Wallet, category: 'Finance & Payroll', moduleCode: 'ALLOWANCES_DEDUCTIONS' },
   { href: '/superadmin/loans', label: 'Loans & Salary Advance', icon: PiggyBank, category: 'Finance & Payroll', moduleCode: 'LOANS_SALARY_ADVANCE' },

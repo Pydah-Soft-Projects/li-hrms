@@ -527,6 +527,20 @@ export interface EmployeeApplication extends Partial<Employee> {
 }
 
 export const api = {
+  // Generic HTTP methods
+  get: async <T = any>(endpoint: string) => apiRequest<T>(endpoint, { method: 'GET' }),
+  post: async <T = any>(endpoint: string, data?: any) =>
+    apiRequest<T>(endpoint, {
+      method: 'POST',
+      body: data instanceof FormData ? data : JSON.stringify(data)
+    }),
+  put: async <T = any>(endpoint: string, data?: any) =>
+    apiRequest<T>(endpoint, {
+      method: 'PUT',
+      body: data instanceof FormData ? data : JSON.stringify(data)
+    }),
+  delete: async <T = any>(endpoint: string) => apiRequest<T>(endpoint, { method: 'DELETE' }),
+
   login: async (identifier: string, password: string) => {
     return apiRequest<LoginResponse>('/auth/login', {
       method: 'POST',
@@ -1476,25 +1490,6 @@ export const api = {
         'Content-Type': 'application/json',
       },
     });
-  },
-
-  // Generic POST method
-  post: async <T = any>(url: string, data: any): Promise<ApiResponse<T>> => {
-    const response = await fetch(`${API_BASE_URL}${url}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(await auth.getAuthHeader())
-      },
-      body: JSON.stringify(data),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Request failed');
-    }
-
-    return response.json();
   },
 
   // ==========================================
