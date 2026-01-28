@@ -447,7 +447,7 @@ async function calculateOtherDeductions(departmentId, basicPay, grossSalary = nu
       if (rule.type === 'fixed') {
         // Fixed deductions don't need a base - apply them directly
         const amount = calculateDeductionAmount(rule, basicPay, grossSalary, attendanceData);
-        if (amount > 0) {
+        if (amount >= 0) {
           fixedDeductions.push({
             masterId: deduction.masterId,
             name: deduction.name,
@@ -478,7 +478,7 @@ async function calculateOtherDeductions(departmentId, basicPay, grossSalary = nu
     const percentageBasicResults = [];
     for (const deduction of percentageBasicDeductions) {
       const amount = calculateDeductionAmount(deduction.rule, basicPay, null, attendanceData);
-      if (amount > 0) {
+      if (amount >= 0) {
         percentageBasicResults.push({
           masterId: deduction.masterId,
           name: deduction.name,
@@ -499,7 +499,7 @@ async function calculateOtherDeductions(departmentId, basicPay, grossSalary = nu
     if (grossSalary !== null && grossSalary !== undefined) {
       for (const deduction of percentageGrossDeductions) {
         const amount = calculateDeductionAmount(deduction.rule, basicPay, grossSalary, attendanceData);
-        if (amount > 0) {
+        if (amount >= 0) {
           percentageGrossResults.push({
             masterId: deduction.masterId,
             name: deduction.name,
