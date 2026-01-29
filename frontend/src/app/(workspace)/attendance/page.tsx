@@ -58,6 +58,23 @@ interface AttendanceRecord {
   extraHours?: number;
   permissionHours?: number;
   permissionCount?: number;
+  shifts?: Array<{
+    _id: string;
+    shiftId: { _id: string; name: string; startTime: string; endTime: string } | string;
+    inTime: string;
+    outTime?: string;
+    workingHours?: number;
+    status?: string;
+    lateInMinutes?: number;
+    earlyOutMinutes?: number;
+  }>;
+  isEdited?: boolean;
+  editHistory?: Array<{
+    action: string;
+    modifiedBy: string;
+    modifiedAt: string;
+    details: string;
+  }>;
 }
 
 interface Employee {
@@ -179,6 +196,7 @@ export default function AttendancePage() {
 
   const [showOutTimeDialog, setShowOutTimeDialog] = useState(false);
   const [selectedRecordForOutTime, setSelectedRecordForOutTime] = useState<any>(null);
+  const [selectedShiftRecordId, setSelectedShiftRecordId] = useState<string | null>(null);
   const [outTimeValue, setOutTimeValue] = useState('');
   const [updatingOutTime, setUpdatingOutTime] = useState(false);
 
@@ -1026,6 +1044,63 @@ export default function AttendancePage() {
     }
   };
 
+  const handleShiftOutTimeUpdate = async () => {
+    if (!attendanceDetail || !outTimeInput) {
+      alert('Please enter out time');
+      return;
+    }
+
+    try {
+      setSavingOutTime(true);
+      setError('');
+      setSuccess('');
+
+      // Format datetime for API
+      // Use the attendance date + time input
+      const dateStr = attendanceDetail.date;
+      const timeStr = outTimeInput; // HH:mm
+      const dateTimeStr = `${dateStr}T${timeStr}:00.000Z`;
+      // Note: The backend expects ISO. We should probably respect local time?
+      // Actually, simple string concatenation might assume UTC if Z is appended.
+      // Better to construct a Date object correctly.
+      const [year, month, day] = dateStr.split('-').map(Number);
+      const [hours, minutes] = timeStr.split(':').map(Number);
+      const outTimeDate = new Date(year, month - 1, day, hours, minutes);
+
+      // Adjust for timezone if necessary OR backend handles local time?
+      // api.updateAttendanceOutTime implementation usually expects ISO.
+      // Let's stick to a safe ISO conversion.
+      const isoString = outTimeDate.toISOString();
+
+      const response = await api.updateAttendanceOutTime(
+        attendanceDetail.employee.emp_no,
+        attendanceDetail.date,
+        isoString,
+        selectedShiftRecordId || undefined
+      );
+
+      if (response.success) {
+        setSuccess('Out time updated successfully.');
+        setEditingOutTime(false);
+        setOutTimeInput('');
+        setSelectedShiftRecordId(null);
+        // Refresh detail
+        const detailRes = await api.getAttendanceDetail(attendanceDetail.employee.emp_no, attendanceDetail.date);
+        if (detailRes.success) {
+          setAttendanceDetail(detailRes.data);
+        }
+        // Also refresh monthly list
+        loadMonthlyAttendance();
+      } else {
+        setError(response.message || 'Failed to update out time');
+      }
+    } catch (err: any) {
+      setError(err.message || 'An error occurred while saving out time');
+    } finally {
+      setSavingOutTime(false);
+    }
+  };
+
   const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -1619,9 +1694,12 @@ export default function AttendancePage() {
                               <td
                                 key={day}
                                 onClick={() => hasData && handleDateClick(item.employee, dateStr)}
-                                className={`border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700 ${hasData ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : ''
+                                className={`border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700 relative ${hasData ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : ''
                                   } ${getStatusColor(record)} ${getCellBackgroundColor(record)}`}
                               >
+                                {record?.isEdited && (
+                                  <span className="absolute top-0.5 right-0.5 h-1.5 w-1.5 rounded-full bg-orange-500 animate-pulse z-20" title="Edited Manually"></span>
+                                )}
                                 {hasData ? (
                                   <div className="space-y-0.5">
                                     {tableType === 'complete' && (
@@ -1892,6 +1970,11 @@ export default function AttendancePage() {
                       ({selectedEmployee.employee_name})
                     </span>
                   )}
+                  {attendanceDetail.isEdited && (
+                    <span className="ml-2 inline-flex items-center rounded-full bg-orange-100 px-2.5 py-0.5 text-xs font-medium text-orange-800 dark:bg-orange-900/30 dark:text-orange-300">
+                      Edited
+                    </span>
+                  )}
                 </h3>
                 <button
                   onClick={() => {
@@ -1927,131 +2010,207 @@ export default function AttendancePage() {
                       {attendanceDetail.status || 'ABSENT'}
                     </div>
                   </div>
-                  <div>
-                    <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Shift</label>
-                    <div className="mt-1 flex items-center gap-2">
-                      {!editingShift ? (
-                        <>
-                          <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                            {attendanceDetail.shiftId && typeof attendanceDetail.shiftId === 'object'
-                              ? attendanceDetail.shiftId.name
-                              : '-'}
+                  {/* Shift Information - Granular or Legacy */}
+                  {attendanceDetail.shifts && attendanceDetail.shifts.length > 0 ? (
+                    <div className="col-span-2 space-y-3">
+                      <div className="text-xs font-semibold text-slate-500 border-b border-slate-100 pb-1 mb-2">Shift Segments</div>
+                      {attendanceDetail.shifts.map((shift: any, idx: number) => (
+                        <div key={idx} className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3 border border-slate-100 dark:border-slate-700">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="font-medium text-sm text-slate-700 dark:text-slate-300">
+                              {typeof shift.shiftId === 'object' ? shift.shiftId.name : 'Unknown Shift'}
+                            </div>
+                            <div className="text-xs font-mono text-slate-500">
+                              {shift.workingHours ? `${shift.workingHours.toFixed(2)}h` : '-'}
+                            </div>
                           </div>
-                          <button
-                            onClick={() => {
-                              setEditingShift(true);
-                              if (attendanceDetail.shiftId && typeof attendanceDetail.shiftId === 'object') {
-                                setSelectedShiftId(attendanceDetail.shiftId._id);
-                              }
-                            }}
-                            className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"
-                          >
-                            {attendanceDetail.shiftId ? 'Change' : 'Assign'}
-                          </button>
-                        </>
-                      ) : (
-                        <div className="flex-1 flex items-center gap-2">
-                          <select
-                            value={selectedShiftId}
-                            onChange={(e) => setSelectedShiftId(e.target.value)}
-                            className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                          >
-                            <option value="">Select Shift</option>
-                            {availableShifts.map((shift) => (
-                              <option key={shift._id} value={shift._id}>
-                                {shift.name} ({shift.startTime} - {shift.endTime})
-                              </option>
-                            ))}
-                          </select>
-                          <button
-                            onClick={handleAssignShift}
-                            disabled={savingShift || !selectedShiftId}
-                            className="rounded-lg bg-green-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {savingShift ? 'Saving...' : 'Save'}
-                          </button>
-                          <button
-                            onClick={() => {
-                              setEditingShift(false);
-                              setSelectedShiftId('');
-                            }}
-                            className="rounded-lg bg-slate-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-slate-600"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-slate-600 dark:text-slate-400">In Time</label>
-                    <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
-                      {formatTime(attendanceDetail.inTime)}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Out Time</label>
-                    <div className="mt-1 flex items-center gap-2">
-                      {!editingOutTime ? (
-                        <>
-                          <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                            {attendanceDetail.outTime ? formatTime(attendanceDetail.outTime, true, selectedDate || '') : '-'}
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div>
+                              <div className="text-slate-500 mb-0.5">In Time</div>
+                              <div className="font-semibold text-green-700 dark:text-green-400">
+                                {formatTime(shift.inTime)}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-slate-500 mb-0.5">Out Time</div>
+                              {editingOutTime && selectedShiftRecordId === shift._id ? (
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="time"
+                                    value={outTimeInput}
+                                    onChange={(e) => setOutTimeInput(e.target.value)}
+                                    className="w-24 rounded border border-slate-300 px-1 py-0.5 text-xs"
+                                  />
+                                  <button
+                                    onClick={handleShiftOutTimeUpdate}
+                                    disabled={savingOutTime}
+                                    className="text-green-600 hover:text-green-700"
+                                  >
+                                    Save
+                                  </button>
+                                  <button
+                                    onClick={() => { setEditingOutTime(false); setSelectedShiftRecordId(null); }}
+                                    className="text-red-500 hover:text-red-700"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-2">
+                                  <span className={shift.outTime ? "font-semibold text-red-700 dark:text-red-400" : "text-slate-400"}>
+                                    {shift.outTime ? formatTime(shift.outTime, true, attendanceDetail.date) : '-'}
+                                  </span>
+                                  <button
+                                    onClick={() => {
+                                      setEditingOutTime(true);
+                                      setSelectedShiftRecordId(shift._id);
+                                      if (shift.outTime) {
+                                        const d = new Date(shift.outTime);
+                                        setOutTimeInput(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
+                                      } else {
+                                        setOutTimeInput('');
+                                      }
+                                    }}
+                                    className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-100 hover:bg-blue-100"
+                                  >
+                                    Edit
+                                  </button>
+                                </div>
+                              )}
+                            </div>
                           </div>
-                          {!attendanceDetail.outTime && (
-                            <button
-                              onClick={() => {
-                                setEditingOutTime(true);
-                                if (attendanceDetail.outTime) {
-                                  const date = new Date(attendanceDetail.outTime);
-                                  setOutTimeInput(`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`);
-                                }
-                              }}
-                              className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"
-                            >
-                              Add
-                            </button>
-                          )}
-                          {attendanceDetail.outTime && (
-                            <button
-                              onClick={() => {
-                                setEditingOutTime(true);
-                                const date = new Date(attendanceDetail.outTime);
-                                setOutTimeInput(`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`);
-                              }}
-                              className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"
-                            >
-                              Edit
-                            </button>
-                          )}
-                        </>
-                      ) : (
-                        <div className="flex-1 flex items-center gap-2">
-                          <input
-                            type="time"
-                            value={outTimeInput}
-                            onChange={(e) => setOutTimeInput(e.target.value)}
-                            className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                          />
-                          <button
-                            onClick={handleSaveOutTime}
-                            disabled={savingOutTime || !outTimeInput}
-                            className="rounded-lg bg-green-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {savingOutTime ? 'Saving...' : 'Save'}
-                          </button>
-                          <button
-                            onClick={() => {
-                              setEditingOutTime(false);
-                              setOutTimeInput('');
-                            }}
-                            className="rounded-lg bg-slate-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-slate-600"
-                          >
-                            Cancel
-                          </button>
                         </div>
-                      )}
+                      ))}
                     </div>
-                  </div>
+                  ) : (
+                    <>
+                      <div>
+                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Shift</label>
+                        <div className="mt-1 flex items-center gap-2">
+                          {!editingShift ? (
+                            <>
+                              <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                                {attendanceDetail.shiftId && typeof attendanceDetail.shiftId === 'object'
+                                  ? attendanceDetail.shiftId.name
+                                  : '-'}
+                              </div>
+                              <button
+                                onClick={() => {
+                                  setEditingShift(true);
+                                  if (attendanceDetail.shiftId && typeof attendanceDetail.shiftId === 'object') {
+                                    setSelectedShiftId(attendanceDetail.shiftId._id);
+                                  }
+                                }}
+                                className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"
+                              >
+                                {attendanceDetail.shiftId ? 'Change' : 'Assign'}
+                              </button>
+                            </>
+                          ) : (
+                            <div className="flex-1 flex items-center gap-2">
+                              <select
+                                value={selectedShiftId}
+                                onChange={(e) => setSelectedShiftId(e.target.value)}
+                                className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                              >
+                                <option value="">Select Shift</option>
+                                {availableShifts.map((shift) => (
+                                  <option key={shift._id} value={shift._id}>
+                                    {shift.name} ({shift.startTime} - {shift.endTime})
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                onClick={handleAssignShift}
+                                disabled={savingShift || !selectedShiftId}
+                                className="rounded-lg bg-green-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {savingShift ? 'Saving...' : 'Save'}
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setEditingShift(false);
+                                  setSelectedShiftId('');
+                                }}
+                                className="rounded-lg bg-slate-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-slate-600"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">In Time</label>
+                        <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
+                          {formatTime(attendanceDetail.inTime)}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Out Time</label>
+                        <div className="mt-1 flex items-center gap-2">
+                          {!editingOutTime ? (
+                            <>
+                              <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                                {attendanceDetail.outTime ? formatTime(attendanceDetail.outTime, true, selectedDate || '') : '-'}
+                              </div>
+                              {!attendanceDetail.outTime && (
+                                <button
+                                  onClick={() => {
+                                    setEditingOutTime(true);
+                                    if (attendanceDetail.outTime) {
+                                      const date = new Date(attendanceDetail.outTime);
+                                      setOutTimeInput(`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`);
+                                    }
+                                  }}
+                                  className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"
+                                >
+                                  Add
+                                </button>
+                              )}
+                              {attendanceDetail.outTime && (
+                                <button
+                                  onClick={() => {
+                                    setEditingOutTime(true);
+                                    const date = new Date(attendanceDetail.outTime);
+                                    setOutTimeInput(`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`);
+                                  }}
+                                  className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"
+                                >
+                                  Edit
+                                </button>
+                              )}
+                            </>
+                          ) : (
+                            <div className="flex-1 flex items-center gap-2">
+                              <input
+                                type="time"
+                                value={outTimeInput}
+                                onChange={(e) => setOutTimeInput(e.target.value)}
+                                className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                              />
+                              <button
+                                onClick={handleSaveOutTime}
+                                disabled={savingOutTime || !outTimeInput}
+                                className="rounded-lg bg-green-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {savingOutTime ? 'Saving...' : 'Save'}
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setEditingOutTime(false);
+                                  setOutTimeInput('');
+                                }}
+                                className="rounded-lg bg-slate-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-slate-600"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  )}
                   <div>
                     <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Total Hours</label>
                     <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
@@ -2451,10 +2610,40 @@ export default function AttendancePage() {
                   </div>
                 )}
               </div>
+
+
+              {/* Edit History */}
+              {attendanceDetail.editHistory && attendanceDetail.editHistory.length > 0 && (
+                <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
+                  <h4 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-300">Edit History</h4>
+                  <div className="space-y-2 max-h-40 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-600">
+                    {attendanceDetail.editHistory.map((edit, idx) => (
+                      <div key={idx} className="bg-white dark:bg-slate-800 p-2.5 rounded-md border border-slate-100 dark:border-slate-700 shadow-sm text-xs">
+                        <div className="flex justify-between items-start mb-1">
+                          <span className={`font-semibold px-1.5 py-0.5 rounded ${edit.action === 'OT_CONVERSION' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' :
+                            edit.action.includes('UPDATE') ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' :
+                              edit.action.includes('SHIFT') ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' :
+                                'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
+                            }`}>
+                            {edit.action.replace(/_/g, ' ')}
+                          </span>
+                          <span className="text-slate-400">
+                            {new Date(edit.modifiedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        <div className="text-slate-600 dark:text-slate-300 mt-1 pl-1">
+                          {edit.details}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )
       }
+
 
       {/* Monthly Summary Modal */}
       {
@@ -2578,62 +2767,112 @@ export default function AttendancePage() {
       }
 
       {/* Type-Specific Summary Modal */}
-      {showTypeSummaryModal && typeSummaryData && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
-            <div className="p-6 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/50">
-              <div>
-                <h3 className="text-xl font-bold text-slate-900 dark:text-white capitalize">
-                  {typeSummaryData.type.replace('_', ' ')} Details
-                </h3>
-                <p className="text-sm text-slate-500 dark:text-slate-400">
-                  {typeSummaryData.item.employee.employee_name} • {monthNames[month - 1]} {year}
-                </p>
+      {
+        showTypeSummaryModal && typeSummaryData && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <div className="w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+              <div className="p-6 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/50">
+                <div>
+                  <h3 className="text-xl font-bold text-slate-900 dark:text-white capitalize">
+                    {typeSummaryData.type.replace('_', ' ')} Details
+                  </h3>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    {typeSummaryData.item.employee.employee_name} • {monthNames[month - 1]} {year}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowTypeSummaryModal(false)}
+                  className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 transition-colors"
+                >
+                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
               </div>
-              <button
-                onClick={() => setShowTypeSummaryModal(false)}
-                className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 transition-colors"
-              >
-                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
 
-            <div className="flex-1 overflow-y-auto p-6">
-              <div className="rounded-xl border border-slate-200 overflow-hidden dark:border-slate-700 shadow-sm">
-                <table className="w-full text-sm text-left">
-                  <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-700 dark:text-slate-300">
-                    <tr>
-                      <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">Date</th>
-                      {typeSummaryData.type === 'in_out' ? (
-                        <>
-                          <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">In Time</th>
-                          <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">Out Time</th>
-                        </>
-                      ) : typeSummaryData.type === 'ot' || typeSummaryData.type === 'extra' ? (
-                        <>
-                          <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">OT Hours</th>
-                          <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">Extra Hours</th>
-                        </>
-                      ) : typeSummaryData.type === 'leaves' ? (
-                        <>
-                          <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">Leave Type</th>
-                          <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">Reason</th>
-                        </>
-                      ) : typeSummaryData.type === 'od' ? (
-                        <>
-                          <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">OD Type</th>
-                          <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">Place/Purpose</th>
-                        </>
-                      ) : (
-                        <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">Status</th>
-                      )}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {Object.entries(typeSummaryData.item.dailyAttendance)
-                      .filter(([_, record]) => {
+              <div className="flex-1 overflow-y-auto p-6">
+                <div className="rounded-xl border border-slate-200 overflow-hidden dark:border-slate-700 shadow-sm">
+                  <table className="w-full text-sm text-left">
+                    <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-700 dark:text-slate-300">
+                      <tr>
+                        <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">Date</th>
+                        {typeSummaryData.type === 'in_out' ? (
+                          <>
+                            <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">In Time</th>
+                            <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">Out Time</th>
+                          </>
+                        ) : typeSummaryData.type === 'ot' || typeSummaryData.type === 'extra' ? (
+                          <>
+                            <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">OT Hours</th>
+                            <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">Extra Hours</th>
+                          </>
+                        ) : typeSummaryData.type === 'leaves' ? (
+                          <>
+                            <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">Leave Type</th>
+                            <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">Reason</th>
+                          </>
+                        ) : typeSummaryData.type === 'od' ? (
+                          <>
+                            <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">OD Type</th>
+                            <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">Place/Purpose</th>
+                          </>
+                        ) : (
+                          <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">Status</th>
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {Object.entries(typeSummaryData.item.dailyAttendance)
+                        .filter(([_, record]) => {
+                          if (!record) return false;
+                          if (typeSummaryData.type === 'present') return record.status === 'PRESENT' || record.status === 'PARTIAL';
+                          if (typeSummaryData.type === 'absent') return record.status === 'ABSENT' || (!record.status && !record.hasLeave && !record.hasOD);
+                          if (typeSummaryData.type === 'leaves') return record.hasLeave;
+                          if (typeSummaryData.type === 'od') return record.hasOD;
+                          if (typeSummaryData.type === 'ot') return (record.otHours || 0) > 0;
+                          if (typeSummaryData.type === 'extra') return (record.extraHours || 0) > 0;
+                          if (typeSummaryData.type === 'permission') return (record.permissionCount || 0) > 0;
+                          if (typeSummaryData.type === 'in_out') return !!record.inTime;
+                          return true;
+                        })
+                        .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
+                        .map(([date, record]) => (
+                          <tr key={date} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                            <td className="px-4 py-3 font-medium text-slate-900 dark:text-white">
+                              {new Date(date).toLocaleDateString(undefined, { day: '2-digit', month: 'short', weekday: 'short' })}
+                            </td>
+                            {typeSummaryData.type === 'in_out' ? (
+                              <>
+                                <td className="px-4 py-3 text-green-600 font-semibold">{record?.inTime ? formatTime(record.inTime) : '-'}</td>
+                                <td className="px-4 py-3 text-red-600 font-semibold">{record?.outTime ? formatTime(record.outTime) : '-'}</td>
+                              </>
+                            ) : typeSummaryData.type === 'ot' || typeSummaryData.type === 'extra' ? (
+                              <>
+                                <td className="px-4 py-3 text-orange-600 font-bold">{record?.otHours?.toFixed(1) || '0.0'}</td>
+                                <td className="px-4 py-3 text-purple-600 font-bold">{record?.extraHours?.toFixed(1) || '0.0'}</td>
+                              </>
+                            ) : typeSummaryData.type === 'leaves' ? (
+                              <>
+                                <td className="px-4 py-3 font-semibold text-orange-600">{record?.leaveInfo?.leaveType || 'Leave'}</td>
+                                <td className="px-4 py-3 text-slate-500 truncate max-w-[200px]" title={record?.leaveInfo?.purpose || ''}>{record?.leaveInfo?.purpose || '-'}</td>
+                              </>
+                            ) : typeSummaryData.type === 'od' ? (
+                              <>
+                                <td className="px-4 py-3 font-semibold text-indigo-600">{record?.odInfo?.odType || 'OD'}</td>
+                                <td className="px-4 py-3 text-slate-500 truncate max-w-[200px]" title={`${record?.odInfo?.placeVisited || ''} ${record?.odInfo?.purpose || ''}`}>
+                                  {record?.odInfo?.placeVisited || record?.odInfo?.purpose || '-'}
+                                </td>
+                              </>
+                            ) : (
+                              <td className="px-4 py-3 font-semibold">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] ${record?.status === 'PRESENT' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                  {record?.status || 'ABSENT'}
+                                </span>
+                              </td>
+                            )}
+                          </tr>
+                        ))}
+                      {Object.entries(typeSummaryData.item.dailyAttendance).filter(([_, record]) => {
                         if (!record) return false;
                         if (typeSummaryData.type === 'present') return record.status === 'PRESENT' || record.status === 'PARTIAL';
                         if (typeSummaryData.type === 'absent') return record.status === 'ABSENT' || (!record.status && !record.hasLeave && !record.hasOD);
@@ -2644,76 +2883,28 @@ export default function AttendancePage() {
                         if (typeSummaryData.type === 'permission') return (record.permissionCount || 0) > 0;
                         if (typeSummaryData.type === 'in_out') return !!record.inTime;
                         return true;
-                      })
-                      .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
-                      .map(([date, record]) => (
-                        <tr key={date} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
-                          <td className="px-4 py-3 font-medium text-slate-900 dark:text-white">
-                            {new Date(date).toLocaleDateString(undefined, { day: '2-digit', month: 'short', weekday: 'short' })}
-                          </td>
-                          {typeSummaryData.type === 'in_out' ? (
-                            <>
-                              <td className="px-4 py-3 text-green-600 font-semibold">{record?.inTime ? formatTime(record.inTime) : '-'}</td>
-                              <td className="px-4 py-3 text-red-600 font-semibold">{record?.outTime ? formatTime(record.outTime) : '-'}</td>
-                            </>
-                          ) : typeSummaryData.type === 'ot' || typeSummaryData.type === 'extra' ? (
-                            <>
-                              <td className="px-4 py-3 text-orange-600 font-bold">{record?.otHours?.toFixed(1) || '0.0'}</td>
-                              <td className="px-4 py-3 text-purple-600 font-bold">{record?.extraHours?.toFixed(1) || '0.0'}</td>
-                            </>
-                          ) : typeSummaryData.type === 'leaves' ? (
-                            <>
-                              <td className="px-4 py-3 font-semibold text-orange-600">{record?.leaveInfo?.leaveType || 'Leave'}</td>
-                              <td className="px-4 py-3 text-slate-500 truncate max-w-[200px]" title={record?.leaveInfo?.purpose || ''}>{record?.leaveInfo?.purpose || '-'}</td>
-                            </>
-                          ) : typeSummaryData.type === 'od' ? (
-                            <>
-                              <td className="px-4 py-3 font-semibold text-indigo-600">{record?.odInfo?.odType || 'OD'}</td>
-                              <td className="px-4 py-3 text-slate-500 truncate max-w-[200px]" title={`${record?.odInfo?.placeVisited || ''} ${record?.odInfo?.purpose || ''}`}>
-                                {record?.odInfo?.placeVisited || record?.odInfo?.purpose || '-'}
-                              </td>
-                            </>
-                          ) : (
-                            <td className="px-4 py-3 font-semibold">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] ${record?.status === 'PRESENT' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                {record?.status || 'ABSENT'}
-                              </span>
-                            </td>
-                          )}
-                        </tr>
-                      ))}
-                    {Object.entries(typeSummaryData.item.dailyAttendance).filter(([_, record]) => {
-                      if (!record) return false;
-                      if (typeSummaryData.type === 'present') return record.status === 'PRESENT' || record.status === 'PARTIAL';
-                      if (typeSummaryData.type === 'absent') return record.status === 'ABSENT' || (!record.status && !record.hasLeave && !record.hasOD);
-                      if (typeSummaryData.type === 'leaves') return record.hasLeave;
-                      if (typeSummaryData.type === 'od') return record.hasOD;
-                      if (typeSummaryData.type === 'ot') return (record.otHours || 0) > 0;
-                      if (typeSummaryData.type === 'extra') return (record.extraHours || 0) > 0;
-                      if (typeSummaryData.type === 'permission') return (record.permissionCount || 0) > 0;
-                      if (typeSummaryData.type === 'in_out') return !!record.inTime;
-                      return true;
-                    }).length === 0 && (
-                        <tr>
-                          <td colSpan={3} className="px-4 py-8 text-center text-slate-400 italic">No records found for this category.</td>
-                        </tr>
-                      )}
-                  </tbody>
-                </table>
+                      }).length === 0 && (
+                          <tr>
+                            <td colSpan={3} className="px-4 py-8 text-center text-slate-400 italic">No records found for this category.</td>
+                          </tr>
+                        )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="p-6 border-t border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 flex justify-end">
+                <button
+                  onClick={() => setShowTypeSummaryModal(false)}
+                  className="px-6 py-2 bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl font-bold hover:bg-slate-300 dark:hover:bg-slate-600 transition-all shadow-sm"
+                >
+                  Close
+                </button>
               </div>
             </div>
-
-            <div className="p-6 border-t border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 flex justify-end">
-              <button
-                onClick={() => setShowTypeSummaryModal(false)}
-                className="px-6 py-2 bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl font-bold hover:bg-slate-300 dark:hover:bg-slate-600 transition-all shadow-sm"
-              >
-                Close
-              </button>
-            </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Payslip Modal */}
       {

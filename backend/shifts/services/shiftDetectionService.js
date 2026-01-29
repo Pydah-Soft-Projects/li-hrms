@@ -327,7 +327,7 @@ const findCandidateShifts = (inTime, shifts, date, toleranceHours = 3) => {
         isStartBeforeLog: isStartBeforeLog,
         isPreferred: isPreferred,
         sourcePriority: shift.sourcePriority || 99, // Lower is better (2=Desig, 3=Dept)
-        matchReason: `In-time ${inTime.toLocaleTimeString()} is ${difference.toFixed(1)} minutes from shift ${shift.name} start (${shift.startTime})`,
+        matchReason: `In-time ${inTimeDate.toLocaleTimeString()} is ${difference.toFixed(1)} minutes from shift ${shift.name} start (${shift.startTime})`,
       });
     }
   }
@@ -1465,6 +1465,8 @@ module.exports = {
   calculateEarlyOut,
   isWithinShiftWindow,
   syncShiftsForExistingRecords,
+  syncShiftsForExistingRecords,
   autoAssignNearestShift,
+  timeToMinutes
 };
 

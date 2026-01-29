@@ -180,7 +180,7 @@ exports.getCalendarViewData = async (employee, year, month) => {
       earlyOutMinutes: record.earlyOutMinutes || null,
       earlyOutDeduction: record.earlyOutDeduction || null,
       expectedHours: record.expectedHours || null,
-      otHours: record.otHours || 0,
+      otHours: Math.max(record.otHours || 0, record.totalOTHours || 0),
       extraHours: record.extraHours || 0,
       permissionHours: record.permissionHours || 0,
       permissionCount: record.permissionCount || 0,
@@ -189,6 +189,8 @@ exports.getCalendarViewData = async (employee, year, month) => {
       hasOD: hasOD,
       odInfo: odMap[record.date] || null,
       isConflict: isConflict,
+      isEdited: record.isEdited || false,
+      editHistory: record.editHistory || [],
     };
   });
 
@@ -245,7 +247,7 @@ exports.getMonthlyTableViewData = async (employees, year, month) => {
     employeeNumber: { $in: empNos },
     date: { $gte: startDate, $lte: endDateStr },
   })
-    .select('employeeNumber date status inTime outTime totalHours lateInMinutes earlyOutMinutes isLateIn isEarlyOut shiftId shifts expectedHours otHours extraHours permissionHours permissionCount notes earlyOutDeduction')
+    .select('employeeNumber date status inTime outTime totalHours lateInMinutes earlyOutMinutes isLateIn isEarlyOut shiftId shifts expectedHours otHours extraHours permissionHours permissionCount notes earlyOutDeduction isEdited editHistory')
     .populate('shiftId', 'name startTime endTime duration payableShifts')
     .populate('shifts.shiftId', 'name startTime endTime')
     .sort({ employeeNumber: 1, date: 1 })
@@ -405,7 +407,7 @@ exports.getMonthlyTableViewData = async (employees, year, month) => {
         shiftId: record?.shiftId || null,
         shifts: record?.shifts || [],
         expectedHours: record?.expectedHours || 0,
-        otHours: record?.otHours || 0,
+        otHours: Math.max(record?.otHours || 0, record?.totalOTHours || 0),
         extraHours: record?.extraHours || 0,
         permissionHours: record?.permissionHours || 0,
         permissionCount: record?.permissionCount || 0,
@@ -415,7 +417,9 @@ exports.getMonthlyTableViewData = async (employees, year, month) => {
         leaveInfo,
         hasOD,
         odInfo,
-        isConflict
+        isConflict,
+        isEdited: record?.isEdited || false,
+        editHistory: record?.editHistory || []
       };
     }
 

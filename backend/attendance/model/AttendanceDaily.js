@@ -138,6 +138,26 @@ const attendanceDailySchema = new mongoose.Schema(
       enum: ['PRESENT', 'ABSENT', 'PARTIAL', 'HALF_DAY'],
       default: 'ABSENT',
     },
+    isEdited: {
+      type: Boolean,
+      default: false,
+    },
+    editHistory: [{
+      action: {
+        type: String,
+        enum: ['OUT_TIME_UPDATE', 'SHIFT_CHANGE', 'OT_CONVERSION'],
+        required: true,
+      },
+      modifiedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+      modifiedAt: {
+        type: Date,
+        default: Date.now,
+      },
+      details: String,
+    }],
     source: {
       type: [String],
       enum: ['mssql', 'excel', 'manual', 'biometric-realtime'],
@@ -345,18 +365,24 @@ attendanceDailySchema.pre('save', async function () {
     this.totalHours = this.totalWorkingHours;
 
     // 3. Status Determination
-    if (this.shifts.some(s => s.status === 'complete')) {
-      const effectiveHours = this.totalWorkingHours + (this.odHours || 0);
-      const totalExpected = this.expectedHours || (this.shifts.length * 9); // Fallback to 9h if unknown
-      const threshold = totalExpected * 0.7;
+    // Logic:
+    // - PRESENT: If any shift is PRESENT (or payable >= 1)
+    // - HALF_DAY: Only if exactly ONE shift and it is HALF_DAY
+    // - ABSENT: Otherwise (or handled by fallback)
+    const hasPresentShift = this.shifts.some(s => s.status === 'complete' || s.status === 'PRESENT' || (s.payableShift && s.payableShift >= 1));
 
-      if (effectiveHours < threshold) {
-        this.status = 'HALF_DAY';
-      } else {
-        this.status = 'PRESENT';
-      }
+    if (hasPresentShift) {
+      this.status = 'PRESENT';
+    } else if (this.shifts.length === 1 && (this.shifts[0].status === 'HALF_DAY' || this.shifts[0].payableShift === 0.5)) {
+      this.status = 'HALF_DAY';
     } else {
-      this.status = 'PARTIAL';
+      // If multi-shift but none present, checking aggregated payable might handle edge cases like 0.5 + 0.5
+      if (this.payableShifts >= 1) {
+        this.status = 'PRESENT';
+      } else {
+        // Fallback to whatever the individual outcomes were, but usually absent/partial
+        this.status = this.shifts.length > 0 ? 'PARTIAL' : 'ABSENT';
+      }
     }
 
     // Set primary lookup fields from first shift
@@ -372,15 +398,32 @@ attendanceDailySchema.pre('save', async function () {
       this.calculateTotalHours();
       if (this.expectedHours) {
         const effectiveHours = (this.totalHours || 0) + (this.odHours || 0);
-        const threshold = this.expectedHours * 0.7;
-        this.status = effectiveHours < threshold ? 'HALF_DAY' : 'PRESENT';
-      } else if (this.status !== 'HALF_DAY') {
+        // Normalize duration to hours if it looks like minutes (e.g. > 20)
+        // expectedHours is usually in hours for legacy, but shift duration is often in hours too. 
+        // Let's assume expectedHours is in HOURS.
+        const durationHours = this.expectedHours;
+
+        if (effectiveHours >= (durationHours * 0.9)) {
+          this.status = 'PRESENT';
+          this.payableShifts = 1;
+        } else if (effectiveHours >= (durationHours * 0.45)) {
+          this.status = 'HALF_DAY';
+          this.payableShifts = 0.5;
+        } else {
+          this.status = 'ABSENT';
+          this.payableShifts = 0;
+        }
+      } else if (this.status !== 'HALF_DAY' && this.status !== 'ABSENT') {
+        // Fallback if expectedHours is missing but we have in/out
         this.status = 'PRESENT';
+        this.payableShifts = 1;
       }
     } else if (this.inTime || this.outTime) {
       this.status = 'PARTIAL';
+      this.payableShifts = 0;
     } else {
       this.status = 'ABSENT';
+      this.payableShifts = 0;
     }
   }
 
