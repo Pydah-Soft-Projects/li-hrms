@@ -66,7 +66,7 @@ const initialFormState: Partial<Employee> = {
   bank_name: '',
   bank_place: '',
   ifsc_code: '',
-  salary_mode: 'Bank',
+  salary_mode: 'Cash',
   is_active: true,
   employeeAllowances: [],
   employeeDeductions: [],
@@ -1100,11 +1100,40 @@ export default function EmployeesPage() {
     }
 
     try {
+      // Build allowances and deductions from form overrides
+      let employeeAllowances = buildOverridePayload(componentDefaults.allowances, overrideAllowances, overrideAllowancesBasedOnPresentDays, 'allowance');
+      let employeeDeductions = buildOverridePayload(componentDefaults.deductions, overrideDeductions, overrideDeductionsBasedOnPresentDays, 'deduction');
+
+      // When editing: always send both sides. If one side is empty but employee had data, preserve existing so we don't clear it
+      const toPayloadItem = (item: any, category: 'allowance' | 'deduction') => ({
+        masterId: item.masterId ?? null,
+        code: item.code ?? null,
+        name: item.name ?? '',
+        category: item.category || category,
+        type: item.type ?? null,
+        amount: item.amount ?? item.overrideAmount ?? null,
+        overrideAmount: item.overrideAmount ?? item.amount ?? null,
+        percentage: item.percentage ?? null,
+        percentageBase: item.percentageBase ?? null,
+        minAmount: item.minAmount ?? null,
+        maxAmount: item.maxAmount ?? null,
+        basedOnPresentDays: item.basedOnPresentDays ?? false,
+        isOverride: true,
+      });
+      if (editingEmployee) {
+        if (employeeAllowances.length === 0 && Array.isArray(editingEmployee.employeeAllowances) && editingEmployee.employeeAllowances.length > 0) {
+          employeeAllowances = editingEmployee.employeeAllowances.map((item: any) => toPayloadItem(item, 'allowance'));
+        }
+        if (employeeDeductions.length === 0 && Array.isArray(editingEmployee.employeeDeductions) && editingEmployee.employeeDeductions.length > 0) {
+          employeeDeductions = editingEmployee.employeeDeductions.map((item: any) => toPayloadItem(item, 'deduction'));
+        }
+      }
+
       // Clean up enum fields - convert empty strings to null/undefined
       const submitData = {
         ...formData,
-        employeeAllowances: buildOverridePayload(componentDefaults.allowances, overrideAllowances, overrideAllowancesBasedOnPresentDays, 'allowance'),
-        employeeDeductions: buildOverridePayload(componentDefaults.deductions, overrideDeductions, overrideDeductionsBasedOnPresentDays, 'deduction'),
+        employeeAllowances,
+        employeeDeductions,
         paidLeaves: formData.paidLeaves !== null && formData.paidLeaves !== undefined ? formData.paidLeaves : 0,
         allottedLeaves: formData.allottedLeaves !== null && formData.allottedLeaves !== undefined ? formData.allottedLeaves : 0,
         ctcSalary: salarySummary.ctcSalary,
@@ -1432,6 +1461,8 @@ export default function EmployeesPage() {
       // Override with processed values (after dynamicFields so they take precedence)
       reporting_to: reportingToValue,
       reporting_to_: reportingToValue,
+      // Salary mode dropdown defaults to Cash when editing if not set
+      salary_mode: (employee as any).salary_mode ?? dynamicFieldsData.salary_mode ?? 'Cash',
     };
 
     setFormData(newFormData);
@@ -4170,12 +4201,12 @@ export default function EmployeesPage() {
                     </div>
                   </div>
 
-                  {/* Allowances & Deductions - Always show this section */}
+                  {/* Allowances & Deductions - Always show both sections */}
                   <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
                     <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Allowances & Deductions</h3>
 
                     {/* Allowances */}
-                    {viewingEmployee.employeeAllowances && viewingEmployee.employeeAllowances.length > 0 ? (
+                    {(Array.isArray(viewingEmployee.employeeAllowances) && viewingEmployee.employeeAllowances.length > 0) ? (
                       <div className="mb-6">
                         <h4 className="mb-3 text-sm font-semibold text-green-700 dark:text-green-400">Allowances</h4>
                         <div className="space-y-2">
@@ -4212,7 +4243,7 @@ export default function EmployeesPage() {
                     )}
 
                     {/* Deductions */}
-                    {viewingEmployee.employeeDeductions && viewingEmployee.employeeDeductions.length > 0 ? (
+                    {(Array.isArray(viewingEmployee.employeeDeductions) && viewingEmployee.employeeDeductions.length > 0) ? (
                       <div>
                         <h4 className="mb-3 text-sm font-semibold text-red-700 dark:text-red-400">Deductions</h4>
                         <div className="space-y-2">
@@ -4583,5 +4614,3 @@ export default function EmployeesPage() {
     </div >
   );
 }
-
-// 
