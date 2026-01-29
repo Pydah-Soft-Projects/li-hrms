@@ -48,10 +48,6 @@ const employeeSchema = new mongoose.Schema(
       type: Number,
       default: null,
     },
-    second_salary: {
-      type: Number,
-      default: null,
-    },
     gender: {
       type: String,
       enum: ['Male', 'Female', 'Other', null],
@@ -139,11 +135,6 @@ const employeeSchema = new mongoose.Schema(
       trim: true,
       uppercase: true,
       default: null,
-    },
-    salary_mode: {
-      type: String,
-      enum: ['Bank', 'Cash'],
-      default: 'Bank',
     },
     paidLeaves: {
       type: Number,
@@ -253,9 +244,6 @@ employeeSchema.index({ leftDate: 1 });
 employeeSchema.index({ phone_number: 1 });
 employeeSchema.index({ email: 1 });
 employeeSchema.index({ division_id: 1 });
-
-// Compound index for efficient scoped/filtered discovery at 1M scale
-employeeSchema.index({ division_id: 1, department_id: 1, is_active: 1 }, { background: true });
 
 // Virtual for department population
 employeeSchema.virtual('department', {
