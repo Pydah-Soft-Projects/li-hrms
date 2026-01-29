@@ -644,9 +644,30 @@ const convertExtraHoursToOT = async (employeeId, employeeNumber, date, userId) =
       comments: `Converted from attendance extra hours (${otHours.toFixed(2)} hrs)`,
     });
 
+    // Track Edit History
+    attendanceRecord.isEdited = true;
+    attendanceRecord.editHistory.push({
+      action: 'OT_CONVERSION',
+      modifiedBy: userId,
+      modifiedAt: new Date(),
+      details: `Converted ${otHours.toFixed(2)} hours extra to OT`
+    });
+
     // Update attendance record: set otHours and clear extraHours
     attendanceRecord.otHours = otHours;
     attendanceRecord.extraHours = 0; // Clear extra hours as they're now converted to OT
+
+    // CRITICAL FIX: Also update the 'shifts' array for multi-shift consistency
+    if (attendanceRecord.shifts && attendanceRecord.shifts.length > 0) {
+      attendanceRecord.shifts.forEach(shift => {
+        if (shift.extraHours > 0) {
+          shift.otHours = (shift.otHours || 0) + shift.extraHours;
+          shift.extraHours = 0;
+        }
+      });
+      attendanceRecord.markModified('shifts');
+    }
+
     await attendanceRecord.save();
 
     // Recalculate monthly summary

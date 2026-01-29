@@ -67,6 +67,13 @@ interface AttendanceRecord {
   extraHours?: number;
   permissionHours?: number;
   permissionCount?: number;
+  isEdited?: boolean;
+  editHistory?: {
+    action: string;
+    modifiedBy: string;
+    modifiedAt: string;
+    details: string;
+  }[];
 }
 
 interface Employee {
@@ -1519,9 +1526,12 @@ export default function AttendancePage() {
                           <td
                             key={day}
                             onClick={() => hasData && item.employee && handleDateClick(item.employee, dateStr)}
-                            className={`border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700 w-[35px] min-w-[35px] align-middle ${hasData ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : ''
+                            className={`border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700 w-[35px] min-w-[35px] align-middle relative ${hasData ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : ''
                               } ${getStatusColor(record)} ${getCellBackgroundColor(record)}`}
                           >
+                            {record && record.isEdited && (
+                              <span className="absolute top-0.5 right-0.5 h-1.5 w-1.5 rounded-full bg-orange-500 animate-pulse z-20" title="Edited Manually"></span>
+                            )}
                             <div className="flex flex-col items-center justify-center w-full h-full">
                               {hasData ? (
                                 <div className="space-y-0.5">
@@ -1775,6 +1785,11 @@ export default function AttendancePage() {
                       {selectedEmployee && (
                         <span className="ml-2 text-sm font-normal text-slate-500 dark:text-slate-400">
                           ({selectedEmployee?.employee_name})
+                        </span>
+                      )}
+                      {attendanceDetail.isEdited && (
+                        <span className="ml-2 inline-flex items-center rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 ring-1 ring-inset ring-amber-600/20" title="This record has been manually modified">
+                          Edited
                         </span>
                       )}
                     </h3>
@@ -2501,6 +2516,35 @@ export default function AttendancePage() {
                         ⚠️ Conflict: OD approved but attendance logged for this date
                       </div>
                     )}
+
+                  {/* Audit Log / Edit History */}
+                  {attendanceDetail.isEdited && attendanceDetail.editHistory && attendanceDetail.editHistory.length > 0 && (
+                    <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
+                      <h4 className="mb-2 text-sm font-bold text-slate-900 dark:text-white">Edit History</h4>
+                      <div className="space-y-2 max-h-40 overflow-y-auto">
+                        {attendanceDetail.editHistory.map((edit: any, index: number) => (
+                          <div key={index} className="flex flex-col text-xs border-b border-slate-200 pb-2 last:border-0 last:pb-0 dark:border-slate-700">
+                            <div className="flex items-center justify-between">
+                              <span className="font-medium text-slate-700 dark:text-slate-300">
+                                {edit.action === 'OUT_TIME_UPDATE' ? 'Out-Time Update' :
+                                  edit.action === 'SHIFT_CHANGE' ? 'Shift Change' :
+                                    edit.action === 'OT_CONVERSION' ? 'Overtime Conversion' : edit.action}
+                              </span>
+                              <span className="text-slate-500 dark:text-slate-400">
+                                {new Date(edit.modifiedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
+                            <div className="text-slate-500 dark:text-slate-400 mt-1">
+                              {edit.details}
+                            </div>
+                            <div className="text-slate-400 dark:text-slate-500 text-[10px] mt-0.5 italic">
+                              By: {edit.modifiedBy && typeof edit.modifiedBy === 'object' ? (edit.modifiedBy.name || 'Unknown') : 'User'}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                 </div>
               </div>

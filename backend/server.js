@@ -14,6 +14,7 @@ const server = http.createServer(app);
 const { Server } = require('socket.io');
 
 const allowedOrigins = [
+  "*",
   process.env.FRONTEND_URL,
   'http://192.168.3.147:3000',
   'http://192.168.3.198:3000',
