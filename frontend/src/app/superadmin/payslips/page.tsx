@@ -390,7 +390,7 @@ export default function PayslipsPage() {
 
     autoTable(doc, {
       startY: yPos,
-      head: [['Earnings', 'Amount (₹)']],
+      head: [['Earnings', 'Amount (Rs.)']],
       body: earningsData,
       theme: 'grid',
       headStyles: { fillColor: [92, 184, 92], fontSize: 9 },
@@ -414,7 +414,7 @@ export default function PayslipsPage() {
 
     autoTable(doc, {
       startY: yPos,
-      head: [['Deductions', 'Amount (₹)']],
+      head: [['Deductions', 'Amount (Rs.)']],
       body: deductionsData,
       theme: 'grid',
       headStyles: { fillColor: [217, 83, 79], fontSize: 9 },
@@ -436,20 +436,20 @@ export default function PayslipsPage() {
 
     doc.setFontSize(10);
     doc.text('Gross Salary:', 14, summaryY + 8);
-    doc.text(`₹ ${record.earnings.grossSalary.toFixed(2)}`, 80, summaryY + 8);
+    doc.text(`Rs. ${record.earnings.grossSalary.toFixed(2)}`, 80, summaryY + 8);
 
     doc.text('Total Deductions:', 14, summaryY + 15);
-    doc.text(`₹ ${record.deductions.totalDeductions.toFixed(2)}`, 80, summaryY + 15);
+    doc.text(`Rs. ${record.deductions.totalDeductions.toFixed(2)}`, 80, summaryY + 15);
 
     if (record.roundOff !== undefined) {
       doc.text('Round Off:', 14, summaryY + 22);
-      doc.text(`₹ ${record.roundOff.toFixed(2)}`, 80, summaryY + 22);
+      doc.text(`Rs. ${record.roundOff.toFixed(2)}`, 80, summaryY + 22);
     }
 
     doc.setFontSize(12);
     doc.setFont('helvetica', 'bold');
     doc.text('NET SALARY:', 14, summaryY + 32);
-    doc.text(`₹ ${record.netSalary.toFixed(2)}`, 80, summaryY + 32);
+    doc.text(`Rs. ${record.netSalary.toFixed(2)}`, 80, summaryY + 32);
 
     // Footer
     doc.setFontSize(8);
@@ -844,13 +844,13 @@ export default function PayslipsPage() {
                           {record.monthName}
                         </td>
                         <td className="px-4 py-3 text-sm text-right font-medium text-green-600 dark:text-green-400">
-                          ₹{record.earnings.grossSalary.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          Rs.{record.earnings.grossSalary.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
                         <td className="px-4 py-3 text-sm text-right font-medium text-red-600 dark:text-red-400">
-                          ₹{record.deductions.totalDeductions.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          Rs.{record.deductions.totalDeductions.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
                         <td className="px-4 py-3 text-sm text-right font-bold text-blue-600 dark:text-blue-400">
-                          ₹{record.netSalary.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          Rs.{record.netSalary.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
                         <td className="px-4 py-3 text-center">
                           <span className={`px-3 py-1 rounded-full text-xs font-semibold ${record.status === 'processed' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
