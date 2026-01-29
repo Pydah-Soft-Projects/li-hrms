@@ -849,6 +849,7 @@ export default function AllowancesDeductionsPage() {
             ))}
           </div>
         )}
+
       </div>
 
       {/* Create/Edit Dialog */}
