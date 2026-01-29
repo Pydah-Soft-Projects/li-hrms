@@ -6,6 +6,14 @@ const { protect, authorize } = require('../authentication/middleware/authMiddlew
 // All routes are protected
 router.use(protect);
 
+// Download template (Must be before /:id)
+router.get('/template', allowanceDeductionController.downloadTemplate);
+
+// Bulk update (Super Admin Only)
+const multer = require('multer');
+const upload = multer(); // Use memory storage for buffer access
+router.post('/bulk-update', authorize('super_admin'), upload.single('file'), allowanceDeductionController.bulkUpdateAllowancesDeductions);
+
 // Get all allowances and deductions
 router.get('/', allowanceDeductionController.getAllAllowancesDeductions);
 

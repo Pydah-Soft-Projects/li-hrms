@@ -1,17 +1,19 @@
 
 require('dotenv').config();
 const express = require('express');
+const http = require('http');
 const cors = require('cors');
-const helmet = require('helmet');
-const compression = require('compression');
-const rateLimit = require('express-rate-limit');
+const { initSocket } = require('./shared/services/socketService');
 const { initializeAllDatabases } = require('./config/init');
 const { checkConnection: checkS3Connection } = require('./shared/services/s3UploadService');
 
 const app = express();
-const http = require('http');
-const server = http.createServer(app);
-const { Server } = require('socket.io');
+module.exports = app;
+const PORT = process.env.PORT || 5000;
+
+// Middleware
+const logger = require('./middleware/logger');
+app.use(logger); // Log all requests
 
 const allowedOrigins = [
   process.env.FRONTEND_URL,
@@ -20,54 +22,6 @@ const allowedOrigins = [
   'http://localhost:3000'
 ].filter(Boolean);
 
-const io = new Server(server, {
-  cors: {
-    origin: allowedOrigins,
-    credentials: true,
-  }
-});
-
-// Store io on app for easy access in routes if needed
-app.set('io', io);
-
-io.on('connection', (socket) => {
-  console.log('🔌 New client connected:', socket.id);
-
-  socket.on('join_user_room', (userId) => {
-    socket.join(`user_${userId}`);
-    console.log(`👤 User ${userId} joined their room`);
-  });
-
-  socket.on('disconnect', () => {
-    console.log('🔌 Client disconnected');
-  });
-});
-
-// Export at the end of file
-const PORT = process.env.PORT || 5000;
-
-// Middleware
-app.use(helmet()); // Security headers
-app.use(compression()); // Gzip compression
-
-// Rate Limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5000, // Limit each IP to 5000 requests per windowMs
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: {
-    error: 'Too Many Requests',
-    message: 'Too many requests from this IP, please try again after 15 minutes'
-  }
-});
-app.use('/api/', limiter); // Apply rate limiting to all API routes
-
-const logger = require('./middleware/logger');
-app.use(logger); // Log all requests
-
-// CORS configuration already handled in Socket.io initialization above,
-// but we still need it for Express routes
 app.use(cors({
   origin: allowedOrigins,
   credentials: true,
@@ -142,10 +96,6 @@ app.use('/api/leaves', leaveRoutes);
 const loanRoutes = require('./loans/index.js');
 app.use('/api/loans', loanRoutes);
 
-// Salary Updates routes
-const salaryUpdateRoutes = require('./salary-updates/index.js');
-app.use('/api/salary-updates', salaryUpdateRoutes);
-
 // Attendance routes
 const attendanceRoutes = require('./attendance/index.js');
 
@@ -192,10 +142,6 @@ app.use('/api/arrears', arrearsRoutes);
 const payrollBatchRoutes = require('./payroll/routes/payrollBatchRoutes.js');
 app.use('/api/payroll-batch', payrollBatchRoutes);
 
-// Second Salary routes
-const secondSalaryRoutes = require('./payroll/routes/secondSalaryRoutes.js');
-app.use('/api/second-salary', secondSalaryRoutes);
-
 // Bonus routes
 const bonusRoutes = require('./bonus/routes/bonusRoutes.js');
 app.use('/api/bonus', bonusRoutes);
@@ -203,10 +149,6 @@ app.use('/api/bonus', bonusRoutes);
 // Dashboard routes
 const dashboardRoutes = require('./dashboard/index.js');
 app.use('/api/dashboard', dashboardRoutes);
-
-// Internal Job Test Routes (For verification)
-const jobTestRoutes = require('./shared/routes/jobTestRoutes');
-app.use('/api/internal/jobs', jobTestRoutes);
 
 // 404 handler
 app.use((req, res) => {
@@ -238,13 +180,9 @@ const startServer = async () => {
     const { startSyncJob } = require('./attendance/services/attendanceSyncJob');
     await startSyncJob();
 
-    // Start BullMQ Workers for Background Jobs
-    try {
-      const { startWorkers } = require('./shared/jobs/worker');
-      startWorkers();
-    } catch (redisError) {
-      console.warn('⚠️ Could not start BullMQ workers. Is Redis running?', redisError.message);
-    }
+    // Create HTTP server and initialize Socket.io
+    const server = http.createServer(app);
+    initSocket(server, allowedOrigins);
 
     // Start server
     server.listen(PORT, () => {
@@ -252,7 +190,6 @@ const startServer = async () => {
       console.log(`📍 Server URL: http://localhost:${PORT}`);
       console.log(`📋 API Root: http://localhost:${PORT}/`);
       console.log(`💚 Health Check: http://localhost:${PORT}/health`);
-      console.log(`🔌 WebSocket Enabled`);
       console.log(`\n📦 Available Endpoints:`);
       console.log(`   - Authentication: /api/auth`);
       console.log(`   - Users: /api/users`);
@@ -289,8 +226,7 @@ process.on('SIGTERM', async () => {
 });
 
 // Export app for testing
-// Export app for testing
-module.exports = { app, server, io };
+module.exports = app;
 
 // Start the server only if run directly (not required as a module)
 if (require.main === module) {
