@@ -145,7 +145,22 @@ const initialFormState: Partial<Employee> = {
   employeeDeductions: [],
 };
 
-// Start of Component
+/**
+ * Renders the Employee Management page UI with lists, dialogs, forms, and related state and behaviors.
+ *
+ * This component manages loading and displaying employees and applications, dynamic form settings and templates,
+ * allowances/deductions defaults and per-employee overrides, salary calculations, infinite scrolling, bulk upload,
+ * create/edit/view workflows for employees and applications, and approval/rejection flows.
+ *
+ * Key behaviors:
+ * - Loads divisions, departments, designations, employees, and form settings from the API.
+ * - Generates a dynamic import/template from form settings and parses dynamic fields (including qualifications).
+ * - Fetches and preserves allowance/deduction component defaults and supports per-item overrides and prorating.
+ * - Computes frontend salary summaries (allowances, deductions, net, and CTC) for employee, application, and approval contexts.
+ * - Provides UI dialogs for creating/updating employees and applications, approving/rejecting applications, bulk upload, and viewing employee details.
+ *
+ * @returns The component's rendered JSX element.
+ */
 export default function EmployeesPage() {
   const [currentUser, setCurrentUser] = useState<any>(null); // To track logged-in user for view logic
   const [activeTab, setActiveTab] = useState<'employees' | 'applications'>('employees');
@@ -4270,4 +4285,3 @@ export default function EmployeesPage() {
     </div >
   );
 }
-

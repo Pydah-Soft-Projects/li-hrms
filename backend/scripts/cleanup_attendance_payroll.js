@@ -30,6 +30,11 @@ const collectionsToClear = [
     'loans'
 ];
 
+/**
+ * Connects to the configured MongoDB instance and removes all documents from a predefined list of transactional collections while leaving core configuration data intact.
+ *
+ * Performs the full cleanup run: establishes the database connection, iterates the target collections to delete their documents, logs per-collection outcomes, and finally disconnects from MongoDB and exits the process.
+ */
 async function runCleanup() {
     try {
         const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/hrms';

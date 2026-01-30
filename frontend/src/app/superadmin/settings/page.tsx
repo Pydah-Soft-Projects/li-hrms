@@ -101,6 +101,21 @@ const CloseIcon = () => (
   </svg>
 );
 
+/**
+ * Renders the full Settings page UI for configuring system-wide administration options.
+ *
+ * This client React component provides tabbed sections to view and edit settings across modules
+ * including Shift, Employee, Leaves/OD, Loan/Salary Advance, Attendance, Overtime, Permission Deductions,
+ * Attendance Deductions (including Early-Out), Payroll (including payroll cycle definition), Communications,
+ * Feature Control, and General system settings. It manages local state, loads and saves settings via the API,
+ * and displays loading, success, and error states for each section.
+ *
+ * Note: The component performs many side-effecting API calls (load/save) and displays toast or inline
+ * messages for user feedback. It also contains UI logic for workflows, workspace permissions, file upload,
+ * and bulk payslip release.
+ *
+ * @returns The Settings page React element used to render the admin configuration interface.
+ */
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<TabType>('shift');
   const [shiftDurations, setShiftDurations] = useState<ShiftDuration[]>([]);

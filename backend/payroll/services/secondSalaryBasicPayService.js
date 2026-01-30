@@ -4,10 +4,21 @@
  */
 
 /**
- * Calculate basic pay components for 2nd Salary
- * @param {Object} employee - Employee object with second_salary
- * @param {Object} attendanceSummary - MonthlyAttendanceSummary or PayRegisterSummary object
- * @returns {Object} Basic pay calculation result
+ * Compute basic-pay components and the payable amount for an employee's second salary.
+ *
+ * @param {Object} employee - Employee record containing compensation data; must include `second_salary` (numeric) used as the base pay.
+ * @param {Object} attendanceSummary - Attendance summary that must include `totalDaysInMonth` (numeric) and may include `totalPayableShifts`, `totalPaidLeaveDays`, `totalWeeklyOffs`, `totalHolidays`, and `extraDays`.
+ * @returns {Object} An object containing calculated pay fields:
+ *  - `basicPay` (number): the employee's `second_salary`.
+ *  - `perDayBasicPay` (number): per-day rate derived from `basicPay` and `totalDaysInMonth`, rounded to 2 decimals.
+ *  - `payableAmount` (number): total amount payable (base pay for capped paid days plus incentive), rounded to 2 decimals.
+ *  - `incentive` (number): payment for days beyond the month's cap, rounded to 2 decimals.
+ *  - `basePayForWork` (number): payment for the capped paid days, rounded to 2 decimals.
+ *  - `totalDaysInMonth` (number): echoed from `attendanceSummary`.
+ *  - `totalPaidDays` (number): paid days after capping at `totalDaysInMonth`.
+ *  - `extraDays` (number): days beyond `totalDaysInMonth`, rounded to 2 decimals.
+ *  - `calculatedPaidDays` (number): raw paid days before capping (sum of payable shifts, paid leaves, weekly offs, and holidays).
+ *  - `physicalUnits` (number): same as `calculatedPaidDays`, the aggregated units used to compute paid days.
  */
 function calculateBasicPay(employee, attendanceSummary) {
     // Validate inputs

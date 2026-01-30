@@ -3,6 +3,17 @@ require('dotenv').config();
 const Settings = require('../settings/model/Settings');
 const { getPayrollDateRange, getAllDatesInRange } = require('../shared/utils/dateUtils');
 
+/**
+ * Runs a suite of payroll date-range tests by updating settings and validating computed ranges.
+ *
+ * For each predefined test case this function sets payroll cycle boundaries in the Settings collection,
+ * invokes getPayrollDateRange for the target year/month, compares the generated start/end dates and
+ * total days against expected values, and logs pass/fail results. After all cases it restores default
+ * payroll cycle settings.
+ *
+ * Side effects: connects to MongoDB, updates documents in the Settings collection, writes test logs,
+ * and terminates the process with exit code 0 on overall success or 1 on error.
+ */
 async function testDynamicPayrollRange() {
     try {
         const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/li-hrms';

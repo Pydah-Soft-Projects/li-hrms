@@ -105,6 +105,18 @@ interface Designation {
   department: string;
 }
 
+/**
+ * Render the Attendance Management page UI including filters, month navigation, attendance table, detail dialogs,
+ * upload/sync controls, payslip and monthly summary modals, and handlers for editing shifts, in/out times, leaves and OT.
+ *
+ * This component manages state and side-effects for loading and normalizing monthly attendance, paginated/infinite
+ * loading, per-employee calendar data, available shifts, leave conflicts, payslip retrieval and payroll calculation.
+ * It provides interactive flows for assigning shifts, updating in/out times (with optimistic UI marking manual edits),
+ * converting extra hours to OT, revoking/updating leaves, uploading attendance Excel files, and exporting/printing
+ * summaries and payslips.
+ *
+ * @returns The rendered JSX element for the attendance management interface.
+ */
 export default function AttendancePage() {
   const [tableType, setTableType] = useState<'complete' | 'present_absent' | 'in_out' | 'leaves' | 'od' | 'ot'>('complete');
 
@@ -3000,7 +3012,6 @@ function numberToWords(num: number): string {
 
   return words + ' Rupees Only';
 }
-
 
 
 

@@ -8,6 +8,15 @@ import { FiPlus, FiEye, FiCalendar } from 'react-icons/fi';
 import { format } from 'date-fns';
 import { useRouter } from 'next/navigation';
 
+/**
+ * Page component that displays and manages bonus batches with filtering, navigation, and creation workflows.
+ *
+ * Renders a filter UI for start/end months, a table of bonus batches (clickable rows that navigate to batch details),
+ * and a modal to create a new bonus batch. The component fetches batches and related metadata on mount and
+ * whenever filters change, and it handles creating a batch which refreshes the list on success.
+ *
+ * @returns The rendered Bonus Batches page as a React element containing filters, the batches table, and the create-batch modal.
+ */
 export default function BonusBatchesPage() {
   const router = useRouter();
   const [batches, setBatches] = useState<BonusBatch[]>([]);

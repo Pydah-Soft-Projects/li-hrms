@@ -8,10 +8,12 @@ const cacheService = require('../../shared/services/cacheService');
  */
 
 /**
- * Get resolved OT settings for a department
- * @param {String} departmentId - Department ID
- * @returns {Object} Resolved OT settings
- */
+ * Resolve OT settings for a department and optional division, applying department/division overrides to global overtime defaults.
+ *
+ * Caches the resolved settings for 300 seconds; on error returns defaults with zero values.
+ * @param {String} departmentId - Department identifier.
+ * @param {String|null} [divisionId=null] - Optional division identifier.
+ * @returns {{otPayPerHour: number, minOTHours: number}} Resolved OT settings where `otPayPerHour` is the pay rate per OT hour and `minOTHours` is the minimum OT hours threshold.
 async function getResolvedOTSettings(departmentId, divisionId = null) {
     try {
         const cacheKey = `settings:ot:second-salary:dept:${departmentId}:div:${divisionId || 'none'}`;
@@ -45,10 +47,18 @@ async function getResolvedOTSettings(departmentId, divisionId = null) {
 }
 
 /**
- * Calculate OT pay for second salary
- * @param {Number} otHours - Total OT hours
- * @param {String} departmentId - Department ID
- * @returns {Object} OT pay calculation result
+ * Compute overtime pay and eligibility for the second salary cycle.
+ *
+ * @param {number} otHours - Total overtime hours; negative or missing values are treated as 0.
+ * @param {string} departmentId - Department identifier used to resolve department-specific OT settings.
+ * @param {string|null} [divisionId=null] - Optional division identifier used when resolving OT settings.
+ * @returns {Object} An object containing OT input, eligibility and calculated pay:
+ *  - `otHours` {number} — normalized OT hours.
+ *  - `eligibleOTHours` {number} — OT hours that meet the minimum threshold.
+ *  - `otPayPerHour` {number} — resolved pay rate per OT hour.
+ *  - `minOTHours` {number} — resolved minimum OT hours required for eligibility.
+ *  - `otPay` {number} — total OT pay rounded to two decimal places.
+ *  - `isEligible` {boolean} — `true` if `otHours` is greater than or equal to `minOTHours`, `false` otherwise.
  */
 async function calculateOTPay(otHours, departmentId, divisionId = null) {
     // Validate inputs

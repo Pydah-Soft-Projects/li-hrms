@@ -330,6 +330,13 @@ const buildDateRange = (fromDate: string, toDate: string, isHalfDay?: boolean, h
   return dates;
 };
 
+/**
+ * Render the Leave & OD management UI with data loading, permission evaluation, and full apply/approval workflows.
+ *
+ * This client-side component provides tabs for Leaves, On Duty (OD), and Pending approvals; loads current user, employees, leave/OD types, and records; enforces workspace- and role-based permissions; supports applying for leave/OD (including half-day and hour-based OD), evidence upload and geo-location capture, conflict checks against approved records, and employee selection; shows detailed item views with split management, revoke/edit actions, and approval/forward/reject processing; and exposes local state and helpers for filtering, validation, and API interactions used throughout the page.
+ *
+ * @returns The JSX element for the Leaves and On-Duty management page.
+ */
 export default function LeavesPage() {
   const { getModuleConfig, hasPermission, activeWorkspace } = useWorkspace();
   const [activeTab, setActiveTab] = useState<'leaves' | 'od' | 'pending'>('leaves');
@@ -3054,4 +3061,3 @@ export default function LeavesPage() {
     </div>
   );
 }
-

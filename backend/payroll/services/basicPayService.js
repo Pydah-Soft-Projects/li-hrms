@@ -4,10 +4,30 @@
  */
 
 /**
- * Calculate basic pay components
- * @param {Object} employee - Employee object with gross_salary
- * @param {Object} attendanceSummary - MonthlyAttendanceSummary object
- * @returns {Object} Basic pay calculation result
+ * Compute an employee's basic-pay breakdown and payable amount for a month.
+ *
+ * @param {Object} employee - Employee record containing compensation fields.
+ * @param {number} employee.gross_salary - Employee's gross monthly salary; required.
+ * @param {Object} attendanceSummary - Monthly attendance summary used for calculations.
+ * @param {number} attendanceSummary.totalDaysInMonth - Total days in the month; required.
+ * @param {number} [attendanceSummary.totalPayableShifts=0] - Payable shifts (includes present + OD).
+ * @param {number} [attendanceSummary.totalPaidLeaveDays=0] - Paid leave days.
+ * @param {number} [attendanceSummary.totalWeeklyOffs=0] - Weekly offs counted as payable.
+ * @param {number} [attendanceSummary.totalHolidays=0] - Holidays counted as payable.
+ * @param {number} [attendanceSummary.extraDays=0] - Manual extra days (not added to calculated paid days).
+ * @returns {Object} An object containing computed pay components and day counts.
+ * @returns {number} returns.basicPay - The gross monthly basic pay (from employee.gross_salary).
+ * @returns {number} returns.perDayBasicPay - Daily basic pay rounded to 2 decimals.
+ * @returns {number} returns.payableAmount - Total payable amount (base pay + incentive) rounded to 2 decimals.
+ * @returns {number} returns.incentive - Pay for extra days beyond the month's cap, rounded to 2 decimals.
+ * @returns {number} returns.basePayForWork - Pay for capped paid days, rounded to 2 decimals.
+ * @returns {number} returns.totalDaysInMonth - The input totalDaysInMonth.
+ * @returns {number} returns.totalPaidDays - Number of days considered for base pay after capping to month length.
+ * @returns {number} returns.extraDays - Number of days exceeding the month's total, rounded to 2 decimals.
+ * @returns {number} returns.calculatedPaidDays - Raw calculated paid days before capping (physical units).
+ * @returns {number} returns.physicalUnits - Sum of payable shifts, paid leaves, weekly offs, and holidays.
+ * @throws {Error} If `employee` or `employee.gross_salary` is missing.
+ * @throws {Error} If `attendanceSummary` or `attendanceSummary.totalDaysInMonth` is missing.
  */
 function calculateBasicPay(employee, attendanceSummary) {
   // Validate inputs
@@ -83,4 +103,3 @@ function calculateBasicPay(employee, attendanceSummary) {
 module.exports = {
   calculateBasicPay,
 };
-

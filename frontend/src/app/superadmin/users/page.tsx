@@ -104,6 +104,15 @@ const getRoleLabel = (role: string) => {
   return ROLES.find((r) => r.value === role)?.label || role;
 };
 
+/**
+ * Render the user management interface for administering accounts, roles, access scopes, and credentials.
+ *
+ * The component displays aggregated stats, searchable/filterable user lists, and provides dialogs for
+ * creating users, provisioning employees, editing accounts, resetting passwords, viewing details, and
+ * showing created credentials. It manages related data loading, form state, and API interactions.
+ *
+ * @returns The UsersPage React element that encapsulates the full user management UI and its interactive dialogs.
+ */
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);

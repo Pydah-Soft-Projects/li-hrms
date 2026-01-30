@@ -19,6 +19,13 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 
+/**
+ * Render a detailed view for a second-salary batch, including batch header, status actions, summary cards, and a searchable employee breakdown table.
+ *
+ * The component fetches batch data for the current route `id` and provides UI controls to change the batch status.
+ *
+ * @returns A React element that displays batch details, action buttons for status updates, summary metrics, and a searchable list of employee payroll records.
+ */
 export default function SecondSalaryBatchDetailPage() {
     const { id } = useParams();
     const router = useRouter();

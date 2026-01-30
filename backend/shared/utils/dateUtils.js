@@ -1,10 +1,16 @@
 const Settings = require('../../settings/model/Settings');
 
 /**
- * Get the date range for a payroll month based on settings
- * @param {number} year - Target year (e.g., 2026)
- * @param {number} monthNumber - Target month number (1-12)
- * @returns {Promise<{startDate: string, endDate: string, totalDays: number}>}
+ * Compute the payroll date range for a given year and month based on configured payroll cycle start and end days.
+ *
+ * @param {number} year - Target year (e.g., 2026).
+ * @param {number} monthNumber - Target month number (1-12).
+ * @returns {{startDate: string, endDate: string, totalDays: number, startDay: number, endDay: number}} Object with:
+ *  - `startDate`: ISO date (YYYY-MM-DD) for the range start,
+ *  - `endDate`: ISO date (YYYY-MM-DD) for the range end,
+ *  - `totalDays`: inclusive number of days in the range,
+ *  - `startDay`: resolved payroll cycle start day,
+ *  - `endDay`: resolved payroll cycle end day.
  */
 async function getPayrollDateRange(year, monthNumber) {
     // Fetch start and end days from settings
@@ -76,10 +82,10 @@ async function getPayrollDateRange(year, monthNumber) {
 }
 
 /**
- * Get all dates between two date strings (inclusive)
- * @param {string} startDate - YYYY-MM-DD
- * @param {string} endDate - YYYY-MM-DD
- * @returns {string[]}
+ * Generate an array of dates between two calendar dates, inclusive.
+ * @param {string} startDate - Start date in `YYYY-MM-DD` format.
+ * @param {string} endDate - End date in `YYYY-MM-DD` format.
+ * @returns {string[]} An array of date strings in `YYYY-MM-DD` format for each day from `startDate` through `endDate`.
  */
 function getAllDatesInRange(startDate, endDate) {
     const result = [];

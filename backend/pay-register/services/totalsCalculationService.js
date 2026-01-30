@@ -4,9 +4,28 @@
  */
 
 /**
- * Calculate totals from dailyRecords array
- * @param {Array} dailyRecords - Array of daily record objects
- * @returns {Object} Calculated totals
+ * Compute attendance and payroll-related aggregates from an array of daily attendance records.
+ *
+ * Produces counts for full and half days across categories (present, absent, paid leave, LOP, OD),
+ * totals for OT hours, weekly offs, holidays, late and early-out occurrences, and total payable shifts.
+ * Numeric totals are rounded to two decimal places.
+ *
+ * @param {Array<Object>} dailyRecords - Array of daily record objects; each record may include
+ *   status, isSplit, firstHalf, secondHalf, otHours, payableShifts, isLate, isEarlyOut, leaveType/leaveNature, etc.
+ * @returns {Object} An object containing aggregated numeric totals:
+ *   - presentDays, presentHalfDays, totalPresentDays
+ *   - absentDays, absentHalfDays, totalAbsentDays
+ *   - paidLeaveDays, paidLeaveHalfDays, totalPaidLeaveDays
+ *   - unpaidLeaveDays, unpaidLeaveHalfDays, totalUnpaidLeaveDays
+ *   - lopDays, lopHalfDays, totalLopDays
+ *   - totalLeaveDays
+ *   - odDays, odHalfDays, totalODDays
+ *   - totalOTHours
+ *   - totalPayableShifts
+ *   - totalWeeklyOffs
+ *   - totalHolidays
+ *   - lateCount
+ *   - earlyOutCount
  */
 function calculateTotals(dailyRecords) {
   const totals = {
@@ -247,4 +266,3 @@ module.exports = {
   countDaysByCategory,
   calculatePayableShifts,
 };
-

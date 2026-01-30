@@ -85,11 +85,19 @@ const normalizeOverrides = (list, fallbackCategory) => {
  */
 
 /**
- * Calculate payroll for an employee for a specific month
- * @param {String} employeeId - Employee ID
- * @param {String} month - Month in YYYY-MM format
- * @param {String} userId - User ID who triggered the calculation
- * @returns {Object} Payroll calculation result
+ * Compute and persist a complete payroll record for a single employee for the given month.
+ *
+ * Performs attendance sourcing (PayRegisterSummary or MonthlyAttendanceSummary), paid-leave adjustments,
+ * basic pay, OT, allowances (two-pass), deductions (attendance, permission, leave, other), loan EMI and
+ * salary advance processing, optional arrears auto-inclusion, final round-off, transaction log creation,
+ * and saves/updates the PayrollRecord and related batch/state.
+ *
+ * @param {String} employeeId - MongoDB ID of the employee.
+ * @param {String} month - Payroll month in `YYYY-MM` format.
+ * @param {String} userId - ID of the user initiating the calculation (used for audit metadata).
+ * @returns {{ success: boolean, payrollRecord: Object }} Object containing success flag and the saved PayrollRecord.
+ * @throws {Error} When required data is missing or validation fails (e.g., employee not found, attendance missing,
+ *                  invalid gross salary, or batch is locked without recalculation permission).
  */
 async function calculatePayroll(employeeId, month, userId) {
   try {
@@ -860,13 +868,24 @@ async function calculatePayroll(employeeId, month, userId) {
 }
 
 /**
- * New payroll calculation flow (non-destructive; used when strategy=new)
- * @param {String} employeeId - Employee ID
- * @param {String} month - Month in YYYY-MM format
- * @param {String} userId - User ID who triggered the calculation
- * @param {Object} options - Options object
- * @param {String} options.source - Data source ('payregister' or 'all')
- * @param {Array} options.arrearsSettlements - Array of arrears settlements {id, amount}
+ * Calculate payroll for a single employee and month using the non-destructive "new" strategy.
+ *
+ * Performs a full payroll computation using attendance source selection (payregister or monthly summary),
+ * computes basic pay, OT, allowances, attendance and other deductions (including absent LOP and loan/advance EMIs),
+ * applies employee overrides, optionally integrates and settles arrears, rounds the final net pay, persists a PayrollRecord,
+ * and associates the record with a payroll batch.
+ *
+ * @param {String} employeeId - MongoDB ObjectId or string identifier of the employee.
+ * @param {String} month - Payroll month in "YYYY-MM" format.
+ * @param {String} userId - Identifier of the user triggering calculation (used for batching/settlement operations).
+ * @param {Object} [options] - Optional settings for the calculation.
+ * @param {String} [options.source='payregister'] - Attendance source: `'payregister'` to require PayRegisterSummary or `'all'` to allow MonthlyAttendanceSummary fallback.
+ * @param {Array<Object>} [options.arrearsSettlements=[]] - Optional list of arrears settlements to apply: elements with shape `{ arrearId, amount }`. If not provided or empty, pending arrears are auto-fetched.
+ * @returns {Object} An object with calculation result metadata:
+ *  - `success` (boolean) indicates operation success,
+ *  - `payrollRecord` (PayrollRecord) is the persisted payroll document,
+ *  - `batchId` (ObjectId|null) is the associated payroll batch id when available.
+ * @throws {Error} If the employee is not found, required attendance/payregister data is missing, or a locked batch prevents recalculation without permission.
  */
 async function calculatePayrollNew(employeeId, month, userId, options = { source: 'payregister', arrearsSettlements: [] }) {
   try {
@@ -1440,13 +1459,22 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
 }
 
 /**
- * Create transaction logs for audit trail
- * @param {ObjectId} payrollRecordId - Payroll record ID
- * @param {String} employeeId - Employee ID
- * @param {String} emp_no - Employee number
- * @param {String} month - Month
- * @param {String} userId - User ID
- * @param {Object} calculationResults - All calculation results
+ * Records payroll transaction entries for audit.
+ *
+ * Persists transaction entries that represent earnings, deductions, adjustments, and the final net salary
+ * derived from the provided calculationResults into the PayrollTransaction collection.
+ *
+ * @param {ObjectId} payrollRecordId - PayrollRecord _id to associate each transaction with.
+ * @param {String} employeeId - Employee document _id.
+ * @param {String} emp_no - Employee number used for human-readable reference.
+ * @param {String} month - Payroll month identifier (e.g., "2025-01").
+ * @param {String} userId - User _id who initiated the calculation (used as createdBy).
+ * @param {Object} calculationResults - Aggregated calculation outputs used to build transactions.
+ *   Expected keys (not exhaustive): `basicPayResult`, `otPayResult`, `allAllowances`,
+ *   `attendanceDeductionResult`, `permissionDeductionResult`, `leaveDeductionResult`,
+ *   `allOtherDeductions`, `emiResult`, `advanceResult`, `deductions`, `grossSalary`,
+ *   `totalDeductions`, and `netSalary`. Each key provides the amounts and breakdowns
+ *   required to compose the individual transaction entries.
  */
 async function createTransactionLogs(payrollRecordId, employeeId, emp_no, month, userId, calculationResults) {
   const transactions = [];
@@ -1711,4 +1739,3 @@ module.exports = {
   calculatePayrollNew,
   processPayroll,
 };
-

@@ -123,14 +123,25 @@ function calculateAllowanceAmount(rule, basicPay, grossSalary = null, attendance
 }
 
 /**
- * Calculate all allowances for an employee
- * @param {String} departmentId - Department ID
- * @param {Number} basicPay - Basic pay
- * @param {Number} grossSalary - Gross salary (for second pass)
- * @param {Boolean} useGrossBase - Whether to use gross salary as base for percentage
- * @param {Object} attendanceData - Attendance data for proration
- * @param {String} divisionId - Optional Division ID
- * @returns {Array} Array of allowance objects
+ * Calculate applicable allowances for a department and return detailed allowance entries.
+ * 
+ * @param {String} departmentId - Department identifier to resolve department-specific rules.
+ * @param {Number} basicPay - Employee basic pay used as the default calculation base.
+ * @param {Number|null} grossSalary - Employee gross salary; used when a rule's percentage base is `gross`.
+ * @param {Boolean} useGrossBase - When `true`, includes allowances whose percentage base is `gross`; when `false`, includes those based on `basic`.
+ * @param {Object|null} attendanceData - Attendance values used for proration when a rule is based on present days. Expected shape: `{ presentDays: Number, paidLeaveDays: Number, odDays: Number, monthDays: Number }`.
+ * @param {String|null} divisionId - Optional division identifier to resolve division-specific rules.
+ * @return {Array<Object>} Array of allowance objects. Each object contains:
+ * - `masterId` (String): allowance master document id
+ * - `name` (String): allowance name
+ * - `amount` (Number): calculated allowance amount (rounded to 2 decimals)
+ * - `type` (String): `'fixed'` or `'percentage'`
+ * - `base` (String|null): the base used for percentage calculations (`'gross'` or `'basic'`) or `null` for fixed amounts
+ * - `percentage` (Number|undefined): percentage value when `type` is `'percentage'`
+ * - `percentageBase` (String|undefined): same as `base` (preserved for clarity)
+ * - `minAmount` (Number|undefined): minimum clamped amount if defined
+ * - `maxAmount` (Number|undefined): maximum clamped amount if defined
+ * - `basedOnPresentDays` (Boolean): whether the amount was prorated based on present days
  */
 async function calculateAllowances(departmentId, basicPay, grossSalary = null, useGrossBase = false, attendanceData = null, divisionId = null) {
   try {
@@ -205,4 +216,3 @@ module.exports = {
   calculateAllowances,
   calculateTotalAllowances,
 };
-

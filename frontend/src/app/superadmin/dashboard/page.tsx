@@ -66,6 +66,13 @@ const DashboardCard = ({ title, value, description, change, statusBadge }: Dashb
   </div>
 );
 
+/**
+ * Render the Super Admin dashboard UI with KPI cards, yesterday's overview, quick stats, and a recent activities feed.
+ *
+ * Fetches dashboard statistics and recent activities on mount, manages loading and error states, and derives summary values used by the displayed cards and lists.
+ *
+ * @returns A JSX element containing the Super Admin dashboard.
+ */
 export default function SuperAdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<DashboardStats | null>(null);

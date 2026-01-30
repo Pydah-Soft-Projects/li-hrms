@@ -88,6 +88,13 @@ interface PayrollRecord {
   endDate?: string;
 }
 
+/**
+ * Display payroll/payslip details for the payroll ID in the current route and provide a download control for an executive PDF.
+ *
+ * Renders the full payslip UI including employee profile, attendance summary, earnings and deductions, final net pay, loading and not-found states, and a button that generates and saves a detailed PDF of the payslip. Manages fetch, loading, error, and PDF-generation states and surfaces user feedback via toast notifications.
+ *
+ * @returns The React element that renders the payslip detail page UI.
+ */
 export default function PayslipDetailPage() {
   const router = useRouter();
   const params = useParams();
@@ -606,7 +613,13 @@ export default function PayslipDetailPage() {
   );
 }
 
-// Reusable UI Components
+/**
+ * Renders a compact two-line labeled value pair for use in the payslip UI.
+ *
+ * @param label - Uppercase descriptor shown above the value (e.g., "Employee ID")
+ * @param value - The value to display; accepts strings, numbers, or any renderable content
+ * @returns A JSX element containing the label and its corresponding value in a stacked layout
+ */
 function DetailRow({ label, value }: { label: string; value: any }) {
   return (
     <div className="flex flex-col gap-0.5">
@@ -616,6 +629,17 @@ function DetailRow({ label, value }: { label: string; value: any }) {
   );
 }
 
+/**
+ * Displays a compact status tile that shows a label and a numeric/value indicator with configurable color and an optional highlighted style.
+ *
+ * The `value` is rendered as-is; when `value` is falsy it displays `0`. The `color` prop selects a predefined color palette (defaults to `'slate'`). When `highlight` is `true` the card uses a distinct highlighted appearance.
+ *
+ * @param label - Short uppercase label shown above the value
+ * @param value - Primary value displayed in the card; falls back to `0` when falsy
+ * @param color - Named color variant to apply (e.g. `'slate'`, `'indigo'`, `'rose'`, `'emerald'`, `'amber'`, `'blue'`); defaults to `'slate'`
+ * @param highlight - When `true`, renders the highlighted visual style instead of the color variant
+ * @returns A JSX element representing the status card
+ */
 function StatusCard({ label, value, color = 'slate', highlight = false }: { label: string; value: any; color?: string; highlight?: boolean }) {
   const colors: Record<string, string> = {
     slate: 'text-slate-600 dark:text-slate-400 bg-slate-50/50 dark:bg-slate-900/40 border-slate-100 dark:border-slate-800',
@@ -641,6 +665,16 @@ function StatusCard({ label, value, color = 'slate', highlight = false }: { labe
   );
 }
 
+/**
+ * Render a single salary line item with a formatted INR amount and optional deduction styling.
+ *
+ * Omits rendering when `value` is 0 except for the labels "Basic Salary", "Earned Salary", and "Attendance Deduct".
+ *
+ * @param label - The line item label shown on the left (e.g., "Basic Salary", "HRA").
+ * @param value - The monetary amount in INR; displayed with two decimal places and thousands separators.
+ * @param isDeduction - When true, displays the amount as a deduction (prefixed with `-`) and applies deduction styling.
+ * @returns A JSX element for the salary row, or `null` if the row is omitted due to a zero value.
+ */
 function SalaryRow({ label, value, isDeduction = false }: { label: string; value: number; isDeduction?: boolean }) {
   if (value === 0 && !['Basic Salary', 'Earned Salary', 'Attendance Deduct'].includes(label)) return null;
 
@@ -653,4 +687,3 @@ function SalaryRow({ label, value, isDeduction = false }: { label: string; value
     </div>
   );
 }
-

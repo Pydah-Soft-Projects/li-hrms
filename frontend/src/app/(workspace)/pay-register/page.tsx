@@ -90,6 +90,13 @@ interface Shift {
 
 type TableType = 'present' | 'absent' | 'leaves' | 'od' | 'ot' | 'extraHours' | 'shifts';
 
+/**
+ * Render the Pay Register page UI for managing monthly payroll and daily attendance records.
+ *
+ * Renders filters (month, division, department, payroll engine), a summary table, tabbed daily-record grid (present, absent, leaves, OD, OT, extra hours, shifts), editing modal for daily records (half-day/full-day), pagination with "Load More", batch lock and permission flows, sync and payroll calculation controls (individual and bulk), Excel export, and an arrears selection section.
+ *
+ * @returns The React element for the Pay Register management page.
+ */
 export default function PayRegisterPage() {
   const router = useRouter();
   const [currentDate, setCurrentDate] = useState(new Date());

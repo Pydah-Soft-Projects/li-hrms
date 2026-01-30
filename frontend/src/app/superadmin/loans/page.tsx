@@ -115,6 +115,13 @@ interface Employee {
   last_name?: string;
 }
 
+/**
+ * Render the Loans & Salary Advance management page with tabs, search/filtering, listings, detail views, and interactive dialogs for apply, edit, disburse, payment, and settlement workflows.
+ *
+ * The component loads and manages loans, salary advances, pending approvals, employees, eligibility and loan settings; provides inline calculations (EMI/interest/settlement), records transactions, and exposes actions for approving, rejecting, updating, disbursing, and recording payments. UI and available actions adapt to the current user's role.
+ *
+ * @returns The React element that renders the Loans & Salary Advance management interface.
+ */
 export default function LoansPage() {
   const [activeTab, setActiveTab] = useState<'loans' | 'advances' | 'pending'>('loans');
   const [loans, setLoans] = useState<LoanApplication[]>([]);
@@ -3218,4 +3225,3 @@ export default function LoansPage() {
     </div >
   );
 }
-

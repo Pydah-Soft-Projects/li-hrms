@@ -22,6 +22,13 @@ import { toast } from 'react-toastify';
 import { format } from 'date-fns';
 import * as XLSX from 'xlsx';
 
+/**
+ * Render the Second Salary Payments administration page with controls to run payroll cycles, view recent batches, and compare/export salary data.
+ *
+ * Provides a two-mode UI ("batches" and "comparison") with filter controls, batch listing, employee-level salary comparison, payroll execution (per-department or global), and Excel export.
+ *
+ * @returns The React element tree for the Second Salary Payments page.
+ */
 export default function SecondSalaryPaymentsPage() {
     const [batches, setBatches] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);

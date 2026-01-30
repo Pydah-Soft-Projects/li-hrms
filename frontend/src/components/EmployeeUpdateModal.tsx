@@ -9,6 +9,13 @@ interface EmployeeUpdateModalProps {
     onSuccess: () => void;
 }
 
+/**
+ * Renders a two-step modal for bulk updating employees: select fields to update, download a template, then upload a filled Excel file to apply updates.
+ *
+ * @param onClose - Callback invoked to close the modal
+ * @param onSuccess - Callback invoked after a successful bulk update (called shortly after completion)
+ * @returns The modal JSX for selecting fields, downloading a template, uploading a file, and displaying progress and results
+ */
 export default function EmployeeUpdateModal({ onClose, onSuccess }: EmployeeUpdateModalProps) {
     const [step, setStep] = useState<'select' | 'upload'>('select');
     const [file, setFile] = useState<File | null>(null);

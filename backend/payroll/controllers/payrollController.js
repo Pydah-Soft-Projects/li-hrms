@@ -18,7 +18,21 @@ const MonthlyAttendanceSummary = require('../../attendance/model/MonthlyAttendan
  * @route   POST /api/payroll/calculate
  * @access  Private (Super Admin, Sub Admin, HR)
  */
-// Shared payslip assembler (used by calculate & getPayslip)
+/**
+ * Assemble a normalized payslip object and its source payroll record for a given employee and month.
+ *
+ * Builds a payslip with employee metadata, attendance breakdown, earnings, deductions, loan/advance info,
+ * arrears, net salary and related totals by reading the stored PayrollRecord and optional PayRegisterSummary
+ * / MonthlyAttendanceSummary as fallbacks.
+ *
+ * @param {import('mongoose').Types.ObjectId|string} employeeId - Employee identifier.
+ * @param {string} month - Target month in `YYYY-MM` format.
+ * @returns {{ payrollRecord: Object, payslip: Object }} An object containing:
+ *   - `payrollRecord`: the matching PayrollRecord document (populated with employee references when available).
+ *   - `payslip`: a normalized payslip object with fields `month`, `employee`, `attendance`, `earnings`,
+ *     `deductions`, `loanAdvance`, `arrears`, `netSalary`, and related metadata used by APIs and Excel export.
+ * @throws {Error} If no PayrollRecord is found for the given employee and month (message: "Payslip not found. Please calculate payroll first.").
+ */
 async function buildPayslipData(employeeId, month) {
   const payrollRecord = await PayrollRecord.findOne({
     employeeId,
@@ -190,12 +204,13 @@ async function buildPayslipData(employeeId, month) {
 }
 
 /**
- * Build Excel row with normalized columns (all employees have same columns)
- * @param {Object} payslip - Payslip data
- * @param {Set} allAllowanceNames - All unique allowance names across all employees
- * @param {Set} allDeductionNames - All unique deduction names across all employees
- * @param {Number} serialNo - Serial number for S.No column
- */
+ * Produce a normalized Excel row for a single payslip so every row uses the same column set.
+ *
+ * @param {Object} payslip - Consolidated payslip object for an employee and month.
+ * @param {Set<string>} allAllowanceNames - Set of all allowance names that should appear as columns.
+ * @param {Set<string>} allDeductionNames - Set of all deduction names that should appear as columns.
+ * @param {number} serialNo - Serial number to place in the "S.No" column.
+ * @returns {Object} A flat object whose keys are Excel column headers (e.g., "Name", "BASIC", each allowance and deduction name, attendance and totals) and whose values are the corresponding cell values for the given payslip.
 function buildPayslipExcelRowsNormalized(payslip, allAllowanceNames, allDeductionNames, serialNo) {
   const row = {
     'S.No': serialNo,

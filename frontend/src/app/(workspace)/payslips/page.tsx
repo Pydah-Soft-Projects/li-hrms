@@ -86,6 +86,14 @@ interface PayrollRecord {
   endDate?: string;
 }
 
+/**
+ * Renders the Employee Payslips management page with filtering, selection, pagination, and PDF export capabilities.
+ *
+ * Displays payroll records for a selected month, provides filters (department, designation, employee, status, search),
+ * supports selecting individual or multiple payslips, viewing details, exporting single or bulk payslip PDFs, and paginating results.
+ *
+ * @returns The React element for the Employee Payslips management page.
+ */
 export default function PayslipsPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);

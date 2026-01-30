@@ -34,6 +34,15 @@ function shiftLabel(shift?: Shift | null) {
   return shift.name || '';
 }
 
+/**
+ * Render the shift roster UI for assigning and reviewing employee shifts for a selected month.
+ *
+ * The component loads shifts, employees, divisions, departments, and existing roster entries;
+ * provides controls to filter by division/department and month; supports per-cell, per-employee,
+ * and bulk shift/weekly-off assignments; and persists changes to the backend with progress feedback.
+ *
+ * @returns The React element tree for the roster page, including the roster table, assigned-shifts summary, controls, and modals.
+ */
 function RosterPage() {
   const [month, setMonth] = useState(formatMonthInput(new Date()));
   const [strict, setStrict] = useState(false);

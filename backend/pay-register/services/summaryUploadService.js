@@ -10,11 +10,16 @@ const mongoose = require('mongoose');
  */
 
 /**
- * Process bulk upload of monthly summaries
- * @param {String} month - Month in YYYY-MM format
- * @param {Array} rows - Array of objects from Excel
- * @param {String} userId - ID of user performing upload
- * @returns {Object} Result summary
+ * Processes an array of Excel-derived monthly summary rows for a specific month and updates or creates pay register summaries for each employee.
+ *
+ * @param {string} month - Month identifier in "YYYY-MM" format for which summaries should be applied.
+ * @param {Array<Object>} rows - Array of objects parsed from Excel; column keys are matched case-insensitively against expected names (e.g., "Employee Code", "Total Present").
+ * @param {string} userId - Identifier of the user performing the upload; recorded as lastEditedBy on modified pay registers.
+ * @returns {Object} Summary of the bulk processing results.
+ * @property {number} total - Total number of rows processed.
+ * @property {number} success - Number of rows successfully processed and persisted.
+ * @property {number} failed - Number of rows that failed processing.
+ * @property {string[]} errors - Array of error messages with row indices and failure details.
  */
 async function processSummaryBulkUpload(month, rows, userId) {
     const [year, monthNum] = month.split('-').map(Number);

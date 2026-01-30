@@ -6,7 +6,9 @@ const Loan = require('../../loans/model/Loan');
  */
 
 /**
- * Get active loans for an employee
+ * Retrieve active loan records for an employee that are eligible for EMI deductions.
+ * @param {string|ObjectId} employeeId - Employee identifier to filter loans.
+ * @returns {Array<Object>} An array of loan documents (selected fields: `_id`, `loanConfig`, `repayment`). Returns an empty array on error or if no matching loans are found.
  */
 async function getActiveLoans(employeeId) {
     try {
@@ -26,8 +28,12 @@ async function getActiveLoans(employeeId) {
 }
 
 /**
- * Get active salary advances for an employee
- */
+ * Retrieve active salary advances for an employee that have a remaining balance.
+ *
+ * Returns only the selected fields for each advance: `_id`, `repayment`, and `amount`.
+ *
+ * @param {string|object} employeeId - Employee identifier used to filter advances.
+ * @returns {Array<object>} An array of advance documents containing `_id`, `repayment`, and `amount`. */
 async function getActiveAdvances(employeeId) {
     try {
         return await Loan.find({
@@ -43,7 +49,12 @@ async function getActiveAdvances(employeeId) {
 }
 
 /**
- * Calculate total EMI
+ * Compute the total monthly EMI and a per-loan breakdown for an employee's active loans.
+ * @param {string|Object} employeeId - Identifier of the employee whose active loans are evaluated.
+ * @returns {{totalEMI: number, emiBreakdown: Array<{loanId: any, emiAmount: number}>, loanCount: number}} An object with:
+ *  - totalEMI: rounded sum of EMI amounts,
+ *  - emiBreakdown: array of entries with `loanId` and rounded `emiAmount`,
+ *  - loanCount: number of loans considered.
  */
 async function calculateTotalEMI(employeeId) {
     try {
@@ -74,7 +85,10 @@ async function calculateTotalEMI(employeeId) {
 }
 
 /**
- * Process salary advance deduction
+ * Calculate how much to deduct from an employee's active salary advances for a given payable amount and provide a per-advance breakdown.
+ * @param {string} employeeId - Identifier of the employee whose active advances will be processed.
+ * @param {number} payableAmount - Amount available to apply toward outstanding advances.
+ * @returns {{advanceDeduction: number, advanceBreakdown: Array<{advanceId: any, advanceAmount: number, carriedForward: number}>, totalAdvanceBalance: number}} advanceDeduction is the total amount deducted from advances; advanceBreakdown is an array of objects for each advance containing `advanceId`, `advanceAmount` (deducted from that advance, rounded to two decimals), and `carriedForward` (remaining balance after deduction, rounded to two decimals); totalAdvanceBalance is the sum of remaining balances before deductions (rounded to two decimals).
  */
 async function processSalaryAdvance(employeeId, payableAmount) {
     try {
@@ -130,7 +144,21 @@ async function processSalaryAdvance(employeeId, payableAmount) {
 }
 
 /**
- * Combined helper for 2nd Salary
+ * Calculate combined loan EMI and salary-advance deductions for an employee for a payroll run.
+ *
+ * Computes total EMI summary from active loans and determines advance deductions (and breakdown)
+ * based on the provided payable amount.
+ *
+ * @param {string} employeeId - Employee identifier to fetch loans and advances for.
+ * @param {string} month - Payroll month identifier used for contextual calculations (may be unused by this implementation).
+ * @param {number} [payableAmount=0] - Amount available in the current payroll to apply toward salary-advance deductions.
+ * @returns {Object} Aggregated loan and advance calculation results.
+ * @returns {number} returns.totalEMI - Sum of EMI amounts to be deducted from salary.
+ * @returns {Array<Object>} returns.emiBreakdown - List of EMI entries with `{ loanId: string, emiAmount: number }`.
+ * @returns {number} returns.loanCount - Number of active loans considered.
+ * @returns {number} returns.advanceDeduction - Total amount deducted towards salary advances from the payable amount.
+ * @returns {Array<Object>} returns.advanceBreakdown - List of advance entries with `{ advanceId: string, advanceAmount: number, carriedForward: number }`.
+ * @returns {number} returns.totalAdvanceBalance - Combined remaining balance of active advances prior to deduction.
  */
 async function calculateLoanAdvance(employeeId, month, payableAmount = 0) {
     // IMPORTANT: For many implementations, loans are only deducted from the main salary.

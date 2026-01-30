@@ -183,6 +183,15 @@ interface PermissionRequest {
   };
 }
 
+/**
+ * Manage overtime and permission requests with a tabbed UI, including list views, filters, creation dialogs,
+ * evidence capture, approval/rejection flows, and QR/outpass viewing.
+ *
+ * Renders controls and dialogs for loading employees/shifts, fetching attendance, creating OT/permission requests
+ * (with photo evidence and optional geo-location), and approving or rejecting requests with toast feedback.
+ *
+ * @returns A JSX element rendering the OT & Permissions management interface.
+ */
 export default function OTAndPermissionsPage() {
   const [activeTab, setActiveTab] = useState<'ot' | 'permissions'>('ot');
   const [loading, setLoading] = useState(false);
@@ -1750,4 +1759,3 @@ export default function OTAndPermissionsPage() {
     </div >
   );
 }
-

@@ -9,6 +9,17 @@ interface SecondSalaryUpdateModalProps {
     onSuccess: () => void;
 }
 
+/**
+ * Renders a modal UI for bulk updating "second salary" values via an Excel file.
+ *
+ * Presents instructions and a template download, accepts an .xlsx/.xls file, uploads it to the server,
+ * and displays a summary of update results including per-row errors. After a successful upload, calls
+ * `onSuccess` after a short delay so the user can view the stats.
+ *
+ * @param onClose - Callback invoked to close the modal
+ * @param onSuccess - Callback invoked after a successful upload (called ~2 seconds after success to allow stats to be visible)
+ * @returns The modal element containing the upload UI, status messages, and update summary
+ */
 export default function SecondSalaryUpdateModal({ onClose, onSuccess }: SecondSalaryUpdateModalProps) {
     const [file, setFile] = useState<File | null>(null);
     const [uploading, setUploading] = useState(false);
