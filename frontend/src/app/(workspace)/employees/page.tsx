@@ -52,7 +52,6 @@ interface Employee {
   bank_name?: string;
   bank_place?: string;
   ifsc_code?: string;
-  salary_mode?: string;
   is_active?: boolean;
   leftDate?: string | null;
   leftReason?: string | null;
