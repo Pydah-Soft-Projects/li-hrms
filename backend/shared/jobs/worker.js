@@ -62,7 +62,7 @@ const startWorkers = () => {
 
     // Application Action Worker
     const applicationWorker = new Worker('applicationQueue', async (job) => {
-        const { type, applicationIds, approvalData, approverId, comments } = job.data;
+        const { type, applicationIds, bulkSettings, approverId, comments } = job.data;
         console.log(`[Worker] Processing ${type} for ${applicationIds.length} applications`);
 
         const EmployeeApplication = require('../../employee-applications/model/EmployeeApplication');
@@ -82,8 +82,8 @@ const startWorkers = () => {
             const id = applicationIds[i];
             try {
                 if (type === 'approve-bulk') {
-                    // Approval logic
-                    const { approvedSalary, doj, employeeAllowances, employeeDeductions, ctcSalary, calculatedSalary } = approvalData || {};
+                    // Approval logic - use bulkSettings instead of approvalData
+                    const { approvedSalary, doj, comments: bulkComments, employeeAllowances, employeeDeductions, ctcSalary, calculatedSalary } = bulkSettings || {};
                     const application = await EmployeeApplication.findById(id);
 
                     if (!application) throw new Error(`Application ${id} not found`);
@@ -97,7 +97,7 @@ const startWorkers = () => {
                     application.doj = finalDOJ;
                     application.approvedBy = approverId;
                     application.approvedAt = new Date();
-                    application.approvalComments = comments || 'Bulk approved';
+                    application.approvalComments = bulkComments || comments || 'Bulk approved';
 
                     // Normalization logic
                     const normalize = (list) => Array.isArray(list) ? list.filter(item => item && (item.masterId || item.name)).map(item => ({ ...item, isOverride: true })) : [];

@@ -23,7 +23,7 @@ const preScheduledShiftSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['WO'], // 'WO' for Week Off, null is allowed by default
+      enum: ['WO', 'HOL'], // 'WO' for Week Off, 'HOL' for Holiday, null is allowed
       default: null,
       index: true,
     },
@@ -70,18 +70,18 @@ preScheduledShiftSchema.index({ employeeNumber: 1, date: 1 }, { unique: true });
 // Validation: Either shiftId or status must be present
 // Using async pre('save') hook without next callback
 preScheduledShiftSchema.pre('save', async function () {
-  // Allow if shiftId exists (regular shift) OR status is 'WO' (week off)
+  // Allow if shiftId exists (regular shift) OR status is 'WO' or 'HOL'
   const hasShiftId = this.shiftId != null && this.shiftId.toString().trim() !== '';
-  const hasWeekOffStatus = this.status === 'WO';
+  const hasNonWorkingStatus = ['WO', 'HOL'].includes(this.status);
 
-  if (!hasShiftId && !hasWeekOffStatus) {
+  if (!hasShiftId && !hasNonWorkingStatus) {
     console.error('[Model Validation] Invalid entry:', {
       employeeNumber: this.employeeNumber,
       date: this.date,
       shiftId: this.shiftId,
       status: this.status,
     });
-    throw new Error('Either shiftId or status (WO) must be provided');
+    throw new Error('Either shiftId or status (WO/HOL) must be provided');
   }
 });
 

@@ -262,7 +262,8 @@ exports.getRoster = async (req, res) => {
           let status = s.status;
           if (!status && !s.shiftId) {
             // Legacy data: if shiftId is null and no status, check notes
-            status = (s.notes && s.notes.includes('Week Off')) ? 'WO' : undefined;
+            if (s.notes && s.notes.includes('Week Off')) status = 'WO';
+            else if (s.notes && s.notes.includes('Holiday')) status = 'HOL';
           }
 
           return {
@@ -274,7 +275,7 @@ exports.getRoster = async (req, res) => {
             actualShift: s.actualShiftId || null,
             isDeviation: s.isDeviation || false,
             attendanceDailyId: s.attendanceDailyId || null,
-            status: status || undefined, // Return 'WO' if status is 'WO', otherwise undefined
+            status: status || undefined, // Return 'WO' or 'HOL' if set, otherwise undefined
           };
         }),
       },
@@ -352,10 +353,10 @@ exports.saveRoster = async (req, res) => {
         return;
       }
 
-      // Validate: must have either shiftId or status='WO'
-      if (!e.shiftId && e.status !== 'WO') {
+      // Validate: must have either shiftId or status='WO' or 'HOL'
+      if (!e.shiftId && e.status !== 'WO' && e.status !== 'HOL') {
         skippedCount++;
-        console.warn(`[Entry ${index}] Skipping: no shiftId and status is not 'WO':`, e);
+        console.warn(`[Entry ${index}] Skipping: no shiftId and status is not 'WO' or 'HOL':`, e);
         return;
       }
 
@@ -366,12 +367,12 @@ exports.saveRoster = async (req, res) => {
         scheduledBy: req.user._id,
       };
 
-      // Handle week off
-      if (e.status === 'WO') {
+      // Handle week off or holiday
+      if (e.status === 'WO' || e.status === 'HOL') {
         entry.shiftId = null;
-        entry.status = 'WO';
-        entry.notes = 'Week Off';
-        console.log(`[Entry ${index}] Week off for ${empNo} on ${day}`);
+        entry.status = e.status;
+        entry.notes = e.status === 'WO' ? 'Week Off' : 'Holiday';
+        console.log(`[Entry ${index}] ${e.status} for ${empNo} on ${day}`);
       } else {
         // Regular shift - must have valid shiftId
         if (!e.shiftId) {
