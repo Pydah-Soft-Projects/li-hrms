@@ -112,13 +112,9 @@ async function calculateSecondSalary(employeeId, month, userId) {
         } else {
             paidLeaves = department?.paidLeaves || 0;
         }
-
-        // Calculate remaining paid leaves and adjust payable shifts
         const totalLeaves = attendanceSummary.totalLeaveDays || 0;
         const remainingPaidLeaves = Math.max(0, paidLeaves - totalLeaves);
         console.log(`Remaining Paid Leaves: ${remainingPaidLeaves}`);
-
-        // Update attendanceSummary payable shifts with remaining paid leaves
         attendanceSummary.totalPayableShifts = (attendanceSummary.totalPayableShifts || 0) + remainingPaidLeaves;
 
         // Batch Validation
