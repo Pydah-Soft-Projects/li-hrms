@@ -2615,7 +2615,7 @@ export const api = {
   },
 
   getPayrollById: async (payrollId: string) => {
-    return apiRequest<ApiResponse<PayrollRecordResponse>>(`/payroll/record/${payrollId}`, { method: 'GET' });
+    return apiRequest<PayrollRecordResponse>(`/payroll/record/${payrollId}`, { method: 'GET' });
   },
 
 

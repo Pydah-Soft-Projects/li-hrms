@@ -116,8 +116,8 @@ export default function PayslipDetailPage() {
       console.log('Fetching payroll with ID:', payrollId);
       const response = await api.getPayrollById(payrollId);
       console.log('Fetch Response:', response);
-      if (response.success) {
-        setPayroll(response.data);
+      if (response.success && response.data) {
+        setPayroll(response.data as PayrollRecord);
       } else {
         console.warn('Payslip not found or API error:', response.message);
         setError(response.message || 'Payslip not found');
@@ -278,7 +278,7 @@ export default function PayslipDetailPage() {
       const monthDays = payroll.attendance?.totalDaysInMonth || 0;
       const presentDays = payroll.attendance?.presentDays || 0;
       const paidLeaves = payroll.attendance?.paidLeaveDays || 0;
-      const totalLeaves = (payroll.attendance as any)?.totalLeaveDays ?? paidLeaves + ((payroll.attendance as any)?.totalLopDays ?? 0) ?? 0;
+      const totalLeaves = (payroll.attendance as any)?.totalLeaveDays ?? paidLeaves + ((payroll.attendance as any)?.totalLopDays ?? 0);
       const absents = payroll.attendance?.absentDays ?? 0;
       doc.setFontSize(9);
       doc.setTextColor(71, 85, 105);

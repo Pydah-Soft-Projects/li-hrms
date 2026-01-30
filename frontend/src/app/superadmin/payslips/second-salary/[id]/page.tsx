@@ -198,7 +198,7 @@ export default function SecondSalaryPayslipDetail() {
             const attDedDays = record.deductions?.attendanceDeductionBreakdown?.daysDeducted ?? record.attendance?.attendanceDeductionDays ?? 0;
             const totalPaid = record.attendance?.totalPaidDays ?? record.attendance?.paidDays ?? 0;
             const finalPaid = record.attendance?.finalPaidDays ?? Math.max(0, totalPaid - attDedDays);
-            const totalLeaves = (record.attendance as any)?.totalLeaveDays ?? (record.attendance?.paidLeaveDays ?? 0) + ((record.attendance as any)?.totalLopDays ?? 0) ?? 0;
+            const totalLeaves = (record.attendance as any)?.totalLeaveDays ?? (record.attendance?.paidLeaveDays ?? 0) + ((record.attendance as any)?.totalLopDays ?? 0);
             const attendanceData = [
                 ['Month Days', record.attendance?.totalDaysInMonth || 0],
                 ['Present Days', record.attendance?.presentDays || 0],
@@ -228,9 +228,16 @@ export default function SecondSalaryPayslipDetail() {
                     0: { cellWidth: 90, fontStyle: 'bold' },
                     1: { cellWidth: 30, halign: 'right' }
                 },
-                rowStyles: {
-                    9: { fillColor: [254, 226, 226], textColor: [185, 28, 28], fontStyle: 'bold' },
-                    10: { fillColor: [220, 252, 231], textColor: [22, 101, 52], fontStyle: 'bold' }
+                didParseCell: (data) => {
+                    if (data.section === 'body' && data.row.index === 9) {
+                        data.cell.styles.fillColor = [254, 226, 226];
+                        data.cell.styles.textColor = [185, 28, 28];
+                        data.cell.styles.fontStyle = 'bold';
+                    } else if (data.section === 'body' && data.row.index === 10) {
+                        data.cell.styles.fillColor = [220, 252, 231];
+                        data.cell.styles.textColor = [22, 101, 52];
+                        data.cell.styles.fontStyle = 'bold';
+                    }
                 },
                 margin: { left: 14, right: pageWidth / 2 + 5 }
             });
