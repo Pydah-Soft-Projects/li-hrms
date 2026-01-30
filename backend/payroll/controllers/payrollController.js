@@ -7,8 +7,7 @@ const Loan = require('../../loans/model/Loan');
 const payrollCalculationService = require('../services/payrollCalculationService');
 const XLSX = require('xlsx');
 const PayRegisterSummary = require('../../pay-register/model/PayRegisterSummary');
-const MonthlyAttendanceSummary = require('../../attendance/model/MonthlyAttendanceSummary');
-
+const MonthlyAttendanceSummary = require('../../attendance/model/MonthlyAttendanceSummary');  
 /**
  * Payroll Controller
  * Handles payroll calculation, retrieval, and processing
@@ -27,9 +26,10 @@ async function buildPayslipData(employeeId, month) {
   }).populate({
     path: 'employeeId',
     select:
-      'employee_name emp_no department_id designation_id gross_salary location bank_account_no pf_number esi_number',
+      'employee_name emp_no department_id division_id designation_id gross_salary location bank_account_no bank_name salary_mode doj pf_number esi_number',
     populate: [
       { path: 'department_id', select: 'name' },
+      { path: 'division_id', select: 'name' },
       { path: 'designation_id', select: 'name' },
     ],
   });
@@ -54,6 +54,18 @@ async function buildPayslipData(employeeId, month) {
       const Department = require('../../departments/model/Department');
       const dept = await Department.findById(employee.department_id).select('name');
       if (dept) departmentName = dept.name;
+    }
+  }
+
+  // Division name
+  let divisionName = 'N/A';
+  if (employee?.division_id) {
+    if (typeof employee.division_id === 'object' && employee.division_id.name) {
+      divisionName = employee.division_id.name;
+    } else if (employee.division_id.toString) {
+      const Division = require('../../departments/model/Division');
+      const div = await Division.findById(employee.division_id).select('name');
+      if (div) divisionName = div.name;
     }
   }
 
@@ -109,9 +121,13 @@ async function buildPayslipData(employeeId, month) {
       emp_no: payrollRecord.emp_no,
       name: employee?.employee_name || 'N/A',
       department: departmentName,
+      division: divisionName,
       designation: designationName,
       location: employee?.location || '',
       bank_account_no: employee?.bank_account_no || '',
+      bank_name: employee?.bank_name || '',
+      payment_mode: employee?.salary_mode || '',
+      date_of_joining: employee?.doj || '',
       pf_number: employee?.pf_number || '',
       esi_number: employee?.esi_number || '',
     },
@@ -131,6 +147,7 @@ async function buildPayslipData(employeeId, month) {
       otHours: payrollRecord.attendance?.otHours || otHours,
       otDays: payrollRecord.attendance?.otDays || 0,
       earnedSalary: payrollRecord.attendance?.earnedSalary || earnedSalary,
+      lopDays: payRegisterSummary?.totals?.totalLopDays || 0,
       incentiveDays: incentiveDays, // Keep for backward compatibility
       workingDays: null, // Can be derived if needed
     },
@@ -186,7 +203,11 @@ function buildPayslipExcelRowsNormalized(payslip, allAllowanceNames, allDeductio
     'Name': payslip.employee.name || '',
     'Designation': payslip.employee.designation || '',
     'Department': payslip.employee.department || '',
-    'Division': '',
+    'Division': payslip.employee.division || '',
+    'Date of Joining': payslip.employee.date_of_joining ? new Date(payslip.employee.date_of_joining).toLocaleDateString() : '',
+    'Payment Mode': payslip.employee.payment_mode || '',
+    'Bank Name': payslip.employee.bank_name || '',
+    'Bank Account No': payslip.employee.bank_account_no || '',
     'BASIC': payslip.earnings.basicPay || 0,
   };
 
@@ -212,7 +233,7 @@ function buildPayslipExcelRowsNormalized(payslip, allAllowanceNames, allDeductio
   row['Paid Leaves'] = payslip.attendance?.paidLeaveDays || 0;
   row['OD Days'] = payslip.attendance?.odDays || 0;
   row['Absents'] = payslip.attendance?.absentDays || 0;
-  row['LOP\'s'] = payRegisterSummary?.totals?.totalLopDays || 0;
+  row['LOP\'s'] = payslip.attendance?.lopDays || 0;
   row['Payable Shifts'] = payslip.attendance?.payableShifts || 0;
   row['Extra Days'] = payslip.attendance?.extraDays || 0;
   row['Total Paid Days'] = payslip.paidDays || 0;
@@ -1389,4 +1410,3 @@ exports.getAttendanceDataRange = async (req, res) => {
     });
   }
 };
-

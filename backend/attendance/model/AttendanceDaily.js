@@ -33,7 +33,7 @@ const attendanceDailySchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['PRESENT', 'ABSENT', 'PARTIAL', 'HALF_DAY'],
+      enum: ['PRESENT', 'ABSENT', 'PARTIAL', 'HALF_DAY', 'HOLIDAY', 'WEEK_OFF'],
       default: 'ABSENT',
     },
     source: {
@@ -209,6 +209,19 @@ attendanceDailySchema.methods.calculateTotalHours = function () {
 
 // Pre-save hook to calculate total hours, status, and early-out deduction
 attendanceDailySchema.pre('save', async function () {
+  // Fetch roster status if not already known
+  let rosterStatus = null;
+  try {
+    const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
+    const rosterEntry = await PreScheduledShift.findOne({
+      employeeNumber: this.employeeNumber,
+      date: this.date,
+    });
+    rosterStatus = rosterEntry?.status; // 'WO' or 'HOL'
+  } catch (err) {
+    console.error('[AttendanceDaily Model] Error fetching roster status:', err);
+  }
+
   if (this.inTime && this.outTime) {
     this.calculateTotalHours();
 
@@ -229,10 +242,28 @@ attendanceDailySchema.pre('save', async function () {
         this.status = 'PRESENT';
       }
     }
+
+    // Special Requirement: If worked on Holiday/Week-Off, add remark
+    if (rosterStatus === 'HOL' || rosterStatus === 'WO') {
+      const dayLabel = rosterStatus === 'HOL' ? 'Holiday' : 'Week Off';
+      const remark = `Worked on ${dayLabel}`;
+      if (!this.notes) {
+        this.notes = remark;
+      } else if (!this.notes.includes(remark)) {
+        this.notes = `${this.notes} | ${remark}`;
+      }
+    }
   } else if (this.inTime || this.outTime) {
     this.status = 'PARTIAL';
   } else {
-    this.status = 'ABSENT';
+    // No punches - use roster status if available, else default to ABSENT
+    if (rosterStatus === 'HOL') {
+      this.status = 'HOLIDAY';
+    } else if (rosterStatus === 'WO') {
+      this.status = 'WEEK_OFF';
+    } else {
+      this.status = 'ABSENT';
+    }
   }
 
   // Calculate early-out deduction if earlyOutMinutes exists

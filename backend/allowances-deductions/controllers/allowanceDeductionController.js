@@ -1,5 +1,7 @@
 const AllowanceDeductionMaster = require('../model/AllowanceDeductionMaster');
 const Department = require('../../departments/model/Department');
+const Employee = require('../../employees/model/Employee');
+const XLSX = require('xlsx');
 
 /**
  * @desc    Get all allowances and deductions
@@ -552,6 +554,149 @@ exports.getResolvedRule = async (req, res) => {
 };
 
 /**
+ * @desc    Download A&D Template with Master Amounts
+ * @route   GET /api/allowances-deductions/template
+ * @access  Private
+ */
+exports.downloadTemplate = async (req, res) => {
+  console.log('Starting downloadTemplate...');
+  try {
+    // Fetch all active allowances and deductions
+    const allowances = await AllowanceDeductionMaster.find({ category: 'allowance', isActive: true }).sort({ name: 1 });
+    const deductions = await AllowanceDeductionMaster.find({ category: 'deduction', isActive: true }).sort({ name: 1 });
+    console.log(`Found ${allowances.length} allowances and ${deductions.length} deductions.`);
+
+    // Fetch all active employees with necessary fields
+    const employees = await Employee.find({ is_active: true })
+      .select('emp_no employee_name department_id division_id designation_id employeeAllowances employeeDeductions')
+      .populate('department_id', 'name')
+      .populate('division_id', 'name')
+      .populate('designation_id', 'name')
+      .sort({ emp_no: 1 });
+    console.log(`Found ${employees.length} employees.`);
+
+    const rows = employees.map((emp, index) => {
+      try {
+        const deptObj = emp.department_id;
+        const divObj = emp.division_id;
+        const desigObj = emp.designation_id;
+
+        const row = {
+          'Employee ID': emp.emp_no,
+          'Name': emp.employee_name,
+          'Department': (deptObj && typeof deptObj === 'object') ? (deptObj.name || '') : '',
+          'Designation': (desigObj && typeof desigObj === 'object') ? (desigObj.name || '') : ''
+        };
+
+        // Create Maps for faster and safer lookup of overrides
+        const allowMap = new Map();
+        (Array.isArray(emp.employeeAllowances) ? emp.employeeAllowances : []).forEach(a => {
+          if (a && a.masterId) allowMap.set(String(a.masterId), a);
+        });
+
+        const deductMap = new Map();
+        (Array.isArray(emp.employeeDeductions) ? emp.employeeDeductions : []).forEach(d => {
+          if (d && d.masterId) deductMap.set(String(d.masterId), d);
+        });
+
+        // Helper to resolve amount
+        const resolveAmount = (master, overrideMap) => {
+          // 1. Check Employee Override
+          const override = overrideMap.get(String(master._id));
+
+          if (override) {
+            if (override.type === 'percentage') return 0;
+            return override.amount !== null && override.amount !== undefined ? override.amount : 0;
+          }
+
+          // Get Department and Division IDs safely
+          const deptId = deptObj?._id ? String(deptObj._id) : (deptObj ? String(deptObj) : null);
+          const divId = divObj?._id ? String(divObj._id) : (divObj ? String(divObj) : null);
+
+          // 2. Check Department Rule
+          if (deptId && master.departmentRules?.length > 0) {
+            // Division + Department Rule
+            if (divId) {
+              const divRule = master.departmentRules.find(r =>
+                r.divisionId && String(r.divisionId) === divId &&
+                r.departmentId && String(r.departmentId) === deptId
+              );
+              if (divRule) {
+                if (divRule.type === 'percentage') return 0;
+                return divRule.amount !== null && divRule.amount !== undefined ? divRule.amount : 0;
+              }
+            }
+
+            // Department Only Rule
+            const deptRule = master.departmentRules.find(r =>
+              !r.divisionId &&
+              r.departmentId && String(r.departmentId) === deptId
+            );
+            if (deptRule) {
+              if (deptRule.type === 'percentage') return 0;
+              return deptRule.amount !== null && deptRule.amount !== undefined ? deptRule.amount : 0;
+            }
+          }
+
+          // 3. Global Rule
+          if (master.globalRule) {
+            if (master.globalRule.type === 'percentage') return 0;
+            return master.globalRule.amount !== null && master.globalRule.amount !== undefined ? master.globalRule.amount : 0;
+          }
+
+          return 0;
+        };
+
+        // Fill Allowances
+        allowances.forEach(allowance => {
+          const header = `${allowance.name} (${allowance.category})`; // Removed ID
+          row[header] = resolveAmount(allowance, allowMap);
+        });
+
+        // Fill Deductions
+        deductions.forEach(deduction => {
+          const header = `${deduction.name} (${deduction.category})`; // Removed ID
+          const amount = resolveAmount(deduction, deductMap);
+          // Make deductions negative for clarity? Or keep absolute? User requirement: "display of negative values for deductions"
+          // If resolveAmount returns positive value for deduction, we should negated it?
+          // Let's assume resolveAmount returns the *value*.
+          // Usually deductions are stored as positive numbers in rules.
+          // I will negate it here for display in template as requested in prompt "Handling the display of negative values for deductions".
+          row[header] = -Math.abs(amount);
+        });
+
+        return row;
+      } catch (err) {
+        console.error(`Error processing employee ${emp.emp_no}:`, err);
+        throw err;
+      }
+    });
+
+    console.log('Generating Excel...');
+    // Generate Excel
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, ws, 'A&D Template');
+
+    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    console.log('Excel generated, sending response...');
+
+    res.setHeader('Content-Disposition', 'attachment; filename="AD_Template.xlsx"');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.send(buffer);
+
+  } catch (error) {
+    console.error('Error downloading template (Top Level):', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error downloading template',
+      error: error.message,
+      stack: error.stack // Send stack to frontend for debugging
+    });
+  }
+};
+
+/**
  * @desc    Delete allowance/deduction master
  * @route   DELETE /api/allowances-deductions/:id
  * @access  Private (Super Admin, Sub Admin)
@@ -583,3 +728,155 @@ exports.deleteAllowanceDeduction = async (req, res) => {
   }
 };
 
+/**
+ * @desc    Bulk update employee allowances/deductions from Excel
+ * @route   POST /api/allowances-deductions/bulk-update
+ * @access  Private (Super Admin)
+ */
+exports.bulkUpdateAllowancesDeductions = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please upload an Excel file',
+      });
+    }
+
+    const { buffer } = req.file;
+    const workbook = XLSX.read(buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+
+    if (!jsonData || jsonData.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'The uploaded file is empty',
+      });
+    }
+
+    // 1. Fetch all active allowances & deductions to map names -> IDs/details
+    const [allowances, deductions] = await Promise.all([
+      AllowanceDeductionMaster.find({ category: 'allowance', isActive: true }),
+      AllowanceDeductionMaster.find({ category: 'deduction', isActive: true }),
+    ]);
+
+    // Create lookup maps: "Name (category)" -> Master Object
+    // Update: User requested headers without ID, so we must map by Name+Category.
+    const headerMap = new Map();
+
+    const addToMap = (list) => {
+      list.forEach(item => {
+        // Must match the format generated in downloadTemplate: `${name} (${category})`
+        const headerKey = `${item.name} (${item.category})`;
+        headerMap.set(headerKey, item);
+      });
+    };
+
+    addToMap(allowances);
+    addToMap(deductions);
+
+    const results = {
+      updated: 0,
+      failed: 0,
+      errors: [],
+    };
+
+    // 2. Process each row
+    for (const [index, row] of jsonData.entries()) {
+      const empNo = row['Employee ID'];
+
+      if (!empNo) {
+        results.errors.push(`Row ${index + 2}: Missing Employee ID`);
+        results.failed++;
+        continue;
+      }
+
+      const employee = await Employee.findOne({ emp_no: String(empNo).toUpperCase() });
+      if (!employee) {
+        results.errors.push(`Row ${index + 2}: Employee with ID ${empNo} not found`);
+        results.failed++;
+        continue;
+      }
+
+      const newAllowances = [];
+      const newDeductions = [];
+
+      // Iterate through row keys to find A&D columns
+      Object.keys(row).forEach(key => {
+        const master = headerMap.get(key);
+        if (master) {
+          let val = row[key];
+
+          if (val !== '' && val !== null && val !== undefined) {
+            // Handle deduction negative input if user kept it negative
+            if (master.category === 'deduction' && val < 0) {
+              val = Math.abs(val);
+            }
+
+            const amount = Number(val);
+            if (!isNaN(amount)) {
+              const overrideObj = {
+                masterId: master._id,
+                name: master.name,
+                category: master.category,
+                type: 'fixed', // Overrides are typically fixed amounts in this context
+                amount: amount,
+                basedOnPresentDays: master.departmentRules?.[0]?.basedOnPresentDays || master.globalRule?.basedOnPresentDays || false, // Best guess fallback, ideally should come from user input but simplistic for now
+                isOverride: true
+              };
+
+              if (master.category === 'allowance') {
+                newAllowances.push(overrideObj);
+              } else {
+                newDeductions.push(overrideObj);
+              }
+            }
+          }
+        }
+      });
+
+      // Update employee
+      // We REPLACE existing overrides with the ones found in the sheet for the columns present.
+      // However, we should preserve overrides for components NOT in the sheet?
+      // Usually bulk upload implies "this is the state".
+      // But if the sheet only had "Bonus", we shouldn't wipe "HRA".
+      // The template download includes ALL active components. So safe to replace?
+      // Let's merge: Remove old overrides for components present in the sheet, keep others.
+      // Actually, since template has ALL active components, we can probably rebuild the lists.
+      // But safest is: 
+      // 1. Keep existing overrides for masters NOT in headerMap (maybe inactive ones?)
+      // 2. Use new values for masters IN headerMap
+
+      // Filter out assignments in existing arrays that match masters we are updating
+      const mapKeys = Array.from(headerMap.values()).map(m => String(m._id));
+
+      const keptAllowances = (employee.employeeAllowances || []).filter(
+        a => a.masterId && !mapKeys.includes(String(a.masterId))
+      );
+      const keptDeductions = (employee.employeeDeductions || []).filter(
+        d => d.masterId && !mapKeys.includes(String(d.masterId))
+      );
+
+      employee.employeeAllowances = [...keptAllowances, ...newAllowances];
+      employee.employeeDeductions = [...keptDeductions, ...newDeductions];
+
+      await employee.save();
+      results.updated++;
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Processed ${jsonData.length} rows. Updated: ${results.updated}, Failed: ${results.failed}`,
+      errors: results.errors,
+    });
+
+  } catch (error) {
+    console.error('Error in bulk update:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error processing bulk update',
+      error: error.message,
+    });
+  }
+};

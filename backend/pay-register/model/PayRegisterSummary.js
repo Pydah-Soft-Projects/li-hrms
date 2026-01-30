@@ -60,12 +60,24 @@ const payRegisterSummarySchema = new mongoose.Schema(
       max: 12,
     },
 
-    // Total days in the month (28/29/30/31)
+    // Total days in the month (28-32)
     totalDaysInMonth: {
       type: Number,
       required: [true, 'Total days in month is required'],
-      min: 28,
-      max: 31,
+      min: 1,
+      max: 40,
+    },
+
+    // Payroll Cycle Start Date (YYYY-MM-DD)
+    startDate: {
+      type: String,
+      index: true,
+    },
+
+    // Payroll Cycle End Date (YYYY-MM-DD)
+    endDate: {
+      type: String,
+      index: true,
     },
 
     // DAILY RECORDS - One record per date in the month
@@ -239,6 +251,12 @@ const payRegisterSummarySchema = new mongoose.Schema(
           type: Boolean,
           default: false,
         },
+
+        // Manual Edit Flag
+        isManuallyEdited: {
+          type: Boolean,
+          default: false,
+        },
       },
     ],
 
@@ -352,6 +370,19 @@ const payRegisterSummarySchema = new mongoose.Schema(
 
       // OT HOURS
       totalOTHours: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+
+      // LATES & EARLY OUTS
+      // Re-added to ensure persistence as schema is strict by default
+      lateCount: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      earlyOutCount: {
         type: Number,
         default: 0,
         min: 0,
@@ -517,15 +548,15 @@ payRegisterSummarySchema.index({ 'dailyRecords.date': 1 });
 
 // Static method to get or create pay register
 payRegisterSummarySchema.statics.getOrCreate = async function (employeeId, emp_no, year, monthNumber) {
+  const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+  const { startDate, endDate, totalDays, startDay } = await getPayrollDateRange(year, monthNumber);
+
   const monthStr = `${year}-${String(monthNumber).padStart(2, '0')}`;
   const monthNames = [
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
   const monthName = `${monthNames[monthNumber - 1]} ${year}`;
-
-  // Get total days in month
-  const totalDaysInMonth = new Date(year, monthNumber, 0).getDate();
 
   let payRegister = await this.findOne({ employeeId, month: monthStr });
 
@@ -537,13 +568,17 @@ payRegisterSummarySchema.statics.getOrCreate = async function (employeeId, emp_n
       monthName,
       year,
       monthNumber,
-      totalDaysInMonth,
+      totalDaysInMonth: totalDays,
+      startDate,
+      endDate,
       status: 'draft',
     });
   } else {
-    // Update month name and total days in case month/year changed
+    // Update month name and range in case settings changed
     payRegister.monthName = monthName;
-    payRegister.totalDaysInMonth = totalDaysInMonth;
+    payRegister.totalDaysInMonth = totalDays;
+    payRegister.startDate = startDate;
+    payRegister.endDate = endDate;
     await payRegister.save();
   }
 
@@ -587,7 +622,7 @@ payRegisterSummarySchema.methods.recalculateTotals = function () {
   }
 
   for (const record of this.dailyRecords) {
-    // Track Holidays and Weekly Offs (can be fractional if split)
+    // 1. Track Holidays and Weekly Offs (denotative count)
     if (record.isSplit) {
       if (record.firstHalf?.status === 'holiday') totals.totalHolidays += 0.5;
       if (record.firstHalf?.status === 'week_off') totals.totalWeeklyOffs += 0.5;
@@ -598,95 +633,70 @@ payRegisterSummarySchema.methods.recalculateTotals = function () {
       if (record.status === 'week_off') totals.totalWeeklyOffs += 1;
     }
 
-    const isHoliday = record.status === 'holiday' || record.firstHalf?.status === 'holiday' || record.secondHalf?.status === 'holiday';
-    const isWeekOff = record.status === 'week_off' || record.firstHalf?.status === 'week_off' || record.secondHalf?.status === 'week_off';
+    // 2. Track Work Hours and Exceptions (Unconditional)
+    totals.totalOTHours += record.otHours || 0;
+    if (record.isLate) totals.lateCount++;
+    if (record.isEarlyOut) totals.earlyOutCount++;
 
-    if (isHoliday || isWeekOff) {
-      // Still count OT hours for holidays/week_off if any
-      totals.totalOTHours += record.otHours || 0;
-      continue; // Skip counting this record in attendance categories
-    }
+    // 3. Track Attendance Categories (Present, Absent, Leave, OD)
+    // Process these UNLESS the status is strictly holiday/week_off for the half/day
 
     // Determine if actually split by checking if halves have different statuses
-    // Don't rely on isSplit flag as it might be incorrect
     const firstHalfStatus = record.firstHalf?.status;
     const secondHalfStatus = record.secondHalf?.status;
-    // Consider split if: both halves exist and have different statuses, OR if record.isSplit is explicitly true
     const isActuallySplit = (firstHalfStatus && secondHalfStatus && firstHalfStatus !== secondHalfStatus) ||
       (record.isSplit === true && firstHalfStatus && secondHalfStatus);
 
-    // If record is actually split, count halves separately
     if (isActuallySplit) {
-      // Process first half - only count if status is explicitly set and valid
-      if (record.firstHalf && record.firstHalf.status &&
-        ['present', 'absent', 'leave', 'od'].includes(record.firstHalf.status)) {
-        if (record.firstHalf.status === 'present') {
-          totals.presentHalfDays++;
-        } else if (record.firstHalf.status === 'absent') {
-          totals.absentHalfDays++;
-        } else if (record.firstHalf.status === 'leave') {
-          const leaveNature = record.firstHalf.leaveNature || (record.firstHalf.leaveType || '').toLowerCase();
-          if (leaveNature === 'paid') {
-            totals.paidLeaveHalfDays++;
-          } else {
-            // Treat any non-paid leave as LOP
-            totals.lopHalfDays++;
-          }
-        } else if (record.firstHalf.status === 'od') {
-          totals.odHalfDays++;
+      // Process first half
+      const s1 = record.firstHalf?.status;
+      if (s1 && ['present', 'absent', 'leave', 'od'].includes(s1)) {
+        if (s1 === 'present' || s1 === 'od') totals.presentHalfDays++;
+
+        if (s1 === 'absent') totals.absentHalfDays++;
+
+        if (s1 === 'od') totals.odHalfDays++;
+
+        if (s1 === 'leave') {
+          const nature = record.firstHalf.leaveNature || (record.firstHalf.leaveType || '').toLowerCase();
+          if (nature === 'paid') totals.paidLeaveHalfDays++;
+          else totals.lopHalfDays++;
         }
       }
 
-      // Process second half - only count if status is explicitly set and valid
-      if (record.secondHalf && record.secondHalf.status &&
-        ['present', 'absent', 'leave', 'od'].includes(record.secondHalf.status)) {
-        if (record.secondHalf.status === 'present') {
-          totals.presentHalfDays++;
-        } else if (record.secondHalf.status === 'absent') {
-          totals.absentHalfDays++;
-        } else if (record.secondHalf.status === 'leave') {
-          const leaveNature = record.secondHalf.leaveNature || (record.secondHalf.leaveType || '').toLowerCase();
-          if (leaveNature === 'paid') {
-            totals.paidLeaveHalfDays++;
-          } else {
-            // Treat any non-paid leave as LOP
-            totals.lopHalfDays++;
-          }
-        } else if (record.secondHalf.status === 'od') {
-          totals.odHalfDays++;
+      // Process second half
+      const s2 = record.secondHalf?.status;
+      if (s2 && ['present', 'absent', 'leave', 'od'].includes(s2)) {
+        if (s2 === 'present' || s2 === 'od') totals.presentHalfDays++;
+
+        if (s2 === 'absent') totals.absentHalfDays++;
+
+        if (s2 === 'od') totals.odHalfDays++;
+
+        if (s2 === 'leave') {
+          const nature = record.secondHalf.leaveNature || (record.secondHalf.leaveType || '').toLowerCase();
+          if (nature === 'paid') totals.paidLeaveHalfDays++;
+          else totals.lopHalfDays++;
         }
       }
     } else {
-      // If not split, count as full day only (don't count halves separately)
-      // Use the record.status if available, otherwise use firstHalf.status (they should be the same)
-      const statusToCount = record.status || firstHalfStatus || secondHalfStatus;
+      // Process as full day
+      const s = record.status || firstHalfStatus || secondHalfStatus;
+      if (s && ['present', 'absent', 'leave', 'od'].includes(s)) {
+        // OD counts as Present
+        if (s === 'present' || s === 'od') totals.presentDays++;
 
-      // Only count if status is explicitly set and valid (not null, not holiday, not week_off)
-      if (statusToCount && ['present', 'absent', 'leave', 'od'].includes(statusToCount)) {
-        if (statusToCount === 'present') {
-          totals.presentDays++;
-        } else if (statusToCount === 'absent') {
-          totals.absentDays++;
-        } else if (statusToCount === 'leave') {
-          const leaveNature = record.leaveNature || record.firstHalf?.leaveNature || (record.leaveType || record.firstHalf?.leaveType || '').toLowerCase();
-          if (leaveNature === 'paid') {
-            totals.paidLeaveDays++;
-          } else {
-            // Treat any non-paid leave as LOP
-            totals.lopDays++;
-          }
-        } else if (statusToCount === 'od') {
-          totals.odDays++;
+        if (s === 'absent') totals.absentDays++;
+
+        if (s === 'od') totals.odDays++;
+
+        if (s === 'leave') {
+          const nature = record.leaveNature || record.firstHalf?.leaveNature || (record.leaveType || record.firstHalf?.leaveType || '').toLowerCase();
+          if (nature === 'paid') totals.paidLeaveDays++;
+          else totals.lopDays++;
         }
       }
     }
-
-    // Add OT hours
-    totals.totalOTHours += record.otHours || 0;
-
-    // Add Lates and Early Outs
-    if (record.isLate) totals.lateCount++;
-    if (record.isEarlyOut) totals.earlyOutCount++;
   }
 
   // Calculate totals (full days + half days * 0.5)
@@ -698,8 +708,9 @@ payRegisterSummarySchema.methods.recalculateTotals = function () {
   totals.totalLeaveDays = totals.totalPaidLeaveDays + totals.totalLopDays;
   totals.totalODDays = totals.odDays + totals.odHalfDays * 0.5;
 
-  // Calculate payable shifts = present + OD + paid leaves + manual extra days
-  totals.totalPayableShifts = totals.totalPresentDays + totals.totalODDays + totals.totalPaidLeaveDays + (totals.extraDays || 0);
+  // Calculate payable shifts = present (includes OD) + paid leaves + manual extra days
+  // NOTE: totalODDays is intentionally excluded because it's now subsumed in totalPresentDays
+  totals.totalPayableShifts = totals.totalPresentDays + totals.totalPaidLeaveDays + (totals.extraDays || 0);
   // This is where we will also use the shift-based payable units if implemented here
   // But for now, let's keep it consistent with the service fix I just did
 
