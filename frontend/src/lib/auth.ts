@@ -45,6 +45,12 @@ export const auth = {
 
   logout: () => {
     if (typeof window !== 'undefined') {
+      const token = localStorage.getItem('token');
+      const user = localStorage.getItem('user');
+
+      // If already cleared, don't dispatch again to avoid infinite loops
+      if (!token && !user) return;
+
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       // Clear workspace data on logout

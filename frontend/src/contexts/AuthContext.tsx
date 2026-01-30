@@ -46,7 +46,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         // Listen for global logout events (e.g. from 401 handlers in api.ts)
         const handleGlobalLogout = () => {
             console.log('[AuthContext] Global logout event received');
-            logout();
+            if (user) {
+                logout();
+            }
         };
 
         window.addEventListener('auth-logout', handleGlobalLogout);

@@ -290,6 +290,75 @@ exports.getRoster = async (req, res) => {
 };
 
 /**
+ * @desc    Get self roster for a month
+ * @route   GET /api/shifts/my-roster
+ * @access  Private (All authenticated users)
+ */
+exports.getMyRoster = async (req, res) => {
+  try {
+    const { month } = req.query; // month = YYYY-MM
+
+    if (!month || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+      return res.status(400).json({ success: false, message: 'Valid month (YYYY-MM) is required' });
+    }
+
+    const employeeNumber = req.user.employeeId;
+    if (!employeeNumber) {
+      return res.status(400).json({ success: false, message: 'User is not linked to any employee record' });
+    }
+
+    const start = `${month}-01`;
+    const endDate = new Date(parseInt(month.split('-')[0], 10), parseInt(month.split('-')[1], 10), 0).getDate();
+    const end = `${month}-${String(endDate).padStart(2, '0')}`;
+
+    const query = {
+      employeeNumber: String(employeeNumber).toUpperCase(),
+      date: { $gte: start, $lte: end }
+    };
+
+    const schedules = await PreScheduledShift.find(query)
+      .select('employeeNumber shiftId actualShiftId isDeviation attendanceDailyId date status notes')
+      .populate('shiftId', 'name code startTime endTime duration')
+      .populate('actualShiftId', 'name code startTime endTime duration');
+
+    const meta = await RosterMeta.findOne({ month });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        month,
+        strict: meta?.strict || false,
+        entries: schedules.map((s) => {
+          let status = s.status;
+          if (!status && !s.shiftId) {
+            if (s.notes && s.notes.includes('Week Off')) status = 'WO';
+            else if (s.notes && s.notes.includes('Holiday')) status = 'HOL';
+          }
+
+          return {
+            employeeNumber: s.employeeNumber,
+            date: s.date,
+            shiftId: s.shiftId?._id || null,
+            shift: s.shiftId || null,
+            actualShiftId: s.actualShiftId?._id || null,
+            actualShift: s.actualShiftId || null,
+            isDeviation: s.isDeviation || false,
+            attendanceDailyId: s.attendanceDailyId || null,
+            status: status || undefined,
+          };
+        }),
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching self roster:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to fetch self roster',
+    });
+  }
+};
+
+/**
  * @desc    Save roster for a month (replace entries)
  * @route   POST /api/shifts/roster
  * @access  Private (HOD/HR/SubAdmin/SuperAdmin)

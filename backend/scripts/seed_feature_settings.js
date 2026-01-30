@@ -15,20 +15,38 @@ const seedSettings = async () => {
         const settingsToSeed = [
             {
                 key: 'feature_control_employee',
-                value: { activeModules: ['DASHBOARD', 'LEAVE', 'OD', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS'] },
+                value: { activeModules: ['DASHBOARD', 'LEAVE_OD', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS', 'MY_ROSTER'] },
                 description: 'Active modules for Employee role',
                 category: 'feature_control',
             },
             {
                 key: 'feature_control_hod',
-                value: { activeModules: ['DASHBOARD', 'LEAVE', 'OD', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS', 'REPORTS'] },
+                value: { activeModules: ['DASHBOARD', 'LEAVE_OD', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS', 'MY_ROSTER', 'REPORTS'] },
                 description: 'Active modules for HOD role',
                 category: 'feature_control',
             },
             {
                 key: 'feature_control_hr',
-                value: { activeModules: ['DASHBOARD', 'LEAVE', 'OD', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS', 'EMPLOYEES', 'REPORTS'] },
+                value: { activeModules: ['DASHBOARD', 'LEAVE_OD', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS', 'MY_ROSTER', 'EMPLOYEES', 'REPORTS'] },
                 description: 'Active modules for HR role',
+                category: 'feature_control',
+            },
+            {
+                key: 'feature_control_manager',
+                value: { activeModules: ['DASHBOARD', 'LEAVE_OD', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS', 'MY_ROSTER', 'EMPLOYEES', 'REPORTS', 'DEPARTMENTS'] },
+                description: 'Active modules for Manager role',
+                category: 'feature_control',
+            },
+            {
+                key: 'feature_control_subadmin',
+                value: { activeModules: ['DASHBOARD', 'LEAVE_OD', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS', 'MY_ROSTER', 'EMPLOYEES', 'REPORTS', 'DEPARTMENTS', 'SETTINGS'] },
+                description: 'Active modules for Sub Admin role',
+                category: 'feature_control',
+            },
+            {
+                key: 'feature_control_sub_admin',
+                value: { activeModules: ['DASHBOARD', 'LEAVE_OD', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS', 'MY_ROSTER', 'EMPLOYEES', 'REPORTS', 'DEPARTMENTS', 'SETTINGS'] },
+                description: 'Active modules for Sub Admin role (alias)',
                 category: 'feature_control',
             },
             {
@@ -64,7 +82,7 @@ const seedSettings = async () => {
         process.exit(0);
     } catch (error) {
         console.error('Error seeding settings:', error);
-        if(process.env.NODE_ENV !== "test") process.exit(1);
+        if (process.env.NODE_ENV !== "test") process.exit(1);
     }
 };
 

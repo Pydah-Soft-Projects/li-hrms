@@ -24,6 +24,7 @@ export const MODULE_CATEGORIES = [
         modules: [
             { code: 'LEAVE_OD', label: 'Leave & OD', href: '/leaves' },
             { code: 'OT_PERMISSIONS', label: 'OT & Permissions', href: '/ot-permissions' },
+            { code: 'MY_ROSTER', label: 'My Roster', href: '/my-roster' },
             { code: 'SHIFT_ROSTER', label: 'Shift Roster', href: '/shift-roster' },
             { code: 'CONFUSED_SHIFTS', label: 'Confused Shifts', href: '/confused-shifts' },
             { code: 'SHIFTS', label: 'Shifts', href: '/shifts' },

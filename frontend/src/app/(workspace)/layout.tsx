@@ -64,6 +64,7 @@ const moduleIcons: Record<string, React.ComponentType<{ className?: string }>> =
   PAYSLIPS: Receipt,
   PAYROLL: Banknote,
   LOANS_SALARY_ADVANCE: PiggyBank,
+  MY_ROSTER: CalendarClock,
 };
 
 // Module code to route mapping
@@ -91,6 +92,7 @@ const moduleRoutes: Record<string, string> = {
   PAY_REGISTER: '/pay-register',
   PAYSLIPS: '/payslips',
   LOANS_SALARY_ADVANCE: '/loans-salary-advance',
+  MY_ROSTER: '/my-roster',
 };
 
 function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {
@@ -107,10 +109,11 @@ function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {
       if (!user?.role) return;
 
       // Priority 1: Check individual user overrides from session
+      // NOTE: We are disabling this early return to ensure role-based settings (which might change) are always fetched fresh
+      // If we want to support true individual overrides, the backend should merge them or we should do it here
       if (user.featureControl && Array.isArray(user.featureControl) && user.featureControl.length > 0) {
-        console.log(`[RBAC] Using individual overrides for user ${user.name}`);
-        setFeatureControl(user.featureControl);
-        return;
+        console.log(`[RBAC] Session has overrides for user ${user.name}, but checking for fresh role updates...`);
+        // We don't return here anymore, allowing the API call to potentially update/override
       }
 
       // Priority 2: Fallback to universal role-based setting from backend
@@ -118,23 +121,29 @@ function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {
         const response = await api.getSetting(`feature_control_${user.role}`);
         if (response.success && response.data?.value?.activeModules) {
           console.log(`[RBAC] Using universal role setting for ${user.role}`);
-          setFeatureControl(response.data.value.activeModules);
+          let modules = response.data.value.activeModules;
+
+          setFeatureControl(modules);
         } else {
           // Priority 3: Hardcoded fallback if setting is not found
-          const managementRoles = ['manager', 'hr', 'hod'];
+          console.log(`[RBAC] Setting not found for ${user.role}, using hardcoded fallback`);
+          const managementRoles = ['manager', 'hr', 'hod', 'subadmin', 'sub_admin'];
           if (managementRoles.includes(user.role)) {
-            setFeatureControl(MODULE_CATEGORIES.flatMap(c => c.modules.map(m => m.code)));
+            const allModules = MODULE_CATEGORIES.flatMap(c => c.modules.map(m => m.code));
+            console.log('[RBAC] Applying full management fallback');
+            setFeatureControl(allModules);
           } else {
-            setFeatureControl(['DASHBOARD', 'LEAVE_OD', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS']);
+            console.log('[RBAC] Applying employee fallback');
+            setFeatureControl(['DASHBOARD', 'LEAVE_OD', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS', 'MY_ROSTER']);
           }
         }
       } catch (error) {
         console.error('Error fetching RBAC settings:', error);
-        const managementRoles = ['manager', 'hr', 'hod'];
+        const managementRoles = ['manager', 'hr', 'hod', 'subadmin', 'sub_admin'];
         if (managementRoles.includes(user.role)) {
           setFeatureControl(MODULE_CATEGORIES.flatMap(c => c.modules.map(m => m.code)));
         } else {
-          setFeatureControl(['DASHBOARD', 'LEAVE_OD', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS']);
+          setFeatureControl(['DASHBOARD', 'LEAVE_OD', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS', 'MY_ROSTER']);
         }
       }
     };
