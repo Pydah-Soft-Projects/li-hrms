@@ -39,6 +39,8 @@ interface SecondSalaryRecord {
         extraDays: number;
         totalPaidDays: number;
         paidDays: number;
+        attendanceDeductionDays?: number;
+        finalPaidDays?: number;
         otHours: number;
         otDays: number;
         earnedSalary: number;
@@ -60,6 +62,8 @@ interface SecondSalaryRecord {
         attendanceDeductionBreakdown?: {
             lateInsCount: number;
             earlyOutsCount: number;
+            combinedCount?: number;
+            daysDeducted?: number;
         };
         permissionDeductionBreakdown?: {
             permissionCount: number;
@@ -183,24 +187,30 @@ export default function SecondSalaryPayslipDetail() {
                 yPos += 6;
             });
 
-            // ===== ATTENDANCE DETAILS =====
+            // ===== ATTENDANCE SUMMARY (no background, bold title) =====
             yPos += 5;
+            doc.setFontSize(11);
+            doc.setTextColor(30, 41, 59);
             doc.setFont('helvetica', 'bold');
-            doc.setFillColor(240, 240, 240);
-            doc.rect(10, yPos - 5, pageWidth - 20, 8, 'F');
-            doc.text('ATTENDANCE DETAILS', 14, yPos);
+            doc.text('ATTENDANCE SUMMARY', 14, yPos);
             yPos += 8;
 
+            const attDedDays = record.deductions?.attendanceDeductionBreakdown?.daysDeducted ?? record.attendance?.attendanceDeductionDays ?? 0;
+            const totalPaid = record.attendance?.totalPaidDays ?? record.attendance?.paidDays ?? 0;
+            const finalPaid = record.attendance?.finalPaidDays ?? Math.max(0, totalPaid - attDedDays);
+            const totalLeaves = (record.attendance as any)?.totalLeaveDays ?? (record.attendance?.paidLeaveDays ?? 0) + ((record.attendance as any)?.totalLopDays ?? 0) ?? 0;
             const attendanceData = [
                 ['Month Days', record.attendance?.totalDaysInMonth || 0],
                 ['Present Days', record.attendance?.presentDays || 0],
                 ['Week Offs', record.attendance?.weeklyOffs || 0],
                 ['Paid Leaves', record.attendance?.paidLeaveDays || 0],
+                ['Total Leaves', totalLeaves],
                 ['Absents', record.attendance?.absentDays || 0],
                 ['Payable Shifts', record.attendance?.payableShifts || 0],
                 ['Extra Days', record.attendance?.extraDays || 0],
-                ['Paid Days', record.attendance?.paidDays || 0],
-                ['Total Paid Days', record.attendance?.totalPaidDays || 0],
+                ['Total Paid Days', totalPaid],
+                ['Attendance Deduction Days (Late)', attDedDays],
+                ['Final Paid Days', finalPaid],
                 ['Late-Ins Count', record.deductions?.attendanceDeductionBreakdown?.lateInsCount || 0],
                 ['Permissions Count', record.deductions?.permissionDeductionBreakdown?.permissionCount || 0],
                 ['OT Hours', record.attendance?.otHours || 0],
@@ -218,15 +228,13 @@ export default function SecondSalaryPayslipDetail() {
                     0: { cellWidth: 90, fontStyle: 'bold' },
                     1: { cellWidth: 30, halign: 'right' }
                 },
+                rowStyles: {
+                    9: { fillColor: [254, 226, 226], textColor: [185, 28, 28], fontStyle: 'bold' },
+                    10: { fillColor: [220, 252, 231], textColor: [22, 101, 52], fontStyle: 'bold' }
+                },
                 margin: { left: 14, right: pageWidth / 2 + 5 }
             });
-
-            // "PRIVATE & CONFIDENTIAL" text
-            doc.setTextColor(41, 128, 185);
-            doc.setFontSize(16);
-            doc.setFont('helvetica', 'bold');
-            doc.text('PRIVATE & CONFIDENTIAL', pageWidth / 2, 40, { align: 'center' });
-            doc.setTextColor(0, 0, 0); // Reset color
+            doc.setTextColor(0, 0, 0);
 
             // ===== SALARY BREAKDOWN =====
             yPos = (doc as any).lastAutoTable.finalY + 10;
@@ -238,24 +246,25 @@ export default function SecondSalaryPayslipDetail() {
             yPos += 8;
 
             // EARNINGS TABLE
+            const formatCurr = (amount: number) => `Rs. ${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
             const earningsData = [
-                ['Fixed 2nd Salary', `₹ ${record.earnings.basicPay.toFixed(2)}`],
-                ['Per Day Salary', `₹ ${record.earnings.perDayBasicPay.toFixed(2)}`],
-                ['Earned Salary', `₹ ${(record.attendance?.earnedSalary || 0).toFixed(2)}`],
-                ...(record.earnings.allowances || []).map(a => [a.name, `₹ ${a.amount.toFixed(2)}`]),
-                ['Extra Days Pay', `₹ ${record.earnings.incentive.toFixed(2)}`],
-                ['OT Pay', `₹ ${record.earnings.otPay.toFixed(2)}`],
-                ['Arrears', `₹ ${(record.arrearsAmount || 0).toFixed(2)}`],
+                ['Fixed 2nd Salary', formatCurr(record.earnings.basicPay)],
+                ['Per Day Salary', formatCurr(record.earnings.perDayBasicPay)],
+                ['Earned Salary', formatCurr(record.attendance?.earnedSalary || 0)],
+                ...(record.earnings.allowances || []).map(a => [a.name, formatCurr(a.amount)]),
+                ['Extra Days Pay', formatCurr(record.earnings.incentive)],
+                ['OT Pay', formatCurr(record.earnings.otPay)],
+                ['Arrears', formatCurr(record.arrearsAmount || 0)],
             ];
 
             autoTable(doc, {
                 startY: yPos,
                 head: [['EARNINGS', 'Amount']],
                 body: earningsData,
-                foot: [['GROSS SALARY', `₹ ${record.earnings.grossSalary.toFixed(2)}`]],
+                foot: [['TOTAL EARNINGS', formatCurr(record.earnings.grossSalary)]],
                 theme: 'striped',
                 headStyles: { fillColor: [46, 204, 113], fontSize: 10, fontStyle: 'bold' },
-                footStyles: { fillColor: [39, 174, 96], fontSize: 10, fontStyle: 'bold', textColor: 255 },
+                footStyles: { fillColor: [39, 174, 96], fontSize: 11, fontStyle: 'bold', textColor: 255, cellPadding: 4 },
                 bodyStyles: { fontSize: 9 },
                 columnStyles: {
                     0: { cellWidth: 60 },
@@ -266,22 +275,22 @@ export default function SecondSalaryPayslipDetail() {
 
             // DEDUCTIONS TABLE
             const deductionsData = [
-                ['Attendance Deduction', `₹ ${record.deductions.attendanceDeduction.toFixed(2)}`],
-                ['Permission Deduction', `₹ ${record.deductions.permissionDeduction.toFixed(2)}`],
-                ['Leave Deduction', `₹ ${record.deductions.leaveDeduction.toFixed(2)}`],
-                ...(record.deductions.otherDeductions || []).map(d => [d.name, `₹ ${d.amount.toFixed(2)}`]),
-                ['EMI Deduction', `₹ ${record.loanAdvance.totalEMI.toFixed(2)}`],
-                ['Advance Deduction', `₹ ${record.loanAdvance.advanceDeduction.toFixed(2)}`],
+                ['Attendance Deduction', formatCurr(record.deductions.attendanceDeduction)],
+                ['Permission Deduction', formatCurr(record.deductions.permissionDeduction)],
+                ['Leave Deduction', formatCurr(record.deductions.leaveDeduction)],
+                ...(record.deductions.otherDeductions || []).map(d => [d.name, formatCurr(d.amount)]),
+                ['EMI Deduction', formatCurr(record.loanAdvance.totalEMI)],
+                ['Advance Deduction', formatCurr(record.loanAdvance.advanceDeduction)],
             ];
 
             autoTable(doc, {
                 startY: yPos,
                 head: [['DEDUCTIONS', 'Amount']],
                 body: deductionsData,
-                foot: [['TOTAL DEDUCTIONS', `₹ ${record.deductions.totalDeductions.toFixed(2)}`]],
+                foot: [['TOTAL DEDUCTIONS', formatCurr(record.deductions.totalDeductions)]],
                 theme: 'striped',
                 headStyles: { fillColor: [231, 76, 60], fontSize: 10, fontStyle: 'bold' },
-                footStyles: { fillColor: [192, 57, 43], fontSize: 10, fontStyle: 'bold', textColor: 255 },
+                footStyles: { fillColor: [192, 57, 43], fontSize: 11, fontStyle: 'bold', textColor: 255, cellPadding: 4 },
                 bodyStyles: { fontSize: 9 },
                 columnStyles: {
                     0: { cellWidth: 60 },
@@ -299,7 +308,7 @@ export default function SecondSalaryPayslipDetail() {
                 doc.setFontSize(10);
                 doc.setFont('helvetica', 'normal');
                 doc.text('Round Off:', 14, yPos);
-                doc.text(`₹ ${record.roundOff.toFixed(2)}`, pageWidth - 14, yPos, { align: 'right' });
+                doc.text(`Rs. ${record.roundOff.toFixed(2)}`, pageWidth - 14, yPos, { align: 'right' });
                 yPos += 8;
             }
 
@@ -310,7 +319,7 @@ export default function SecondSalaryPayslipDetail() {
             doc.setFontSize(14);
             doc.setFont('helvetica', 'bold');
             doc.text('NET SALARY (Take Home):', 14, yPos);
-            doc.text(`₹ ${record.netSalary.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, pageWidth - 14, yPos, { align: 'right' });
+            doc.text(`Rs. ${record.netSalary.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, pageWidth - 14, yPos, { align: 'right' });
 
             doc.setTextColor(0, 0, 0);
 
@@ -450,7 +459,7 @@ export default function SecondSalaryPayslipDetail() {
                                 </div>
                                 <h2 className="text-base font-bold text-slate-800 dark:text-white uppercase tracking-tight">Attendance Summary</h2>
                             </div>
-                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-9 gap-2">
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-11 gap-2">
                                 <StatusCard label="Month Days" value={record.attendance?.totalDaysInMonth} />
                                 <StatusCard label="Present" value={record.attendance?.presentDays} color="indigo" />
                                 <StatusCard label="Absents" value={record.attendance?.absentDays} color="rose" />
@@ -459,7 +468,9 @@ export default function SecondSalaryPayslipDetail() {
                                 <StatusCard label="Late-Ins" value={record.deductions?.attendanceDeductionBreakdown?.lateInsCount} color="amber" />
                                 <StatusCard label="Permissions" value={record.deductions?.permissionDeductionBreakdown?.permissionCount} color="blue" />
                                 <StatusCard label="OT Days" value={record.attendance?.otDays} color="amber" />
-                                <StatusCard label="Net Paid Days" value={record.attendance?.totalPaidDays} highlight />
+                                <StatusCard label="Total Paid Days" value={record.attendance?.totalPaidDays ?? record.attendance?.paidDays} />
+                                <StatusCard label="Attendance Ded. Days" value={record.deductions?.attendanceDeductionBreakdown?.daysDeducted ?? record.attendance?.attendanceDeductionDays} color="rose" />
+                                <StatusCard label="Final Paid Days" value={record.attendance?.finalPaidDays ?? (typeof (record.attendance?.totalPaidDays ?? record.attendance?.paidDays) === 'number' ? Math.max(0, (record.attendance?.totalPaidDays ?? record.attendance?.paidDays ?? 0) - (record.deductions?.attendanceDeductionBreakdown?.daysDeducted ?? record.attendance?.attendanceDeductionDays ?? 0)) : undefined)} highlight />
                             </div>
                         </section>
 

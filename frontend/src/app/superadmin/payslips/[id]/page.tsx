@@ -40,6 +40,10 @@ interface PayrollRecord {
     extraDays: number;
     totalPaidDays: number;
     paidDays: number;
+    /** Days deducted due to late-in/early-out (attendance deduction) */
+    attendanceDeductionDays?: number;
+    /** Final paid days = total paid days minus attendance deduction days */
+    finalPaidDays?: number;
     otHours: number;
     otDays: number;
     earnedSalary: number;
@@ -185,7 +189,7 @@ export default function PayslipDetailPage() {
       const cardWidth = (pageWidth - 30) / 3;
       const cardHeight = 20;
 
-      const formatValue = (val: number) => `₹${val.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+      const formatValue = (val: number) => `Rs. ${val.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
 
       // Card 1: Gross
       doc.setFillColor(lightBg[0], lightBg[1], lightBg[2]);
@@ -260,31 +264,71 @@ export default function PayslipDetailPage() {
         doc.text(item.value.toString(), xOffset + 35, yOffset);
       });
 
-      // ===== ATTENDANCE SUMMARY =====
+      // ===== ATTENDANCE SUMMARY (no background, bold title and labels) =====
       yPos += 30;
-      doc.setFillColor(lightBg[0], lightBg[1], lightBg[2]);
-      doc.rect(10, yPos - 5, pageWidth - 20, 8, 'F');
-      doc.setFontSize(8);
+      doc.setFontSize(11);
       doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
       doc.setFont('helvetica', 'bold');
       doc.text('ATTENDANCE SUMMARY', 14, yPos);
 
       yPos += 8;
-      const attData = [
-        `Month Days: ${payroll.attendance?.totalDaysInMonth || 0}`,
-        `Present: ${payroll.attendance?.presentDays || 0}`,
-        `Paid Leaves: ${payroll.attendance?.paidLeaveDays || 0}`,
-        `Net Paid Days: ${payroll.attendance?.totalPaidDays || 0}`,
-      ];
-      doc.setFont('helvetica', 'normal');
+      const attDedDays = payroll.deductions?.attendanceDeductionBreakdown?.daysDeducted ?? payroll.attendance?.attendanceDeductionDays ?? 0;
+      const totalPaid = payroll.attendance?.totalPaidDays ?? payroll.attendance?.paidDays ?? 0;
+      const finalPaid = payroll.attendance?.finalPaidDays ?? Math.max(0, totalPaid - attDedDays);
+      const monthDays = payroll.attendance?.totalDaysInMonth || 0;
+      const presentDays = payroll.attendance?.presentDays || 0;
+      const paidLeaves = payroll.attendance?.paidLeaveDays || 0;
+      const totalLeaves = (payroll.attendance as any)?.totalLeaveDays ?? paidLeaves + ((payroll.attendance as any)?.totalLopDays ?? 0) ?? 0;
+      const absents = payroll.attendance?.absentDays ?? 0;
+      doc.setFontSize(9);
       doc.setTextColor(71, 85, 105);
-      doc.text(attData.join('    |    '), 14, yPos);
+      let x = 14;
+      doc.setFont('helvetica', 'bold');
+      doc.text('Month Days: ', x, yPos); x += doc.getTextWidth('Month Days: ');
+      doc.setFont('helvetica', 'normal');
+      doc.text(String(monthDays), x, yPos); x += doc.getTextWidth(String(monthDays)) + 6;
+      doc.setFont('helvetica', 'bold');
+      doc.text('Present Days: ', x, yPos); x += doc.getTextWidth('Present Days: ');
+      doc.setFont('helvetica', 'normal');
+      doc.text(String(presentDays), x, yPos); x += doc.getTextWidth(String(presentDays)) + 6;
+      doc.setFont('helvetica', 'bold');
+      doc.text('Paid Leaves: ', x, yPos); x += doc.getTextWidth('Paid Leaves: ');
+      doc.setFont('helvetica', 'normal');
+      doc.text(String(paidLeaves), x, yPos); x += doc.getTextWidth(String(paidLeaves)) + 6;
+      doc.setFont('helvetica', 'bold');
+      doc.text('Total Paid Days: ', x, yPos); x += doc.getTextWidth('Total Paid Days: ');
+      doc.setFont('helvetica', 'normal');
+      doc.text(String(totalPaid), x, yPos);
+      yPos += 6;
+      x = 14;
+      doc.setFont('helvetica', 'bold');
+      doc.text('Total Leaves: ', x, yPos); x += doc.getTextWidth('Total Leaves: ');
+      doc.setFont('helvetica', 'normal');
+      doc.text(String(totalLeaves), x, yPos); x += doc.getTextWidth(String(totalLeaves)) + 6;
+      doc.setFont('helvetica', 'bold');
+      doc.text('Absents: ', x, yPos); x += doc.getTextWidth('Absents: ');
+      doc.setFont('helvetica', 'normal');
+      doc.text(String(absents), x, yPos);
+      yPos += 7;
+      // Attendance Deduction Days in red (slightly lower highlight)
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(185, 28, 28);
+      doc.text('Attendance Deduction Days (Late): ', 14, yPos);
+      const attDedX = doc.getTextWidth('Attendance Deduction Days (Late): ') + 14;
+      doc.setFont('helvetica', 'bold');
+      doc.text(String(attDedDays), attDedX, yPos);
+      // Final Paid Days bold and prominent (more than att ded)
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(22, 101, 52);
+      doc.text(`    |    Final Paid Days: ${finalPaid}`, attDedX + 12, yPos);
 
       // ===== SALARY TABLES (MINIMALIST) =====
       yPos += 12;
-      const formatCurr = (amount: number) => `₹ ${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      const formatCurr = (amount: number) => `Rs. ${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-      // Earnings
+      // Earnings (with TOTAL EARNINGS foot)
       const earningsBody = [
         ['Basic Pay', formatCurr(payroll.earnings.basicPay)],
         ['Earned Basic', formatCurr(payroll.attendance?.earnedSalary || 0)],
@@ -298,9 +342,11 @@ export default function PayslipDetailPage() {
         startY: yPos,
         head: [['EARNINGS', 'AMOUNT']],
         body: earningsBody,
+        foot: [['TOTAL EARNINGS', formatCurr(payroll.earnings.grossSalary)]],
         theme: 'plain',
         headStyles: { fontStyle: 'bold', textColor: primaryColor, fontSize: 8, cellPadding: 2 },
         bodyStyles: { fontSize: 8, textColor: [51, 65, 85], cellPadding: 2 },
+        footStyles: { fontStyle: 'bold', textColor: primaryColor, fontSize: 9, cellPadding: 3, fillColor: [248, 250, 252] },
         columnStyles: { 1: { halign: 'right', fontStyle: 'bold' } },
         margin: { left: 10, right: pageWidth / 2 + 2 },
         didDrawPage: (data) => {
@@ -309,7 +355,7 @@ export default function PayslipDetailPage() {
         }
       });
 
-      // Deductions
+      // Deductions (with TOTAL DEDUCTIONS foot)
       const deductionsBody = [
         ['Attendance Deduction', formatCurr(payroll.deductions.attendanceDeduction)],
         ['Permission Deduction', formatCurr(payroll.deductions.permissionDeduction)],
@@ -323,9 +369,11 @@ export default function PayslipDetailPage() {
         startY: yPos,
         head: [['DEDUCTIONS', 'AMOUNT']],
         body: deductionsBody,
+        foot: [['TOTAL DEDUCTIONS', formatCurr(payroll.deductions.totalDeductions)]],
         theme: 'plain',
         headStyles: { fontStyle: 'bold', textColor: [190, 18, 60], fontSize: 8, cellPadding: 2 },
         bodyStyles: { fontSize: 8, textColor: [51, 65, 85], cellPadding: 2 },
+        footStyles: { fontStyle: 'bold', textColor: [190, 18, 60], fontSize: 9, cellPadding: 3, fillColor: [255, 241, 242] },
         columnStyles: { 1: { halign: 'right', fontStyle: 'bold' } },
         margin: { left: pageWidth / 2 + 2, right: 10 },
         didDrawPage: (data) => {
@@ -492,7 +540,7 @@ export default function PayslipDetailPage() {
                 </div>
                 <h2 className="text-base font-bold text-slate-800 dark:text-white uppercase tracking-tight">Attendance Summary</h2>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-9 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-11 gap-2">
                 <StatusCard label="Month Days" value={payroll.attendance?.totalDaysInMonth} />
                 <StatusCard label="Present" value={payroll.attendance?.presentDays} color="indigo" />
                 <StatusCard label="Absents" value={payroll.attendance?.absentDays} color="rose" />
@@ -502,7 +550,9 @@ export default function PayslipDetailPage() {
                 <StatusCard label="Permissions" value={payroll.deductions?.permissionDeductionBreakdown?.permissionCount} color="blue" />
                 <StatusCard label="OT Days" value={payroll.attendance?.otDays} color="amber" />
                 <StatusCard label="Extra Days" value={((payroll.attendance?.payableShifts || 0) - (payroll.attendance?.totalPaidDays || 0)) > 0 ? ((payroll.attendance?.payableShifts || 0) - (payroll.attendance?.totalPaidDays || 0)) : 0} color="gold" />
-                <StatusCard label="Net Paid Days" value={payroll.attendance?.totalPaidDays} highlight />
+                <StatusCard label="Total Paid Days" value={payroll.attendance?.totalPaidDays ?? payroll.attendance?.paidDays} />
+                <StatusCard label="Attendance Ded. Days" value={payroll.deductions?.attendanceDeductionBreakdown?.daysDeducted ?? payroll.attendance?.attendanceDeductionDays} color="rose" />
+                <StatusCard label="Final Paid Days" value={payroll.attendance?.finalPaidDays ?? (typeof (payroll.attendance?.totalPaidDays ?? payroll.attendance?.paidDays) === 'number' ? Math.max(0, (payroll.attendance?.totalPaidDays ?? payroll.attendance?.paidDays ?? 0) - (payroll.deductions?.attendanceDeductionBreakdown?.daysDeducted ?? payroll.attendance?.attendanceDeductionDays ?? 0)) : undefined)} highlight />
               </div>
             </section>
 
