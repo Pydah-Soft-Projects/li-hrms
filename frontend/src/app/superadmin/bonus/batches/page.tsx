@@ -153,7 +153,15 @@ export default function BonusBatchesPage() {
             <tbody className='divide-y divide-slate-200 dark:divide-slate-700'>
               {batches.map(batch => (
                 <tr key={batch._id} className='hover:bg-slate-50 dark:hover:bg-slate-900/50 cursor-pointer' onClick={() => router.push(`/superadmin/bonus/batches/${batch._id}`)}>
-                  <td className='px-6 py-4 font-medium'>{batch.batchName}</td>
+                  <td className='px-6 py-4 font-medium'>
+                    <Link
+                      href={`/superadmin/bonus/batches/${batch._id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-blue-600 hover:text-blue-800 hover:underline"
+                    >
+                      {batch.batchName}
+                    </Link>
+                  </td>
                   <td className='px-6 py-4 text-sm text-slate-500'>
                     {batch.startMonth === batch.endMonth ? batch.startMonth : `${batch.startMonth} to ${batch.endMonth}`}
                   </td>

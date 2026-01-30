@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from "next/navigation";
+import Link from 'next/link';
 import { api, apiRequest, Employee, Division } from '@/lib/api';
 import { toast, ToastContainer } from 'react-toastify';
 import ArrearsPayrollSection from '@/components/Arrears/ArrearsPayrollSection';
@@ -87,6 +88,8 @@ interface PayRegisterSummary {
   lastAutoSyncedAt: string | null;
   lastEditedAt: string | null;
   payrollId?: string;
+  startDate?: string;
+  endDate?: string;
 }
 
 interface Shift {
@@ -133,6 +136,8 @@ export default function PayRegisterPage() {
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [selectedArrears, setSelectedArrears] = useState<Array<{ id: string, amount: number, employeeId?: string }>>([]);
+  const [payrollStartDate, setPayrollStartDate] = useState<string | null>(null);
+  const [payrollEndDate, setPayrollEndDate] = useState<string | null>(null);
 
   const normalizeHalfDay = (
     half?: Partial<DailyRecord['firstHalf']>,
@@ -180,7 +185,30 @@ export default function PayRegisterPage() {
   const month = currentDate.getMonth() + 1;
   const monthStr = `${year}-${String(month).padStart(2, '0')}`;
   const daysInMonth = new Date(year, month, 0).getDate();
-  const daysArray = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+
+  // Use the configured range from the backend if available, otherwise compute calendar month
+  const displayDays = payrollStartDate && payrollEndDate
+    ? (() => {
+      const start = new Date(payrollStartDate);
+      const end = new Date(payrollEndDate);
+      const dates = [];
+      let curr = new Date(start);
+      // Safety break to prevent infinite loop
+      let count = 0;
+      while (curr <= end && count < 40) {
+        dates.push(curr.toISOString().split('T')[0]);
+        curr.setDate(curr.getDate() + 1);
+        count++;
+      }
+      return dates;
+    })()
+    : Array.from({ length: daysInMonth }, (_, i) => {
+      const d = new Date(year, month - 1, i + 1);
+      // Using UTC to avoid local timezone shifts during string conversion
+      return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+    });
+
+  const daysArray = displayDays; // For compatibility with existing loop names
 
   const isPastMonth = new Date(year, month - 1, 1).getTime() < new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
 
@@ -286,6 +314,9 @@ export default function PayRegisterPage() {
         const payRegisterList = response.data || [];
         console.log('[Pay Register] Loaded page', pageToLoad, 'count:', payRegisterList.length);
 
+        if ((response as any).startDate) setPayrollStartDate((response as any).startDate);
+        if ((response as any).endDate) setPayrollEndDate((response as any).endDate);
+
         if (append) {
           setPayRegisters(prev => [...prev, ...payRegisterList]);
         } else {
@@ -329,13 +360,29 @@ export default function PayRegisterPage() {
   const handleSyncAll = async () => {
     try {
       setSyncing(true);
+
+      // 1. First trigger a global attendance sync for this payroll cycle's date range
+      // This ensures MongoDB records are updated from MSSQL/Biometric for the spanned dates
+      if (payrollStartDate && payrollEndDate) {
+        toast.info('Syncing logs from biometric source...', { autoClose: 2000 });
+        await apiRequest('/attendance/sync', {
+          method: 'POST',
+          body: JSON.stringify({
+            fromDate: payrollStartDate,
+            toDate: payrollEndDate
+          })
+        });
+      }
+
+      // 2. Now sync individual pay registers from the updated MongoDB records
       const syncPromises = payRegisters.map((pr) => {
         const employeeId = typeof pr.employeeId === 'object' ? pr.employeeId._id : pr.employeeId;
         return api.syncPayRegister(employeeId, monthStr);
       });
+
       await Promise.all(syncPromises);
       await loadPayRegisters();
-      toast.success('All pay registers synced successfully');
+      toast.success('All data synced successfully');
     } catch (err: any) {
       console.error('Error syncing pay registers:', err);
       toast.error(err.message || 'Failed to sync pay registers');
@@ -439,9 +486,15 @@ export default function PayRegisterPage() {
       const lateCount = totals.lateCount || 0;
       const holidayAndWeekoffs = (totals.totalWeeklyOffs || 0) + (totals.totalHolidays || 0);
 
-      const totalPaidDays = present + weeklyOffs + holidays + od + paidLeave;
-      const monthDays = pr.totalDaysInMonth || daysInMonth;
-      const countedDays = totalPaidDays + absent + lop;
+      // User Definition:
+      // Paid Days = Present + Paid Leaves + Holidays + Weekoffs
+      const totalPaidDays = present + paidLeave + holidays + weeklyOffs;
+
+      const monthDays = pr.totalDaysInMonth || daysArray.length || daysInMonth;
+
+      // User Definition:
+      // Counted Days = Present + Absent + Holidays + Weekoffs + Total Leaves
+      const countedDays = present + absent + holidays + weeklyOffs + leave;
       const matchesMonth = Math.abs(countedDays - monthDays) < 0.001;
       return {
         pr,
@@ -502,6 +555,10 @@ export default function PayRegisterPage() {
 
   const getCellBackgroundColor = (record: DailyRecord | null, tableType: TableType): string => {
     if (!record) return '';
+
+    if (record.isManuallyEdited) {
+      return 'bg-amber-100 dark:bg-amber-900/30 ring-inset ring-1 ring-amber-300 dark:ring-amber-700';
+    }
 
     if (tableType === 'present') {
       if (record.status === 'present' || record.firstHalf.status === 'present' || record.secondHalf.status === 'present') {
@@ -566,7 +623,7 @@ export default function PayRegisterPage() {
 
   const handleViewPayslip = (employee: Employee) => {
     // Navigate to payslip or open payslip modal
-    window.location.href = `/superadmin/payroll-transactions?employeeId=${employee._id}&month=${monthStr}`;
+    router.push(`/superadmin/payroll-transactions?employeeId=${employee._id}&month=${monthStr}`);
   };
 
   const handleCalculatePayroll = async (employee: Employee) => {
@@ -825,6 +882,11 @@ export default function PayRegisterPage() {
             <div className="flex items-center gap-3 shrink-0">
               <div className="flex flex-col">
                 <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white whitespace-nowrap">Pay Register</h1>
+                {payrollStartDate && payrollEndDate && (
+                  <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                    Period: {new Date(payrollStartDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} - {new Date(payrollEndDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </p>
+                )}
               </div>
 
               <div className="h-6 w-px bg-slate-200 dark:bg-slate-800 hidden md:block" />
@@ -1242,7 +1304,7 @@ export default function PayRegisterPage() {
 
       {/* Summary Table */}
       {!loading && payRegisters.length > 0 && (
-        <div className="mt-4 rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-lg dark:border-slate-700 dark:bg-slate-900/80 overflow-x-auto">
+        <div className="mt-4 mb-8 rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-lg dark:border-slate-700 dark:bg-slate-900/80 overflow-x-auto">
           <div className="p-4">
             <h3 className="text-base font-semibold text-slate-900 dark:text-white mb-3">Monthly Summary</h3>
             <table className="w-full border-collapse text-xs">
@@ -1328,7 +1390,7 @@ export default function PayRegisterPage() {
       )}
 
       {/* Table Tabs */}
-      <div className="bg-white dark:bg-slate-800 rounded-lg shadow">
+      <div className="bg-white dark:bg-slate-800 rounded-lg shadow mb-8">
         <div className="border-b border-slate-200 dark:border-slate-700">
           <nav className="flex -mb-px">
             {[
@@ -1398,9 +1460,9 @@ export default function PayRegisterPage() {
                     {daysArray.map((day) => (
                       <th
                         key={day}
-                        className={`w-[calc((100%-180px-${activeTable === 'leaves' ? '320px' : '80px'})/${daysInMonth})] border-r border-slate-200 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300`}
+                        className={`w-[calc((100%-180px-${activeTable === 'leaves' ? '320px' : '80px'})/${daysArray.length})] border-r border-slate-200 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300`}
                       >
-                        {day}
+                        {parseInt(day.split('-')[2])}
                       </th>
                     ))}
                     {/* Dynamic columns based on active tab */}
@@ -1503,25 +1565,27 @@ export default function PayRegisterPage() {
                                   )}
                                 </div>
                                 <div className="flex gap-2">
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation(); // Prevent row click
-                                      if (employee) {
-                                        if (isPastMonth && !pr.payrollId) {
-                                          handleCalculatePayroll(employee);
-                                        } else {
-                                          handleViewPayslip(employee);
-                                        }
-                                      }
-                                    }}
-                                    className={`rounded-md px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:shadow-md ${isPastMonth && !pr.payrollId
-                                      ? 'bg-amber-500 hover:bg-amber-600'
-                                      : 'bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700'
-                                      }`}
-                                    title={isPastMonth && !pr.payrollId ? "Calculate Payroll" : "View Payslip"}
-                                  >
-                                    {isPastMonth && !pr.payrollId ? 'Calculate' : 'Payslip'}
-                                  </button>
+                                  {isPastMonth && !pr.payrollId ? (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (employee) handleCalculatePayroll(employee);
+                                      }}
+                                      className="rounded-md px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:shadow-md bg-amber-500 hover:bg-amber-600"
+                                      title="Calculate Payroll"
+                                    >
+                                      Calculate
+                                    </button>
+                                  ) : (
+                                    <Link
+                                      href={`/superadmin/payroll-transactions?employeeId=${employeeId}&month=${monthStr}`}
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="rounded-md px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:shadow-md bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 inline-block"
+                                      title="View Payslip"
+                                    >
+                                      Payslip
+                                    </Link>
+                                  )}
 
                                   {!isFrozenOrComplete && (
                                     <div />
@@ -1535,7 +1599,7 @@ export default function PayRegisterPage() {
                             </div>
                           </td>
                           {daysArray.map((day) => {
-                            const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                            const dateStr = day;
                             const record = dailyRecordsMap.get(dateStr) || null;
                             const shouldShow = shouldShowInTable(record, activeTable);
                             const displayStatus = getStatusDisplay(record);

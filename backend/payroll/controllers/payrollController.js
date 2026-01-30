@@ -7,8 +7,7 @@ const Loan = require('../../loans/model/Loan');
 const payrollCalculationService = require('../services/payrollCalculationService');
 const XLSX = require('xlsx');
 const PayRegisterSummary = require('../../pay-register/model/PayRegisterSummary');
-const MonthlyAttendanceSummary = require('../../attendance/model/MonthlyAttendanceSummary');
-
+const MonthlyAttendanceSummary = require('../../attendance/model/MonthlyAttendanceSummary');  
 /**
  * Payroll Controller
  * Handles payroll calculation, retrieval, and processing
@@ -27,9 +26,10 @@ async function buildPayslipData(employeeId, month) {
   }).populate({
     path: 'employeeId',
     select:
-      'employee_name emp_no department_id designation_id gross_salary location bank_account_no pf_number esi_number',
+      'employee_name emp_no department_id division_id designation_id gross_salary location bank_account_no bank_name salary_mode doj pf_number esi_number',
     populate: [
       { path: 'department_id', select: 'name' },
+      { path: 'division_id', select: 'name' },
       { path: 'designation_id', select: 'name' },
     ],
   });
@@ -54,6 +54,18 @@ async function buildPayslipData(employeeId, month) {
       const Department = require('../../departments/model/Department');
       const dept = await Department.findById(employee.department_id).select('name');
       if (dept) departmentName = dept.name;
+    }
+  }
+
+  // Division name
+  let divisionName = 'N/A';
+  if (employee?.division_id) {
+    if (typeof employee.division_id === 'object' && employee.division_id.name) {
+      divisionName = employee.division_id.name;
+    } else if (employee.division_id.toString) {
+      const Division = require('../../departments/model/Division');
+      const div = await Division.findById(employee.division_id).select('name');
+      if (div) divisionName = div.name;
     }
   }
 
@@ -86,9 +98,12 @@ async function buildPayslipData(employeeId, month) {
     payrollRecord.earnings.otHours ??
     0;
   const monthDays = payrollRecord.totalDaysInMonth;
+  // Incentive = extra days only (payableShifts - present - paidLeave). Do NOT use (payableShifts - presentDays)
+  // or paid leave days would be counted twice: once in paidLeaveSalary and again in incentive.
+  // OD is already subsumed in presentDays in pay register, so we don't subtract it here.
   const incentiveDays =
-    presentDays !== null
-      ? (payableShifts - presentDays)
+    presentDays !== null && paidLeaveDays !== null
+      ? Math.max(0, payableShifts - presentDays - (paidLeaveDays || 0))
       : (payrollRecord.attendance?.extraDays || 0);
 
   const earnedSalary =
@@ -109,9 +124,13 @@ async function buildPayslipData(employeeId, month) {
       emp_no: payrollRecord.emp_no,
       name: employee?.employee_name || 'N/A',
       department: departmentName,
+      division: divisionName,
       designation: designationName,
       location: employee?.location || '',
       bank_account_no: employee?.bank_account_no || '',
+      bank_name: employee?.bank_name || '',
+      payment_mode: employee?.salary_mode || '',
+      date_of_joining: employee?.doj || '',
       pf_number: employee?.pf_number || '',
       esi_number: employee?.esi_number || '',
     },
@@ -128,9 +147,14 @@ async function buildPayslipData(employeeId, month) {
       payableShifts: payrollRecord.attendance?.payableShifts || payableShifts,
       extraDays: payrollRecord.attendance?.extraDays || 0,
       totalPaidDays: payrollRecord.attendance?.totalPaidDays || 0,
+      // Late/attendance deducting days (days deducted due to late-in/early-out)
+      attendanceDeductionDays: payrollRecord.deductions?.attendanceDeductionBreakdown?.daysDeducted ?? 0,
+      // Final paid days = total paid days minus attendance deduction days
+      finalPaidDays: Math.max(0, (payrollRecord.attendance?.totalPaidDays ?? payrollRecord.attendance?.paidDays ?? 0) - (payrollRecord.deductions?.attendanceDeductionBreakdown?.daysDeducted ?? 0)),
       otHours: payrollRecord.attendance?.otHours || otHours,
       otDays: payrollRecord.attendance?.otDays || 0,
       earnedSalary: payrollRecord.attendance?.earnedSalary || earnedSalary,
+      lopDays: payRegisterSummary?.totals?.totalLopDays || 0,
       incentiveDays: incentiveDays, // Keep for backward compatibility
       workingDays: null, // Can be derived if needed
     },
@@ -148,6 +172,7 @@ async function buildPayslipData(employeeId, month) {
     },
     deductions: {
       attendanceDeduction: payrollRecord.deductions.attendanceDeduction,
+      attendanceDeductionBreakdown: payrollRecord.deductions.attendanceDeductionBreakdown || {},
       permissionDeduction: payrollRecord.deductions.permissionDeduction,
       leaveDeduction: payrollRecord.deductions.leaveDeduction,
       otherDeductions: payrollRecord.deductions.otherDeductions,
@@ -165,6 +190,10 @@ async function buildPayslipData(employeeId, month) {
     netSalary: payrollRecord.netSalary,
     totalPayableShifts: payrollRecord.totalPayableShifts,
     paidDays: payrollRecord.attendance?.paidDays || (presentDays + (payRegisterSummary?.totals?.totalWeeklyOffs || 0) + (payRegisterSummary?.totals?.totalHolidays || 0) + (odDays || 0) + (paidLeaveDays || 0)),
+    // Late/attendance deducting days (days deducted due to late-in/early-out rules)
+    attendanceDeductionDays: (payrollRecord.deductions?.attendanceDeductionBreakdown?.daysDeducted ?? 0),
+    // Final paid days = paid days minus attendance deduction days (clear picture for user)
+    finalPaidDays: Math.max(0, (payrollRecord.attendance?.paidDays ?? (presentDays + (payRegisterSummary?.totals?.totalWeeklyOffs || 0) + (payRegisterSummary?.totals?.totalHolidays || 0) + (odDays || 0) + (paidLeaveDays || 0))) - (payrollRecord.deductions?.attendanceDeductionBreakdown?.daysDeducted ?? 0)),
     roundOff: payrollRecord.roundOff || 0,
     status: payrollRecord.status,
   };
@@ -186,7 +215,11 @@ function buildPayslipExcelRowsNormalized(payslip, allAllowanceNames, allDeductio
     'Name': payslip.employee.name || '',
     'Designation': payslip.employee.designation || '',
     'Department': payslip.employee.department || '',
-    'Division': '',
+    'Division': payslip.employee.division || '',
+    'Date of Joining': payslip.employee.date_of_joining ? new Date(payslip.employee.date_of_joining).toLocaleDateString() : '',
+    'Payment Mode': payslip.employee.payment_mode || '',
+    'Bank Name': payslip.employee.bank_name || '',
+    'Bank Account No': payslip.employee.bank_account_no || '',
     'BASIC': payslip.earnings.basicPay || 0,
   };
 
@@ -212,10 +245,12 @@ function buildPayslipExcelRowsNormalized(payslip, allAllowanceNames, allDeductio
   row['Paid Leaves'] = payslip.attendance?.paidLeaveDays || 0;
   row['OD Days'] = payslip.attendance?.odDays || 0;
   row['Absents'] = payslip.attendance?.absentDays || 0;
-  row['LOP\'s'] = payRegisterSummary?.totals?.totalLopDays || 0;
+  row['LOP\'s'] = payslip.attendance?.lopDays || 0;
   row['Payable Shifts'] = payslip.attendance?.payableShifts || 0;
   row['Extra Days'] = payslip.attendance?.extraDays || 0;
   row['Total Paid Days'] = payslip.paidDays || 0;
+  row['Attendance Deduction Days'] = payslip.attendanceDeductionDays ?? payslip.attendance?.attendanceDeductionDays ?? 0;
+  row['Final Paid Days'] = payslip.finalPaidDays ?? payslip.attendance?.finalPaidDays ?? (row['Total Paid Days'] - (row['Attendance Deduction Days'] || 0));
 
   // Net earnings
   row['Net Basic'] = payslip.attendance?.earnedSalary || payslip.earnings.earnedSalary || 0;
@@ -320,6 +355,8 @@ function buildPayslipExcelRowsOld(payslip) {
   row['Payable Shifts'] = payslip.attendance?.payableShifts || 0;
   row['Extra Days'] = payslip.attendance?.extraDays || 0;
   row['Total Paid Days'] = payslip.attendance?.totalPaidDays || 0;
+  row['Attendance Deduction Days'] = payslip.attendanceDeductionDays ?? payslip.attendance?.attendanceDeductionDays ?? 0;
+  row['Final Paid Days'] = payslip.finalPaidDays ?? payslip.attendance?.finalPaidDays ?? Math.max(0, (payslip.attendance?.totalPaidDays || 0) - (row['Attendance Deduction Days'] || 0));
 
   // ===== NET EARNINGS (Based on Attendance) =====
   row['Net Basic'] = payslip.attendance?.earnedSalary || payslip.earnings.earnedSalary || 0;
@@ -1389,4 +1426,3 @@ exports.getAttendanceDataRange = async (req, res) => {
     });
   }
 };
-

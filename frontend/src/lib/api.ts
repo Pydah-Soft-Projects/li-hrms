@@ -194,12 +194,82 @@ export interface PayrollBatch {
   monthName?: string;
 }
 
+/** Attendance deduction breakdown (late-in/early-out) */
+export interface AttendanceDeductionBreakdown {
+  lateInsCount?: number;
+  earlyOutsCount?: number;
+  combinedCount?: number;
+  daysDeducted?: number;
+  deductionType?: string | null;
+  calculationMode?: string | null;
+}
+
+/** Payroll record / payslip attendance with late deduction clarity */
+export interface PayrollAttendance {
+  totalDaysInMonth?: number;
+  presentDays?: number;
+  paidLeaveDays?: number;
+  odDays?: number;
+  weeklyOffs?: number;
+  holidays?: number;
+  absentDays?: number;
+  payableShifts?: number;
+  extraDays?: number;
+  totalPaidDays?: number;
+  paidDays?: number;
+  /** Days deducted due to late-in/early-out (attendance deduction) */
+  attendanceDeductionDays?: number;
+  /** Final paid days = total paid days minus attendance deduction days */
+  finalPaidDays?: number;
+  otHours?: number;
+  otDays?: number;
+  earnedSalary?: number;
+}
+
+/** Payroll record (from GET /payroll/record/:id) or payslip response */
+export interface PayrollRecordResponse {
+  _id: string;
+  employeeId?: any;
+  emp_no?: string;
+  month?: string;
+  monthName?: string;
+  year?: number;
+  monthNumber?: number;
+  attendance?: PayrollAttendance;
+  earnings?: any;
+  deductions?: {
+    attendanceDeduction?: number;
+    attendanceDeductionBreakdown?: AttendanceDeductionBreakdown;
+    permissionDeduction?: number;
+    leaveDeduction?: number;
+    totalOtherDeductions?: number;
+    otherDeductions?: any[];
+    totalDeductions?: number;
+  };
+  loanAdvance?: { totalEMI?: number; advanceDeduction?: number };
+  netSalary?: number;
+  status?: string;
+  arrearsAmount?: number;
+  roundOff?: number;
+  /** Top-level: days deducted for late (from breakdown) */
+  attendanceDeductionDays?: number;
+  /** Top-level: final paid days after late deduction */
+  finalPaidDays?: number;
+}
+
 export interface ApiResponse<T> {
   success: boolean;
   message?: string;
   data?: T;
   error?: string;
   dataSource?: string;
+  jobId?: string;
+  pagination?: {
+    total: number;
+    totalPages: number;
+    page: number;
+    limit: number;
+  };
   // For backward compatibility with various response formats
   durations?: any[];
   count?: number;
@@ -214,13 +284,6 @@ export interface ApiResponse<T> {
   syncError?: any;
   identifier?: string;
   generatedPassword?: string;
-  jobId?: string;
-  pagination?: {
-    page: number;
-    limit: number;
-    totalPages: number;
-    total: number;
-  };
 }
 
 export interface LoginResponse {
@@ -283,19 +346,6 @@ export async function apiRequest<T>(
     console.log(`[API Response] ${response.status} ${url}`, data);
 
     if (!response.ok) {
-      if (response.status === 401) {
-        console.warn('[API] Unauthorized access detected (401). Logging out...');
-        auth.logout();
-        if (typeof window !== 'undefined') {
-          // Prevent multiple alerts/redirects if multiple requests fail at once
-          if (!(window as any)._isLoggingOut) {
-            (window as any)._isLoggingOut = true;
-            alert('Your session has expired. Please login again for security reasons.');
-            window.location.href = '/login';
-          }
-        }
-      }
-
       return {
         success: false,
         message: data.message || 'An error occurred',
@@ -321,6 +371,36 @@ export async function apiRequest<T>(
     };
   }
 }
+
+// Timeout wrapper for long-running operations
+async function apiRequestWithTimeout<T>(
+  endpoint: string,
+  options: RequestInit = {},
+  timeoutMs: number = 60000 // 60 seconds default
+): Promise<ApiResponse<T>> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await apiRequest<T>(endpoint, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      return {
+        success: false,
+        message: 'Request timed out. The operation is taking longer than expected. Please check the server logs.',
+        error: 'Request timeout',
+      };
+    }
+    throw error;
+  }
+}
+
 
 export interface Shift {
   _id: string;
@@ -349,12 +429,12 @@ export interface Designation {
   code: string;
   description?: string;
   department?: string | Department;
-  shifts?: { shiftId: string | Shift; gender: string }[];
-  divisionDefaults?: { division: string | Division; shifts: { shiftId: string | Shift; gender: string }[] }[];
+  shifts?: (string | Shift)[];
+  divisionDefaults?: { division: string | Division; shifts: (string | Shift)[] }[];
   departmentShifts?: Array<{
     division?: string | Division;
     department: string | Department | { _id: string; name: string; code?: string };
-    shifts: { shiftId: string | Shift; gender: string }[];
+    shifts: (string | Shift)[];
     _id?: string;
   }>;
   paidLeaves?: number;
@@ -391,7 +471,7 @@ export interface Department {
     action: 'half_day' | 'full_day' | 'deduct_amount';
     amount?: number;
   }>;
-  shifts?: { shiftId: string | Shift; gender: string }[];
+  shifts?: (string | Shift)[];
   paidLeaves?: number;
   leaveLimits?: {
     casual: number;
@@ -403,7 +483,7 @@ export interface Department {
   updatedAt?: string;
   divisions?: (string | Division)[];
   designations?: (string | Designation)[];
-  divisionDefaults?: { division: string | Division; shifts: { shiftId: string | Shift; gender: string }[] }[];
+  divisionDefaults?: { division: string | Division; shifts: (string | Shift)[] }[];
 }
 
 export interface Division {
@@ -413,7 +493,7 @@ export interface Division {
   description?: string;
   manager?: { _id: string; name: string; email: string };
   departments?: (string | Department)[];
-  shifts?: { shiftId: string | Shift; gender: string }[];
+  shifts?: (string | Shift)[];
   isActive?: boolean;
 }
 
@@ -450,7 +530,6 @@ export interface Employee {
   doj?: string;
   dob?: string;
   gross_salary?: number;
-  second_salary?: number;
   gender?: string;
   marital_status?: string;
   blood_group?: string;
@@ -469,6 +548,7 @@ export interface Employee {
   bank_place?: string;
   ifsc_code?: string;
   salary_mode?: 'Bank' | 'Cash';
+  second_salary?: number;
   paidLeaves?: number;
   allottedLeaves?: number;
   employeeAllowances?: any[];
@@ -676,10 +756,6 @@ export const api = {
     return apiRequest<any>('/dashboard/stats', { method: 'GET' });
   },
 
-  getDashboardAnalytics: async () => {
-    return apiRequest<any>('/dashboard/analytics', { method: 'GET' });
-  },
-
   getEmployeesWithoutAccount: async () => {
     return apiRequest<any>('/users/employees-without-account', { method: 'GET' });
   },
@@ -800,7 +876,7 @@ export const api = {
     });
   },
 
-  assignShiftsToDivision: async (id: string, data: { shifts: { shiftId: string; gender: string }[]; targetType: string; targetId?: string | { designationId: string; departmentId: string } }) => {
+  assignShiftsToDivision: async (id: string, data: { shifts: (string | { shiftId: string; gender: string })[]; targetType: string; targetId?: string | { designationId: string; departmentId: string } }) => {
     return apiRequest<any>(`/divisions/${id}/shifts`, {
       method: 'POST',
       body: JSON.stringify(data),
@@ -820,10 +896,36 @@ export const api = {
 
   // Department Settings
   getDepartmentSettings: async (deptId: string, divisionId?: string) => {
-    const params = new URLSearchParams();
-    if (divisionId) params.append('divisionId', divisionId);
-    const query = params.toString() ? `?${params.toString()}` : '';
-    return apiRequest<any>(`/departments/${deptId}/settings${query}`, { method: 'GET' });
+    let url = `/departments/${deptId}/settings`;
+    if (divisionId) url += `?divisionId=${divisionId}`;
+    return apiRequest<any>(url, { method: 'GET' });
+  },
+
+  // Bulk Allowance & Deduction
+  downloadAllowanceDeductionTemplate: async () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const response = await fetch(`${API_BASE_URL}/allowances-deductions/template`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || 'Download failed');
+    }
+
+    return response.blob();
+  },
+
+  bulkUpdateAllowancesDeductions: async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return apiRequest<any>('/allowances-deductions/bulk-update', {
+      method: 'POST',
+      body: formData,
+    });
   },
 
   updateDepartmentSettings: async (deptId: string, data: {
@@ -862,20 +964,17 @@ export const api = {
       deductionAmount?: number | null;
     };
   }, divisionId?: string) => {
-    const params = new URLSearchParams();
-    if (divisionId) params.append('divisionId', divisionId);
-    const query = params.toString() ? `?${params.toString()}` : '';
-    return apiRequest<any>(`/departments/${deptId}/settings${query}`, {
+    let url = `/departments/${deptId}/settings`;
+    if (divisionId) url += `?divisionId=${divisionId}`;
+    return apiRequest<any>(url, {
       method: 'PUT',
       body: JSON.stringify(data),
     });
   },
 
   getResolvedDepartmentSettings: async (deptId: string, type?: 'leaves' | 'loans' | 'salary_advance' | 'permissions' | 'ot' | 'overtime' | 'all', divisionId?: string) => {
-    const params = new URLSearchParams();
-    if (type) params.append('type', type);
-    if (divisionId) params.append('divisionId', divisionId);
-    const query = params.toString() ? `?${params.toString()}` : '';
+    let query = type ? `?type=${type}` : '';
+    if (divisionId) query += `${query ? '&' : '?'}divisionId=${divisionId}`;
     return apiRequest<any>(`/departments/${deptId}/settings/resolved${query}`, { method: 'GET' });
   },
 
@@ -893,10 +992,10 @@ export const api = {
     });
   },
 
-  assignShifts: async (id: string, shifts: { shiftId: string; gender: string }[]) => {
+  assignShifts: async (id: string, shiftIds: (string | { shiftId: string; gender: string })[]) => {
     return apiRequest<Department>(`/departments/${id}/shifts`, {
       method: 'PUT',
-      body: JSON.stringify({ shifts }),
+      body: JSON.stringify({ shiftIds }),
     });
   },
 
@@ -941,10 +1040,10 @@ export const api = {
     return apiRequest<void>(`/departments/designations/${id}`, { method: 'DELETE' });
   },
 
-  assignShiftsToDesignation: async (id: string, shifts: { shiftId: string; gender: string }[], departmentId?: string) => {
+  assignShiftsToDesignation: async (id: string, shiftIds: (string | { shiftId: string; gender: string })[], departmentId?: string) => {
     return apiRequest<any>(`/departments/designations/${id}/shifts`, {
       method: 'PUT',
-      body: JSON.stringify({ shifts, departmentId }),
+      body: JSON.stringify({ shiftIds, departmentId }),
     });
   },
 
@@ -1036,25 +1135,16 @@ export const api = {
   },
 
   // Employees
-  getEmployees: async (filters?: {
-    is_active?: boolean;
-    department_id?: string;
-    division_id?: string;
-    designation_id?: string;
-    includeLeft?: boolean;
-    page?: number;
-    limit?: number;
-    search?: string;
-  }) => {
+  getEmployees: async (filters?: { is_active?: boolean; department_id?: string; division_id?: string; designation_id?: string; includeLeft?: boolean; search?: string; page?: number; limit?: number }) => {
     const params = new URLSearchParams();
     if (filters?.is_active !== undefined) params.append('is_active', String(filters.is_active));
     if (filters?.department_id) params.append('department_id', filters.department_id);
     if (filters?.division_id) params.append('division_id', filters.division_id);
     if (filters?.designation_id) params.append('designation_id', filters.designation_id);
     if (filters?.includeLeft !== undefined) params.append('includeLeft', String(filters.includeLeft));
-    if (filters?.page !== undefined) params.append('page', String(filters.page));
-    if (filters?.limit !== undefined) params.append('limit', String(filters.limit));
     if (filters?.search) params.append('search', filters.search);
+    if (filters?.page) params.append('page', String(filters.page));
+    if (filters?.limit) params.append('limit', String(filters.limit));
     const query = params.toString() ? `?${params.toString()}` : '';
     return apiRequest<any>(`/employees${query}`, { method: 'GET' });
   },
@@ -1161,10 +1251,12 @@ export const api = {
   },
 
   bulkApproveEmployeeApplications: async (applicationIds: string[], bulkSettings: any) => {
-    return apiRequest<any>('/employee-applications/bulk-approve', {
+    // Use timeout for bulk operations - allow up to 2 minutes for large batches
+    const timeoutMs = Math.max(60000, applicationIds.length * 500); // At least 60s, or 500ms per application
+    return apiRequestWithTimeout<any>('/employee-applications/bulk-approve', {
       method: 'PUT',
       body: JSON.stringify({ applicationIds, bulkSettings }),
-    });
+    }, timeoutMs);
   },
 
   bulkRejectEmployeeApplications: async (applicationIds: string[], comments?: string) => {
@@ -1407,6 +1499,48 @@ export const api = {
         'Content-Type': 'application/json',
       },
     });
+  },
+
+  // Generic GET method
+  get: async <T = any>(url: string): Promise<ApiResponse<T>> => {
+    return apiRequest<T>(url, { method: 'GET' });
+  },
+
+  // Generic PUT method
+  put: async <T = any>(url: string, data: any): Promise<ApiResponse<T>> => {
+    const response = await fetch(`${API_BASE_URL}${url}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(await auth.getAuthHeader())
+      },
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Request failed');
+    }
+
+    return response.json();
+  },
+
+  // Generic DELETE method
+  delete: async <T = any>(url: string): Promise<ApiResponse<T>> => {
+    const response = await fetch(`${API_BASE_URL}${url}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(await auth.getAuthHeader())
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Request failed');
+    }
+
+    return response.json();
   },
 
   // Generic POST method
@@ -1815,10 +1949,10 @@ export const api = {
   },
 
   // Process loan action (approve/reject/forward)
-  processLoanAction: async (id: string, payload: any) => {
+  processLoanAction: async (id: string, action: string, comments?: string) => {
     return apiRequest<any>(`/loans/${id}/action`, {
       method: 'PUT',
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ action, comments }),
     });
   },
 
@@ -1936,18 +2070,20 @@ export const api = {
     return apiRequest<any>(`/attendance/employees${query}`, { method: 'GET' });
   },
 
-  getMonthlyAttendance: async (year: number, month: number, params?: { page?: number; limit?: number; search?: string; divisionId?: string; departmentId?: string; designationId?: string }) => {
-    const searchParams = new URLSearchParams();
-    searchParams.set('year', String(year));
-    searchParams.set('month', String(month));
-    if (params?.page) searchParams.set('page', String(params.page));
-    if (params?.limit) searchParams.set('limit', String(params.limit));
-    if (params?.search) searchParams.set('search', params.search);
-    if (params?.divisionId) searchParams.set('divisionId', params.divisionId);
-    if (params?.departmentId) searchParams.set('departmentId', params.departmentId);
-    if (params?.designationId) searchParams.set('designationId', params.designationId);
+  getMonthlyAttendance: async (year: number, month: number, filters?: { page?: number; limit?: number; search?: string; divisionId?: string; departmentId?: string; designationId?: string }) => {
+    const params = new URLSearchParams();
+    params.append('year', String(year));
+    params.append('month', String(month));
 
-    return apiRequest<any>(`/attendance/monthly?${searchParams.toString()}`, {
+    if (filters?.page) params.append('page', String(filters.page));
+    if (filters?.limit) params.append('limit', String(filters.limit));
+    if (filters?.search) params.append('search', filters.search);
+    if (filters?.divisionId) params.append('divisionId', filters.divisionId);
+    if (filters?.departmentId) params.append('departmentId', filters.departmentId);
+    if (filters?.designationId) params.append('designationId', filters.designationId);
+
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return apiRequest<any>(`/attendance/monthly${query}`, {
       method: 'GET',
     });
   },
@@ -2266,6 +2402,15 @@ export const api = {
   // Update outTime for attendance
   updateAttendanceOutTime: async (employeeNumber: string, date: string, outTime: string, shiftRecordId?: string) => {
     return apiRequest<any>(`/attendance/${employeeNumber}/${date}/outtime`, {
+  updateAttendanceInTime: async (empNo: string, date: string, inTime: string) => {
+    return apiRequest<any>('/attendance/in-time', {
+      method: 'PUT',
+      body: JSON.stringify({ empNo, date, inTime }),
+    });
+  },
+
+  updateAttendanceOutTime: async (empNo: string, date: string, outTime: string) => {
+    return apiRequest<any>(`/attendance/${empNo}/${date}/outtime`, {
       method: 'PUT',
       body: JSON.stringify({ outTime, shiftRecordId }),
     });
@@ -2349,7 +2494,7 @@ export const api = {
   },
 
   addOrUpdateDepartmentRule: async (id: string, data: {
-    divisionId?: string;  // NEW: Optional division ID
+    divisionId?: string;
     departmentId: string;
     type: 'fixed' | 'percentage';
     amount?: number;
@@ -2366,8 +2511,10 @@ export const api = {
   },
 
   removeDepartmentRule: async (id: string, deptId: string, divisionId?: string) => {
-    const query = divisionId ? `?divisionId=${divisionId}` : '';
-    return apiRequest<void>(`/allowances-deductions/${id}/department-rule/${deptId}${query}`, {
+    const url = divisionId
+      ? `/allowances-deductions/${id}/department-rule/${deptId}?divisionId=${encodeURIComponent(divisionId)}`
+      : `/allowances-deductions/${id}/department-rule/${deptId}`;
+    return apiRequest<void>(url, {
       method: 'DELETE',
     });
   },
@@ -2414,10 +2561,10 @@ export const api = {
     });
   },
 
-  calculatePayrollBulk: async (params: { month: string; divisionId?: string; departmentId?: string; strategy?: string }) => {
+  calculatePayrollBulk: async (data: { month: string; divisionId?: string; departmentId?: string; strategy?: string }) => {
     return apiRequest<any>('/payroll/bulk-calculate', {
       method: 'POST',
-      body: JSON.stringify(params),
+      body: JSON.stringify(data),
     });
   },
 
@@ -2442,16 +2589,8 @@ export const api = {
     });
 
     if (!response.ok) {
-      // Try to parse as JSON first (for structured error responses)
-      const contentType = response.headers.get('content-type');
-      if (contentType && contentType.includes('application/json')) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || errorData.error || 'Failed to export payroll');
-      } else {
-        // Fallback to text for non-JSON responses
-        const text = await response.text();
-        throw new Error(text || 'Failed to export payroll');
-      }
+      const text = await response.text();
+      throw new Error(text || 'Failed to export payroll');
     }
 
     const blob = await response.blob();
@@ -2478,7 +2617,7 @@ export const api = {
   },
 
   getPayrollById: async (payrollId: string) => {
-    return apiRequest<any>(`/payroll/record/${payrollId}`, { method: 'GET' });
+    return apiRequest<PayrollRecordResponse>(`/payroll/record/${payrollId}`, { method: 'GET' });
   },
 
 
@@ -2632,8 +2771,8 @@ export const api = {
     if (departmentId) query.append('departmentId', departmentId);
     if (divisionId) query.append('divisionId', divisionId);
     if (status) query.append('status', status);
-    if (page) query.append('page', String(page));
-    if (limit) query.append('limit', String(limit));
+    if (page) query.append('page', page.toString());
+    if (limit) query.append('limit', limit.toString());
     return apiRequest<any>(`/pay-register/employees/${month}${query.toString() ? `?${query.toString()}` : ''}`, {
       method: 'GET',
     });
@@ -2828,6 +2967,69 @@ export const api = {
     return apiRequest<BonusRecord>(`/bonus/records/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
+    });
+  },
+
+  // Bulk Employee A&D Update
+  downloadEmployeeADUpdateTemplate: async () => {
+    return api.downloadAllowanceDeductionTemplate();
+  },
+
+  updateEmployeeADBulk: async (data: FormData) => {
+    return apiRequest<any>('/allowances-deductions/bulk-update', {
+      method: 'POST',
+      body: data,
+    });
+  },
+
+  // Bulk Employee Update (backend: /api/salary-updates/bulk-update/*)
+  downloadEmployeeUpdateTemplate: async (fields?: string[]) => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    let url = `${API_BASE_URL}/salary-updates/bulk-update/template`;
+    if (fields && fields.length > 0) {
+      url += `?fields=${encodeURIComponent(fields.join(','))}`;
+    }
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!response.ok) throw new Error('Failed to download template');
+    const blob = await response.blob();
+    if (typeof window !== 'undefined' && window.URL && document) {
+      const objectUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = 'EmployeeUpdateTemplate.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(objectUrl);
+      document.body.removeChild(a);
+    }
+    return blob;
+  },
+
+  updateEmployeeBulk: async (data: FormData) => {
+    return apiRequest<any>('/salary-updates/bulk-update/upload', {
+      method: 'POST',
+      body: data,
+    });
+  },
+
+  // Second Salary Bulk Update
+  downloadSecondSalaryTemplate: async () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const response = await fetch(`${API_BASE_URL}/payroll/second-salary/bulk-update/template`, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!response.ok) throw new Error('Failed to download template');
+    return response.blob();
+  },
+
+  updateSecondSalaryBulk: async (data: FormData) => {
+    return apiRequest<any>('/payroll/second-salary/bulk-update', {
+      method: 'POST',
+      body: data,
     });
   },
 };

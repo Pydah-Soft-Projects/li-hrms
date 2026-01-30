@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from "next/navigation";
+import Link from 'next/link';
 import { api, apiRequest, Employee, Division } from '@/lib/api';
 import { toast } from 'react-toastify';
 import ArrearsPayrollSection from '@/components/Arrears/ArrearsPayrollSection';
@@ -478,6 +479,10 @@ export default function PayRegisterPage() {
   const getCellBackgroundColor = (record: DailyRecord | null, tableType: TableType): string => {
     if (!record) return '';
 
+    if (record.isManuallyEdited) {
+      return 'bg-amber-100 dark:bg-amber-900/30 ring-inset ring-1 ring-amber-300 dark:ring-amber-700';
+    }
+
     if (tableType === 'present') {
       if (record.status === 'present' || record.firstHalf.status === 'present' || record.secondHalf.status === 'present') {
         return 'bg-green-100 dark:bg-green-900/30';
@@ -541,7 +546,9 @@ export default function PayRegisterPage() {
 
   const handleViewPayslip = (employee: Employee) => {
     // Navigate to payslip or open payslip modal
-    window.location.href = `/superadmin/payroll-transactions?employeeId=${employee._id}&month=${monthStr}`;
+    // Use emp_no for search as per PayrollTransactionsPage filter logic
+    const searchParam = employee.emp_no || employee._id;
+    router.push(`/payroll-transactions?search=${searchParam}&month=${monthStr}`);
   };
 
   const handleCalculatePayroll = async (employee: Employee) => {
@@ -1005,7 +1012,7 @@ export default function PayRegisterPage() {
 
       {/* Summary Table */}
       {!loading && payRegisters.length > 0 && (
-        <div className="mt-4 rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-lg dark:border-slate-700 dark:bg-slate-900/80 overflow-x-auto">
+        <div className="mt-4 mb-8 rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-lg dark:border-slate-700 dark:bg-slate-900/80 overflow-x-auto">
           <div className="p-4">
             <h3 className="text-base font-semibold text-slate-900 dark:text-white mb-3">Monthly Summary</h3>
             <table className="w-full border-collapse text-xs">
@@ -1081,7 +1088,7 @@ export default function PayRegisterPage() {
       )}
 
       {/* Table Tabs */}
-      <div className="bg-white dark:bg-slate-800 rounded-lg shadow">
+      <div className="bg-white dark:bg-slate-800 rounded-lg shadow mb-8">
         <div className="border-b border-slate-200 dark:border-slate-700">
           <nav className="flex -mb-px">
             {[
@@ -1255,25 +1262,27 @@ export default function PayRegisterPage() {
                                   )}
                                 </div>
                                 <div className="flex gap-2">
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation(); // Prevent row click
-                                      if (employee) {
-                                        if (isPastMonth && !pr.payrollId) {
-                                          handleCalculatePayroll(employee);
-                                        } else {
-                                          handleViewPayslip(employee);
-                                        }
-                                      }
-                                    }}
-                                    className={`rounded-md px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:shadow-md ${isPastMonth && !pr.payrollId
-                                      ? 'bg-amber-500 hover:bg-amber-600'
-                                      : 'bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700'
-                                      }`}
-                                    title={isPastMonth && !pr.payrollId ? "Calculate Payroll" : "View Payslip"}
-                                  >
-                                    {isPastMonth && !pr.payrollId ? 'Calculate' : 'Payslip'}
-                                  </button>
+                                  {isPastMonth && !pr.payrollId ? (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (employee) handleCalculatePayroll(employee);
+                                      }}
+                                      className="rounded-md px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:shadow-md bg-amber-500 hover:bg-amber-600"
+                                      title="Calculate Payroll"
+                                    >
+                                      Calculate
+                                    </button>
+                                  ) : (
+                                    <Link
+                                      href={`/payroll-transactions?search=${employee?.emp_no || employeeId}&month=${monthStr}`}
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="rounded-md px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:shadow-md bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 inline-block"
+                                      title="View Payslip"
+                                    >
+                                      Payslip
+                                    </Link>
+                                  )}
 
                                   {!isFrozenOrComplete && (
                                     <div />
