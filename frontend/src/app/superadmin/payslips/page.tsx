@@ -58,6 +58,7 @@ interface PayrollRecord {
   };
   deductions: {
     attendanceDeduction: number;
+    attendanceDeductionBreakdown?: { daysDeducted?: number };
     permissionDeduction: number;
     leaveDeduction: number;
     totalOtherDeductions: number;
@@ -269,201 +270,239 @@ export default function PayslipsPage() {
 
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
+    const primaryColor: [number, number, number] = [30, 41, 59];
+    const lightBg: [number, number, number] = [248, 250, 252];
+    const borderColor: [number, number, number] = [226, 232, 240];
 
-    // Company Header
-    doc.setFontSize(18);
+    const formatCurr = (amount: number) => `Rs. ${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const formatValue = (val: number) => `Rs. ${val.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+
+    // Page border
+    doc.setDrawColor(borderColor[0], borderColor[1], borderColor[2]);
+    doc.setLineWidth(0.2);
+    doc.rect(5, 5, pageWidth - 10, pageHeight - 10);
+
+    // Header: PAYSLIP + period
+    doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.rect(10, 15, 2, 15, 'F');
+    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.setFontSize(22);
     doc.setFont('helvetica', 'bold');
-    doc.text('PAYSLIP', pageWidth / 2, 20, { align: 'center' });
-
-    doc.setFontSize(10);
+    doc.text('PAYSLIP', 16, 24);
+    doc.setFontSize(9);
     doc.setFont('helvetica', 'normal');
-    let monthLabel = `Month: ${record.monthName}`;
+    doc.setTextColor(100, 116, 139);
+    let periodLabel = `${record.monthName} ${record.year}`;
     if (record.startDate && record.endDate) {
       const startStr = new Date(record.startDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
       const endStr = new Date(record.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-      monthLabel += ` (${startStr} to ${endStr})`;
+      periodLabel += ` | ${startStr} - ${endStr}`;
     }
-    doc.text(monthLabel, pageWidth / 2, 28, { align: 'center' });
-
-    // Employee Details Box
-    doc.setFontSize(10);
+    doc.text(periodLabel, 16, 30);
     doc.setFont('helvetica', 'bold');
-    doc.text('EMPLOYEE DETAILS', 14, 40);
-
+    doc.setTextColor(5, 150, 105);
+    doc.text('PRIVATE & CONFIDENTIAL', pageWidth - 15, 22, { align: 'right' });
     doc.setFont('helvetica', 'normal');
-    const col1X = 14;
-    const col2X = 80;
-    const col3X = 145;
+    doc.setTextColor(148, 163, 184);
+    doc.text(`Ref: ${record._id.toString().slice(-8).toUpperCase()}`, pageWidth - 15, 27, { align: 'right' });
 
-    let yPos = 48;
-
-    // Row 1
-    doc.setFont('helvetica', 'bold');
-    doc.text('Employee Code:', col1X, yPos);
-    doc.setFont('helvetica', 'normal');
-    doc.text(record.emp_no || 'N/A', col1X + 30, yPos);
-
-    doc.setFont('helvetica', 'bold');
-    doc.text('Department:', col2X, yPos);
-    doc.setFont('helvetica', 'normal');
-    doc.text(getDeptName(employee.department_id), col2X + 25, yPos);
-
-    doc.setFont('helvetica', 'bold');
-    doc.text('Location:', col3X, yPos);
-    doc.setFont('helvetica', 'normal');
-    doc.text(employee.location || 'N/A', col3X + 20, yPos);
-
-    yPos += 7;
-
-    // Row 2
-    doc.setFont('helvetica', 'bold');
-    doc.text('Name:', col1X, yPos);
-    doc.setFont('helvetica', 'normal');
-    doc.text(employee.employee_name || 'N/A', col1X + 30, yPos);
-
-    doc.setFont('helvetica', 'bold');
-    doc.text('Designation:', col2X, yPos);
-    doc.setFont('helvetica', 'normal');
-    doc.text(getDesigName(employee.designation_id), col2X + 25, yPos);
-
-    doc.setFont('helvetica', 'bold');
-    doc.text('Bank Acc:', col3X, yPos);
-    doc.setFont('helvetica', 'normal');
-    doc.text(employee.bank_account_no || 'N/A', col3X + 20, yPos);
-
-    yPos += 7;
-
-    // Row 3
-    doc.setFont('helvetica', 'bold');
-    doc.text('PF Number:', col1X, yPos);
-    doc.setFont('helvetica', 'normal');
-    doc.text(employee.pf_number || 'N/A', col1X + 30, yPos);
-
-    doc.setFont('helvetica', 'bold');
-    doc.text('ESI Number:', col2X, yPos);
-    doc.setFont('helvetica', 'normal');
-    doc.text(employee.esi_number || 'N/A', col2X + 25, yPos);
-
-    yPos += 5;
-
-    // Attendance Details
-    yPos += 5;
-    doc.setFont('helvetica', 'bold');
-    doc.text('ATTENDANCE DETAILS', 14, yPos);
-    yPos += 6;
-
-    const attendanceData = [
-      ['Month Days', record.totalDaysInMonth || record.attendance?.totalDaysInMonth || 0],
-      ['Present Days', record.attendance?.presentDays || 0],
-      ['Week Offs', record.attendance?.weeklyOffs || 0],
-      ['Paid Leaves', record.attendance?.paidLeaveDays || 0],
-      ['OD Days', record.attendance?.odDays || 0],
-      ['Absents', record.attendance?.absentDays || 0],
-      ['Payable Shifts', record.totalPayableShifts || record.attendance?.payableShifts || 0],
-      ['Extra Days', record.attendance?.extraDays || 0],
-      ['Total Paid Days', record.attendance?.totalPaidDays || 0],
-      ['OT Hours', record.attendance?.otHours || 0],
-    ];
-
-    autoTable(doc, {
-      startY: yPos,
-      head: [['Attendance Type', 'Days/Hours']],
-      body: attendanceData,
-      theme: 'grid',
-      headStyles: { fillColor: [16, 185, 129], fontSize: 9, fontStyle: 'bold' }, // emerald-500
-      bodyStyles: { fontSize: 9 },
-      columnStyles: {
-        0: { cellWidth: 80 },
-        1: { cellWidth: 40, halign: 'right' }
-      },
-      margin: { left: 14, right: 14 }
-    });
-
-    yPos = (doc as any).lastAutoTable.finalY + 10;
-
-    // Earnings and Deductions Side by Side
-    doc.setFont('helvetica', 'bold');
-    doc.text('EARNINGS', 14, yPos);
-    doc.text('DEDUCTIONS', pageWidth / 2 + 7, yPos);
-    yPos += 6;
-
-    // Earnings Table
-    const earningsData = [
-      ['Basic Pay', record.earnings.basicPay.toFixed(2)],
-      ['Earned Salary', record.attendance?.earnedSalary?.toFixed(2) || '0.00'],
-      ...(record.earnings.allowances || []).map(a => [a.name, a.amount.toFixed(2)]),
-      ['Incentive', record.earnings.incentive.toFixed(2)],
-      ['OT Pay', record.earnings.otPay.toFixed(2)],
-      ['Arrears', (record.arrearsAmount || 0).toFixed(2)],
-    ];
-
-    autoTable(doc, {
-      startY: yPos,
-      head: [['Earnings', 'Amount (Rs.)']],
-      body: earningsData,
-      theme: 'grid',
-      headStyles: { fillColor: [5, 150, 105], fontSize: 9, fontStyle: 'bold' }, // emerald-600
-      bodyStyles: { fontSize: 9 },
-      columnStyles: {
-        0: { cellWidth: 60 },
-        1: { cellWidth: 30, halign: 'right' }
-      },
-      margin: { left: 14, right: pageWidth / 2 + 7 }
-    });
-
-    // Deductions Table
-    const deductionsData = [
-      ['Attendance Deduction', record.deductions.attendanceDeduction.toFixed(2)],
-      ['Permission Deduction', record.deductions.permissionDeduction.toFixed(2)],
-      ['Leave Deduction', record.deductions.leaveDeduction.toFixed(2)],
-      ...(record.deductions.otherDeductions || []).map(d => [d.name, d.amount.toFixed(2)]),
-      ['EMI', record.loanAdvance.totalEMI.toFixed(2)],
-      ['Advance', record.loanAdvance.advanceDeduction.toFixed(2)],
-    ];
-
-    autoTable(doc, {
-      startY: yPos,
-      head: [['Deductions', 'Amount (Rs.)']],
-      body: deductionsData,
-      theme: 'grid',
-      headStyles: { fillColor: [225, 29, 72], fontSize: 9, fontStyle: 'bold' }, // rose-600
-      bodyStyles: { fontSize: 9 },
-      columnStyles: {
-        0: { cellWidth: 60 },
-        1: { cellWidth: 30, halign: 'right' }
-      },
-      margin: { left: pageWidth / 2 + 7, right: 14 }
-    });
-
-    const finalY = Math.max((doc as any).lastAutoTable.finalY, yPos + 40);
-
-    // Summary
+    // Summary cards row
+    let yPos = 40;
+    const cardWidth = (pageWidth - 30) / 3;
+    const cardHeight = 20;
+    doc.setFillColor(lightBg[0], lightBg[1], lightBg[2]);
+    doc.roundedRect(10, yPos, cardWidth, cardHeight, 2, 2, 'F');
+    doc.setFontSize(7);
+    doc.setTextColor(100, 116, 139);
+    doc.text('GROSS EARNINGS', 14, yPos + 7);
     doc.setFontSize(11);
     doc.setFont('helvetica', 'bold');
-    const summaryY = finalY + 10;
-    doc.text('SALARY SUMMARY', 14, summaryY);
+    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.text(formatValue(record.earnings.grossSalary), 14, yPos + 15);
 
+    doc.setFillColor(lightBg[0], lightBg[1], lightBg[2]);
+    doc.roundedRect(15 + cardWidth, yPos, cardWidth, cardHeight, 2, 2, 'F');
+    doc.setFontSize(7);
+    doc.setTextColor(100, 116, 139);
+    doc.text('TOTAL DEDUCTIONS', 15 + cardWidth + 4, yPos + 7);
+    doc.setFontSize(11);
+    doc.setTextColor(190, 18, 60);
+    doc.text(formatValue(record.deductions.totalDeductions), 15 + cardWidth + 4, yPos + 15);
+
+    doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.roundedRect(20 + cardWidth * 2, yPos, cardWidth, cardHeight, 2, 2, 'F');
+    doc.setFontSize(7);
+    doc.setTextColor(209, 213, 219);
+    doc.text('NET PAYABLE', 20 + cardWidth * 2 + 4, yPos + 7);
+    doc.setFontSize(11);
+    doc.setTextColor(255, 255, 255);
+    doc.text(formatValue(record.netSalary), 20 + cardWidth * 2 + 4, yPos + 15);
+
+    // EMPLOYEE DETAILS
+    yPos += 35;
+    doc.setDrawColor(borderColor[0], borderColor[1], borderColor[2]);
+    doc.setFillColor(lightBg[0], lightBg[1], lightBg[2]);
+    doc.rect(10, yPos - 5, pageWidth - 20, 8, 'F');
+    doc.setFontSize(8);
+    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.setFont('helvetica', 'bold');
+    doc.text('EMPLOYEE DETAILS', 14, yPos);
+    yPos += 10;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(71, 85, 105);
+    const col1 = 14, col2 = 70, col3 = 120;
+    doc.text(`Name ${employee.employee_name || 'N/A'}`, col1, yPos);
+    doc.text(`Employee ID ${record.emp_no || 'N/A'}`, col2, yPos);
+    doc.text(`Designation ${getDesigName(employee.designation_id)}`, col3, yPos);
+    yPos += 5;
+    doc.text(`Department ${getDeptName(employee.department_id)}`, col1, yPos);
+    doc.text(`Bank Account ${employee.bank_account_no || 'N/A'}`, col2, yPos);
+    doc.text(`Location ${employee.location || 'N/A'}`, col3, yPos);
+    yPos += 5;
+    doc.text(`PAN Number ${(employee as any).pan_number || 'N/A'}`, col1, yPos);
+    doc.text(`UAN Number ${(employee as any).uan_number || 'N/A'}`, col2, yPos);
+
+    // ATTENDANCE SUMMARY (no background, bold title and labels)
+    yPos += 12;
+    doc.setFontSize(11);
+    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.setFont('helvetica', 'bold');
+    doc.text('ATTENDANCE SUMMARY', 14, yPos);
+
+    yPos += 8;
+    const attDedDays = record.deductions?.attendanceDeductionBreakdown?.daysDeducted ?? 0;
+    const totalPaid = record.attendance?.totalPaidDays ?? 0;
+    const finalPaid = Math.max(0, totalPaid - attDedDays);
+    const monthDays = record.totalDaysInMonth || record.attendance?.totalDaysInMonth || 0;
+    const presentDays = record.attendance?.presentDays || 0;
+    const paidLeaves = record.attendance?.paidLeaveDays || 0;
+    const totalLeaves = (record.attendance as any)?.totalLeaveDays ?? paidLeaves + ((record.attendance as any)?.totalLopDays ?? 0);
+    const absents = record.attendance?.absentDays ?? 0;
+    doc.setFontSize(9);
+    doc.setTextColor(71, 85, 105);
+    let x = 14;
+    doc.setFont('helvetica', 'bold');
+    doc.text('Month Days: ', x, yPos); x += doc.getTextWidth('Month Days: ');
+    doc.setFont('helvetica', 'normal');
+    doc.text(String(monthDays), x, yPos); x += doc.getTextWidth(String(monthDays)) + 6;
+    doc.setFont('helvetica', 'bold');
+    doc.text('Present Days: ', x, yPos); x += doc.getTextWidth('Present Days: ');
+    doc.setFont('helvetica', 'normal');
+    doc.text(String(presentDays), x, yPos); x += doc.getTextWidth(String(presentDays)) + 6;
+    doc.setFont('helvetica', 'bold');
+    doc.text('Paid Leaves: ', x, yPos); x += doc.getTextWidth('Paid Leaves: ');
+    doc.setFont('helvetica', 'normal');
+    doc.text(String(paidLeaves), x, yPos); x += doc.getTextWidth(String(paidLeaves)) + 6;
+    doc.setFont('helvetica', 'bold');
+    doc.text('Total Paid Days: ', x, yPos); x += doc.getTextWidth('Total Paid Days: ');
+    doc.setFont('helvetica', 'normal');
+    doc.text(String(totalPaid), x, yPos);
+    yPos += 6;
+    x = 14;
+    doc.setFont('helvetica', 'bold');
+    doc.text('Total Leaves: ', x, yPos); x += doc.getTextWidth('Total Leaves: ');
+    doc.setFont('helvetica', 'normal');
+    doc.text(String(totalLeaves), x, yPos); x += doc.getTextWidth(String(totalLeaves)) + 6;
+    doc.setFont('helvetica', 'bold');
+    doc.text('Absents: ', x, yPos); x += doc.getTextWidth('Absents: ');
+    doc.setFont('helvetica', 'normal');
+    doc.text(String(absents), x, yPos);
+    yPos += 7;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(185, 28, 28);
+    doc.text('Attendance Deduction Days (Late): ', 14, yPos);
+    const attDedX = doc.getTextWidth('Attendance Deduction Days (Late): ') + 14;
+    doc.setFont('helvetica', 'bold');
+    doc.text(String(attDedDays), attDedX, yPos);
+    doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
-    doc.text('Gross Salary:', 14, summaryY + 8);
-    doc.text(`Rs. ${record.earnings.grossSalary.toFixed(2)}`, 80, summaryY + 8);
+    doc.setTextColor(22, 101, 52);
+    doc.text(`    |    Final Paid Days: ${finalPaid}`, attDedX + 12, yPos);
 
-    doc.text('Total Deductions:', 14, summaryY + 15);
-    doc.text(`Rs. ${record.deductions.totalDeductions.toFixed(2)}`, 80, summaryY + 15);
+    // EARNINGS & DEDUCTIONS TABLES (with totals)
+    yPos += 12;
+    const earningsBody = [
+      ['Basic Pay', formatCurr(record.earnings.basicPay)],
+      ['Earned Basic', formatCurr(record.attendance?.earnedSalary || 0)],
+      ...(record.earnings.allowances || []).map(a => [a.name, formatCurr(a.amount)]),
+      ['Extra Days Pay', formatCurr(record.earnings.incentive)],
+      ['OT Pay', formatCurr(record.earnings.otPay)],
+      ['Arrears', formatCurr(record.arrearsAmount || 0)],
+    ];
+    autoTable(doc, {
+      startY: yPos,
+      head: [['EARNINGS', 'AMOUNT']],
+      body: earningsBody,
+      foot: [['TOTAL EARNINGS', formatCurr(record.earnings.grossSalary)]],
+      theme: 'plain',
+      headStyles: { fontStyle: 'bold', textColor: primaryColor, fontSize: 8, cellPadding: 2 },
+      bodyStyles: { fontSize: 8, textColor: [51, 65, 85], cellPadding: 2 },
+      footStyles: { fontStyle: 'bold', textColor: primaryColor, fontSize: 9, cellPadding: 3, fillColor: [248, 250, 252] },
+      columnStyles: { 1: { halign: 'right', fontStyle: 'bold' } },
+      margin: { left: 10, right: pageWidth / 2 + 2 },
+    });
 
-    if (record.roundOff !== undefined) {
-      doc.text('Round Off:', 14, summaryY + 22);
-      doc.text(`Rs. ${record.roundOff.toFixed(2)}`, 80, summaryY + 22);
+    const deductionsBody = [
+      ['Attendance Deduction', formatCurr(record.deductions.attendanceDeduction)],
+      ['Permission Deduction', formatCurr(record.deductions.permissionDeduction)],
+      ['Leave Deduction', formatCurr(record.deductions.leaveDeduction)],
+      ...(record.deductions.otherDeductions || []).map(d => [d.name, formatCurr(d.amount)]),
+      ['EMI Deduction', formatCurr(record.loanAdvance.totalEMI)],
+      ['Advance Deduction', formatCurr(record.loanAdvance.advanceDeduction)],
+    ];
+    autoTable(doc, {
+      startY: yPos,
+      head: [['DEDUCTIONS', 'AMOUNT']],
+      body: deductionsBody,
+      foot: [['TOTAL DEDUCTIONS', formatCurr(record.deductions.totalDeductions)]],
+      theme: 'plain',
+      headStyles: { fontStyle: 'bold', textColor: [190, 18, 60], fontSize: 8, cellPadding: 2 },
+      bodyStyles: { fontSize: 8, textColor: [51, 65, 85], cellPadding: 2 },
+      footStyles: { fontStyle: 'bold', textColor: [190, 18, 60], fontSize: 9, cellPadding: 3, fillColor: [255, 241, 242] },
+      columnStyles: { 1: { halign: 'right', fontStyle: 'bold' } },
+      margin: { left: pageWidth / 2 + 2, right: 10 },
+    });
+
+    yPos = Math.max((doc as any).lastAutoTable.finalY + 15, yPos + 60);
+
+    // NET PAYABLE IN WORDS
+    doc.setFillColor(lightBg[0], lightBg[1], lightBg[2]);
+    doc.roundedRect(10, yPos, pageWidth - 20, 25, 2, 2, 'F');
+    doc.setTextColor(100, 116, 139);
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.text('NET PAYABLE IN WORDS', 16, yPos + 8);
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.text(`Total amount of: ${formatValue(record.netSalary)} (Approx INR)`, 16, yPos + 16);
+    if (record.roundOff !== 0 && record.roundOff !== undefined) {
+      doc.setFontSize(7);
+      doc.setFont('helvetica', 'italic');
+      doc.setTextColor(148, 163, 184);
+      doc.text(`* Adjusted by ${formatValue(record.roundOff)} round-off`, pageWidth - 15, yPos + 22, { align: 'right' });
     }
 
-    doc.setFontSize(12);
+    // Signature blocks
+    yPos += 45;
+    doc.setDrawColor(borderColor[0], borderColor[1], borderColor[2]);
+    doc.setLineWidth(0.5);
+    doc.line(20, yPos, 70, yPos);
+    doc.line(pageWidth - 70, yPos, pageWidth - 20, yPos);
+    doc.setFontSize(8);
     doc.setFont('helvetica', 'bold');
-    doc.text('NET SALARY:', 14, summaryY + 32);
-    doc.text(`Rs. ${record.netSalary.toFixed(2)}`, 80, summaryY + 32);
+    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.text('Employee Signature', 45, yPos + 5, { align: 'center' });
+    doc.text('Authorized Signatory', pageWidth - 45, yPos + 5, { align: 'center' });
 
     // Footer
-    doc.setFontSize(8);
+    doc.setFontSize(7);
     doc.setFont('helvetica', 'italic');
-    doc.text('This is a computer-generated payslip and does not require a signature.', pageWidth / 2, pageHeight - 10, { align: 'center' });
+    doc.setTextColor(148, 163, 184);
+    doc.text('This is a computer-generated document and does not require a physical signature.', pageWidth / 2, pageHeight - 12, { align: 'center' });
+    doc.text(`Generated on: ${new Date().toLocaleString('en-IN')}`, pageWidth / 2, pageHeight - 8, { align: 'center' });
 
     return true;
   };

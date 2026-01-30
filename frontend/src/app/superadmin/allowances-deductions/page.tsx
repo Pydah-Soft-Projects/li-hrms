@@ -556,7 +556,7 @@ export default function AllowancesDeductionsPage() {
       const dept = departments.find((d) => d._id === deptId);
       return dept ? dept.name : 'Unknown';
     }
-    return deptId.name;
+    return deptId?.name;
   };
 
   const filteredItems = items.filter((item) => {
@@ -741,7 +741,7 @@ export default function AllowancesDeductionsPage() {
                     </p>
                     <div className="space-y-1.5 max-h-24 overflow-y-auto">
                       {item.departmentRules.slice(0, 2).map((rule, idx) => {
-                        const deptId = typeof rule.departmentId === 'string' ? rule.departmentId : rule.departmentId._id;
+                        const deptId = typeof rule.departmentId === 'string' ? rule.departmentId : rule.departmentId?._id;
                         const divId = rule.divisionId ? (typeof rule.divisionId === 'string' ? rule.divisionId : rule.divisionId._id) : null;
                         const divName = rule.divisionId && typeof rule.divisionId === 'object' ? rule.divisionId.name : null;
 

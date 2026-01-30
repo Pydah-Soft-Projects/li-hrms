@@ -111,8 +111,8 @@ export default function PayslipDetailPage() {
       console.log('Fetching payroll with ID:', payrollId);
       const response = await api.getPayrollById(payrollId);
       console.log('Fetch Response:', response);
-      if (response.success) {
-        setPayroll(response.data);
+      if (response.success && response.data) {
+        setPayroll(response.data as PayrollRecord);
       } else {
         console.warn('Payslip not found or API error:', response.message);
         setError(response.message || 'Payslip not found');

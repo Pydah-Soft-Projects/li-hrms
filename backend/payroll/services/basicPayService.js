@@ -36,7 +36,6 @@ function calculateBasicPay(employee, attendanceSummary) {
   // Note: totalPayableShifts already includes Present Days + OD Days from attendance processing
   // We add Paid Leaves, Holidays, and Weekly Offs to get the complete calculation
   const physicalUnits = (attendanceSummary.totalPayableShifts || 0) +
-    (attendanceSummary.totalPaidLeaveDays || 0) +
     (attendanceSummary.totalWeeklyOffs || 0) +
     (attendanceSummary.totalHolidays || 0);
 
