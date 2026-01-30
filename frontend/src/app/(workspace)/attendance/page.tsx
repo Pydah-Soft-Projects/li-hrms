@@ -2617,7 +2617,7 @@ export default function AttendancePage() {
                 <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
                   <h4 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-300">Edit History</h4>
                   <div className="space-y-2 max-h-40 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-600">
-                    {attendanceDetail.editHistory.map((edit, idx) => (
+                    {attendanceDetail.editHistory.map((edit: { action: string; modifiedBy: string; modifiedAt: string; details: string }, idx: number) => (
                       <div key={idx} className="bg-white dark:bg-slate-800 p-2.5 rounded-md border border-slate-100 dark:border-slate-700 shadow-sm text-xs">
                         <div className="flex justify-between items-start mb-1">
                           <span className={`font-semibold px-1.5 py-0.5 rounded ${edit.action === 'OT_CONVERSION' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' :
