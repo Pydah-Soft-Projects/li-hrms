@@ -302,6 +302,36 @@ export async function apiRequest<T>(
   }
 }
 
+// Timeout wrapper for long-running operations
+async function apiRequestWithTimeout<T>(
+  endpoint: string,
+  options: RequestInit = {},
+  timeoutMs: number = 60000 // 60 seconds default
+): Promise<ApiResponse<T>> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await apiRequest<T>(endpoint, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      return {
+        success: false,
+        message: 'Request timed out. The operation is taking longer than expected. Please check the server logs.',
+        error: 'Request timeout',
+      };
+    }
+    throw error;
+  }
+}
+
+
 export interface Shift {
   _id: string;
   name: string;
@@ -1146,10 +1176,12 @@ export const api = {
   },
 
   bulkApproveEmployeeApplications: async (applicationIds: string[], bulkSettings: any) => {
-    return apiRequest<any>('/employee-applications/bulk-approve', {
+    // Use timeout for bulk operations - allow up to 2 minutes for large batches
+    const timeoutMs = Math.max(60000, applicationIds.length * 500); // At least 60s, or 500ms per application
+    return apiRequestWithTimeout<any>('/employee-applications/bulk-approve', {
       method: 'PUT',
       body: JSON.stringify({ applicationIds, bulkSettings }),
-    });
+    }, timeoutMs);
   },
 
   bulkRejectEmployeeApplications: async (applicationIds: string[], comments?: string) => {
