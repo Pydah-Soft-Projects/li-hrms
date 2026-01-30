@@ -101,8 +101,8 @@ export default function EmployeeUpdateModal({ onClose, onSuccess }: EmployeeUpda
         }
     };
 
-    // Filter out restricted fields
-    const isFieldRestricted = (id: string) => ['emp_no', 'gross_salary', 'proposedSalary'].includes(id);
+    // Filter out restricted fields (only emp_no; gross_salary, second_salary and proposedSalary are allowed for bulk update)
+    const isFieldRestricted = (id: string) => ['emp_no'].includes(id);
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -149,7 +149,7 @@ export default function EmployeeUpdateModal({ onClose, onSuccess }: EmployeeUpda
                             <div className="rounded-xl bg-indigo-50 p-4 border border-indigo-100 dark:bg-indigo-900/20 dark:border-indigo-800">
                                 <h3 className="text-sm font-bold text-indigo-800 dark:text-indigo-300 mb-2">Step 1: Choose Update Scope</h3>
                                 <p className="text-xs text-indigo-700 dark:text-indigo-400">
-                                    Select the fields you want to update for all active employees. Once selected, download the template, fill it with data, and upload it in the next step.
+                                    Select the fields you want to update for all active employees (e.g. Employee Name, Division, Designation, Second Salary, Gross Salary). Then download the template, fill it with data, and upload it in the next step.
                                 </p>
                             </div>
 
@@ -178,7 +178,7 @@ export default function EmployeeUpdateModal({ onClose, onSuccess }: EmployeeUpda
                                                                     }`}>
                                                                     {selectedFields.includes(field.id) && <Check className="h-3 w-3" />}
                                                                 </div>
-                                                                <span className="text-xs font-semibold">{field.label}</span>
+                                                                <span className="text-xs font-semibold">{field.id === 'proposedSalary' ? 'Gross Salary' : field.label}</span>
                                                             </button>
                                                         )
                                                     ))}

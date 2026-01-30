@@ -1,6 +1,41 @@
 const xlsx = require('xlsx');
+const mongoose = require('mongoose');
 const Employee = require('../../employees/model/Employee');
 const AllowanceDeductionMaster = require('../../allowances-deductions/model/AllowanceDeductionMaster');
+const Division = require('../../departments/model/Division');
+const Department = require('../../departments/model/Department');
+const Designation = require('../../departments/model/Designation');
+
+/** Field IDs that store ObjectIds; we show names in template and resolve names on upload */
+const REF_FIELD_IDS = ['division_id', 'department_id', 'designation_id'];
+
+/** Top-level Employee schema paths (excluding _id, __v, timestamps, dynamicFields). Non-schema fields go into dynamicFields. */
+const EMPLOYEE_TOP_LEVEL_PATHS = new Set(
+    Object.keys(Employee.schema.paths).filter(
+        p => !['_id', '__v', 'created_at', 'updated_at', 'dynamicFields'].includes(p)
+    )
+);
+
+/** Static header->fieldId map so upload works even when form settings are missing or structure differs. */
+const normalizeHeader = (s) => String(s).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+const STATIC_HEADER_TO_FIELD = {
+    [normalizeHeader('Employee ID')]: null,
+    [normalizeHeader('emp_no')]: null,
+    [normalizeHeader('employee_name')]: 'employee_name',
+    [normalizeHeader('Employee Name')]: 'employee_name',
+    [normalizeHeader('division_id')]: 'division_id',
+    [normalizeHeader('Division')]: 'division_id',
+    [normalizeHeader('department_id')]: 'department_id',
+    [normalizeHeader('Department')]: 'department_id',
+    [normalizeHeader('designation_id')]: 'designation_id',
+    [normalizeHeader('Designation')]: 'designation_id',
+    [normalizeHeader('second_salary')]: 'second_salary',
+    [normalizeHeader('Second Salary')]: 'second_salary',
+    [normalizeHeader('gross_salary')]: 'gross_salary',
+    [normalizeHeader('Gross Salary')]: 'gross_salary',
+    [normalizeHeader('proposedSalary')]: 'proposedSalary',
+    [normalizeHeader('Proposed Salary')]: 'proposedSalary',
+};
 
 /**
  * Service to handle second salary updates
@@ -111,30 +146,74 @@ const generateSalaryUpdateTemplateData = async () => {
  */
 const generateEmployeeUpdateTemplateData = async (selectedFieldIds) => {
     try {
+        // Ensure we always have a flat array of single field ids (no comma-separated strings)
+        const fieldIds = [];
+        (Array.isArray(selectedFieldIds) ? selectedFieldIds : [selectedFieldIds]).forEach(item => {
+            const s = String(item).trim();
+            if (!s) return;
+            if (s.includes(',')) {
+                s.split(',').forEach(f => { const t = f.trim(); if (t) fieldIds.push(t); });
+            } else {
+                fieldIds.push(s);
+            }
+        });
+        const ids = [...new Set(fieldIds)];
+        if (ids.length === 0) throw new Error('No field ids provided');
+
         const FormSettings = require('../../employee-applications/model/EmployeeApplicationFormSettings');
         const settings = await FormSettings.getActiveSettings();
 
         const fieldMap = {};
         if (settings && settings.groups) {
             settings.groups.forEach(group => {
-                group.fields.forEach(field => {
-                    fieldMap[field.id] = field.label;
+                (group.fields || []).forEach(field => {
+                    if (field && field.id) fieldMap[field.id] = field.label || field.id;
                 });
             });
         }
 
-        const employees = await Employee.find({ is_active: true }).sort({ emp_no: 1 });
+        const employees = await Employee.find({ is_active: true }).sort({ emp_no: 1 }).lean();
+
+        // Fetch ref collections to show names instead of ObjectIds in template
+        const [divisions, departments, designations] = await Promise.all([
+            Division.find({ isActive: true }).select('_id name code').lean(),
+            Department.find({ isActive: true }).select('_id name code').lean(),
+            Designation.find({ isActive: true }).select('_id name code').lean()
+        ]);
+        const divisionIdToName = {};
+        const departmentIdToName = {};
+        const designationIdToName = {};
+        divisions.forEach(d => { divisionIdToName[String(d._id)] = d.name || d.code || ''; });
+        departments.forEach(d => { departmentIdToName[String(d._id)] = d.name || d.code || ''; });
+        designations.forEach(d => { designationIdToName[String(d._id)] = d.name || d.code || ''; });
 
         const headers = ['Employee ID'];
-        selectedFieldIds.forEach(id => {
-            headers.push(fieldMap[id] || id);
+        ids.forEach(id => {
+            // proposedSalary is shown and stored as Gross Salary
+            headers.push(id === 'proposedSalary' ? 'Gross Salary' : (fieldMap[id] || id));
         });
 
         const data = employees.map(emp => {
             const row = { 'Employee ID': emp.emp_no };
-            selectedFieldIds.forEach(id => {
-                const label = fieldMap[id] || id;
-                row[label] = emp[id] || '';
+            const base = { ...emp };
+            const dynamic = base.dynamicFields || {};
+            const unified = { ...base, ...dynamic };
+
+            ids.forEach(id => {
+                const label = id === 'proposedSalary' ? 'Gross Salary' : (fieldMap[id] || id);
+                let val = id === 'proposedSalary' ? unified.gross_salary : unified[id];
+                // Show name instead of ObjectId for division/department/designation
+                if (REF_FIELD_IDS.includes(id) && (val != null)) {
+                    const idStr = String(val);
+                    if (id === 'division_id') val = divisionIdToName[idStr] || '';
+                    else if (id === 'department_id') val = departmentIdToName[idStr] || '';
+                    else if (id === 'designation_id') val = designationIdToName[idStr] || '';
+                    else val = idStr;
+                }
+                if (val === undefined || val === null) val = '';
+                if (val && typeof val === 'object' && val.constructor && (val.constructor.name === 'ObjectID' || val.constructor.name === 'ObjectId')) val = String(val);
+                if (val && Object.prototype.toString.call(val) === '[object Date]') val = val.toISOString ? val.toISOString().slice(0, 10) : String(val);
+                row[label] = val;
             });
             return row;
         });
@@ -147,6 +226,46 @@ const generateEmployeeUpdateTemplateData = async (selectedFieldIds) => {
 };
 
 /**
+ * Build lookup maps: name/code -> _id for Division, Department, Designation (resolve names on upload)
+ */
+const buildRefLookups = async () => {
+    const [divisions, departments, designations] = await Promise.all([
+        Division.find({ isActive: true }).select('_id name code').lean(),
+        Department.find({ isActive: true }).select('_id name code').lean(),
+        Designation.find({ isActive: true }).select('_id name code').lean()
+    ]);
+    const byKey = (list) => {
+        const map = {};
+        list.forEach(item => {
+            const id = item._id;
+            if (item.name != null && String(item.name).trim()) map[String(item.name).trim().toLowerCase()] = id;
+            if (item.code != null && String(item.code).trim()) map[String(item.code).trim().toUpperCase()] = id;
+        });
+        return map;
+    };
+    return {
+        divisionByKey: byKey(divisions),
+        departmentByKey: byKey(departments),
+        designationByKey: byKey(designations)
+    };
+};
+
+/**
+ * Resolve a cell value to ObjectId for ref fields: accept name, code, or existing ObjectId string
+ */
+const resolveRefValue = (value, fieldId, lookups) => {
+    if (value === undefined || value === null || value === '') return null;
+    const str = String(value).trim();
+    if (!str) return null;
+    if (mongoose.Types.ObjectId.isValid(str) && str.length === 24) return new mongoose.Types.ObjectId(str);
+    const byKey = fieldId === 'division_id' ? lookups.divisionByKey
+        : fieldId === 'department_id' ? lookups.departmentByKey
+            : fieldId === 'designation_id' ? lookups.designationByKey : null;
+    if (!byKey) return null;
+    return byKey[str.toLowerCase()] || byKey[str.toUpperCase()] || null;
+};
+
+/**
  * Dynamic Employee Update - Process Upload
  */
 const processEmployeeUpdateUpload = async (fileBuffer) => {
@@ -154,17 +273,23 @@ const processEmployeeUpdateUpload = async (fileBuffer) => {
         const FormSettings = require('../../employee-applications/model/EmployeeApplicationFormSettings');
         const settings = await FormSettings.getActiveSettings();
 
-        // Map labels/IDs to internal field IDs
+        // Map labels/IDs to internal field IDs (template headers can be label or field id; normalize like upload headers)
         const labelToIdMap = {};
         if (settings && settings.groups) {
             settings.groups.forEach(group => {
-                group.fields.forEach(field => {
-                    const normalizedLabel = field.label.toLowerCase().replace(/[^a-z0-9]/g, '');
-                    labelToIdMap[normalizedLabel] = field.id;
-                    labelToIdMap[field.id.toLowerCase()] = field.id;
+                (group.fields || []).forEach(field => {
+                    if (field && field.id) {
+                        const normalizedLabel = (field.label || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                        const normalizedId = (field.id || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                        labelToIdMap[normalizedLabel] = field.id;
+                        labelToIdMap[normalizedId] = field.id;
+                        labelToIdMap[(field.id || '').toLowerCase()] = field.id;
+                    }
                 });
             });
         }
+
+        const lookups = await buildRefLookups();
 
         const workbook = xlsx.read(fileBuffer, { type: 'buffer' });
         const data = xlsx.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
@@ -179,17 +304,28 @@ const processEmployeeUpdateUpload = async (fileBuffer) => {
             const updateData = {};
             let empNo = '';
 
-            // Map columns to fields
+            // Map columns to fields (trim header so Excel BOM/spaces don't break matching)
+            const headerNorm = (h) => String(h).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
             Object.keys(row).forEach(header => {
-                const normalizedHeader = header.toLowerCase().replace(/[^a-z0-9]/g, '');
+                const normalizedHeader = headerNorm(header);
 
                 if (normalizedHeader === 'employeeid' || normalizedHeader === 'empno') {
                     empNo = row[header];
-                } else {
-                    const fieldId = labelToIdMap[normalizedHeader];
-                    if (fieldId && fieldId !== 'emp_no' && fieldId !== 'gross_salary' && fieldId !== 'proposedSalary') {
-                        updateData[fieldId] = row[header];
+                    return;
+                }
+                const fieldId = labelToIdMap[normalizedHeader] || STATIC_HEADER_TO_FIELD[normalizedHeader];
+                if (!fieldId || fieldId === 'emp_no') return;
+
+                let cellValue = row[header];
+                if (REF_FIELD_IDS.includes(fieldId)) {
+                    const resolved = resolveRefValue(cellValue, fieldId, lookups);
+                    if (resolved !== null) {
+                        updateData[fieldId] = resolved;
+                    } else if (cellValue !== undefined && cellValue !== null && String(cellValue).trim() !== '') {
+                        errors.push({ empNo: empNo || '(unknown)', error: `Unknown ${fieldId.replace('_id', '')} (use name or code): "${cellValue}"` });
                     }
+                } else {
+                    updateData[fieldId] = cellValue;
                 }
             });
 
@@ -199,23 +335,53 @@ const processEmployeeUpdateUpload = async (fileBuffer) => {
                 continue;
             }
 
+            const normalizedEmpNo = String(empNo).trim().toUpperCase();
+            if (!normalizedEmpNo) {
+                failedCount++;
+                errors.push({ row, error: 'Missing Employee ID' });
+                continue;
+            }
+
             if (Object.keys(updateData).length === 0) {
                 failedCount++;
-                errors.push({ empNo, error: 'No updateable fields found in row' });
+                errors.push({ empNo: normalizedEmpNo, error: 'No updateable fields found in row' });
                 continue;
             }
 
             try {
-                const result = await Employee.updateOne({ emp_no: empNo }, { $set: updateData });
-                if (result.matchedCount === 0) {
+                const doc = await Employee.findOne({ emp_no: normalizedEmpNo });
+                if (!doc) {
                     failedCount++;
-                    errors.push({ empNo, error: 'Employee not found' });
-                } else {
-                    updatedCount++;
+                    errors.push({ empNo: normalizedEmpNo, error: 'Employee not found' });
+                    continue;
                 }
+
+                // Coerce and set each field: schema at top level, rest in dynamicFields (findOne+save so Mixed persists)
+                // proposedSalary from template/upload is persisted as gross_salary
+                const numericFields = ['second_salary', 'gross_salary', 'proposedSalary', 'experience', 'paidLeaves', 'allottedLeaves'];
+                Object.keys(updateData).forEach(fieldId => {
+                    const persistAs = fieldId === 'proposedSalary' ? 'gross_salary' : fieldId;
+                    let value = updateData[fieldId];
+                    if (numericFields.includes(fieldId)) {
+                        const n = Number(value);
+                        value = Number.isFinite(n) ? n : (value === '' || value === null || value === undefined ? null : value);
+                    }
+                    if (EMPLOYEE_TOP_LEVEL_PATHS.has(persistAs)) {
+                        doc.set(persistAs, value);
+                    } else {
+                        if (!doc.dynamicFields || typeof doc.dynamicFields !== 'object') {
+                            doc.dynamicFields = {};
+                        }
+                        doc.dynamicFields[persistAs] = value;
+                        doc.markModified('dynamicFields');
+                    }
+                });
+
+                await doc.save();
+                updatedCount++;
             } catch (err) {
                 failedCount++;
-                errors.push({ empNo, error: err.message });
+                errors.push({ empNo: normalizedEmpNo, error: err.message });
             }
         }
 
