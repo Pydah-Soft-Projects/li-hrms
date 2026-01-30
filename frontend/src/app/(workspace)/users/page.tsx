@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import Swal from 'sweetalert2';
 import { api, Department, Division } from '@/lib/api';
 import { MODULE_CATEGORIES } from '@/config/moduleCategories';
 import Spinner from '@/components/Spinner';
@@ -423,7 +424,17 @@ export default function UsersPage() {
 
   // Handle delete
   const handleDelete = async (user: User) => {
-    if (!confirm(`Are you sure you want to delete user "${user.name}"?`)) return;
+    const result = await Swal.fire({
+      title: 'Delete User',
+      text: `Are you sure you want to delete user "${user.name}"?`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Yes, delete it!'
+    });
+
+    if (!result.isConfirmed) return;
 
     try {
       const res = await api.deleteUser(user._id);

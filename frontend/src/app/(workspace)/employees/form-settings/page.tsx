@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Swal from 'sweetalert2';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import Spinner from '@/components/Spinner';
@@ -357,7 +358,17 @@ export default function EmployeeFormSettingsPage() {
       return;
     }
 
-    if (!confirm(`Are you sure you want to delete the group "${group?.label}"? This will also delete all fields in this group.`)) {
+    const result = await Swal.fire({
+      title: 'Delete Group',
+      text: `Are you sure you want to delete the group "${group?.label}"? This will also delete all fields in this group.`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Yes, delete it!'
+    });
+
+    if (!result.isConfirmed) {
       return;
     }
 
@@ -408,7 +419,17 @@ export default function EmployeeFormSettingsPage() {
       return;
     }
 
-    if (!confirm(`Are you sure you want to delete the field "${field?.label}"?`)) {
+    const result = await Swal.fire({
+      title: 'Delete Field',
+      text: `Are you sure you want to delete the field "${field?.label}"?`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Yes, delete it!'
+    });
+
+    if (!result.isConfirmed) {
       return;
     }
 
@@ -1428,8 +1449,20 @@ export default function EmployeeFormSettingsPage() {
                             </label>
                             <button
                               onClick={async () => {
-                                await api.deleteQualificationsField(field.id);
-                                await loadSettings();
+                                const result = await Swal.fire({
+                                  title: 'Delete Field',
+                                  text: `Are you sure you want to delete the qualification field "${field.label}"?`,
+                                  icon: 'warning',
+                                  showCancelButton: true,
+                                  confirmButtonColor: '#d33',
+                                  cancelButtonColor: '#3085d6',
+                                  confirmButtonText: 'Yes, delete it!'
+                                });
+
+                                if (result.isConfirmed) {
+                                  await api.deleteQualificationsField(field.id);
+                                  await loadSettings();
+                                }
                               }}
                               className="rounded-lg bg-red-500 px-3 py-1 text-xs text-white hover:bg-red-600"
                             >
@@ -1504,7 +1537,12 @@ export default function EmployeeFormSettingsPage() {
                       <button
                         onClick={async () => {
                           if (!newQualField.id || !newQualField.label) {
-                            alert('Field ID and Label are required');
+                            Swal.fire({
+                              title: 'Validation Error',
+                              text: 'Field ID and Label are required',
+                              icon: 'error',
+                              confirmButtonColor: '#7c3aed'
+                            });
                             return;
                           }
                           await api.addQualificationsField(newQualField);

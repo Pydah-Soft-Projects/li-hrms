@@ -9,87 +9,397 @@ const { applyScopeFilter } = require('../shared/middleware/dataScopeMiddleware')
 // All routes are protected
 router.use(protect);
 
-// Get all departments
+/**
+ * @swagger
+ * /api/departments:
+ *   get:
+ *     summary: Get all departments
+ *     tags: [Departments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: isActive
+ *         schema:
+ *           type: boolean
+ *     responses:
+ *       200:
+ *         description: List of departments
+ */
 router.get('/', applyScopeFilter, departmentController.getAllDepartments);
 
 // ============== Global Designation Routes ==============
-// These routes handle designations as independent entities
 
-// Get all designations (global)
+/**
+ * @swagger
+ * /api/departments/designations:
+ *   get:
+ *     summary: Get all designations
+ *     tags: [Designations]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of designations
+ */
 router.get('/designations', designationController.getAllDesignations);
 
-// Create global designation (Super Admin, Sub Admin, HR)
+/**
+ * @swagger
+ * /api/departments/designations:
+ *   post:
+ *     summary: Create global designation
+ *     tags: [Designations]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       201:
+ *         description: Created
+ */
 router.post('/designations', authorize('manager', 'super_admin', 'sub_admin', 'hr'), designationController.createGlobalDesignation);
 
-// Get single designation
 router.get('/designations/:id', designationController.getDesignation);
-
-// Update designation (Super Admin, Sub Admin, HR)
 router.put('/designations/:id', authorize('manager', 'super_admin', 'sub_admin', 'hr'), designationController.updateDesignation);
-
-// Assign shifts to designation (Super Admin, Sub Admin, HR)
 router.put('/designations/:id/shifts', authorize('manager', 'super_admin', 'sub_admin', 'hr'), designationController.assignShifts);
-
-// Delete designation (Super Admin, Sub Admin)
 router.delete('/designations/:id', authorize('super_admin', 'sub_admin'), designationController.deleteDesignation);
 
-// Get single department
+/**
+ * @swagger
+ * /api/departments/{id}:
+ *   get:
+ *     summary: Get single department
+ *     tags: [Departments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Department details
+ */
 router.get('/:id', departmentController.getDepartment);
 
-// Get department employees
+/**
+ * @swagger
+ * /api/departments/{id}/employees:
+ *   get:
+ *     summary: Get department employees
+ *     tags: [Departments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *     responses:
+ *       200:
+ *         description: List of employees
+ */
 router.get('/:id/employees', departmentController.getDepartmentEmployees);
 
-// Get department configuration
+/**
+ * @swagger
+ * /api/departments/{id}/configuration:
+ *   get:
+ *     summary: Get department configuration
+ *     tags: [Departments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *     responses:
+ *       200:
+ *         description: Configuration data
+ */
 router.get('/:id/configuration', departmentController.getDepartmentConfiguration);
 
-// Create department (Super Admin, Sub Admin, HR)
+/**
+ * @swagger
+ * /api/departments:
+ *   post:
+ *     summary: Create department
+ *     tags: [Departments]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *             properties:
+ *               name:
+ *                 type: string
+ *               code:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               divisionHODs:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     division:
+ *                       type: string
+ *                     hod:
+ *                       type: string
+ *     responses:
+ *       201:
+ *         description: Created
+ */
 router.post('/', authorize('manager', 'super_admin', 'sub_admin', 'hr'), departmentController.createDepartment);
 
-// Update department (Super Admin, Sub Admin, HR)
+/**
+ * @swagger
+ * /api/departments/{id}:
+ *   put:
+ *     summary: Update department
+ *     tags: [Departments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *               code:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               divisionHODs:
+ *                 type: array
+ *               hr:
+ *                 type: string
+ *               shifts:
+ *                 type: array
+ *               paidLeaves:
+ *                 type: integer
+ *               isActive:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: Department updated
+ */
 router.put('/:id', authorize('manager', 'super_admin', 'sub_admin', 'hr'), departmentController.updateDepartment);
-
-// Update department configuration (Super Admin, Sub Admin, HR)
+/**
+ * @swagger
+ * /api/departments/{id}/configuration:
+ *   put:
+ *     summary: Update department configuration
+ *     tags: [Departments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               attendanceConfig:
+ *                 type: object
+ *               permissionPolicy:
+ *                 type: object
+ *               autoDeductionRules:
+ *                 type: object
+ *               leaveLimits:
+ *                 type: object
+ *               paidLeaves:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: Configuration updated
+ */
 router.put('/:id/configuration', authorize('manager', 'super_admin', 'sub_admin', 'hr'), departmentController.updateDepartmentConfiguration);
-
-// Assign HOD (Super Admin, Sub Admin, HR)
+/**
+ * @swagger
+ * /api/departments/{id}/assign-hod:
+ *   put:
+ *     summary: Assign HOD (Division)
+ *     tags: [Departments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - hodId
+ *               - divisionId
+ *             properties:
+ *               hodId:
+ *                 type: string
+ *               divisionId:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: HOD assigned
+ */
 router.put('/:id/assign-hod', authorize('manager', 'super_admin', 'sub_admin', 'hr'), departmentController.assignHOD);
-
-// Assign HR (Super Admin, Sub Admin)
+/**
+ * @swagger
+ * /api/departments/{id}/assign-hr:
+ *   put:
+ *     summary: Assign HR
+ *     tags: [Departments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - hrId
+ *             properties:
+ *               hrId:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: HR assigned
+ */
 router.put('/:id/assign-hr', authorize('super_admin', 'sub_admin'), departmentController.assignHR);
-
-// Assign shifts to department (Super Admin, Sub Admin, HR)
+/**
+ * @swagger
+ * /api/departments/{id}/shifts:
+ *   put:
+ *     summary: Assign shifts
+ *     tags: [Departments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               shifts:
+ *                 type: array
+ *     responses:
+ *       200:
+ *         description: Shifts assigned
+ */
 router.put('/:id/shifts', authorize('manager', 'super_admin', 'sub_admin', 'hr'), departmentController.assignShifts);
-
-// Update paid leaves (Super Admin, Sub Admin, HR)
+/**
+ * @swagger
+ * /api/departments/{id}/paid-leaves:
+ *   put:
+ *     summary: Update paid leaves
+ *     tags: [Departments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               paidLeaves:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: Paid leaves updated
+ */
 router.put('/:id/paid-leaves', authorize('manager', 'super_admin', 'sub_admin', 'hr'), departmentController.updatePaidLeaves);
-
-// Update leave limits (Super Admin, Sub Admin, HR)
+/**
+ * @swagger
+ * /api/departments/{id}/leave-limits:
+ *   put:
+ *     summary: Update leave limits
+ *     tags: [Departments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               dailyLimit:
+ *                 type: integer
+ *               monthlyLimit:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: Limits updated
+ */
 router.put('/:id/leave-limits', authorize('manager', 'super_admin', 'sub_admin', 'hr'), departmentController.updateLeaveLimits);
 
-// Delete department (Super Admin, Sub Admin)
+/**
+ * @swagger
+ * /api/departments/{id}:
+ *   delete:
+ *     summary: Delete department
+ *     tags: [Departments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Deleted
+ */
 router.delete('/:id', authorize('super_admin', 'sub_admin'), departmentController.deleteDepartment);
-
-
 
 // ============== Department-Specific Designation Routes (Backward Compatible) ==============
 
-// Get designations by department
 router.get('/:departmentId/designations', designationController.getDesignationsByDepartment);
-
-// Link existing designation to department
 router.post('/:departmentId/designations/link', authorize('manager', 'super_admin', 'sub_admin', 'hr'), designationController.linkDesignation);
-
-// Create designation (Super Admin, Sub Admin, HR) - backward compatible
 router.post('/:departmentId/designations', authorize('manager', 'super_admin', 'sub_admin', 'hr'), designationController.createDesignation);
 
 // Department Settings routes
-// Get department settings
 router.get('/:deptId/settings', departmentSettingsController.getDepartmentSettings);
-
-// Get resolved settings (department + global fallback)
 router.get('/:deptId/settings/resolved', departmentSettingsController.getResolvedSettings);
-
-// Update department settings (Any authenticated user)
 router.put('/:deptId/settings', departmentSettingsController.updateDepartmentSettings);
 
 module.exports = router;

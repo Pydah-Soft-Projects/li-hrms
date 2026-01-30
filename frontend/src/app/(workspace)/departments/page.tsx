@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { api, Department, Shift, Designation } from '@/lib/api';
 import BulkUpload from '@/components/BulkUpload';
+import Swal from 'sweetalert2';
 import {
   DEPARTMENT_TEMPLATE_HEADERS,
   DEPARTMENT_TEMPLATE_SAMPLE,
@@ -371,17 +372,41 @@ export default function DepartmentsPage() {
   };
 
   const handleDeleteDepartment = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this department?')) return;
+    const result = await Swal.fire({
+      title: 'Are you sure?',
+      text: "You won't be able to revert this!",
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Yes, delete it!'
+    });
 
-    try {
-      const response = await api.deleteDepartment(id);
-      if (response.success) {
-        loadDepartments();
-      } else {
-        alert(response.message || 'Failed to delete department');
+    if (result.isConfirmed) {
+      try {
+        const response = await api.deleteDepartment(id);
+        if (response.success) {
+          loadDepartments();
+          Swal.fire(
+            'Deleted!',
+            'Department has been deleted.',
+            'success'
+          );
+        } else {
+          Swal.fire(
+            'Error!',
+            response.message || 'Failed to delete department',
+            'error'
+          );
+        }
+      } catch (err) {
+        console.error('Error deleting department:', err);
+        Swal.fire(
+          'Error!',
+          'An error occurred while deleting the department.',
+          'error'
+        );
       }
-    } catch (err) {
-      console.error('Error deleting department:', err);
     }
   };
 

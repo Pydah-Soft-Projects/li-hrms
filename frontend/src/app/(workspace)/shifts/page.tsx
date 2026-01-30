@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { api, Shift, Division, Department, Designation } from '@/lib/api';
 import Spinner from '@/components/Spinner';
+import Swal from 'sweetalert2';
 
 export default function ShiftsPage() {
   // User Scope & RBAC
@@ -417,17 +418,41 @@ export default function ShiftsPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this shift?')) return;
+    const result = await Swal.fire({
+      title: 'Are you sure?',
+      text: "You won't be able to revert this!",
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Yes, delete it!'
+    });
 
-    try {
-      const response = await api.deleteShift(id);
-      if (response.success) {
-        loadShifts();
-      } else {
-        alert(response.message || 'Failed to delete shift');
+    if (result.isConfirmed) {
+      try {
+        const response = await api.deleteShift(id);
+        if (response.success) {
+          loadShifts();
+          Swal.fire(
+            'Deleted!',
+            'Shift has been deleted.',
+            'success'
+          );
+        } else {
+          Swal.fire(
+            'Error!',
+            response.message || 'Failed to delete shift',
+            'error'
+          );
+        }
+      } catch (err) {
+        console.error('Error deleting shift:', err);
+        Swal.fire(
+          'Error!',
+          'An error occurred while deleting the shift.',
+          'error'
+        );
       }
-    } catch (err) {
-      console.error('Error deleting shift:', err);
     }
   };
 

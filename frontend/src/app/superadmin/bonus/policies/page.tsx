@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Swal from 'sweetalert2';
 import { api, BonusPolicy } from '@/lib/api';
 import { toast } from 'react-toastify';
 import { FiPlus, FiEdit2, FiTrash2, FiSave, FiX } from 'react-icons/fi';
@@ -61,7 +62,17 @@ export default function BonusPoliciesPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this policy?')) return;
+    const result = await Swal.fire({
+      title: 'Delete Policy',
+      text: 'Are you sure you want to delete this policy?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Yes, delete it!'
+    });
+
+    if (!result.isConfirmed) return;
     try {
       const response = await api.deleteBonusPolicy(id);
       if (response.success) {

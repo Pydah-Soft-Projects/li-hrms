@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
+import Swal from 'sweetalert2';
 import { api, Employee, Department, Division, Designation, EmployeeApplication, Allowance, Deduction } from '@/lib/api';
 import { auth } from '@/lib/auth';
 import BulkUpload from '@/components/BulkUpload';
@@ -838,9 +839,17 @@ export default function EmployeesPage() {
   const handleBulkApprove = async () => {
     if (selectedApplicationIds.length === 0) return;
 
-    if (!confirm(`Are you sure you want to approve ${selectedApplicationIds.length} selected applications using their proposed salaries?`)) {
-      return;
-    }
+    const result = await Swal.fire({
+      title: 'Bulk Approval',
+      text: `Are you sure you want to approve ${selectedApplicationIds.length} selected applications using their proposed salaries?`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#10b981',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Yes, approve them!'
+    });
+
+    if (!result.isConfirmed) return;
 
     try {
       setLoadingApplications(true);
@@ -878,9 +887,17 @@ export default function EmployeesPage() {
   const handleBulkReject = async () => {
     if (selectedApplicationIds.length === 0) return;
 
-    if (!confirm(`Are you sure you want to REJECT ${selectedApplicationIds.length} selected applications? This action cannot be undone.`)) {
-      return;
-    }
+    const result = await Swal.fire({
+      title: 'Bulk Reject',
+      text: `Are you sure you want to REJECT ${selectedApplicationIds.length} selected applications? This action cannot be undone.`,
+      icon: 'error',
+      showCancelButton: true,
+      confirmButtonColor: '#ef4444',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Yes, reject them!'
+    });
+
+    if (!result.isConfirmed) return;
 
     try {
       setLoadingApplications(true);
@@ -1482,7 +1499,17 @@ export default function EmployeesPage() {
     if (updatingStatusIds.has(empNo)) return; // Prevent duplicate clicks
 
     const action = currentStatus ? 'deactivate' : 'activate';
-    if (!confirm(`Are you sure you want to ${action} this employee?`)) return;
+    const result = await Swal.fire({
+      title: `${currentStatus ? 'Deactivate' : 'Activate'} Employee`,
+      text: `Are you sure you want to ${action} this employee?`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: currentStatus ? '#f59e0b' : '#10b981',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: `Yes, ${action}!`
+    });
+
+    if (!result.isConfirmed) return;
 
     // Track this employee as updating
     setUpdatingStatusIds(prev => new Set(prev).add(empNo));
@@ -1576,7 +1603,17 @@ export default function EmployeesPage() {
   };
 
   const handleRemoveLeftDate = async (employee: Employee) => {
-    if (!confirm(`Are you sure you want to reactivate ${employee.employee_name}? This will remove their left date.`)) return;
+    const result = await Swal.fire({
+      title: 'Reactivate Employee',
+      text: `Are you sure you want to reactivate ${employee.employee_name}? This will remove their left date.`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#10b981',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Yes, reactivate!'
+    });
+
+    if (!result.isConfirmed) return;
 
     try {
       setError('');
@@ -2585,7 +2622,18 @@ export default function EmployeesPage() {
                                     <button
                                       onClick={async (e) => {
                                         e.stopPropagation();
-                                        if (!confirm(`Resend credentials to ${employee.employee_name}? This will reset their password.`)) return;
+                                        const result = await Swal.fire({
+                                          title: 'Resend Credentials',
+                                          text: `Resend credentials to ${employee.employee_name}? This will reset their password.`,
+                                          icon: 'warning',
+                                          showCancelButton: true,
+                                          confirmButtonColor: '#3085d6',
+                                          cancelButtonColor: '#d33',
+                                          confirmButtonText: 'Yes, resend!'
+                                        });
+
+                                        if (!result.isConfirmed) return;
+
                                         setIsResending(employee.emp_no);
                                         try {
                                           const res = await api.resendEmployeeCredentials(employee.emp_no, {

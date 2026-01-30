@@ -10,6 +10,7 @@ const Shift = require('../../shifts/model/Shift');
  */
 exports.getDivisions = async (req, res, next) => {
     try {
+        const { isActive, search } = req.query;
         // Apply scope filter if it exists
         let query = {};
         if (req.scopeFilter) {
@@ -28,6 +29,17 @@ exports.getDivisions = async (req, res, next) => {
                     return cond;
                 });
             }
+        }
+
+        if (isActive !== undefined) {
+            query.isActive = isActive === 'true';
+        }
+
+        if (search) {
+            query.$or = [
+                { name: { $regex: search, $options: 'i' } },
+                { code: { $regex: search, $options: 'i' } }
+            ];
         }
 
         const divisions = await Division.find(query)
@@ -139,7 +151,11 @@ exports.updateDivision = async (req, res, next) => {
         const oldDepartments = division.departments.map((d) => d.toString());
         const newDepartments = req.body.departments || [];
 
+        // Store old manager ID before update
+        const oldManagerId = division.manager ? division.manager.toString() : null;
+
         division = await Division.findByIdAndUpdate(req.params.id, req.body, {
+            new: true, // Return the updated document
             runValidators: true,
         });
 
@@ -147,7 +163,6 @@ exports.updateDivision = async (req, res, next) => {
         if (req.body.manager !== undefined) {
             const User = require('../../users/model/User');
             const newManagerId = req.body.manager;
-            const oldManagerId = division.manager ? division.manager.toString() : null;
 
             if (oldManagerId !== newManagerId) {
                 // Remove division from old Manager

@@ -236,13 +236,26 @@ const calculateEarlySettlement = (loan, settlementDate = new Date()) => {
 // @access  Private
 exports.getLoans = async (req, res) => {
   try {
-    const { status, employeeId, department, requestType, page = 1, limit = 20 } = req.query;
+    const { status, employeeId, department, division_id, divisionId, requestType, page = 1, limit = 20, search } = req.query;
     const filter = { isActive: true, ...(req.scopeFilter || {}) };
 
     if (status) filter.status = status;
     if (employeeId) filter.employeeId = employeeId;
     if (department) filter.department = department;
+    if (division_id || divisionId) filter.division_id = division_id || divisionId;
     if (requestType) filter.requestType = requestType;
+
+    if (search) {
+      const Employee = require('../../employees/model/Employee');
+      const searchEmployees = await Employee.find({
+        $or: [
+          { employee_name: { $regex: search, $options: 'i' } },
+          { emp_no: { $regex: search, $options: 'i' } }
+        ]
+      }).select('_id');
+      const empIds = searchEmployees.map(e => e._id);
+      filter.employeeId = { $in: empIds };
+    }
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
@@ -281,19 +294,15 @@ exports.getLoans = async (req, res) => {
 exports.getMyLoans = async (req, res) => {
   try {
     const { status, requestType } = req.query;
-    const filter = {
-      isActive: true,
-      appliedBy: req.user._id,
-    };
+    const filter = { employeeId: req.user.employeeRef, isActive: true };
 
     if (status) filter.status = status;
     if (requestType) filter.requestType = requestType;
 
     const loans = await Loan.find(filter)
-      .populate('employeeId', 'employee_name emp_no gross_salary')
       .populate('department', 'name')
       .populate('designation', 'name')
-      .sort({ createdAt: -1 });
+      .sort({ appliedAt: -1 });
 
     res.status(200).json({
       success: true,
@@ -304,7 +313,7 @@ exports.getMyLoans = async (req, res) => {
     console.error('Error fetching my loans:', error);
     res.status(500).json({
       success: false,
-      error: error.message || 'Failed to fetch loans',
+      error: error.message || 'Failed to fetch my loans',
     });
   }
 };
@@ -976,6 +985,7 @@ exports.updateLoan = async (req, res) => {
 exports.getPendingApprovals = async (req, res) => {
   try {
     const userRole = req.user.role;
+    const { status, requestType, department, division_id, divisionId, search } = req.query;
     let filter = { isActive: true };
 
     // Determine what the user can approve based on their role
@@ -1008,6 +1018,24 @@ exports.getPendingApprovals = async (req, res) => {
         success: false,
         error: 'Not authorized to view pending approvals',
       });
+    }
+
+    // Apply additional filters from query
+    if (status) filter.status = status;
+    if (requestType) filter.requestType = requestType;
+    if (department) filter.department = department;
+    if (division_id || divisionId) filter.division_id = division_id || divisionId;
+
+    if (search) {
+      const Employee = require('../../employees/model/Employee');
+      const searchEmployees = await Employee.find({
+        $or: [
+          { employee_name: { $regex: search, $options: 'i' } },
+          { emp_no: { $regex: search, $options: 'i' } }
+        ]
+      }).select('_id');
+      const empIds = searchEmployees.map(e => e._id);
+      filter.employeeId = { $in: empIds };
     }
 
     const loans = await Loan.find(filter)

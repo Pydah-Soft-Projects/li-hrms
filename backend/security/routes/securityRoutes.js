@@ -12,12 +12,54 @@ const {
 router.use(protect);
 
 // Security Dashboard Routes (Super Admin & Security roles)
-// Assuming 'security' role exists or reusing 'super_admin'/'sub_admin' for now
+/**
+ * @swagger
+ * /api/security/permissions/today:
+ *   get:
+ *     summary: Get all permissions for today (Security view)
+ *     tags: [Security]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of today's permissions retrieved
+ */
 router.get('/permissions/today', authorize('super_admin', 'sub_admin', 'security'), getTodayPermissions);
+
+/**
+ * @swagger
+ * /api/security/verify:
+ *   post:
+ *     summary: Verify a gate pass
+ *     tags: [Security]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Gate pass verification result
+ */
 router.post('/verify', authorize('super_admin', 'sub_admin', 'security'), verifyGatePass);
 
-// Employee QR Generation Routes
+/**
+ * @swagger
+ * /api/security/gate-pass/out/{id}:
+ *   post:
+ *     summary: Generate gate-out QR code
+ *     tags: [Security]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: QR code generated
+ */
 router.post('/gate-pass/out/:id', generateGateOutQR);
+
 router.post('/gate-pass/in/:id', generateGateInQR);
 
 module.exports = router;

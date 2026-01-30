@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
+import Swal from 'sweetalert2';
 
 interface AttendanceRecord {
   date: string;
@@ -794,7 +795,17 @@ export default function AttendancePage() {
       return;
     }
 
-    if (!confirm(`Convert ${attendanceDetail.extraHours.toFixed(2)} extra hours to OT for ${selectedDate}?`)) {
+    const result = await Swal.fire({
+      title: 'Convert to OT?',
+      text: `Convert ${attendanceDetail.extraHours.toFixed(2)} extra hours to OT for ${selectedDate}?`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#3085d6',
+      cancelButtonColor: '#d33',
+      confirmButtonText: 'Yes, convert it!'
+    });
+
+    if (!result.isConfirmed) {
       return;
     }
 
@@ -988,9 +999,17 @@ export default function AttendancePage() {
   };
 
   const handleSyncShifts = async () => {
-    if (!confirm('This will sync shifts for all attendance records that don\'t have shifts assigned. This may take a few minutes. Continue?')) {
-      return;
-    }
+    const result = await Swal.fire({
+      title: 'Sync Shifts',
+      text: "This will sync shifts for all attendance records that don't have shifts assigned. This may take a few minutes. Continue?",
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#3085d6',
+      cancelButtonColor: '#d33',
+      confirmButtonText: 'Yes, sync now!'
+    });
+
+    if (!result.isConfirmed) return;
 
     try {
       setSyncingShifts(true);
@@ -1012,7 +1031,7 @@ export default function AttendancePage() {
 
   const handleUpdateOutTime = async () => {
     if (!selectedRecordForOutTime || !outTimeValue) {
-      alert('Please enter out time');
+      Swal.fire('Error', 'Please enter out time', 'error');
       return;
     }
 

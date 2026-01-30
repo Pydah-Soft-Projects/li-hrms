@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Swal from 'sweetalert2';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import Spinner from '@/components/Spinner';
@@ -355,7 +356,17 @@ export default function EmployeeFormSettingsPage() {
       return;
     }
 
-    if (!confirm(`Are you sure you want to delete the group "${group?.label}"? This will also delete all fields in this group.`)) {
+    const result = await Swal.fire({
+      title: 'Delete Group',
+      text: `Are you sure you want to delete the group "${group?.label}"? This will also delete all fields in this group.`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Yes, delete it!'
+    });
+
+    if (!result.isConfirmed) {
       return;
     }
 
@@ -406,7 +417,17 @@ export default function EmployeeFormSettingsPage() {
       return;
     }
 
-    if (!confirm(`Are you sure you want to delete the field "${field?.label}"?`)) {
+    const result = await Swal.fire({
+      title: 'Delete Field',
+      text: `Are you sure you want to delete the field "${field?.label}"?`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Yes, delete it!'
+    });
+
+    if (!result.isConfirmed) {
       return;
     }
 
@@ -530,10 +551,10 @@ export default function EmployeeFormSettingsPage() {
                     placeholder="e.g., Professional Experience"
                   />
                   <div className="flex gap-2 items-start ml-1 mt-2">
-                     <Info className="h-3 w-3 text-slate-400 mt-0.5" />
-                     <p className="text-[10px] font-medium text-slate-500 leading-relaxed uppercase tracking-wider">
-                       Groups categorize related data clusters for orchestration.
-                     </p>
+                    <Info className="h-3 w-3 text-slate-400 mt-0.5" />
+                    <p className="text-[10px] font-medium text-slate-500 leading-relaxed uppercase tracking-wider">
+                      Groups categorize related data clusters for orchestration.
+                    </p>
                   </div>
                 </div>
 
@@ -771,7 +792,7 @@ export default function EmployeeFormSettingsPage() {
 
                         {/* Functional Properties */}
                         <div className="space-y-6">
-                           <div className="space-y-2">
+                          <div className="space-y-2">
                             <label className="text-[10px] font-bold uppercase tracking-widest text-slate-700 flex items-center gap-2">
                               <AlignLeft className="h-3 w-3 text-emerald-600" />
                               Input Placeholder
@@ -914,8 +935,8 @@ export default function EmployeeFormSettingsPage() {
                             {showAddNestedField && (
                               <div className="rounded-2xl border border-emerald-200 bg-white p-6 shadow-xl dark:border-emerald-800 dark:bg-slate-950 animate-in zoom-in-95 duration-200">
                                 <h6 className="text-[10px] font-bold uppercase tracking-widest text-emerald-700 mb-6 flex items-center gap-2">
-                                   <Plus className="h-3 w-3" />
-                                   New Nested Property
+                                  <Plus className="h-3 w-3" />
+                                  New Nested Property
                                 </h6>
                                 <div className="grid grid-cols-1 gap-6">
                                   <div className="space-y-2">
@@ -1017,18 +1038,18 @@ export default function EmployeeFormSettingsPage() {
                   {/* Fields List */}
                   <div className="mb-8">
                     <div className="mb-6 flex items-center justify-between px-2">
-                        <div className="flex items-center gap-3">
-                          <div className="h-1.5 w-1.5 rounded-full bg-blue-600 shadow-[0_0_8px_rgba(37,99,235,0.6)]" />
-                          <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">
-                            Operational Fields ({group.fields.length})
-                          </h4>
-                        </div>
+                      <div className="flex items-center gap-3">
+                        <div className="h-1.5 w-1.5 rounded-full bg-blue-600 shadow-[0_0_8px_rgba(37,99,235,0.6)]" />
+                        <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">
+                          Operational Fields ({group.fields.length})
+                        </h4>
+                      </div>
                     </div>
                     <div className="space-y-4">
                       {group.fields.length === 0 ? (
                         <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-100/30 p-12 text-center dark:border-slate-800 dark:bg-slate-900/20">
                           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-[2rem] bg-white text-slate-300 shadow-sm dark:bg-slate-800">
-                             <Layout className="h-8 w-8" />
+                            <Layout className="h-8 w-8" />
                           </div>
                           <p className="mt-4 text-sm font-bold text-slate-950 dark:text-white uppercase tracking-widest">No Fields Defined</p>
                           <p className="mt-2 text-xs font-medium text-slate-500">Initialize structural fields to begin schema definition.</p>
@@ -1118,8 +1139,8 @@ export default function EmployeeFormSettingsPage() {
                               <Edit3 className="h-6 w-6" />
                             </div>
                             <div>
-                               <h4 className="text-sm font-bold text-blue-900 dark:text-blue-300 uppercase tracking-widest">Adjust Architectural Context</h4>
-                               <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mt-0.5">Instance: {fieldToEdit.label}</p>
+                              <h4 className="text-sm font-bold text-blue-900 dark:text-blue-300 uppercase tracking-widest">Adjust Architectural Context</h4>
+                              <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mt-0.5">Instance: {fieldToEdit.label}</p>
                             </div>
                           </div>
                         </div>
@@ -1159,7 +1180,7 @@ export default function EmployeeFormSettingsPage() {
 
                           {!fieldToEdit.isSystem && (
                             <div className="space-y-6">
-                               <div className="space-y-2">
+                              <div className="space-y-2">
                                 <label className="text-[10px] font-bold uppercase tracking-widest text-slate-600 ml-1">Input Hint (Placeholder)</label>
                                 <input
                                   type="text"
@@ -1443,7 +1464,7 @@ export default function EmployeeFormSettingsPage() {
                 <p className="text-xs font-medium text-slate-500 mt-0.5 uppercase tracking-widest">Configure qualification schema definitions</p>
               </div>
             </div>
-            
+
             {settings.qualifications?.isEnabled !== false && (
               <button
                 onClick={() => {
@@ -1481,7 +1502,7 @@ export default function EmployeeFormSettingsPage() {
                       >
                         <div className="flex items-center gap-4">
                           <div className={`flex h-14 w-14 items-center justify-center rounded-2xl transition-all duration-300 ${field.isEnabled ? 'bg-indigo-50 text-indigo-600 group-hover/qual:bg-indigo-600 group-hover/qual:text-white dark:bg-indigo-900/30' : 'bg-slate-50 text-slate-300 dark:bg-slate-900'}`}>
-                             {getFieldIcon(field.type)}
+                            {getFieldIcon(field.type)}
                           </div>
                           <div>
                             <div className="flex items-center gap-3">
@@ -1500,222 +1521,236 @@ export default function EmployeeFormSettingsPage() {
                           </div>
                         </div>
                         <div className="flex items-center gap-1.5">
-                           <label className="relative inline-flex items-center cursor-pointer group/toggle p-2">
-                              <input
-                                type="checkbox"
-                                checked={field.isEnabled}
-                                onChange={async (e) => {
-                                  await api.updateQualificationsField(field.id, { isEnabled: e.target.checked });
-                                  await loadSettings();
-                                }}
-                                className="sr-only peer"
-                              />
-                              <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-indigo-500/20 rounded-full peer dark:bg-slate-800 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[10px] after:left-[10px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-slate-600 peer-checked:bg-indigo-600"></div>
-                            </label>
-                          <button
-                            onClick={async () => {
-                              if(confirm(`Are you sure you want to decommission the ${field.label} field?`)) {
-                                await api.deleteQualificationsField(field.id);
+                          <label className="relative inline-flex items-center cursor-pointer group/toggle p-2">
+                            <input
+                              type="checkbox"
+                              checked={field.isEnabled}
+                              onChange={async (e) => {
+                                await api.updateQualificationsField(field.id, { isEnabled: e.target.checked });
                                 await loadSettings();
-                              }
-                            }}
-                            className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-400 hover:border-rose-600 hover:text-rose-600 shadow-sm transition-all dark:border-slate-800 dark:bg-slate-900"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              ) : (
-                <div className="rounded-[2.5rem] border border-dashed border-slate-300 bg-slate-100/30 p-16 text-center dark:border-slate-800 dark:bg-slate-900/20">
-                    <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[2.5rem] bg-white text-slate-300 shadow-sm dark:bg-slate-800">
-                       <GraduationCap className="h-10 w-10" />
-                    </div>
-                    <p className="mt-6 text-base font-bold text-slate-950 dark:text-white uppercase tracking-widest">No Academic Fields Defined</p>
-                    <p className="mt-2 text-sm font-medium text-slate-500">Initialize qualification protocols to begin education schema definition.</p>
-                </div>
-              )}
-
-              {/* Add Qualification Field Form (Inline-style) */}
-              {showNewQualField && (
-                <div className="rounded-[2.5rem] border border-indigo-200 bg-indigo-50/20 p-8 dark:border-indigo-800 dark:bg-indigo-900/10 shadow-sm relative overflow-hidden animate-in fade-in zoom-in-95 duration-300 mt-8">
-                  <div className="absolute right-0 top-0 h-32 w-32 -translate-y-12 translate-x-12 rounded-full bg-indigo-500/[0.05] blur-3xl" />
-                  <div className="relative flex items-center gap-4 mb-10">
-                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-xl">
-                      <PlusCircle className="h-7 w-7" />
-                    </div>
-                    <div>
-                      <h4 className="text-base font-bold text-indigo-900 dark:text-indigo-300 uppercase tracking-widest">Architect Academic Identity</h4>
-                      <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest mt-0.5">Define New Qualification Attribute</p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div className="space-y-6">
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-slate-600 ml-1">Structural Handle (ID)</label>
-                        <input
-                          type="text"
-                          value={newQualField.id}
-                          onChange={(e) => setNewQualField({ ...newQualField, id: e.target.value })}
-                          className="w-full rounded-2xl border border-slate-300 bg-white py-3.5 px-6 text-sm font-semibold text-slate-950 shadow-inner focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all dark:bg-slate-900 dark:text-white"
-                          placeholder="e.g., degree_code"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-slate-600 ml-1">Visible Nomenclature (Label)</label>
-                        <input
-                          type="text"
-                          value={newQualField.label}
-                          onChange={(e) => setNewQualField({ ...newQualField, label: e.target.value })}
-                          className="w-full rounded-2xl border border-slate-300 bg-white py-3.5 px-6 text-sm font-semibold text-slate-950 shadow-inner focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all dark:bg-slate-900 dark:text-white"
-                          placeholder="e.g., Qualification Degree"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-6">
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-slate-600 ml-1">Data Protocol (Type)</label>
-                        <select
-                          value={newQualField.type}
-                          onChange={(e) => setNewQualField({ ...newQualField, type: e.target.value as any })}
-                          className="w-full rounded-2xl border border-slate-300 bg-white py-3.5 px-6 text-sm font-semibold text-slate-950 shadow-inner focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all dark:bg-slate-900 dark:text-white"
-                        >
-                          <option value="text">Single Line Text</option>
-                          <option value="textarea">Multi-line Text</option>
-                          <option value="number">Numeric Value</option>
-                          <option value="date">Date Protocol</option>
-                          <option value="select">Selection Dropdown</option>
-                        </select>
-                      </div>
-                      <div className="flex bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm mt-8">
-                         <label className="flex flex-1 items-center justify-between cursor-pointer group/toggle">
-                            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-600 ml-1">Mandatory Validation</span>
-                            <div className="relative inline-flex items-center">
-                              <input
-                                type="checkbox"
-                                checked={newQualField.isRequired}
-                                onChange={(e) => setNewQualField({ ...newQualField, isRequired: e.target.checked })}
-                                className="sr-only peer"
-                              />
-                              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-500/20 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-indigo-600"></div>
-                            </div>
+                              }}
+                              className="sr-only peer"
+                            />
+                            <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-indigo-500/20 rounded-full peer dark:bg-slate-800 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[10px] after:left-[10px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-slate-600 peer-checked:bg-indigo-600"></div>
                           </label>
+                          onClick={async () => {
+                            const result = await Swal.fire({
+                              title: 'Decommission Field',
+                              text: `Are you sure you want to decommission the ${field.label} field?`,
+                              icon: 'warning',
+                              showCancelButton: true,
+                              confirmButtonColor: '#d33',
+                              cancelButtonColor: '#3085d6',
+                              confirmButtonText: 'Yes, decommission it!'
+                            });
+
+                            if (result.isConfirmed) {
+                              await api.deleteQualificationsField(field.id);
+                              await loadSettings();
+                            }
+                          }}
+                          className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-400 hover:border-rose-600 hover:text-rose-600 shadow-sm transition-all dark:border-slate-800 dark:bg-slate-900"
+                          >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                       </div>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-4 mt-10 pt-10 border-t border-indigo-200 dark:border-indigo-800">
-                    <button
-                        onClick={() => {
-                          setShowNewQualField(false);
-                          setNewQualField({
-                            id: '',
-                            label: '',
-                            type: 'text',
-                            isRequired: false,
-                            isEnabled: true,
-                            placeholder: '',
-                            validation: {},
-                            options: [],
-                            order: 0,
-                          });
-                        }}
-                        className="flex-1 rounded-2xl py-4 text-xs font-bold uppercase tracking-[0.2em] text-slate-600 hover:text-slate-950 transition-colors bg-white dark:bg-slate-800"
-                      >
-                        Abort Registry
-                      </button>
-                    <button
-                      onClick={async () => {
-                        if (!newQualField.id || !newQualField.label) {
-                          alert('Field ID and Label are required');
-                          return;
-                        }
-                        await api.addQualificationsField(newQualField);
-                        setShowNewQualField(false);
-                        setNewQualField({
-                          id: '',
-                          label: '',
-                          type: 'text',
-                          isRequired: false,
-                          isEnabled: true,
-                          placeholder: '',
-                          validation: {},
-                          options: [],
-                          order: 0,
-                        });
-                        await loadSettings();
-                      }}
-                      className="flex-[2] rounded-2xl bg-indigo-600 py-4 text-xs font-bold uppercase tracking-[0.2em] text-white shadow-xl transition-all hover:bg-indigo-700 active:scale-[0.98]"
-                    >
-                      Commit Architectural Context
-                    </button>
-                  </div>
-                </div>
+                      </div>
+              ))}
+            </div>
+          ) : (
+          <div className="rounded-[2.5rem] border border-dashed border-slate-300 bg-slate-100/30 p-16 text-center dark:border-slate-800 dark:bg-slate-900/20">
+            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[2.5rem] bg-white text-slate-300 shadow-sm dark:bg-slate-800">
+              <GraduationCap className="h-10 w-10" />
+            </div>
+            <p className="mt-6 text-base font-bold text-slate-950 dark:text-white uppercase tracking-widest">No Academic Fields Defined</p>
+            <p className="mt-2 text-sm font-medium text-slate-500">Initialize qualification protocols to begin education schema definition.</p>
+          </div>
               )}
-            </>
-          )}
-        </div>
 
-        {/* Info Box */}
-        <div className="mt-12 overflow-hidden rounded-[2.5rem] border border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-950">
-           <div className="flex items-center gap-4 border-b border-slate-100 bg-slate-50/50 px-8 py-5 dark:border-slate-800 dark:bg-slate-900/50">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white shadow-lg shadow-blue-200 dark:shadow-none">
-                 <Info className="h-5 w-5" />
-              </div>
-              <div>
-                 <h4 className="text-sm font-bold text-slate-950 dark:text-white uppercase tracking-widest">Architectural Repository Intel</h4>
-                 <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest">Protocol Guidelines & Compliance</p>
-              </div>
-           </div>
-           <div className="p-8">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6">
-                <div className="space-y-4">
-                  <div className="flex gap-4 group/info">
-                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600 transition-colors group-hover/info:bg-blue-600 group-hover/info:text-white dark:bg-blue-900/30">
-                       <ShieldCheck className="h-3.5 w-3.5" />
-                    </div>
-                    <div>
-                        <p className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-widest">System Protocol Enforcement</p>
-                        <p className="mt-1 text-xs font-medium text-slate-500 leading-relaxed">Core system attributes are immutably defined to ensure database integrity. Visual labels may be aliased, but structural handles remain constant.</p>
-                    </div>
-                  </div>
-                  <div className="flex gap-4 group/info">
-                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 transition-colors group-hover/info:bg-emerald-600 group-hover/info:text-white dark:bg-emerald-900/30">
-                       <Database className="h-3.5 w-3.5" />
-                    </div>
-                    <div>
-                        <p className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-widest">Dynamic Schema Evolution</p>
-                        <p className="mt-1 text-xs font-medium text-slate-500 leading-relaxed">Custom fields and groups can be provisioned or decommissioned in real-time. Changes are immediately broadcast to application gateways.</p>
-                    </div>
-                  </div>
+          {/* Add Qualification Field Form (Inline-style) */}
+          {showNewQualField && (
+            <div className="rounded-[2.5rem] border border-indigo-200 bg-indigo-50/20 p-8 dark:border-indigo-800 dark:bg-indigo-900/10 shadow-sm relative overflow-hidden animate-in fade-in zoom-in-95 duration-300 mt-8">
+              <div className="absolute right-0 top-0 h-32 w-32 -translate-y-12 translate-x-12 rounded-full bg-indigo-500/[0.05] blur-3xl" />
+              <div className="relative flex items-center gap-4 mb-10">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-xl">
+                  <PlusCircle className="h-7 w-7" />
                 </div>
-                <div className="space-y-4">
-                  <div className="flex gap-4 group/info">
-                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-purple-50 text-purple-600 transition-colors group-hover/info:bg-purple-600 group-hover/info:text-white dark:bg-purple-900/30">
-                       <Layers className="h-3.5 w-3.5" />
-                    </div>
-                    <div>
-                        <p className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-widest">Nested Logic & Arrays</p>
-                        <p className="mt-1 text-xs font-medium text-slate-500 leading-relaxed">Advanced field typing allows for recursive objects and dynamic arrays, facilitating complex data capture such as academic history or professional timelines.</p>
-                    </div>
-                  </div>
-                  <div className="flex gap-4 group/info">
-                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600 transition-colors group-hover/info:bg-amber-600 group-hover/info:text-white dark:bg-amber-900/30">
-                       <Zap className="h-3.5 w-3.5" />
-                    </div>
-                    <div>
-                        <p className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-widest">Instructional Latency</p>
-                        <p className="mt-1 text-xs font-medium text-slate-500 leading-relaxed">All modifications commit instantly to the orchestration layer. Ensure schema validation is verified before final execution in production environments.</p>
-                    </div>
-                  </div>
+                <div>
+                  <h4 className="text-base font-bold text-indigo-900 dark:text-indigo-300 uppercase tracking-widest">Architect Academic Identity</h4>
+                  <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest mt-0.5">Define New Qualification Attribute</p>
                 </div>
               </div>
-           </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-600 ml-1">Structural Handle (ID)</label>
+                    <input
+                      type="text"
+                      value={newQualField.id}
+                      onChange={(e) => setNewQualField({ ...newQualField, id: e.target.value })}
+                      className="w-full rounded-2xl border border-slate-300 bg-white py-3.5 px-6 text-sm font-semibold text-slate-950 shadow-inner focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all dark:bg-slate-900 dark:text-white"
+                      placeholder="e.g., degree_code"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-600 ml-1">Visible Nomenclature (Label)</label>
+                    <input
+                      type="text"
+                      value={newQualField.label}
+                      onChange={(e) => setNewQualField({ ...newQualField, label: e.target.value })}
+                      className="w-full rounded-2xl border border-slate-300 bg-white py-3.5 px-6 text-sm font-semibold text-slate-950 shadow-inner focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all dark:bg-slate-900 dark:text-white"
+                      placeholder="e.g., Qualification Degree"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-600 ml-1">Data Protocol (Type)</label>
+                    <select
+                      value={newQualField.type}
+                      onChange={(e) => setNewQualField({ ...newQualField, type: e.target.value as any })}
+                      className="w-full rounded-2xl border border-slate-300 bg-white py-3.5 px-6 text-sm font-semibold text-slate-950 shadow-inner focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all dark:bg-slate-900 dark:text-white"
+                    >
+                      <option value="text">Single Line Text</option>
+                      <option value="textarea">Multi-line Text</option>
+                      <option value="number">Numeric Value</option>
+                      <option value="date">Date Protocol</option>
+                      <option value="select">Selection Dropdown</option>
+                    </select>
+                  </div>
+                  <div className="flex bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm mt-8">
+                    <label className="flex flex-1 items-center justify-between cursor-pointer group/toggle">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-slate-600 ml-1">Mandatory Validation</span>
+                      <div className="relative inline-flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={newQualField.isRequired}
+                          onChange={(e) => setNewQualField({ ...newQualField, isRequired: e.target.checked })}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-500/20 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-indigo-600"></div>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-4 mt-10 pt-10 border-t border-indigo-200 dark:border-indigo-800">
+                <button
+                  onClick={() => {
+                    setShowNewQualField(false);
+                    setNewQualField({
+                      id: '',
+                      label: '',
+                      type: 'text',
+                      isRequired: false,
+                      isEnabled: true,
+                      placeholder: '',
+                      validation: {},
+                      options: [],
+                      order: 0,
+                    });
+                  }}
+                  className="flex-1 rounded-2xl py-4 text-xs font-bold uppercase tracking-[0.2em] text-slate-600 hover:text-slate-950 transition-colors bg-white dark:bg-slate-800"
+                >
+                  Abort Registry
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!newQualField.id || !newQualField.label) {
+                      Swal.fire({
+                        title: 'Validation Error',
+                        text: 'Field ID and Label are required',
+                        icon: 'error',
+                        confirmButtonColor: '#4f46e5'
+                      });
+                      return;
+                    }
+                    await api.addQualificationsField(newQualField);
+                    setShowNewQualField(false);
+                    setNewQualField({
+                      id: '',
+                      label: '',
+                      type: 'text',
+                      isRequired: false,
+                      isEnabled: true,
+                      placeholder: '',
+                      validation: {},
+                      options: [],
+                      order: 0,
+                    });
+                    await loadSettings();
+                  }}
+                  className="flex-[2] rounded-2xl bg-indigo-600 py-4 text-xs font-bold uppercase tracking-[0.2em] text-white shadow-xl transition-all hover:bg-indigo-700 active:scale-[0.98]"
+                >
+                  Commit Architectural Context
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+          )}
+      </div>
+
+      {/* Info Box */}
+      <div className="mt-12 overflow-hidden rounded-[2.5rem] border border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-950">
+        <div className="flex items-center gap-4 border-b border-slate-100 bg-slate-50/50 px-8 py-5 dark:border-slate-800 dark:bg-slate-900/50">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white shadow-lg shadow-blue-200 dark:shadow-none">
+            <Info className="h-5 w-5" />
+          </div>
+          <div>
+            <h4 className="text-sm font-bold text-slate-950 dark:text-white uppercase tracking-widest">Architectural Repository Intel</h4>
+            <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest">Protocol Guidelines & Compliance</p>
+          </div>
+        </div>
+        <div className="p-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6">
+            <div className="space-y-4">
+              <div className="flex gap-4 group/info">
+                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600 transition-colors group-hover/info:bg-blue-600 group-hover/info:text-white dark:bg-blue-900/30">
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-widest">System Protocol Enforcement</p>
+                  <p className="mt-1 text-xs font-medium text-slate-500 leading-relaxed">Core system attributes are immutably defined to ensure database integrity. Visual labels may be aliased, but structural handles remain constant.</p>
+                </div>
+              </div>
+              <div className="flex gap-4 group/info">
+                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 transition-colors group-hover/info:bg-emerald-600 group-hover/info:text-white dark:bg-emerald-900/30">
+                  <Database className="h-3.5 w-3.5" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-widest">Dynamic Schema Evolution</p>
+                  <p className="mt-1 text-xs font-medium text-slate-500 leading-relaxed">Custom fields and groups can be provisioned or decommissioned in real-time. Changes are immediately broadcast to application gateways.</p>
+                </div>
+              </div>
+            </div>
+            <div className="space-y-4">
+              <div className="flex gap-4 group/info">
+                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-purple-50 text-purple-600 transition-colors group-hover/info:bg-purple-600 group-hover/info:text-white dark:bg-purple-900/30">
+                  <Layers className="h-3.5 w-3.5" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-widest">Nested Logic & Arrays</p>
+                  <p className="mt-1 text-xs font-medium text-slate-500 leading-relaxed">Advanced field typing allows for recursive objects and dynamic arrays, facilitating complex data capture such as academic history or professional timelines.</p>
+                </div>
+              </div>
+              <div className="flex gap-4 group/info">
+                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600 transition-colors group-hover/info:bg-amber-600 group-hover/info:text-white dark:bg-amber-900/30">
+                  <Zap className="h-3.5 w-3.5" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-widest">Instructional Latency</p>
+                  <p className="mt-1 text-xs font-medium text-slate-500 leading-relaxed">All modifications commit instantly to the orchestration layer. Ensure schema validation is verified before final execution in production environments.</p>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
+    </div >
   );
 }

@@ -246,14 +246,31 @@ exports.getAttendanceDetail = async (req, res) => {
  */
 exports.getEmployeesWithAttendance = async (req, res) => {
   try {
-    const { date, page = 1, limit = 50 } = req.query;
+    const { date, page = 1, limit = 50, search, divisionId, departmentId, designationId, is_active } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    // Get paginated employees within scope
-    const employees = await Employee.find({
-      ...req.scopeFilter,
-      is_active: { $ne: false }
-    })
+    // Build filter based on scope and provided filters
+    const filter = { ...req.scopeFilter };
+
+    if (is_active !== undefined) {
+      filter.is_active = is_active === 'true';
+    } else {
+      filter.is_active = { $ne: false };
+    }
+
+    if (search) {
+      filter.$or = [
+        { employee_name: { $regex: search, $options: 'i' } },
+        { emp_no: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    if (divisionId) filter.division_id = divisionId;
+    if (departmentId) filter.department_id = departmentId;
+    if (designationId) filter.designation_id = designationId;
+
+    // Get paginated employees within filter
+    const employees = await Employee.find(filter)
       .select('emp_no employee_name department_id designation_id')
       .populate('department_id', 'name')
       .populate('designation_id', 'name')
@@ -261,10 +278,7 @@ exports.getEmployeesWithAttendance = async (req, res) => {
       .skip(skip)
       .limit(parseInt(limit));
 
-    const total = await Employee.countDocuments({
-      ...req.scopeFilter,
-      is_active: { $ne: false }
-    });
+    const total = await Employee.countDocuments(filter);
 
     // If date provided, get attendance for that date for these SPECIFIC employees
     let attendanceMap = {};
@@ -746,16 +760,27 @@ exports.assignShift = async (req, res) => {
  */
 exports.getRecentActivity = async (req, res) => {
   try {
-    const { page = 1, limit = 20 } = req.query;
+    const { page = 1, limit = 20, search, divisionId, departmentId, designationId } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     // 1. Determine Scope & Filter
     let logQuery = {};
 
-    // If we have a specific scope filter (Division/HR/HOD/Emp)
-    if (req.scopeFilter && Object.keys(req.scopeFilter).length > 0) {
+    // If we have a specific scope filter or query filters
+    const employeeFilter = { ...req.scopeFilter };
+    if (search) {
+      employeeFilter.$or = [
+        { employee_name: { $regex: search, $options: 'i' } },
+        { emp_no: { $regex: search, $options: 'i' } }
+      ];
+    }
+    if (divisionId) employeeFilter.division_id = divisionId;
+    if (departmentId) employeeFilter.department_id = departmentId;
+    if (designationId) employeeFilter.designation_id = designationId;
+
+    if (Object.keys(employeeFilter).length > 0) {
       // Find allowed Employee Numbers
-      const allowedEmployees = await Employee.find(req.scopeFilter).select('emp_no').lean();
+      const allowedEmployees = await Employee.find(employeeFilter).select('emp_no').lean();
       const allowedEmpNos = allowedEmployees.map(e => e.emp_no);
 
       if (allowedEmpNos.length === 0) {

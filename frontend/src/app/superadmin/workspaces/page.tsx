@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Swal from 'sweetalert2';
 import { api } from '@/lib/api';
 
 // Icons
@@ -110,7 +111,7 @@ export default function WorkspacesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  
+
   // Dialog states
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
@@ -121,7 +122,7 @@ export default function WorkspacesPage() {
   const [selectedWorkspace, setSelectedWorkspace] = useState<Workspace | null>(null);
   const [selectedModule, setSelectedModule] = useState<Module | null>(null);
   const [workspaceUsers, setWorkspaceUsers] = useState<any[]>([]);
-  
+
   // Form state
   const [formData, setFormData] = useState({
     name: '',
@@ -170,7 +171,7 @@ export default function WorkspacesPage() {
   const handleCreateWorkspace = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    
+
     try {
       const response = await api.createWorkspace(formData);
       if (response.success) {
@@ -190,7 +191,7 @@ export default function WorkspacesPage() {
     e.preventDefault();
     if (!selectedWorkspace) return;
     setError('');
-    
+
     try {
       const response = await api.updateWorkspace(selectedWorkspace._id, formData);
       if (response.success) {
@@ -211,9 +212,19 @@ export default function WorkspacesPage() {
       setError('Cannot delete system workspace');
       return;
     }
-    
-    if (!confirm(`Are you sure you want to delete "${workspace.name}"?`)) return;
-    
+
+    const result = await Swal.fire({
+      title: 'Delete Workspace',
+      text: `Are you sure you want to delete "${workspace.name}"?`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Yes, delete it!'
+    });
+
+    if (!result.isConfirmed) return;
+
     try {
       const response = await api.deleteWorkspace(workspace._id);
       if (response.success) {
@@ -248,7 +259,7 @@ export default function WorkspacesPage() {
   const openUsersDialog = async (workspace: Workspace) => {
     setSelectedWorkspace(workspace);
     setShowUsersDialog(true);
-    
+
     try {
       const response = await api.getWorkspaceUsers(workspace._id);
       if (response.success) {
@@ -263,11 +274,11 @@ export default function WorkspacesPage() {
     try {
       setError('');
       setSuccess('');
-      
+
       // Normalize module code to uppercase for comparison
       const normalizedModuleCode = moduleCode.toUpperCase();
       const existingModule = workspace.modules.find(m => m.moduleCode.toUpperCase() === normalizedModuleCode);
-      
+
       if (existingModule) {
         // Update existing module
         const response = await api.updateWorkspaceModule(workspace._id, normalizedModuleCode, { isEnabled });
@@ -308,7 +319,7 @@ export default function WorkspacesPage() {
   const handleCreateModule = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    
+
     try {
       const response = await api.createModule(moduleFormData);
       if (response.success) {
@@ -337,14 +348,14 @@ export default function WorkspacesPage() {
     e.preventDefault();
     if (!selectedModule) return;
     setError('');
-    
+
     try {
       const response = await api.updateModule(selectedModule._id, moduleFormData);
-        if (response.success) {
+      if (response.success) {
         setSuccess('Module updated successfully');
         setShowEditModuleDialog(false);
         setSelectedModule(null);
-          loadData();
+        loadData();
       } else {
         setError(response.error || 'Failed to update module');
       }
@@ -358,14 +369,24 @@ export default function WorkspacesPage() {
       setError('Cannot delete system module');
       return;
     }
-    
-    if (!confirm(`Are you sure you want to delete "${module.name}"?`)) return;
-    
+
+    const result = await Swal.fire({
+      title: 'Delete Module',
+      text: `Are you sure you want to delete "${module.name}"?`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Yes, delete it!'
+    });
+
+    if (!result.isConfirmed) return;
+
     try {
       const response = await api.deleteModule(module._id);
-        if (response.success) {
+      if (response.success) {
         setSuccess('Module deleted successfully');
-          loadData();
+        loadData();
       } else {
         setError(response.error || 'Failed to delete module');
       }
@@ -526,11 +547,10 @@ export default function WorkspacesPage() {
                 <ModulesIcon />
                 {workspace.modules?.filter(m => m.isEnabled).length || 0} modules
               </span>
-              <span className={`px-2.5 py-1 text-xs font-medium rounded-lg ${
-                workspace.isActive
+              <span className={`px-2.5 py-1 text-xs font-medium rounded-lg ${workspace.isActive
                   ? 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400'
                   : 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-              }`}>
+                }`}>
                 {workspace.isActive ? 'Active' : 'Inactive'}
               </span>
             </div>
@@ -585,7 +605,7 @@ export default function WorkspacesPage() {
             <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-6">
               {showCreateDialog ? 'Create Workspace' : 'Edit Workspace'}
             </h2>
-            
+
             <form onSubmit={showCreateDialog ? handleCreateWorkspace : handleUpdateWorkspace} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Name *</label>
@@ -598,7 +618,7 @@ export default function WorkspacesPage() {
                   placeholder="e.g., HR Management"
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Code *</label>
                 <input
@@ -611,7 +631,7 @@ export default function WorkspacesPage() {
                   placeholder="e.g., HR"
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Type *</label>
                 <select
@@ -626,7 +646,7 @@ export default function WorkspacesPage() {
                   <option value="custom">Custom</option>
                 </select>
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Description</label>
                 <textarea
@@ -637,7 +657,7 @@ export default function WorkspacesPage() {
                   placeholder="Workspace description..."
                 />
               </div>
-              
+
               <div className="flex gap-3 pt-4">
                 <button
                   type="button"
@@ -665,44 +685,41 @@ export default function WorkspacesPage() {
           <div className="relative z-50 w-full max-w-2xl max-h-[80vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
             <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">
               Modules: {selectedWorkspace.name}
-                </h2>
+            </h2>
             <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
               Configure which modules are available in this workspace
             </p>
-            
+
             {(error || success) && (
-              <div className={`mb-4 p-3 rounded-lg ${
-                error ? 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-              }`}>
+              <div className={`mb-4 p-3 rounded-lg ${error ? 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                }`}>
                 {error || success}
               </div>
             )}
-            
-            <div className="space-y-3">
-                {modules.map((mod) => {
-                  const wsModule = selectedWorkspace.modules?.find(m => m.moduleCode.toUpperCase() === mod.code.toUpperCase());
-                  const isEnabled = wsModule?.isEnabled ?? false;
 
-                  return (
-                    <div
-                      key={mod._id}
-                    className={`flex items-center justify-between p-4 rounded-xl border transition-all ${
-                        isEnabled
+            <div className="space-y-3">
+              {modules.map((mod) => {
+                const wsModule = selectedWorkspace.modules?.find(m => m.moduleCode.toUpperCase() === mod.code.toUpperCase());
+                const isEnabled = wsModule?.isEnabled ?? false;
+
+                return (
+                  <div
+                    key={mod._id}
+                    className={`flex items-center justify-between p-4 rounded-xl border transition-all ${isEnabled
                         ? 'border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-900/20'
-                          : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800'
+                        : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800'
                       }`}
-                    >
+                  >
                     <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                        isEnabled ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-400'
-                          }`}>
-                            <ModulesIcon />
-                          </div>
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isEnabled ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-400'
+                        }`}>
+                        <ModulesIcon />
+                      </div>
                       <div>
                         <div className="font-medium text-slate-900 dark:text-white">{mod.name}</div>
                         <div className="text-xs text-slate-500 dark:text-slate-400">{mod.code} • {mod.category}</div>
-                            </div>
-                            </div>
+                      </div>
+                    </div>
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input
                         type="checkbox"
@@ -712,11 +729,11 @@ export default function WorkspacesPage() {
                       />
                       <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-blue-600"></div>
                     </label>
-                          </div>
+                  </div>
                 );
               })}
-                        </div>
-            
+            </div>
+
             <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800">
               <button
                 onClick={() => { setShowModulesDialog(false); setError(''); setSuccess(''); }}
@@ -747,10 +764,9 @@ export default function WorkspacesPage() {
               className="rounded-xl border border-slate-200 bg-white p-4 transition-all hover:shadow-md dark:border-slate-700 dark:bg-slate-800"
             >
               <div className="flex items-start justify-between mb-3">
-                        <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                    module.isActive ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-400'
-                  }`}>
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${module.isActive ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-400'
+                    }`}>
                     <ModulesIcon />
                   </div>
                   <div>
@@ -764,7 +780,7 @@ export default function WorkspacesPage() {
                   </span>
                 )}
               </div>
-              
+
               {module.description && (
                 <p className="text-sm text-slate-600 dark:text-slate-300 mb-3 line-clamp-2">
                   {module.description}
@@ -775,17 +791,16 @@ export default function WorkspacesPage() {
                 <span className="px-2 py-1 text-xs font-medium bg-indigo-50 text-indigo-700 rounded-lg dark:bg-indigo-900/30 dark:text-indigo-400 capitalize">
                   {module.category}
                 </span>
-                <span className={`px-2 py-1 text-xs font-medium rounded-lg ${
-                  module.isActive
+                <span className={`px-2 py-1 text-xs font-medium rounded-lg ${module.isActive
                     ? 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400'
                     : 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                }`}>
+                  }`}>
                   {module.isActive ? 'Active' : 'Inactive'}
                 </span>
               </div>
 
               <div className="flex items-center gap-2 pt-3 border-t border-slate-100 dark:border-slate-700">
-                            <button
+                <button
                   onClick={() => openEditModuleDialog(module)}
                   className="flex-1 px-3 py-1.5 text-sm font-medium text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400"
                 >
@@ -797,8 +812,8 @@ export default function WorkspacesPage() {
                     className="px-3 py-1.5 text-sm font-medium text-red-700 bg-red-50 rounded-lg hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400"
                   >
                     <TrashIcon />
-                            </button>
-                          )}
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -817,11 +832,11 @@ export default function WorkspacesPage() {
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowCreateModuleDialog(false)} />
           <div className="relative z-50 w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
             <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-6">Create Module</h2>
-            
+
             <form onSubmit={handleCreateModule} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Name *</label>
-                            <input
+                <input
                   type="text"
                   value={moduleFormData.name}
                   onChange={(e) => setModuleFormData({ ...moduleFormData, name: e.target.value })}
@@ -829,8 +844,8 @@ export default function WorkspacesPage() {
                   className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   placeholder="e.g., Attendance Management"
                 />
-                        </div>
-              
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Code *</label>
                 <input
@@ -841,7 +856,7 @@ export default function WorkspacesPage() {
                   className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm uppercase dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   placeholder="e.g., ATTENDANCE"
                 />
-                      </div>
+              </div>
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Description</label>
@@ -852,7 +867,7 @@ export default function WorkspacesPage() {
                   className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   placeholder="Module description..."
                 />
-                            </div>
+              </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -866,7 +881,7 @@ export default function WorkspacesPage() {
                     placeholder="e.g., /attendance"
                   />
                 </div>
-                
+
                 <div>
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Icon</label>
                   <input
@@ -893,8 +908,8 @@ export default function WorkspacesPage() {
                     <option value="reports">Reports</option>
                     <option value="settings">Settings</option>
                   </select>
-                                      </div>
-                
+                </div>
+
                 <div>
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Sort Order</label>
                   <input
@@ -903,12 +918,12 @@ export default function WorkspacesPage() {
                     onChange={(e) => setModuleFormData({ ...moduleFormData, sortOrder: parseInt(e.target.value) || 0 })}
                     className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   />
-                                    </div>
-                                  </div>
+                </div>
+              </div>
 
               <div className="flex items-center gap-2">
-                                    <input
-                                      type="checkbox"
+                <input
+                  type="checkbox"
                   id="moduleActive"
                   checked={moduleFormData.isActive}
                   onChange={(e) => setModuleFormData({ ...moduleFormData, isActive: e.target.checked })}
@@ -916,9 +931,9 @@ export default function WorkspacesPage() {
                 />
                 <label htmlFor="moduleActive" className="text-sm text-slate-700 dark:text-slate-300">
                   Module is active
-                                  </label>
-                                </div>
-              
+                </label>
+              </div>
+
               <div className="flex gap-3 pt-4">
                 <button
                   type="button"
@@ -935,9 +950,9 @@ export default function WorkspacesPage() {
                 </button>
               </div>
             </form>
-                          </div>
-                        </div>
-                      )}
+          </div>
+        </div>
+      )}
 
       {/* Edit Module Dialog */}
       {showEditModuleDialog && selectedModule && (
@@ -945,7 +960,7 @@ export default function WorkspacesPage() {
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => { setShowEditModuleDialog(false); setSelectedModule(null); }} />
           <div className="relative z-50 w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
             <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-6">Edit Module</h2>
-            
+
             <form onSubmit={handleUpdateModule} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Name *</label>
@@ -956,8 +971,8 @@ export default function WorkspacesPage() {
                   required
                   className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                 />
-                    </div>
-              
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Code *</label>
                 <input
@@ -969,7 +984,7 @@ export default function WorkspacesPage() {
                   className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm uppercase dark:border-slate-700 dark:bg-slate-800 dark:text-white disabled:opacity-50"
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Description</label>
                 <textarea
@@ -978,7 +993,7 @@ export default function WorkspacesPage() {
                   rows={3}
                   className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                 />
-            </div>
+              </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -991,7 +1006,7 @@ export default function WorkspacesPage() {
                     className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   />
                 </div>
-                
+
                 <div>
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Icon</label>
                   <input
@@ -1018,7 +1033,7 @@ export default function WorkspacesPage() {
                     <option value="settings">Settings</option>
                   </select>
                 </div>
-                
+
                 <div>
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Sort Order</label>
                   <input
@@ -1042,7 +1057,7 @@ export default function WorkspacesPage() {
                   Module is active
                 </label>
               </div>
-              
+
               <div className="flex gap-3 pt-4">
                 <button
                   type="button"
@@ -1074,7 +1089,7 @@ export default function WorkspacesPage() {
             <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
               Users assigned to this workspace
             </p>
-            
+
             {workspaceUsers.length === 0 ? (
               <div className="text-center py-8">
                 <p className="text-slate-500 dark:text-slate-400">No users assigned to this workspace yet.</p>
@@ -1111,7 +1126,7 @@ export default function WorkspacesPage() {
                 ))}
               </div>
             )}
-            
+
             <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800">
               <button
                 onClick={() => setShowUsersDialog(false)}

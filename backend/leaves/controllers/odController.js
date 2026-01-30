@@ -136,7 +136,7 @@ const getWorkflowSettings = async () => {
 // @access  Private
 exports.getODs = async (req, res) => {
   try {
-    const { status, employeeId, department, fromDate, toDate, page = 1, limit = 20 } = req.query;
+    const { status, employeeId, department, departmentId, divisionId, designationId, fromDate, toDate, page = 1, limit = 20, search } = req.query;
 
     // Multi-layered filter: Jurisdiction (Scope) AND Timing (Workflow)
     const scopeFilter = req.scopeFilter || { isActive: true };
@@ -152,9 +152,23 @@ exports.getODs = async (req, res) => {
 
     if (status) filter.status = status;
     if (employeeId) filter.employeeId = employeeId;
-    if (department) filter.department = department;
+    if (department || departmentId) filter.department = department || departmentId;
+    if (divisionId) filter.division_id = divisionId;
+    if (designationId) filter.designation = designationId;
     if (fromDate) filter.fromDate = { $gte: new Date(fromDate) };
     if (toDate) filter.toDate = { ...filter.toDate, $lte: new Date(toDate) };
+
+    if (search) {
+      const Employee = require('../../employees/model/Employee');
+      const searchEmployees = await Employee.find({
+        $or: [
+          { employee_name: { $regex: search, $options: 'i' } },
+          { emp_no: { $regex: search, $options: 'i' } }
+        ]
+      }).select('_id');
+      const empIds = searchEmployees.map(e => e._id);
+      filter.employeeId = { $in: empIds };
+    }
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
@@ -193,13 +207,14 @@ exports.getODs = async (req, res) => {
 // @access  Private
 exports.getMyODs = async (req, res) => {
   try {
-    const { status, fromDate, toDate } = req.query;
+    const { status, fromDate, toDate, odType } = req.query;
     const filter = {
       isActive: true,
       appliedBy: req.user._id,
     };
 
     if (status) filter.status = status;
+    if (odType) filter.odType = odType;
     if (fromDate) filter.fromDate = { $gte: new Date(fromDate) };
     if (toDate) filter.toDate = { ...filter.toDate, $lte: new Date(toDate) };
 
@@ -1013,7 +1028,8 @@ exports.cancelOD = async (req, res) => {
 exports.getPendingApprovals = async (req, res) => {
   try {
     const userRole = req.user.role;
-    // Base filter: Active AND Not Applied by Me (Self-requests go to "My Leaves")
+    const { status, odType, departmentId, divisionId, designationId, fromDate, toDate, search } = req.query;
+    // Base filter: Active AND Not Applied by Me (Self-requests go to "My ODs")
     let filter = {
       isActive: true,
       appliedBy: { $ne: req.user._id }
@@ -1022,26 +1038,67 @@ exports.getPendingApprovals = async (req, res) => {
     // 1. Super Admin / Sub Admin: View all non-final ODs
     if (['sub_admin', 'super_admin'].includes(userRole)) {
       filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
-    } else if (userRole === 'manager') {
-      // 2. Manager: Strict Scope Check
-      filter['$or'] = [
-        { 'workflow.nextApprover': 'manager' },
-        { 'workflow.nextApproverRole': 'manager' }
-      ];
+    }
+    // 2, 3, 4: Scoped Roles (HOD, HR, Manager)
+    else if (['hod', 'hr', 'manager'].includes(userRole)) {
+      // 1. Role-based turn check
+      if (userRole === 'hr') {
+        filter['$or'] = [
+          { 'workflow.nextApprover': { $in: ['hr', 'final_authority'] } },
+          { 'workflow.nextApproverRole': { $in: ['hr', 'final_authority'] } }
+        ];
+      } else {
+        filter['$or'] = [
+          { 'workflow.nextApprover': userRole },
+          { 'workflow.nextApproverRole': userRole }
+        ];
+      }
 
+      // 2. Strict Employee-First Scope Match
       const employeeIds = await getEmployeeIdsInScope(req.user);
+
       if (employeeIds.length > 0) {
         filter.employeeId = { $in: employeeIds };
       } else {
-        console.warn(`[GetPendingApprovals] Manager ${req.user._id} has no employees in scope.`);
+        console.warn(`[GetPendingApprovals] User ${req.user._id} (${userRole}) has no employees in scope.`);
         filter.employeeId = { $in: [] };
       }
     }
+    // 5. Generic / Custom Role: View ODs explicitly assigned to this role
     else {
-      return res.status(403).json({
-        success: false,
-        error: 'Not authorized to view pending approvals',
-      });
+      filter['$or'] = [
+        { 'workflow.nextApprover': userRole },
+        { 'workflow.nextApproverRole': userRole }
+      ];
+    }
+
+    // Apply additional filters from query
+    if (status) filter.status = status;
+    if (odType) filter.odType = odType;
+    if (departmentId) filter.department = departmentId;
+    if (divisionId) filter.division_id = divisionId;
+    if (designationId) filter.designation = designationId;
+    if (fromDate) filter.fromDate = { $gte: new Date(fromDate) };
+    if (toDate) filter.toDate = { ...(filter.toDate || {}), $lte: new Date(toDate) };
+
+    if (search) {
+      const Employee = require('../../employees/model/Employee');
+      const searchEmployees = await Employee.find({
+        $or: [
+          { employee_name: { $regex: search, $options: 'i' } },
+          { emp_no: { $regex: search, $options: 'i' } }
+        ]
+      }).select('_id');
+      const empIds = searchEmployees.map(e => e._id);
+      // Intersection with existing employeeId filter if any
+      if (filter.employeeId) {
+        if (filter.employeeId.$in) {
+          const existingIds = new Set(filter.employeeId.$in.map(id => id.toString()));
+          filter.employeeId.$in = empIds.filter(id => existingIds.has(id.toString()));
+        }
+      } else {
+        filter.employeeId = { $in: empIds };
+      }
     }
 
     const ods = await OD.find(filter)

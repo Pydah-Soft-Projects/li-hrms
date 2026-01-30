@@ -3,6 +3,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
+import Swal from 'sweetalert2';
 import { createPortal } from 'react-dom';
 import { api } from '@/lib/api';
 import { QRCodeSVG } from 'qrcode.react';
@@ -694,9 +695,17 @@ export default function OTAndPermissionsPage() {
   };
 
   const handleApprove = async (type: 'ot' | 'permission', id: string) => {
-    if (!window.confirm(`Are you sure you want to approve this ${type === 'ot' ? 'OT' : 'permission'} request?`)) {
-      return;
-    }
+    const result = await Swal.fire({
+      title: 'Approve Request',
+      text: `Are you sure you want to approve this ${type === 'ot' ? 'OT' : 'permission'} request?`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#10b981',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Yes, approve it!'
+    });
+
+    if (!result.isConfirmed) return;
 
     setLoading(true);
     try {
@@ -722,8 +731,23 @@ export default function OTAndPermissionsPage() {
   };
 
   const handleReject = async (type: 'ot' | 'permission', id: string) => {
-    const reason = window.prompt(`Enter rejection reason for this ${type === 'ot' ? 'OT' : 'permission'} request:`);
-    if (reason === null) return;
+    const { value: reason, isConfirmed } = await Swal.fire({
+      title: `Reject ${type === 'ot' ? 'OT' : 'Permission'} Request`,
+      input: 'text',
+      inputLabel: 'Rejection Reason',
+      inputPlaceholder: 'Enter reason for rejection...',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Reject',
+      inputValidator: (value) => {
+        if (!value) {
+          return 'You need to write something!'
+        }
+      }
+    });
+
+    if (!isConfirmed) return;
 
     setLoading(true);
     try {

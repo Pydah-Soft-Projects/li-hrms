@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { toast } from 'react-toastify';
+import Swal from 'sweetalert2';
 
 interface CertificateUploadProps {
     qualificationIndex: number;
@@ -54,8 +55,18 @@ export const CertificateUpload: React.FC<CertificateUploadProps> = ({
         onFileChange(file);
     };
 
-    const handleDelete = () => {
-        if (!confirm('Are you sure you want to remove this certificate?')) {
+    const handleDelete = async () => {
+        const result = await Swal.fire({
+            title: 'Delete Certificate',
+            text: 'Are you sure you want to remove this certificate?',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#d33',
+            cancelButtonColor: '#3085d6',
+            confirmButtonText: 'Yes, remove it!'
+        });
+
+        if (!result.isConfirmed) {
             return;
         }
 

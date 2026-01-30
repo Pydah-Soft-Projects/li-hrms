@@ -148,7 +148,7 @@ const getWorkflowSettings = async () => {
 // @access  Private
 exports.getLeaves = async (req, res) => {
   try {
-    const { status, employeeId, department, fromDate, toDate, page = 1, limit = 20 } = req.query;
+    const { status, employeeId, department, departmentId, divisionId, designationId, fromDate, toDate, page = 1, limit = 20, search } = req.query;
 
     // Multi-layered filter: Jurisdiction (Scope) AND Timing (Workflow)
     const scopeFilter = req.scopeFilter || { isActive: true };
@@ -164,9 +164,23 @@ exports.getLeaves = async (req, res) => {
 
     if (status) filter.status = status;
     if (employeeId) filter.employeeId = employeeId;
-    if (department) filter.department = department;
+    if (department || departmentId) filter.department = department || departmentId;
+    if (divisionId) filter.division_id = divisionId;
+    if (designationId) filter.designation = designationId;
     if (fromDate) filter.fromDate = { $gte: new Date(fromDate) };
     if (toDate) filter.toDate = { ...filter.toDate, $lte: new Date(toDate) };
+
+    if (search) {
+      const Employee = require('../../employees/model/Employee');
+      const searchEmployees = await Employee.find({
+        $or: [
+          { employee_name: { $regex: search, $options: 'i' } },
+          { emp_no: { $regex: search, $options: 'i' } }
+        ]
+      }).select('_id');
+      const empIds = searchEmployees.map(e => e._id);
+      filter.employeeId = { $in: empIds };
+    }
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
@@ -204,13 +218,14 @@ exports.getLeaves = async (req, res) => {
 // @access  Private
 exports.getMyLeaves = async (req, res) => {
   try {
-    const { status, fromDate, toDate } = req.query;
+    const { status, fromDate, toDate, leaveType } = req.query;
     const filter = {
       isActive: true,
       appliedBy: req.user._id,
     };
 
     if (status) filter.status = status;
+    if (leaveType) filter.leaveType = leaveType;
     if (fromDate) filter.fromDate = { $gte: new Date(fromDate) };
     if (toDate) filter.toDate = { ...filter.toDate, $lte: new Date(toDate) };
 
@@ -944,6 +959,7 @@ exports.cancelLeave = async (req, res) => {
 exports.getPendingApprovals = async (req, res) => {
   try {
     const userRole = req.user.role;
+    const { status, leaveType, departmentId, divisionId, designationId, fromDate, toDate, search } = req.query;
     // Base filter: Active AND Not Applied by Me (Self-requests go to "My Leaves")
     let filter = {
       isActive: true,
@@ -985,6 +1001,35 @@ exports.getPendingApprovals = async (req, res) => {
         { 'workflow.nextApprover': userRole },
         { 'workflow.nextApproverRole': userRole }
       ];
+    }
+
+    // Apply additional filters from query
+    if (status) filter.status = status;
+    if (leaveType) filter.leaveType = leaveType;
+    if (departmentId) filter.department = departmentId;
+    if (divisionId) filter.division_id = divisionId;
+    if (designationId) filter.designation = designationId;
+    if (fromDate) filter.fromDate = { $gte: new Date(fromDate) };
+    if (toDate) filter.toDate = { ...(filter.toDate || {}), $lte: new Date(toDate) };
+
+    if (search) {
+      const Employee = require('../../employees/model/Employee');
+      const searchEmployees = await Employee.find({
+        $or: [
+          { employee_name: { $regex: search, $options: 'i' } },
+          { emp_no: { $regex: search, $options: 'i' } }
+        ]
+      }).select('_id');
+      const empIds = searchEmployees.map(e => e._id);
+      // Intersection with existing employeeId filter if any
+      if (filter.employeeId) {
+        if (filter.employeeId.$in) {
+          const existingIds = new Set(filter.employeeId.$in.map(id => id.toString()));
+          filter.employeeId.$in = empIds.filter(id => existingIds.has(id.toString()));
+        }
+      } else {
+        filter.employeeId = { $in: empIds };
+      }
     }
 
     const leaves = await Leave.find(filter)

@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { api, Division, Department, Designation, Shift } from '@/lib/api';
 import Spinner from '@/components/Spinner';
+import Swal from 'sweetalert2';
 
 interface Manager {
     _id: string;
@@ -332,16 +333,41 @@ export default function DivisionsPage() {
     };
 
     const handleDeleteDivision = async (id: string) => {
-        if (!confirm('Are you sure you want to delete this division?')) return;
-        try {
-            const res = await api.deleteDivision(id);
-            if (res.success) {
-                loadData();
-            } else {
-                alert(res.message || 'Failed to delete division');
+        const result = await Swal.fire({
+            title: 'Are you sure?',
+            text: "You won't be able to revert this!",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#d33',
+            cancelButtonColor: '#3085d6',
+            confirmButtonText: 'Yes, delete it!'
+        });
+
+        if (result.isConfirmed) {
+            try {
+                const res = await api.deleteDivision(id);
+                if (res.success) {
+                    loadData();
+                    Swal.fire(
+                        'Deleted!',
+                        'Division has been deleted.',
+                        'success'
+                    );
+                } else {
+                    Swal.fire(
+                        'Error!',
+                        res.message || 'Failed to delete division',
+                        'error'
+                    );
+                }
+            } catch (err) {
+                console.error(err);
+                Swal.fire(
+                    'Error!',
+                    'An error occurred while deleting the division.',
+                    'error'
+                );
             }
-        } catch (err) {
-            console.error(err);
         }
     };
 

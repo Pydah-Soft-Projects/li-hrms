@@ -532,7 +532,17 @@ exports.getAllUsers = async (req, res) => {
 // @access  Private
 exports.getUser = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id)
+    const { id } = req.params;
+
+    // Validate ObjectId
+    if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid User ID format. Please provide a valid MongoDB ObjectId.',
+      });
+    }
+
+    const user = await User.findById(id)
       .populate('department', 'name code')
       .populate('departments', 'name code')
       .populate('divisionMapping.division', 'name code')
@@ -585,6 +595,16 @@ exports.getUser = async (req, res) => {
 // @access  Private (Super Admin, Sub Admin, HR)
 exports.updateUser = async (req, res) => {
   try {
+    const { id } = req.params;
+
+    // Validate ObjectId
+    if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid User ID format. Please provide a valid MongoDB ObjectId.',
+      });
+    }
+
     const {
       name,
       role,
@@ -812,9 +832,18 @@ exports.updateUser = async (req, res) => {
 // @access  Private (Super Admin, Sub Admin)
 exports.resetPassword = async (req, res) => {
   try {
+    const { id } = req.params;
     const { newPassword, autoGenerate } = req.body;
 
-    const user = await User.findById(req.params.id);
+    // Validate ObjectId
+    if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid User ID format. Please provide a valid MongoDB ObjectId.',
+      });
+    }
+
+    const user = await User.findById(id);
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -878,7 +907,17 @@ exports.resetPassword = async (req, res) => {
 // @access  Private (Super Admin, Sub Admin)
 exports.toggleUserStatus = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id);
+    const { id } = req.params;
+
+    // Validate ObjectId
+    if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid User ID format. Please provide a valid MongoDB ObjectId.',
+      });
+    }
+
+    const user = await User.findById(id);
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -922,7 +961,17 @@ exports.toggleUserStatus = async (req, res) => {
 // @access  Private (Super Admin, Sub Admin)
 exports.deleteUser = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id);
+    const { id } = req.params;
+
+    // Validate ObjectId
+    if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid User ID format. Please provide a valid MongoDB ObjectId.',
+      });
+    }
+
+    const user = await User.findById(id);
     if (!user) {
       return res.status(404).json({
         success: false,

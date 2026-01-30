@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Swal from 'sweetalert2';
 import { api } from '@/lib/api';
 import Spinner from '@/components/Spinner';
 
@@ -162,7 +163,17 @@ export default function ConfusedShiftsPage() {
   };
 
   const handleDismiss = async (record: ConfusedShift) => {
-    if (!confirm('Are you sure you want to dismiss this record?')) return;
+    const result = await Swal.fire({
+      title: 'Dismiss Record',
+      text: 'Are you sure you want to dismiss this record?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Yes, dismiss it!'
+    });
+
+    if (!result.isConfirmed) return;
 
     try {
       const response = await api.dismissConfusedShift(record._id);
@@ -185,7 +196,17 @@ export default function ConfusedShiftsPage() {
       return;
     }
 
-    if (!confirm(`This will auto-assign the nearest shift to all ${pendingCount} pending confused shifts based on their in-time. Continue?`)) return;
+    const result = await Swal.fire({
+      title: 'Auto Assign All',
+      text: `This will auto-assign the nearest shift to all ${pendingCount} pending confused shifts based on their in-time. Continue?`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#3085d6',
+      cancelButtonColor: '#aaa',
+      confirmButtonText: 'Yes, proceed'
+    });
+
+    if (!result.isConfirmed) return;
 
     try {
       setResolving(true);
@@ -342,8 +363,8 @@ export default function ConfusedShiftsPage() {
         {/* Messages */}
         {(error || success) && (
           <div className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${success
-              ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400'
-              : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'
+            ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400'
+            : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'
             }`}>
             {success || error}
           </div>
@@ -428,8 +449,8 @@ export default function ConfusedShiftsPage() {
                               <div
                                 key={shift._id || idx}
                                 className={`rounded-xl border p-3 ${isPossible
-                                    ? 'border-blue-300 bg-blue-50/50 dark:border-blue-700 dark:bg-blue-900/30'
-                                    : 'border-slate-200 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-900/50'
+                                  ? 'border-blue-300 bg-blue-50/50 dark:border-blue-700 dark:bg-blue-900/30'
+                                  : 'border-slate-200 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-900/50'
                                   }`}
                               >
                                 <div className="flex items-center justify-between">

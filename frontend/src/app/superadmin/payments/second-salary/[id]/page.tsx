@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Swal from 'sweetalert2';
 import { useParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import {
@@ -46,17 +47,27 @@ export default function SecondSalaryBatchDetailPage() {
     };
 
     const handleUpdateStatus = async (status: string) => {
-        if (!confirm(`Are you sure you want to change status to ${status}?`)) return;
+        const result = await Swal.fire({
+            title: 'Change Status',
+            text: `Are you sure you want to change status to ${status}?`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#4f46e5',
+            cancelButtonColor: '#3085d6',
+            confirmButtonText: `Yes, ${status}!`
+        });
+
+        if (!result.isConfirmed) return;
 
         setIsUpdatingStatus(true);
         try {
             const res = await api.put(`/second-salary/batches/${id}/status`, { status });
             if (res.success) {
                 setBatch(res.data);
-                alert(`Batch ${status} successfully`);
+                Swal.fire('Success', `Batch ${status} successfully`, 'success');
             }
         } catch (error: any) {
-            alert(error.message || 'Failed to update status');
+            Swal.fire('Error', error.message || 'Failed to update status', 'error');
         } finally {
             setIsUpdatingStatus(false);
         }

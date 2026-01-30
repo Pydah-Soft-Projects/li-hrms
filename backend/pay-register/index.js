@@ -6,7 +6,7 @@ const { protect, authorize } = require('../authentication/middleware/authMiddlew
 // All routes require authentication
 router.use(protect);
 
-// All routes exclude employee role (only super_admin, sub_admin, hr, hod can access)
+// All routes exclude employee role
 router.use((req, res, next) => {
   if (req.user && req.user.role === 'employee') {
     return res.status(403).json({
@@ -17,29 +17,58 @@ router.use((req, res, next) => {
   next();
 });
 
-// IMPORTANT: More specific routes must come before parameterized routes
-// Bulk upload monthly summary
+/**
+ * @swagger
+ * /api/pay-register/upload-summary/{month}:
+ *   post:
+ *     summary: Bulk upload monthly pay register summaries
+ *     tags: [PayRegister]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: month
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Summary uploaded
+ */
 router.post('/upload-summary/:month', payRegisterController.uploadSummaryBulk);
 
-// Get all employees with pay registers for a month (must come before /:employeeId routes)
+/**
+ * @swagger
+ * /api/pay-register/employees/{month}:
+ *   get:
+ *     summary: Get all employees with pay registers for a specific month
+ *     tags: [PayRegister]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of employees with registers
+ */
 router.get('/employees/:month', payRegisterController.getEmployeesWithPayRegister);
 
-// Get pay register for employee and month
+/**
+ * @swagger
+ * /api/pay-register/{employeeId}/{month}:
+ *   get:
+ *     summary: Get pay register for a specific employee and month
+ *     tags: [PayRegister]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Pay register details retrieved
+ */
 router.get('/:employeeId/:month', payRegisterController.getPayRegister);
 
-// Create pay register
 router.post('/:employeeId/:month', payRegisterController.createPayRegister);
-
-// Update pay register
 router.put('/:employeeId/:month', payRegisterController.updatePayRegister);
-
-// Update single daily record
 router.put('/:employeeId/:month/daily/:date', payRegisterController.updateDailyRecord);
-
-// Sync pay register from sources
 router.post('/:employeeId/:month/sync', payRegisterController.syncPayRegister);
-
-// Get edit history
 router.get('/:employeeId/:month/history', payRegisterController.getEditHistory);
 
 module.exports = router;

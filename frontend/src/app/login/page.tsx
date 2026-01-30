@@ -56,7 +56,12 @@ export default function LoginPage() {
         const dashboardPath = auth.getRoleBasedPath(response.data.user.role);
         router.push(dashboardPath);
       } else {
-        setError(response.message || "Login failed. Please check your credentials.");
+        // Handle specific error codes or messages
+        if (response.error?.includes('401') || response.message?.toLowerCase().includes('unauthorized')) {
+          setError("Invalid credentials. Please check your username and password.");
+        } else {
+          setError(response.message || "Login failed. Please check your credentials.");
+        }
       }
     } catch (err) {
       setError("An unexpected error occurred. Please try again.");

@@ -9,9 +9,9 @@ const Designation = require('../model/Designation');
 // @access  Private
 exports.getAllDepartments = async (req, res) => {
   try {
-    const { isActive } = req.query;
+    const { isActive, search } = req.query;
     const cacheService = require('../../shared/services/cacheService');
-    const cacheKey = `departments:all:${isActive || 'any'}`;
+    const cacheKey = `departments:all:${isActive || 'any'}:${search || 'none'}`;
 
     // Try to get from cache
     const cachedDepts = await cacheService.get(cacheKey);
@@ -29,6 +29,13 @@ exports.getAllDepartments = async (req, res) => {
 
     if (isActive !== undefined) {
       query.isActive = isActive === 'true';
+    }
+
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { code: { $regex: search, $options: 'i' } }
+      ];
     }
 
     const departments = await Department.find(query)

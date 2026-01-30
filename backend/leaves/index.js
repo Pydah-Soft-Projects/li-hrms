@@ -9,136 +9,434 @@ const { applyScopeFilter } = require('../shared/middleware/dataScopeMiddleware')
 // All routes require authentication
 router.use(protect);
 
-// ==========================================
-// SETTINGS ROUTES (Must come before dynamic routes)
-// ==========================================
-
-// Initialize default settings
-router.post('/settings/initialize', authorize('super_admin'), settingsController.initializeSettings);
-
-// Get settings for leave or OD
-router.get('/settings/:type', settingsController.getSettings);
-
-// Save settings
-router.post('/settings/:type', authorize('super_admin'), settingsController.saveSettings);
-
-// Get types (leave types or OD types)
-router.get('/types/:type', settingsController.getTypes);
-
-// Add new type
-router.post('/types/:type', authorize('super_admin'), settingsController.addType);
-
-// ==========================================
-// OD (ON DUTY) ROUTES - MUST COME BEFORE /:id routes!
-// ==========================================
-
-// Get my ODs
-router.get('/od/my', odController.getMyODs);
-
-// Get pending OD approvals
-router.get('/od/pending-approvals', authorize('hod', 'hr', 'manager', 'sub_admin', 'super_admin'), odController.getPendingApprovals);
-
-// Get all ODs
-router.get('/od', authorize('hod', 'hr', 'manager', 'sub_admin', 'super_admin'), odController.getODs);
-router.get('/od/pending-approvals', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), odController.getPendingApprovals);
-
-// Get all ODs
-router.get('/od', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), odController.getODs);
-
-// Get single OD
-router.get('/od/:id', odController.getOD);
-
-// Apply for OD
-router.post('/od', odController.applyOD);
-
-// Update OD
-router.put('/od/:id', odController.updateOD);
-
-// Cancel OD
-router.put('/od/:id/cancel', odController.cancelOD);
-
-// Process OD action (approve/reject/forward)
-router.put('/od/:id/action', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), odController.processODAction);
-
-// Revoke OD approval (within 2-3 hours)
-router.put('/od/:id/revoke', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), odController.revokeODApproval);
-
-// Update OD outcome
-router.put('/od/:id/outcome', odController.updateODOutcome);
-
-// Delete OD
-router.delete('/od/:id', authorize('sub_admin', 'super_admin'), odController.deleteOD);
-
-// ==========================================
-// LEAVE ROUTES
-// ==========================================
-
-// Get my leaves
+/**
+ * @swagger
+ * /api/leaves/my:
+ *   get:
+ *     summary: Get leaves of the current user
+ *     tags: [Leaves]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: fromDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: toDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *     responses:
+ *       200:
+ *         description: List of my leaves
+ */
 router.get('/my', leaveController.getMyLeaves);
 
-// Get pending approvals
-router.get('/pending-approvals', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), leaveController.getPendingApprovals);
-
-// Get leave statistics
-router.get('/stats', leaveController.getLeaveStats);
-
-// Get approved records for a date (for conflict checking)
-router.get('/approved-records', leaveController.getApprovedRecordsForDate);
-
-// Get leave conflicts for attendance date
-router.get('/conflicts', leaveController.getLeaveConflicts);
-
-// Revoke leave for attendance
-router.post('/:id/revoke-for-attendance', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), leaveController.revokeLeaveForAttendance);
-
-// Update leave for attendance (multi-day leave adjustments)
-router.post('/:id/update-for-attendance', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), leaveController.updateLeaveForAttendance);
-
-// Get all leaves (with filters)
+/**
+ * @swagger
+ * /api/leaves:
+ *   get:
+ *     summary: Get all leaves (filtered)
+ *     tags: [Leaves]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: employeeId
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: department
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: fromDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: toDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: List of leaves
+ */
 router.get('/', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), applyScopeFilter, leaveController.getLeaves);
 
-// Apply for leave
+/**
+ * @swagger
+ * /api/leaves:
+ *   post:
+ *     summary: Apply for leave
+ *     tags: [Leaves]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - leaveType
+ *               - fromDate
+ *               - toDate
+ *               - purpose
+ *             properties:
+ *               leaveType:
+ *                 type: string
+ *               fromDate:
+ *                 type: string
+ *                 format: date
+ *               toDate:
+ *                 type: string
+ *                 format: date
+ *               purpose:
+ *                 type: string
+ *               contactNumber:
+ *                 type: string
+ *               emergencyContact:
+ *                 type: string
+ *               addressDuringLeave:
+ *                 type: string
+ *               isHalfDay:
+ *                 type: boolean
+ *               halfDayType:
+ *                 type: string
+ *               remarks:
+ *                 type: string
+ *               empNo:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Created
+ */
 router.post('/', leaveController.applyLeave);
 
-// Get single leave - MUST be after all specific routes like /my, /pending-approvals, /stats, /od/*
+/**
+ * @swagger
+ * /api/leaves/stats:
+ *   get:
+ *     summary: Get leave stats
+ *     tags: [Leaves]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: employeeId
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: department
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: year
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Stats retrieved
+ */
+router.get('/stats', leaveController.getLeaveStats);
+
+/**
+ * @swagger
+ * /api/leaves/pending-approvals:
+ *   get:
+ *     summary: Get pending approvals
+ *     tags: [Leaves]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Pending approvals
+ */
+router.get('/pending-approvals', leaveController.getPendingApprovals);
+
+/**
+ * @swagger
+ * /api/leaves/approved-records:
+ *   get:
+ *     summary: Get approved records
+ *     tags: [Leaves]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: employeeId
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: employeeNumber
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: date
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: date
+ *     responses:
+ *       200:
+ *         description: Approved records
+ */
+router.get('/approved-records', leaveController.getApprovedRecordsForDate);
+
+/**
+ * @swagger
+ * /api/leaves/conflicts:
+ *   get:
+ *     summary: Get leave conflicts
+ *     tags: [Leaves]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: employeeNumber
+ *         required: true
+ *       - in: query
+ *         name: date
+ *         required: true
+ *     responses:
+ *       200:
+ *         description: Conflicts
+ */
+router.get('/conflicts', leaveController.getLeaveConflicts);
+
+/**
+ * @swagger
+ * /api/leaves/{id}:
+ *   get:
+ *     summary: Get single leave
+ *     tags: [Leaves]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *     responses:
+ *       200:
+ *         description: Leave details
+ */
 router.get('/:id', leaveController.getLeave);
 
-// Update leave
+/**
+ * @swagger
+ * /api/leaves/{id}:
+ *   put:
+ *     summary: Update leave
+ *     tags: [Leaves]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               leaveType:
+ *                 type: string
+ *               fromDate:
+ *                 type: string
+ *               toDate:
+ *                 type: string
+ *               purpose:
+ *                 type: string
+ *               status:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Updated
+ */
 router.put('/:id', leaveController.updateLeave);
 
-// Cancel leave
+/**
+ * @swagger
+ * /api/leaves/{id}/cancel:
+ *   put:
+ *     summary: Cancel leave
+ *     tags: [Leaves]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               reason:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Cancelled
+ */
 router.put('/:id/cancel', leaveController.cancelLeave);
 
-// Process leave action (approve/reject/forward)
-router.put('/:id/action', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), leaveController.processLeaveAction);
+/**
+ * @swagger
+ * /api/leaves/{id}/action:
+ *   put:
+ *     summary: Process leave action (approve/reject/forward)
+ *     tags: [Leaves]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - action
+ *             properties:
+ *               action:
+ *                 type: string
+ *                 enum: [approve, reject, forward]
+ *               comments:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Action processed
+ */
+router.put('/:id/action', authorize('hod', 'hr', 'sub_admin', 'super_admin', 'manager'), leaveController.processLeaveAction);
 
-// Revoke leave approval (within 2-3 hours)
-router.put('/:id/revoke', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), leaveController.revokeLeaveApproval);
+/**
+ * @swagger
+ * /api/leaves/{id}/revoke:
+ *   put:
+ *     summary: Revoke leave approval
+ *     tags: [Leaves]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               reason:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Revoked
+ */
+router.put('/:id/revoke', authorize('hod', 'hr', 'sub_admin', 'super_admin'), leaveController.revokeLeaveApproval);
 
-// Delete leave
+/**
+ * @swagger
+ * /api/leaves/{id}:
+ *   delete:
+ *     summary: Delete leave
+ *     tags: [Leaves]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *     responses:
+ *       200:
+ *         description: Deleted
+ */
 router.delete('/:id', authorize('sub_admin', 'super_admin'), leaveController.deleteLeave);
 
-// ==========================================
-// LEAVE SPLIT ROUTES
-// ==========================================
+// OD (ON DUTY) ROUTES
+/**
+ * @swagger
+ * /api/leaves/od/my:
+ *   get:
+ *     summary: Get my ODs
+ *     tags: [OD]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List retrieved
+ */
+router.get('/od/my', odController.getMyODs);
 
-// Validate splits before creating
-router.post('/:id/validate-splits', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), leaveController.validateLeaveSplits);
+/**
+ * @swagger
+ * /api/leaves/od/pending-approvals:
+ *   get:
+ *     summary: Get pending OD approvals
+ *     tags: [OD]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List retrieved
+ */
+router.get('/od/pending-approvals', authorize('hod', 'hr', 'manager', 'sub_admin', 'super_admin'), odController.getPendingApprovals);
 
-// Create splits for a leave
-router.post('/:id/split', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), leaveController.createLeaveSplits);
+/**
+ * @swagger
+ * /api/leaves/od:
+ *   get:
+ *     summary: Get all ODs
+ *     tags: [OD]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List retrieved
+ */
+router.get('/od', authorize('hod', 'hr', 'manager', 'sub_admin', 'super_admin'), odController.getODs);
 
-// Get splits for a leave
-router.get('/:id/splits', leaveController.getLeaveSplits);
-
-// Get split summary for a leave
-router.get('/:id/split-summary', leaveController.getLeaveSplitSummary);
-
-// Update a single split
-router.put('/:id/splits/:splitId', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), leaveController.updateLeaveSplit);
-
-// Delete a split
-router.delete('/:id/splits/:splitId', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), leaveController.deleteLeaveSplit);
+/**
+ * @swagger
+ * /api/leaves/od:
+ *   post:
+ *     summary: Apply for OD
+ *     tags: [OD]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       201:
+ *         description: Created
+ */
+router.post('/od', odController.applyOD);
 
 module.exports = router;
 

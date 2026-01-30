@@ -10,46 +10,89 @@ const { protect, authorize } = require('../authentication/middleware/authMiddlew
 // All routes are protected
 router.use(protect);
 
-// Shift Duration routes
-// Get allowed durations (for shift creation validation)
+/**
+ * @swagger
+ * /api/shifts/durations:
+ *   get:
+ *     summary: Get allowed shift durations
+ *     tags: [Shifts]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of allowed durations
+ */
 router.get('/durations', shiftController.getAllowedDurations);
-// Get all shift durations with full details (for settings page)
+
 router.get('/durations/all', shiftDurationController.getAllShiftDurations);
-// CRUD operations for shift durations
 router.post('/durations', authorize('super_admin', 'sub_admin'), shiftDurationController.createShiftDuration);
 router.put('/durations/:id', authorize('super_admin', 'sub_admin'), shiftDurationController.updateShiftDuration);
 router.delete('/durations/:id', authorize('super_admin', 'sub_admin'), shiftDurationController.deleteShiftDuration);
 
-// Shift routes - specific routes first, then parameterized routes
-router.get('/scoped', shiftController.getScopedShiftData);
+/**
+ * @swagger
+ * /api/shifts:
+ *   get:
+ *     summary: Get all shifts
+ *     tags: [Shifts]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of shifts
+ */
 router.get('/', shiftController.getAllShifts);
+
+router.get('/scoped', shiftController.getScopedShiftData);
+
+/**
+ * @swagger
+ * /api/shifts:
+ *   post:
+ *     summary: Create a new shift
+ *     tags: [Shifts]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       201:
+ *         description: Shift created
+ */
 router.post('/', authorize('manager', 'super_admin', 'sub_admin', 'hr'), shiftController.createShift);
 
-// Shift Sync route (must be before /:id)
 router.post('/sync', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), shiftSyncController.syncShifts);
 
-// Confused Shift routes (MUST be before /:id routes to avoid conflicts)
+// Confused Shift routes
 router.get('/confused/stats', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), confusedShiftController.getConfusedShiftStats);
 router.get('/confused', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), confusedShiftController.getConfusedShifts);
-router.get('/confused/:id', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), confusedShiftController.getConfusedShift);
-router.put('/confused/auto-assign-all', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), confusedShiftController.autoAssignAllConfusedShifts);
-router.put('/confused/:id/auto-assign', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), confusedShiftController.autoAssignConfusedShift);
-router.put('/confused/:id/resolve', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), confusedShiftController.resolveConfusedShift);
-router.put('/confused/:id/dismiss', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), confusedShiftController.dismissConfusedShift);
 
-// Pre-Scheduled Shift routes (MUST be before /:id routes)
-router.post('/pre-schedule/bulk', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), preScheduledShiftController.bulkCreatePreScheduledShifts);
-router.get('/pre-schedule', preScheduledShiftController.getPreScheduledShifts);
-router.post('/pre-schedule', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), preScheduledShiftController.createPreScheduledShift);
-router.put('/pre-schedule/:id', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), preScheduledShiftController.updatePreScheduledShift);
-router.delete('/pre-schedule/:id', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), preScheduledShiftController.deletePreScheduledShift);
-
-// Roster (monthly) routes
-router.get('/my-roster', preScheduledShiftController.getMyRoster);
+/**
+ * @swagger
+ * /api/shifts/roster:
+ *   get:
+ *     summary: Get employee roster
+ *     tags: [Roster]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Roster retrieved
+ */
 router.get('/roster', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), preScheduledShiftController.getRoster);
-router.post('/roster', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), preScheduledShiftController.saveRoster);
 
-// Parameterized shift routes (must be last)
+/**
+ * @swagger
+ * /api/shifts/my-roster:
+ *   get:
+ *     summary: Get my shift roster
+ *     tags: [Roster]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: My roster retrieved
+ */
+router.get('/my-roster', preScheduledShiftController.getMyRoster);
+
 router.get('/:id', shiftController.getShift);
 router.put('/:id', authorize('manager', 'super_admin', 'sub_admin', 'hr'), shiftController.updateShift);
 router.delete('/:id', authorize('super_admin', 'sub_admin'), shiftController.deleteShift);

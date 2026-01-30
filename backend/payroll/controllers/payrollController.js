@@ -7,7 +7,7 @@ const Loan = require('../../loans/model/Loan');
 const payrollCalculationService = require('../services/payrollCalculationService');
 const XLSX = require('xlsx');
 const PayRegisterSummary = require('../../pay-register/model/PayRegisterSummary');
-const MonthlyAttendanceSummary = require('../../attendance/model/MonthlyAttendanceSummary');  
+const MonthlyAttendanceSummary = require('../../attendance/model/MonthlyAttendanceSummary');
 /**
  * Payroll Controller
  * Handles payroll calculation, retrieval, and processing
@@ -26,7 +26,7 @@ async function buildPayslipData(employeeId, month) {
   }).populate({
     path: 'employeeId',
     select:
-      'employee_name emp_no department_id division_id designation_id gross_salary location bank_account_no bank_name salary_mode doj pf_number esi_number',
+      'employee_name emp_no department_id division_id designation_id gross_salary location bank_account_no bank_name salary_mode doj pf_number esi_number dynamicFields',
     populate: [
       { path: 'department_id', select: 'name' },
       { path: 'division_id', select: 'name' },
@@ -126,7 +126,7 @@ async function buildPayslipData(employeeId, month) {
       location: employee?.location || '',
       bank_account_no: employee?.bank_account_no || '',
       bank_name: employee?.bank_name || '',
-      payment_mode: employee?.salary_mode || '',
+      payment_mode: employee?.salary_mode || employee?.dynamicFields?.salary_mode || employee?.dynamicFields?.payment_mode || 'Bank Transfer',
       date_of_joining: employee?.doj || '',
       pf_number: employee?.pf_number || '',
       esi_number: employee?.esi_number || '',
@@ -479,25 +479,100 @@ exports.exportPayrollExcel = async (req, res) => {
     }
 
     let targetEmployeeIds = [];
+
+    // Case 1: Specific employees provided
     if (employeeIds) {
       targetEmployeeIds = String(employeeIds)
         .split(',')
         .map((id) => id.trim())
         .filter(Boolean);
-    } else if (departmentId) {
-      const emps = await Employee.find({ ...req.scopeFilter, department_id: departmentId }).select('_id');
-      targetEmployeeIds = emps.map((e) => e._id.toString());
-    } else if (req.scopeFilter && Object.keys(req.scopeFilter).length > 0) {
-      const emps = await Employee.find(req.scopeFilter).select('_id');
-      targetEmployeeIds = emps.map((e) => e._id.toString());
+    }
+    // Case 2: Filter by Division and/or Department (or just scope)
+    else {
+      // Start with base scope filter
+      const filter = { ...req.scopeFilter };
+
+      // Apply filters if provided
+      if (req.query.divisionId) {
+        filter.division_id = req.query.divisionId;
+      }
+
+      if (departmentId) {
+        filter.department_id = departmentId;
+      }
+
+      // If any filter is active (including scope), fetch employees
+      if (Object.keys(filter).length > 0) {
+        // If query parameters were provided OR scope exists, we filter based on that
+        const emps = await Employee.find(filter).select('_id');
+        targetEmployeeIds = emps.map((e) => e._id.toString());
+      }
     }
 
     const query = { month };
-    if (targetEmployeeIds.length > 0) {
+
+    // Only apply employee filter if we found specific employees to target. 
+    // If no targetEmployeeIds but no filters were applied (superadmin full export), we export ALL matching month.
+    // However, if filters WERE applied (e.g. division/dept) but returned 0 employees, we should query with empty list to return 0 records.
+
+    // Check if any filter was active
+    const filteringActive = employeeIds || req.query.divisionId || departmentId || (req.scopeFilter && Object.keys(req.scopeFilter).length > 0);
+
+    if (filteringActive) {
+      // If filtering is active, we MUST limit by employeeId. 
+      // If targetEmployeeIds is empty, it means no employees matched the filter -> Should return 0 results.
+      if (targetEmployeeIds.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'No employees found matching the selected filters.',
+        });
+      }
       query.employeeId = { $in: targetEmployeeIds };
     }
 
-    const payrollRecords = await PayrollRecord.find(query).select('employeeId month');
+    // --- OPTIMIZATION START for OOM Prevention ---
+
+    // Step 1: Aggregate ALL unique allowance and deduction names upfront (instead of iterating payslips later)
+    // This avoids needing to hold all payslip objects in memory just to find keys.
+    const uniqueKeysAggregation = await PayrollRecord.aggregate([
+      { $match: query },
+      {
+        $project: {
+          allowances: "$earnings.allowances.name",
+          deductions: "$deductions.otherDeductions.name"
+        }
+      },
+      {
+        $facet: {
+          "allowances": [
+            { $unwind: "$allowances" },
+            { $group: { _id: null, names: { $addToSet: "$allowances" } } }
+          ],
+          "deductions": [
+            { $unwind: "$deductions" },
+            { $group: { _id: null, names: { $addToSet: "$deductions" } } }
+          ]
+        }
+      }
+    ]);
+
+    const allAllowanceNames = new Set(uniqueKeysAggregation[0]?.allowances[0]?.names || []);
+    const allDeductionNames = new Set(uniqueKeysAggregation[0]?.deductions[0]?.names || []);
+
+    console.log(`\n📊 Excel Export Optimized: Found ${allAllowanceNames.size} unique allowances and ${allDeductionNames.size} unique deductions from DB aggregation.`);
+
+    // Step 2: Stream process records instead of loading all payslips at once
+    // We fetch a cursor or just iterate the find result (if manageable size)
+    // For large datasets, cursor is safer but requires keeping connection open. 
+    // Given standard limits, looping find result is usually okay if we don't map it to another heavy array first.
+
+    // Fetch records sorted by employee ID
+    const payrollRecords = await PayrollRecord.find(query)
+      .select('employeeId month')
+      .populate('employeeId', 'emp_no')
+      .sort({ 'employeeId.emp_no': 1 })
+      .lean(); // Use lean() for smaller object size if possible (though we need populate to work) - actually populate works with lean in some versions but safer without if methods needed. PayrollRecord has no methods used here.
+
     if (!payrollRecords || payrollRecords.length === 0) {
       return res.status(404).json({
         success: false,
@@ -505,51 +580,39 @@ exports.exportPayrollExcel = async (req, res) => {
       });
     }
 
-    // Step 1: Build all payslips
-    const payslips = [];
+    const rows = [];
+    let processedCount = 0;
+
+    // Process one by one to keep memory usage low
     for (const pr of payrollRecords) {
       try {
+        // Build single payslip
         const { payslip } = await buildPayslipData(pr.employeeId, pr.month);
-        payslips.push(payslip);
+
+        // Immediately convert to row (lightweight flat object)
+        // Pass the pre-calculated allowance/deduction names
+        const row = buildPayslipExcelRowsNormalized(payslip, allAllowanceNames, allDeductionNames, processedCount + 1);
+        rows.push(row);
+
+        processedCount++;
+
+        // Optional: periodic GC hint or logging
+        if (processedCount % 100 === 0) {
+          if (global.gc) { global.gc(); } // requires expose-gc flag, usually not available in prod but harmless check
+        }
       } catch (err) {
-        console.error(`Error building payslip for export (Emp: ${pr.employeeId}, Month: ${pr.month}):`, err);
+        console.error(`Error processing export row (Emp: ${pr.employeeId}):`, err);
       }
     }
 
-    if (payslips.length === 0) {
-      console.warn(`[Export Excel] Valid PayrollRecords found (${payrollRecords.length}) but ZERO payslips built. Check 'Error building payslip' logs above.`);
+    if (rows.length === 0) {
       return res.status(404).json({
         success: false,
-        message: 'No payslip data available to export. (Internal generation failure)',
+        message: 'No valid payslip data could be generated.',
       });
     }
 
-    // Step 2: Collect ALL unique allowances and deductions across all employees
-    const allAllowanceNames = new Set();
-    const allDeductionNames = new Set();
-
-    payslips.forEach(payslip => {
-      if (Array.isArray(payslip.earnings?.allowances)) {
-        payslip.earnings.allowances.forEach(allowance => {
-          if (allowance.name) allAllowanceNames.add(allowance.name);
-        });
-      }
-      if (Array.isArray(payslip.deductions?.otherDeductions)) {
-        payslip.deductions.otherDeductions.forEach(deduction => {
-          if (deduction.name) allDeductionNames.add(deduction.name);
-        });
-      }
-    });
-
-    console.log(`\n📊 Excel Export: Found ${allAllowanceNames.size} unique allowances and ${allDeductionNames.size} unique deductions`);
-    console.log(`Allowances: ${Array.from(allAllowanceNames).join(', ')}`);
-    console.log(`Deductions: ${Array.from(allDeductionNames).join(', ')}\n`);
-
-    // Step 3: Build rows with normalized columns (all employees have same columns)
-    const rows = payslips.map((payslip, index) =>
-      buildPayslipExcelRowsNormalized(payslip, allAllowanceNames, allDeductionNames, index + 1)
-    );
-
+    // Step 3: Generate Excel (This still uses memory but 'rows' is much lighter than 'payslips')
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.json_to_sheet(rows);
     XLSX.utils.book_append_sheet(wb, ws, 'Payslips');
@@ -741,42 +804,45 @@ exports.getPayrollRecords = async (req, res) => {
       }
     }
 
-    // If departmentId or divisionId is provided, filter by employees in that scope
-    let employeeIds = null;
-    if (departmentId || (req.query.divisionId)) {
+    // If departmentId, divisionId, designationId or search is provided, filter by employees in that scope
+    const { divisionId, designationId, search } = req.query;
+    if (departmentId || divisionId || designationId || search) {
       const empQuery = { ...req.scopeFilter };
       if (departmentId) empQuery.department_id = departmentId;
-      if (req.query.divisionId) empQuery.division_id = req.query.divisionId;
+      if (divisionId) empQuery.division_id = divisionId;
+      if (designationId) empQuery.designation_id = designationId;
+
+      if (search) {
+        empQuery.$or = [
+          { employee_name: { $regex: search, $options: 'i' } },
+          { emp_no: { $regex: search, $options: 'i' } }
+        ];
+      }
 
       const employees = await Employee.find(empQuery).select('_id');
-      employeeIds = employees.map((emp) => emp._id);
+      const employeeIdsInRange = employees.map((emp) => emp._id);
 
-      if (employeeIds.length === 0) {
+      if (employeeIdsInRange.length === 0) {
         return res.status(200).json({
           success: true,
           count: 0,
           data: [],
         });
       }
-      // If we already have a list of employeeIds (from specific employee filter), intersection is needed
+
+      // If we already have a specific employeeId filter, intersect it
       if (query.employeeId) {
-        // query.employeeId might be a single ID or $in array. 
-        // For simplicity, if both filters exist, we can just add $in with the intersection, 
-        // but since query.employeeId usually comes from direct selection, it's safer to just let the $in overlap happen or 
-        // simpler: if specific employee is selected, ignore list filter? No, user might select emp + div. 
-        // Let's use $in intersection logic if needed, but Mongoose doesn't support implicit AND on same field easily in basic object.
-        // Actually line 678 sets query.employeeId = employeeId. 
-        // If employeeId is passed, we probably don't need to filter by div/dept for discovery, but for validation.
-        // Let's assume if employeeId is passed, we check if they are in the list.
-        const validIds = new Set(employeeIds.map(id => id.toString()));
-        if (Array.isArray(query.employeeId.$in)) {
-          query.employeeId.$in = query.employeeId.$in.filter(id => validIds.has(id.toString()));
-        } else if (query.employeeId && !validIds.has(query.employeeId.toString())) {
-          // Employee not in the selected division/dept
-          return res.status(200).json({ success: true, count: 0, data: [] });
+        const rangeSet = new Set(employeeIdsInRange.map(id => id.toString()));
+        if (query.employeeId.$in) {
+          query.employeeId.$in = query.employeeId.$in.filter(id => rangeSet.has(id.toString()));
+          if (query.employeeId.$in.length === 0) return res.status(200).json({ success: true, count: 0, data: [] });
+        } else {
+          if (!rangeSet.has(query.employeeId.toString())) {
+            return res.status(200).json({ success: true, count: 0, data: [] });
+          }
         }
       } else {
-        query.employeeId = { $in: employeeIds };
+        query.employeeId = { $in: employeeIdsInRange };
       }
     }
 

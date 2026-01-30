@@ -6,64 +6,128 @@ const { protect, authorize } = require('../authentication/middleware/authMiddlew
 // All routes require authentication
 router.use(protect);
 
-// ==========================================
-// ARREARS MANAGEMENT ROUTES
-// ==========================================
-
-// Get my arrears
+/**
+ * @swagger
+ * /api/arrears/my:
+ *   get:
+ *     summary: Get arrears requests of the current user
+ *     tags: [Arrears]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of my arrears
+ */
 router.get('/my', arrearsController.getMyArrears);
 
-// Get pending approvals (for HOD, HR, Admin)
+/**
+ * @swagger
+ * /api/arrears/pending-approvals:
+ *   get:
+ *     summary: Get pending arrears approvals
+ *     tags: [Arrears]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of pending approvals
+ */
 router.get('/pending-approvals', authorize('hod', 'hr', 'sub_admin', 'super_admin'), arrearsController.getPendingApprovals);
 
-// Get arrears statistics
+/**
+ * @swagger
+ * /api/arrears/stats/summary:
+ *   get:
+ *     summary: Get arrears statistics summary
+ *     tags: [Arrears]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Stats retrieved
+ */
 router.get('/stats/summary', arrearsController.getArrearsStats);
 
-// Get arrears for payroll inclusion
-router.get('/for-payroll', authorize('hr', 'sub_admin', 'super_admin'), arrearsController.getArrearsForPayroll);
-
-// Get employee's pending arrears
-router.get('/employee/:employeeId/pending', arrearsController.getEmployeePendingArrears);
-
-// Get all arrears (with filters)
-router.get('/', authorize('hod', 'hr', 'sub_admin', 'super_admin'), arrearsController.getArrears);
-
-// Create new arrears request
+/**
+ * @swagger
+ * /api/arrears:
+ *   post:
+ *     summary: Create a new arrears request
+ *     tags: [Arrears]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       201:
+ *         description: Arrears request created
+ */
 router.post('/', authorize('hr', 'sub_admin', 'super_admin'), arrearsController.createArrears);
 
-// ==========================================
-// SPECIFIC ROUTES (Must come BEFORE generic /:id routes)
-// ==========================================
+/**
+ * @swagger
+ * /api/arrears:
+ *   get:
+ *     summary: Get all arrears requests
+ *     tags: [Arrears]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List retrieved
+ */
+router.get('/', authorize('hod', 'hr', 'sub_admin', 'super_admin'), arrearsController.getArrears);
 
-// Edit arrears details (at any approval level)
-router.put('/:id/edit', authorize('sub_admin', 'super_admin'), arrearsController.editArrears);
-
-// Transition arrears to next approval level (SuperAdmin only)
-router.put('/:id/transition', authorize('sub_admin', 'super_admin'), arrearsController.transitionArrears);
-
-// Cancel arrears request
-router.put('/:id/cancel', arrearsController.cancelArrears);
-
-// Process arrears action (approve/reject/forward at different levels)
-router.put('/:id/action', authorize('hod', 'hr', 'sub_admin', 'super_admin'), arrearsController.processArrearsAction);
-
-// Process arrears settlement
-router.post('/:id/settle', authorize('hr', 'sub_admin', 'super_admin'), arrearsController.processSettlement);
-
-// Update arrears settlement status
-router.put('/:id/settlement', authorize('hr', 'sub_admin', 'super_admin'), arrearsController.updateArrearsSettlement);
-
-// Revoke arrears approval (within time limit)
-router.put('/:id/revoke', authorize('hod', 'hr', 'sub_admin', 'super_admin'), arrearsController.revokeArrearsApproval);
-
-// ==========================================
-// GENERIC ROUTES (Must come AFTER specific routes)
-// ==========================================
-
-// Get single arrears - MUST be after all specific routes like /my, /pending-approvals, /stats, /transition, /cancel, etc
+/**
+ * @swagger
+ * /api/arrears/{id}:
+ *   get:
+ *     summary: Get arrears request by ID
+ *     tags: [Arrears]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *     responses:
+ *       200:
+ *         description: Arrears retrieved
+ */
 router.get('/:id', arrearsController.getArrearsById);
 
-// Update arrears (only draft)
-router.put('/:id', arrearsController.updateArrears);
+/**
+ * @swagger
+ * /api/arrears/{id}/action:
+ *   put:
+ *     summary: Process action on arrears request
+ *     tags: [Arrears]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *     responses:
+ *       200:
+ *         description: Action processed
+ */
+router.put('/:id/action', authorize('hod', 'hr', 'sub_admin', 'super_admin'), arrearsController.processArrearsAction);
+
+/**
+ * @swagger
+ * /api/arrears/{id}/settle:
+ *   post:
+ *     summary: Settle an arrears request
+ *     tags: [Arrears]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *     responses:
+ *       200:
+ *         description: Arrears settled
+ */
+router.post('/:id/settle', authorize('hr', 'sub_admin', 'super_admin'), arrearsController.processSettlement);
 
 module.exports = router;

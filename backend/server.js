@@ -30,7 +30,22 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Root endpoint - Returns metadata
+// Swagger Documentation
+const swaggerUi = require('swagger-ui-express');
+const swaggerSpec = require('./config/swagger');
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
+/**
+ * @swagger
+ * /:
+ *   get:
+ *     summary: Root endpoint - Returns API metadata
+ *     tags: [General]
+ *     security: []
+ *     responses:
+ *       200:
+ *         description: API metadata retrieved
+ */
 app.get('/', (req, res) => {
   res.json({
     name: 'HRMS Backend API',
@@ -39,12 +54,23 @@ app.get('/', (req, res) => {
     message: 'HRMS Backend Server is operational',
     endpoints: {
       authentication: '/api/auth',
-      employees: '/api/employees'
+      employees: '/api/employees',
+      swagger: '/api-docs'
     }
   });
 });
 
-// Health check endpoint
+/**
+ * @swagger
+ * /health:
+ *   get:
+ *     summary: Health check endpoint
+ *     tags: [General]
+ *     security: []
+ *     responses:
+ *       200:
+ *         description: Server health status
+ */
 app.get('/health', (req, res) => {
   res.json({
     status: 'healthy',
@@ -190,6 +216,9 @@ const startServer = async () => {
       console.log(`📍 Server URL: http://localhost:${PORT}`);
       console.log(`📋 API Root: http://localhost:${PORT}/`);
       console.log(`💚 Health Check: http://localhost:${PORT}/health`);
+      console.log(`📘 Swagger Docs: http://localhost:${PORT}/api-docs`);
+      console.log(`\n📝 Note: Swagger documentation has been completed for core modules:`);
+      console.log(`   - Authentication, Employees, Attendance, Payroll, and Leaves.`);
       console.log(`\n📦 Available Endpoints:`);
       console.log(`   - Authentication: /api/auth`);
       console.log(`   - Users: /api/users`);

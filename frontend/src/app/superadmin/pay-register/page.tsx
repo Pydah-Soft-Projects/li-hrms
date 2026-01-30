@@ -709,6 +709,8 @@ export default function PayRegisterPage() {
         month: monthStr,
         departmentId:
           selectedDepartment && selectedDepartment.trim() !== '' ? selectedDepartment : undefined,
+        divisionId:
+          selectedDivision && selectedDivision.trim() !== '' ? selectedDivision : undefined,
         employeeIds,
       });
       const url = window.URL.createObjectURL(blob);
@@ -1033,43 +1035,43 @@ export default function PayRegisterPage() {
               }
 
               return (
-                <>
-                  <button
-                    onClick={handleCalculatePayrollForAll}
-                    disabled={bulkCalculating || exportingExcel}
-                    className="h-9 px-4 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-xl shadow-sm disabled:opacity-50 transition-all"
-                  >
-                    {bulkCalculating ? 'Calculating...' : 'Calculate Payroll'}
-                  </button>
-
-                  <button
-                    onClick={() => setShowUploadModal(true)}
-                    className="h-9 px-4 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-sm transition-all"
-                  >
-                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                    </svg>
-                    Upload Summary
-                  </button>
-
-                  <button
-                    onClick={async () => {
-                      const listedEmployeeIds = payRegisters.map((pr) =>
-                        typeof pr.employeeId === 'object' ? pr.employeeId._id : pr.employeeId
-                      );
-                      await downloadPayrollExcel(listedEmployeeIds);
-                    }}
-                    disabled={exportingExcel || payRegisters.length === 0}
-                    className="h-9 px-4 flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold rounded-xl shadow-sm disabled:opacity-50 transition-all"
-                  >
-                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    {exportingExcel ? 'Exporting...' : 'Export Excel'}
-                  </button>
-                </>
+                <button
+                  onClick={handleCalculatePayrollForAll}
+                  disabled={bulkCalculating || exportingExcel}
+                  className="h-9 px-4 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-xl shadow-sm disabled:opacity-50 transition-all"
+                >
+                  {bulkCalculating ? 'Calculating...' : 'Calculate Payroll'}
+                </button>
               );
             })()}
+
+            {/* Always show Upload and Export buttons provided we're not in a weird locked state that should prevent it - actually Export should seemingly always be allowed */}
+            {(!isPastMonth || !payRegisters.some(pr => !!pr.payrollId)) && (
+              <button
+                onClick={() => setShowUploadModal(true)}
+                className="h-9 px-4 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-sm transition-all"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                Upload Summary
+              </button>
+            )}
+
+            <button
+              onClick={async () => {
+                // If filters are active, pass undefined to use backend filtering
+                // If no filters, pass undefined to export all
+                await downloadPayrollExcel();
+              }}
+              disabled={exportingExcel || (!payRegisters.length && !selectedDivision && !selectedDepartment)}
+              className="h-9 px-4 flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold rounded-xl shadow-sm disabled:opacity-50 transition-all"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              {exportingExcel ? 'Exporting...' : 'Export Excel'}
+            </button>
           </div>
         </div>
 

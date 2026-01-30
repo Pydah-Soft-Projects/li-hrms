@@ -399,10 +399,10 @@ exports.getAllEmployees = async (req, res) => {
       const mssqlEmployees = await getAllEmployeesMSSQL(filters);
       total = mssqlEmployees.length;
       const sortedMssql = mssqlEmployees.slice(skip, skip + parseInt(limit));
-      
+
       // Resolve names/refs for MSSQL employees
       const resolved = await resolveEmployeeReferences(sortedMssql);
-      
+
       // MERGE with MongoDB data for fields not in SQL (allowances, dynamicFields, etc.)
       const empNos = resolved.map(e => e.emp_no);
       const mongoMatches = await Employee.find({ emp_no: { $in: empNos } });
@@ -414,7 +414,7 @@ exports.getAllEmployees = async (req, res) => {
 
         // Transform MongoDB extra data
         const transformed = await transformEmployeeForResponse(mongoEmp, true);
-        
+
         // Merge: MSSQL fields take priority for core fields, MongoDB for extra ones
         return {
           ...transformed,
@@ -1253,14 +1253,26 @@ exports.deleteEmployee = async (req, res) => {
  */
 exports.getEmployeeCount = async (req, res) => {
   try {
-    const { is_active } = req.query;
-    const query = {};
+    const { is_active, division_id, divisionId, department_id, departmentId, designation_id, designationId, search } = req.query;
+    const filter = { ...(req.scopeFilter || {}) };
 
     if (is_active !== undefined) {
-      query.is_active = is_active === 'true';
+      filter.is_active = is_active === 'true';
     }
 
-    const count = await Employee.countDocuments(query);
+    if (division_id || divisionId) filter.division_id = division_id || divisionId;
+    if (department_id || departmentId) filter.department_id = department_id || departmentId;
+    if (designation_id || designationId) filter.designation_id = designation_id || designationId;
+
+    if (search) {
+      const searchRegex = new RegExp(search, 'i');
+      filter.$or = [
+        { emp_no: searchRegex },
+        { employee_name: searchRegex }
+      ];
+    }
+
+    const count = await Employee.countDocuments(filter);
 
     res.status(200).json({
       success: true,

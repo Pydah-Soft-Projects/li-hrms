@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Swal from 'sweetalert2';
 import { api, apiRequest } from '@/lib/api';
 import { toast } from 'react-toastify';
 import Spinner from '@/components/Spinner';
@@ -1215,7 +1216,17 @@ export default function SettingsPage() {
   };
 
   const handleDeleteLeaveType = async (code: string) => {
-    if (!confirm('Are you sure you want to delete this leave type?')) return;
+    const result = await Swal.fire({
+      title: 'Delete Leave Type',
+      text: 'Are you sure you want to delete this leave type?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Yes, delete it!'
+    });
+
+    if (!result.isConfirmed) return;
 
     const updatedTypes = leaveSettings?.types?.filter(t => t.code !== code) || [];
 
@@ -1274,7 +1285,17 @@ export default function SettingsPage() {
   };
 
   const handleDeleteODType = async (code: string) => {
-    if (!confirm('Are you sure you want to delete this OD type?')) return;
+    const result = await Swal.fire({
+      title: 'Delete OD Type',
+      text: 'Are you sure you want to delete this OD type?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Yes, delete it!'
+    });
+
+    if (!result.isConfirmed) return;
 
     const updatedTypes = odSettings?.types?.filter(t => t.code !== code) || [];
 
@@ -1340,7 +1361,17 @@ export default function SettingsPage() {
   };
 
   const handleDeleteStatus = async (settingsType: 'leave' | 'od', code: string) => {
-    if (!confirm('Are you sure you want to delete this status?')) return;
+    const result = await Swal.fire({
+      title: 'Delete Status',
+      text: 'Are you sure you want to delete this status?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Yes, delete it!'
+    });
+
+    if (!result.isConfirmed) return;
 
     const settings = settingsType === 'leave' ? leaveSettings : odSettings;
     const updatedStatuses = settings?.statuses?.filter(s => s.code !== code) || [];
@@ -1508,7 +1539,17 @@ export default function SettingsPage() {
   };
 
   const handleDeleteDuration = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this duration?')) return;
+    const result = await Swal.fire({
+      title: 'Delete Duration',
+      text: 'Are you sure you want to delete this duration?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Yes, delete it!'
+    });
+
+    if (!result.isConfirmed) return;
 
     try {
       const response = await api.deleteShiftDuration(id);

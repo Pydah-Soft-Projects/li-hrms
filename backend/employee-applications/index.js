@@ -35,17 +35,21 @@ const {
 // All routes require authentication
 router.use(protect);
 
-// ==========================================
-// FORM SETTINGS ROUTES (must come before /:id routes)
-// ==========================================
-
-// Get active form settings
+/**
+ * @swagger
+ * /api/employee-applications/form-settings:
+ *   get:
+ *     summary: Get active form settings for employee applications
+ *     tags: [EmployeeApplications]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Form settings retrieved
+ */
 router.get('/form-settings', getSettings);
 
-// Initialize default form settings
 router.post('/form-settings/initialize', authorize('super_admin', 'sub_admin'), initializeSettings);
-
-// Update form settings
 router.put('/form-settings', authorize('super_admin', 'sub_admin'), updateSettings);
 
 // Group management
@@ -71,31 +75,61 @@ router.delete('/form-settings/qualifications/fields/:fieldId', authorize('super_
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage() });
 
-// Create application (HR) - handle file uploads
+/**
+ * @swagger
+ * /api/employee-applications:
+ *   post:
+ *     summary: Create a new employee application
+ *     tags: [EmployeeApplications]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       201:
+ *         description: Application created
+ */
 router.post('/', upload.any(), createApplication);
 
-// Bulk approve applications (Superadmin)
 router.put('/bulk-approve', authorize('super_admin', 'sub_admin'), bulkApproveApplications);
-
-// Bulk reject applications (Superadmin)
 router.put('/bulk-reject', authorize('super_admin', 'sub_admin'), bulkRejectApplications);
-
-// Bulk create applications (HR/Admin)
 router.post('/bulk', authorize('super_admin', 'sub_admin', 'hr'), bulkCreateApplications);
 
-// Update application (HR/Admin) - handle file uploads
 router.put('/:id', upload.any(), require('./controllers/employeeApplicationController').updateApplication);
 
-// Get all applications
+/**
+ * @swagger
+ * /api/employee-applications:
+ *   get:
+ *     summary: Get all employee applications
+ *     tags: [EmployeeApplications]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of applications retrieved
+ */
 router.get('/', getApplications);
 
-// Get single application
+/**
+ * @swagger
+ * /api/employee-applications/{id}:
+ *   get:
+ *     summary: Get single application details
+ *     tags: [EmployeeApplications]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Application details retrieved
+ */
 router.get('/:id', getApplication);
 
-// Approve application (Superadmin)
 router.put('/:id/approve', authorize('super_admin', 'sub_admin'), approveApplication);
-
-// Reject application (Superadmin)
 router.put('/:id/reject', authorize('super_admin', 'sub_admin'), rejectApplication);
 
 module.exports = router;

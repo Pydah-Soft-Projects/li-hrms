@@ -11,9 +11,9 @@ const mongoose = require('mongoose');
 // @access  Private
 exports.getAllShifts = async (req, res) => {
   try {
-    const { isActive } = req.query;
+    const { isActive, search } = req.query;
     const cacheService = require('../../shared/services/cacheService');
-    const cacheKey = `shifts:all:${isActive || 'any'}`;
+    const cacheKey = `shifts:all:${isActive || 'any'}:${search || 'none'}`;
 
     // Try to get from cache
     const cachedShifts = await cacheService.get(cacheKey);
@@ -30,6 +30,10 @@ exports.getAllShifts = async (req, res) => {
     const query = {};
     if (isActive !== undefined) {
       query.isActive = isActive === 'true';
+    }
+
+    if (search) {
+      query.name = { $regex: search, $options: 'i' };
     }
 
     const shifts = await Shift.find(query)

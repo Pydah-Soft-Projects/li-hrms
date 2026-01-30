@@ -456,11 +456,22 @@ exports.updateApplication = async (req, res) => {
  */
 exports.getApplications = async (req, res) => {
   try {
-    const { status } = req.query;
+    const { status, search, division_id, divisionId, department_id, departmentId, designation_id, designationId } = req.query;
 
     const filter = {};
     if (status) {
       filter.status = status;
+    }
+
+    if (division_id || divisionId) filter.division_id = division_id || divisionId;
+    if (department_id || departmentId) filter.department_id = department_id || departmentId;
+    if (designation_id || designationId) filter.designation_id = designation_id || designationId;
+
+    if (search) {
+      filter.$or = [
+        { employee_name: { $regex: search, $options: 'i' } },
+        { emp_no: { $regex: search, $options: 'i' } }
+      ];
     }
 
     // HR can only see their own applications, Superadmin can see all

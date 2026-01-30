@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Swal from 'sweetalert2';
 import { useParams } from 'next/navigation';
 import { api, BonusBatch, BonusRecord } from '@/lib/api';
 import { toast } from 'react-toastify';
@@ -45,7 +46,17 @@ export default function BonusBatchDetailsPage() {
   };
 
   const updateStatus = async (status: 'approved' | 'frozen') => {
-    if (!confirm(`Are you sure you want to change status to ${status.toUpperCase()}?`)) return;
+    const result = await Swal.fire({
+      title: 'Update Batch Status',
+      text: `Are you sure you want to change status to ${status.toUpperCase()}?`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#3085d6',
+      cancelButtonColor: '#aaa',
+      confirmButtonText: 'Yes, change it'
+    });
+
+    if (!result.isConfirmed) return;
     try {
       const response = await api.updateBonusBatchStatus(batchId, status);
       if (response.success) {

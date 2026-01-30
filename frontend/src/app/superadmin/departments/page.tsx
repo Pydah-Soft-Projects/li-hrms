@@ -485,11 +485,26 @@ export default function DepartmentsPage() {
       if (response.success) {
         loadDepartments(); // Reload to get updated structure
         setShowLinkDesignationDialog(null);
+        Swal.fire({
+          icon: 'success',
+          title: 'Linked!',
+          text: 'Designation linked successfully.',
+          timer: 1500
+        });
       } else {
-        alert(response.message || 'Failed to link designation');
+        Swal.fire({
+          icon: 'error',
+          title: 'Error',
+          text: response.message || 'Failed to link designation'
+        });
       }
     } catch (err) {
       console.error('Error linking designation:', err);
+      Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: 'An unexpected error occurred.'
+      });
     }
   };
 
@@ -550,17 +565,41 @@ export default function DepartmentsPage() {
   };
 
   const handleDeleteDepartment = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this department?')) return;
+    const result = await Swal.fire({
+      title: 'Are you sure?',
+      text: "You won't be able to revert this!",
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Yes, delete it!'
+    });
 
-    try {
-      const response = await api.deleteDepartment(id);
-      if (response.success) {
-        loadDepartments();
-      } else {
-        alert(response.message || 'Failed to delete department');
+    if (result.isConfirmed) {
+      try {
+        const response = await api.deleteDepartment(id);
+        if (response.success) {
+          loadDepartments();
+          Swal.fire(
+            'Deleted!',
+            'Department has been deleted.',
+            'success'
+          );
+        } else {
+          Swal.fire(
+            'Error!',
+            response.message || 'Failed to delete department',
+            'error'
+          );
+        }
+      } catch (err) {
+        console.error('Error deleting department:', err);
+        Swal.fire(
+          'Error!',
+          'An error occurred while deleting the department.',
+          'error'
+        );
       }
-    } catch (err) {
-      console.error('Error deleting department:', err);
     }
   };
 

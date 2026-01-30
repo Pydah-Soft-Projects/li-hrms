@@ -776,7 +776,7 @@ export const api = {
     });
   },
 
-  assignShiftsToDivision: async (id: string, data: { shifts: string[]; targetType: string; targetId?: string | { designationId: string; departmentId: string } }) => {
+  assignShiftsToDivision: async (id: string, data: { shifts: (string | { shiftId: string; gender?: string })[]; targetType: string; targetId?: string | { designationId: string; departmentId: string } }) => {
     return apiRequest<any>(`/divisions/${id}/shifts`, {
       method: 'POST',
       body: JSON.stringify(data),
@@ -887,7 +887,7 @@ export const api = {
     });
   },
 
-  assignShifts: async (id: string, shiftIds: string[]) => {
+  assignShifts: async (id: string, shiftIds: (string | { shiftId: string; gender?: string })[]) => {
     return apiRequest<Department>(`/departments/${id}/shifts`, {
       method: 'PUT',
       body: JSON.stringify({ shiftIds }),
@@ -935,7 +935,7 @@ export const api = {
     return apiRequest<void>(`/departments/designations/${id}`, { method: 'DELETE' });
   },
 
-  assignShiftsToDesignation: async (id: string, shiftIds: string[], departmentId?: string) => {
+  assignShiftsToDesignation: async (id: string, shiftIds: (string | { shiftId: string; gender?: string })[], departmentId?: string) => {
     return apiRequest<any>(`/departments/designations/${id}/shifts`, {
       method: 'PUT',
       body: JSON.stringify({ shiftIds, departmentId }),
@@ -2391,10 +2391,11 @@ export const api = {
     });
   },
 
-  exportPayrollExcel: async (params: { month: string; departmentId?: string; employeeIds?: string[] }) => {
+  exportPayrollExcel: async (params: { month: string; departmentId?: string; divisionId?: string; employeeIds?: string[] }) => {
     const query = new URLSearchParams();
     query.append('month', params.month);
     if (params.departmentId) query.append('departmentId', params.departmentId);
+    if (params.divisionId) query.append('divisionId', params.divisionId);
     if (params.employeeIds && params.employeeIds.length > 0) {
       query.append('employeeIds', params.employeeIds.join(','));
     }

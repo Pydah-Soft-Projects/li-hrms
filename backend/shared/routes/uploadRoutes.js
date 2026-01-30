@@ -22,9 +22,16 @@ const upload = multer({
 });
 
 /**
- * @desc    Upload certificate file
- * @route   POST /api/upload/certificate
- * @access  Private
+ * @swagger
+ * /api/upload/certificate:
+ *   post:
+ *     summary: Upload a certificate file to S3
+ *     tags: [Upload]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: File uploaded successfully
  */
 router.post('/certificate', protect, upload.single('file'), async (req, res) => {
     try {
@@ -70,9 +77,16 @@ router.post('/certificate', protect, upload.single('file'), async (req, res) => 
 });
 
 /**
- * @desc    Delete certificate file
- * @route   DELETE /api/upload/certificate
- * @access  Private
+ * @swagger
+ * /api/upload/certificate:
+ *   delete:
+ *     summary: Delete a certificate from S3
+ *     tags: [Upload]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: File deleted
  */
 router.delete('/certificate', protect, async (req, res) => {
     try {
@@ -146,9 +160,16 @@ router.put('/certificate', protect, upload.single('file'), async (req, res) => {
 });
 
 /**
- * @desc    Upload evidence file (OD/OT/Permission)
- * @route   POST /api/upload/evidence
- * @access  Private
+ * @swagger
+ * /api/upload/evidence:
+ *   post:
+ *     summary: Upload evidence file (OD/OT/Permission)
+ *     tags: [Upload]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Evidence uploaded
  */
 router.post('/evidence', protect, upload.single('file'), async (req, res) => {
     try {

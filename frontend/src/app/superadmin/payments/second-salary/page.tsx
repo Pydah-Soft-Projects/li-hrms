@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Swal from 'sweetalert2';
 import { api, Division, Department, Designation } from '@/lib/api';
 import {
     Banknote,
@@ -146,12 +147,21 @@ export default function SecondSalaryPaymentsPage() {
 
     const handleCalculateAll = async () => {
         if (!month) {
-            alert('Please select Month');
+            Swal.fire('Error', 'Please select Month', 'error');
             return;
         }
 
-        const confirmReset = window.confirm(`This will calculate 2nd salary for ALL employees across ALL divisions and departments for ${month}. Continue?`);
-        if (!confirmReset) return;
+        const result = await Swal.fire({
+            title: 'Global Calculation',
+            text: `This will calculate 2nd salary for ALL employees across ALL divisions and departments for ${month}. Continue?`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#4f46e5',
+            cancelButtonColor: '#3085d6',
+            confirmButtonText: 'Yes, calculate all!'
+        });
+
+        if (!result.isConfirmed) return;
 
         setIsCalculating(true);
         try {

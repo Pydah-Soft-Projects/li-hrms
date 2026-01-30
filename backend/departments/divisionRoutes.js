@@ -8,25 +8,57 @@ const { applyScopeFilter } = require('../shared/middleware/dataScopeMiddleware')
 // All routes are protected
 router.use(protect);
 
-// Get all divisions
+/**
+ * @swagger
+ * /api/divisions:
+ *   get:
+ *     summary: Get all divisions
+ *     tags: [Divisions]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of divisions
+ */
 router.get('/', applyScopeFilter, divisionController.getDivisions);
 
-// Get single division
+/**
+ * @swagger
+ * /api/divisions/{id}:
+ *   get:
+ *     summary: Get single division
+ *     tags: [Divisions]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Division details
+ */
 router.get('/:id', divisionController.getDivision);
 
-// Create division (Super Admin, Sub Admin)
+/**
+ * @swagger
+ * /api/divisions:
+ *   post:
+ *     summary: Create division
+ *     tags: [Divisions]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       201:
+ *         description: Created
+ */
 router.post('/', authorize('super_admin', 'sub_admin'), divisionController.createDivision);
 
-// Update division (Super Admin, Sub Admin)
 router.put('/:id', authorize('super_admin', 'sub_admin'), divisionController.updateDivision);
-
-// Delete division (Super Admin, Sub Admin)
 router.delete('/:id', authorize('super_admin', 'sub_admin'), divisionController.deleteDivision);
-
-// Link/Unlink departments
 router.post('/:id/departments', authorize('super_admin', 'sub_admin'), divisionController.linkDepartments);
-
-// Assign shifts
 router.post('/:id/shifts', authorize('super_admin', 'sub_admin'), divisionController.assignShifts);
 
 module.exports = router;
