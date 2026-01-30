@@ -19,14 +19,21 @@ export default function EmployeeADUpdateModal({ onClose, onSuccess }: EmployeeAD
 
   const handleDownloadTemplate = async () => {
     try {
-      await api.downloadEmployeeADUpdateTemplate();
+      const blob = await api.downloadEmployeeADUpdateTemplate();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'employee_ad_template.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
       setStep('upload');
       setError('');
     } catch (err: any) {
       setError(err.message || 'Failed to download template');
     }
   };
-
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setFile(e.target.files[0]);

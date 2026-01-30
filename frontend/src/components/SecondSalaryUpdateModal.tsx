@@ -18,7 +18,15 @@ export default function SecondSalaryUpdateModal({ onClose, onSuccess }: SecondSa
 
     const handleDownloadTemplate = async () => {
         try {
-            await api.downloadSecondSalaryTemplate();
+            const blob = await api.downloadSecondSalaryTemplate();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'second_salary_template.xlsx';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
         } catch (err: any) {
             setError(err.message || 'Failed to download template');
         }
@@ -157,21 +165,16 @@ export default function SecondSalaryUpdateModal({ onClose, onSuccess }: SecondSa
                                     <div className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{stats.updated}</div>
                                     <div className="text-[10px] text-emerald-600/70">Updated</div>
                                 </div>
-                                <div className="p-2 rounded-lg bg-red-50 dark:bg-red-900/20">
-                                    <div className="text-lg font-bold text-red-600 dark:text-red-400">{stats.failed}</div>
-                                    <div className="text-[10px] text-red-600/70">Failed</div>
-                                </div>
+                                {stats.errors && stats.errors.length > 0 && (
+                                    <div className="mt-3 max-h-32 overflow-y-auto space-y-1">
+                                        {stats.errors.map((err: any, i: number) => (
+                                            <div key={i} className="text-[10px] text-red-500 border-b border-red-100 dark:border-red-900/30 py-1">
+                                                {err.empNo || err.row?.empno ? `Emp ${err.empNo || err.row?.empno}: ` : ''}{err.error}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
-
-                            {stats.errors && stats.errors.length > 0 && (
-                                <div className="mt-3 max-h-32 overflow-y-auto space-y-1">
-                                    {stats.errors.map((err: any, i: number) => (
-                                        <div key={i} className="text-[10px] text-red-500 border-b border-red-100 dark:border-red-900/30 py-1">
-                                            Row {err.row?.empno || ''} {err.empNo}: {err.error}
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
                         </div>
                     )}
 
