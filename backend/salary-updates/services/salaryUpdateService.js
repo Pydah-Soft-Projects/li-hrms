@@ -2,6 +2,13 @@ const xlsx = require('xlsx');
 const Employee = require('../../employees/model/Employee');
 const AllowanceDeductionMaster = require('../../allowances-deductions/model/AllowanceDeductionMaster');
 
+/** Normalize object key (case-insensitive, strips non-alphanumeric) */
+function normalizeKey(obj, key) {
+    const norm = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
+    const found = Object.keys(obj).find(k => norm(k) === norm(key));
+    return found ? obj[found] : undefined;
+}
+
 /**
  * Service to handle second salary updates
  */
@@ -26,12 +33,6 @@ const processSecondSalaryUpload = async (fileBuffer) => {
 
         // Process each row
         for (const row of data) {
-            // Normalize keys to lowercase to be safe
-            const normalizeKey = (obj, key) => {
-                const found = Object.keys(obj).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === key.toLowerCase().replace(/[^a-z0-9]/g, ''));
-                return found ? obj[found] : undefined;
-            };
-
             const empNo = normalizeKey(row, 'empno') || normalizeKey(row, 'employeeid');
             const secondSalary = normalizeKey(row, 'secondsalary');
 
@@ -51,6 +52,11 @@ const processSecondSalaryUpload = async (fileBuffer) => {
             if (isNaN(salaryValue)) {
                 failedCount++;
                 errors.push({ empNo, error: `Invalid salary value: ${secondSalary}` });
+                continue;
+            }
+            if (salaryValue < 0) {
+                failedCount++;
+                errors.push({ empNo, error: 'Negative salary value' });
                 continue;
             }
 
@@ -110,6 +116,9 @@ const generateSalaryUpdateTemplateData = async () => {
  * Dynamic Employee Update - Template Generator
  */
 const generateEmployeeUpdateTemplateData = async (selectedFieldIds) => {
+    if (!Array.isArray(selectedFieldIds)) {
+        selectedFieldIds = [];
+    }
     try {
         const FormSettings = require('../../employee-applications/model/EmployeeApplicationFormSettings');
         const settings = await FormSettings.getActiveSettings();
@@ -154,14 +163,16 @@ const processEmployeeUpdateUpload = async (fileBuffer) => {
         const FormSettings = require('../../employee-applications/model/EmployeeApplicationFormSettings');
         const settings = await FormSettings.getActiveSettings();
 
-        // Map labels/IDs to internal field IDs
+        // Map labels/IDs to internal field IDs; allowlist: only fields with isBulkUpdatable
         const labelToIdMap = {};
+        const formSettingsMap = {};
         if (settings && settings.groups) {
             settings.groups.forEach(group => {
                 group.fields.forEach(field => {
                     const normalizedLabel = field.label.toLowerCase().replace(/[^a-z0-9]/g, '');
                     labelToIdMap[normalizedLabel] = field.id;
                     labelToIdMap[field.id.toLowerCase()] = field.id;
+                    formSettingsMap[field.id] = field;
                 });
             });
         }
@@ -179,7 +190,6 @@ const processEmployeeUpdateUpload = async (fileBuffer) => {
             const updateData = {};
             let empNo = '';
 
-            // Map columns to fields
             Object.keys(row).forEach(header => {
                 const normalizedHeader = header.toLowerCase().replace(/[^a-z0-9]/g, '');
 
@@ -187,7 +197,8 @@ const processEmployeeUpdateUpload = async (fileBuffer) => {
                     empNo = row[header];
                 } else {
                     const fieldId = labelToIdMap[normalizedHeader];
-                    if (fieldId && fieldId !== 'emp_no' && fieldId !== 'gross_salary' && fieldId !== 'proposedSalary') {
+                    const meta = formSettingsMap[fieldId];
+                    if (meta && (meta.isBulkUpdatable === true || meta.isBulkUpdatable === undefined)) {
                         updateData[fieldId] = row[header];
                     }
                 }
@@ -242,7 +253,8 @@ module.exports = {
      * Deductions are shown as negative values in Excel.
      */
     generateEmployeeADUpdateTemplateData: async () => {
-        const masters = await AllowanceDeductionMaster.find({ isActive: true })
+        try {
+            const masters = await AllowanceDeductionMaster.find({ isActive: true })
             .select('name category globalRule departmentRules')
             .sort({ category: 1, name: 1 });
 
@@ -344,7 +356,10 @@ module.exports = {
         });
 
         return { data, headers };
-
+        } catch (err) {
+            console.error('Error in generateEmployeeADUpdateTemplateData:', err);
+            throw new Error('Failed to generate employee A&D update template: ' + (err.message || err));
+        }
     },
     /**
      * Bulk Employee Allowances/Deductions Update - Process Upload
@@ -370,11 +385,6 @@ module.exports = {
         masters.forEach(m => {
             masterByHeader.set(`${m.name} (${m.category})`, m);
         });
-
-        const normalizeKey = (obj, key) => {
-            const found = Object.keys(obj).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === key.toLowerCase().replace(/[^a-z0-9]/g, ''));
-            return found ? obj[found] : undefined;
-        };
 
         let updatedCount = 0;
         let failedCount = 0;
@@ -432,7 +442,10 @@ module.exports = {
                     }
 
                     const n = Number(cell);
-                    if (!Number.isFinite(n)) return;
+                    if (!Number.isFinite(n)) {
+                        errors.push({ empNo, rowIdentifier: empNo, masterId, column: header, cellValue: cell, error: `Non-numeric value for column "${header}": ${cell}` });
+                        return;
+                    }
                     const valueAbs = Math.abs(n);
 
                     const rule = master.globalRule || {};

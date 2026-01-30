@@ -22,13 +22,31 @@ import { toast } from 'react-toastify';
 import { format } from 'date-fns';
 import * as XLSX from 'xlsx';
 
+interface SecondSalaryBatchItem {
+    _id: string;
+    batchNumber?: string;
+    month?: string;
+    monthName?: string;
+    department?: { name?: string };
+    division?: { name?: string };
+    totalEmployees?: number;
+    totalNetSalary?: number;
+    status?: string;
+}
+interface ComparisonItem {
+    id?: string;
+    employee: { _id?: string; name?: string; emp_no?: string; designation?: string; department?: string };
+    regularNetSalary?: number;
+    secondSalaryNet?: number;
+    difference?: number;
+}
+
 export default function SecondSalaryPaymentsPage() {
-    const [batches, setBatches] = useState<any[]>([]);
+    const [batches, setBatches] = useState<SecondSalaryBatchItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isCalculating, setIsCalculating] = useState(false);
     const [viewMode, setViewMode] = useState<'batches' | 'comparison'>('batches');
 
-    // Filters
     const [month, setMonth] = useState(format(new Date(), 'yyyy-MM'));
     const [divisions, setDivisions] = useState<Division[]>([]);
     const [departments, setDepartments] = useState<Department[]>([]);
@@ -38,9 +56,9 @@ export default function SecondSalaryPaymentsPage() {
     const [selectedDepartment, setSelectedDepartment] = useState<string>('');
     const [selectedDesignation, setSelectedDesignation] = useState<string>('');
     const [searchTerm, setSearchTerm] = useState('');
+    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
 
-    // Comparison Data
-    const [comparisonData, setComparisonData] = useState<any[]>([]);
+    const [comparisonData, setComparisonData] = useState<ComparisonItem[]>([]);
     const [isComparing, setIsComparing] = useState(false);
 
     useEffect(() => {
@@ -48,12 +66,17 @@ export default function SecondSalaryPaymentsPage() {
     }, []);
 
     useEffect(() => {
+        const t = setTimeout(() => setDebouncedSearchTerm(searchTerm), 300);
+        return () => clearTimeout(t);
+    }, [searchTerm]);
+
+    useEffect(() => {
         if (viewMode === 'batches') {
             fetchBatches();
         } else {
             fetchComparison();
         }
-    }, [month, selectedDivision, selectedDepartment, selectedDesignation, viewMode, searchTerm]);
+    }, [month, selectedDivision, selectedDepartment, selectedDesignation, viewMode, debouncedSearchTerm]);
 
     const fetchInitialData = async () => {
         try {
@@ -98,7 +121,7 @@ export default function SecondSalaryPaymentsPage() {
             if (selectedDivision) query.append('divisionId', selectedDivision);
             if (selectedDepartment) query.append('departmentId', selectedDepartment);
             if (selectedDesignation) query.append('designationId', selectedDesignation);
-            if (searchTerm) query.append('search', searchTerm);
+            if (debouncedSearchTerm) query.append('search', debouncedSearchTerm);
 
             const res = await api.get(`/second-salary/comparison?${query.toString()}`);
             if (res.success) {
@@ -146,7 +169,7 @@ export default function SecondSalaryPaymentsPage() {
 
     const handleCalculateAll = async () => {
         if (!month) {
-            alert('Please select Month');
+            toast.error('Please select Month');
             return;
         }
 
@@ -545,8 +568,8 @@ export default function SecondSalaryPaymentsPage() {
                                         </td>
                                     </tr>
                                 ) : (
-                                    comparisonData.map((item) => (
-                                        <tr key={item.employee._id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors">
+                                    comparisonData.map((item, index) => (
+                                        <tr key={item.employee?._id ?? item.id ?? `employee-${index}`} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors">
                                             <td className="px-6 py-4">
                                                 <div>
                                                     <div className="text-sm font-bold text-slate-900 dark:text-white">

@@ -195,7 +195,7 @@ export default function ArrearsPage() {
   };
 
   return (
-    <div className=" md:p-8">
+    <div className="md:p-8">
       <ToastContainer
         position="top-right"
         autoClose={3000}

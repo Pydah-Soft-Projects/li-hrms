@@ -109,9 +109,23 @@ export default function AttendancePage() {
   const { activeWorkspace } = useWorkspace();
 
   const isEmployee = user?.role === 'employee' || activeWorkspace?.type === 'employee';
-  const isHR = !isEmployee;
+  const isHR = user?.role === 'hr' || activeWorkspace?.type === 'hr';
 
   const [currentDate, setCurrentDate] = useState(new Date());
+
+  // Pure helper: add manual source to a daily record in monthly data
+  const addManualSourceToMonthlyData = (monthlyData: MonthlyAttendanceData[], emp_no: string, date: string): MonthlyAttendanceData[] =>
+    monthlyData.map(empData => {
+      if (empData.employee.emp_no !== emp_no) return empData;
+      const updatedDaily = { ...empData.dailyAttendance };
+      if (!updatedDaily[date]) return empData;
+      const record = updatedDaily[date];
+      if (!record) return empData;
+      const newSource = record.source ? [...record.source] : [];
+      if (!newSource.includes('manual')) newSource.push('manual');
+      updatedDaily[date] = { ...record, source: newSource };
+      return { ...empData, dailyAttendance: updatedDaily };
+    });
 
   // Helper to format time in IST
   const formatTimeIST = (timeStr: string | null) => {
@@ -123,7 +137,8 @@ export default function AttendancePage() {
         minute: '2-digit',
         hour12: true
       });
-    } catch {
+    } catch (err) {
+      console.error('formatTimeIST: malformed date input', timeStr, err);
       return '-';
     }
   };
@@ -541,27 +556,13 @@ export default function AttendancePage() {
         setSelectedShiftId('');
 
         // Optimistic update: mark as manually edited
-        setMonthlyData(prevData => prevData.map(empData => {
-          if (empData.employee.emp_no === selectedEmployee.emp_no) {
-            const updatedDaily = { ...empData.dailyAttendance };
-            if (updatedDaily[selectedDate]) {
-              const record = updatedDaily[selectedDate];
-              if (record) {
-                const newSource = record.source ? [...record.source] : [];
-                if (!newSource.includes('manual')) newSource.push('manual');
-                updatedDaily[selectedDate] = { ...record, source: newSource };
-              }
-            }
-            return { ...empData, dailyAttendance: updatedDaily };
-          }
-          return empData;
-        }));
+        setMonthlyData(prev => addManualSourceToMonthlyData(prev, selectedEmployee.emp_no, selectedDate!));
 
         // Reload attendance detail and monthly data
         await loadMonthlyAttendance();
 
         // Refresh the detail view
-        const updatedResponse = await api.getAttendanceDetail(selectedEmployee.emp_no, selectedDate);
+        const updatedResponse = await api.getAttendanceDetail(selectedEmployee.emp_no, selectedDate!);
         if (updatedResponse.success) {
           setAttendanceDetail(updatedResponse.data);
         }
@@ -606,21 +607,7 @@ export default function AttendancePage() {
         setOutTimeInput('');
 
         // Optimistic update: mark as manually edited
-        setMonthlyData(prevData => prevData.map(empData => {
-          if (empData.employee.emp_no === selectedEmployee.emp_no) {
-            const updatedDaily = { ...empData.dailyAttendance };
-            if (updatedDaily[selectedDate]) {
-              const record = updatedDaily[selectedDate];
-              if (record) {
-                const newSource = record.source ? [...record.source] : [];
-                if (!newSource.includes('manual')) newSource.push('manual');
-                updatedDaily[selectedDate] = { ...record, source: newSource };
-              }
-            }
-            return { ...empData, dailyAttendance: updatedDaily };
-          }
-          return empData;
-        }));
+        setMonthlyData(prev => addManualSourceToMonthlyData(prev, selectedEmployee.emp_no, selectedDate!));
 
         // Reload attendance detail and monthly data
         await loadMonthlyAttendance();
@@ -1069,21 +1056,7 @@ export default function AttendancePage() {
         setOutTimeValue('');
 
         // Optimistic update: mark as manually edited
-        setMonthlyData(prevData => prevData.map(empData => {
-          if (empData.employee.emp_no === selectedRecordForOutTime.employee.emp_no) {
-            const updatedDaily = { ...empData.dailyAttendance };
-            if (updatedDaily[selectedRecordForOutTime.date]) {
-              const record = updatedDaily[selectedRecordForOutTime.date];
-              if (record) {
-                const newSource = record.source ? [...record.source] : [];
-                if (!newSource.includes('manual')) newSource.push('manual');
-                updatedDaily[selectedRecordForOutTime.date] = { ...record, source: newSource };
-              }
-            }
-            return { ...empData, dailyAttendance: updatedDaily };
-          }
-          return empData;
-        }));
+        setMonthlyData(prev => addManualSourceToMonthlyData(prev, selectedRecordForOutTime.employee.emp_no, selectedRecordForOutTime.date));
 
         loadMonthlyAttendance();
       } else {
@@ -1745,14 +1718,6 @@ export default function AttendancePage() {
                                           <div
                                             className="text-[8px] opacity-75 truncate cursor-pointer hover:text-blue-600 hover:underline"
                                             title={shiftName !== '-' ? shiftName : 'Assign Shift'}
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              // Only open shift dialog if authorized
-                                              if (isHR) {
-                                                // Logic to open shift dialog would go here if not handled by row click
-                                                // For now, let row click handle it but visual cue is restricted
-                                              }
-                                            }}
                                           >
                                             {shiftName !== '-' ? shiftName.substring(0, 3) : (record?.totalHours ? '' : 'Asgn')}
                                           </div>

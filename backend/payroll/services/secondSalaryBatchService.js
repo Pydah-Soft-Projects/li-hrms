@@ -61,13 +61,8 @@ class SecondSalaryBatchService {
 
             if (!batch.employeePayrolls.includes(secondSalaryRecordId)) {
                 batch.employeePayrolls.push(secondSalaryRecordId);
-                batch.totalEmployees = batch.employeePayrolls.length;
-
-                batch.totalGrossSalary += record.earnings?.grossSalary || 0;
-                batch.totalDeductions += record.deductions?.totalDeductions || 0;
-                batch.totalNetSalary += record.netSalary || 0;
-
                 await batch.save();
+                return await SecondSalaryBatchService.recalculateBatchTotals(batch._id);
             }
 
             if (!record.secondSalaryBatchId || record.secondSalaryBatchId.toString() !== batchId.toString()) {

@@ -1,6 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+declare module 'jspdf' {
+  interface jsPDF {
+    lastAutoTable?: { finalY: number };
+  }
+}
+
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
@@ -88,13 +94,7 @@ export default function SecondSalaryPayslipDetail() {
     const [generatingPDF, setGeneratingPDF] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    useEffect(() => {
-        if (recordId) {
-            fetchRecordDetail();
-        }
-    }, [recordId]);
-
-    const fetchRecordDetail = async () => {
+    const fetchRecordDetail = useCallback(async () => {
         setLoading(true);
         setError(null);
         try {
@@ -112,7 +112,13 @@ export default function SecondSalaryPayslipDetail() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [recordId]);
+
+    useEffect(() => {
+        if (recordId) {
+            fetchRecordDetail();
+        }
+    }, [recordId, fetchRecordDetail]);
 
     const generateDetailedPDF = () => {
         if (!record) return;
@@ -229,7 +235,7 @@ export default function SecondSalaryPayslipDetail() {
             doc.setTextColor(0, 0, 0); // Reset color
 
             // ===== SALARY BREAKDOWN =====
-            yPos = (doc as any).lastAutoTable.finalY + 10;
+            yPos = (doc.lastAutoTable?.finalY ?? yPos) + 10;
 
             doc.setFont('helvetica', 'bold');
             doc.setFillColor(240, 240, 240);
@@ -291,7 +297,7 @@ export default function SecondSalaryPayslipDetail() {
             });
 
             // ===== NET SALARY =====
-            const finalY = Math.max((doc as any).lastAutoTable.finalY, yPos + 100);
+            const finalY = Math.max(doc.lastAutoTable?.finalY ?? 0, yPos + 100);
             yPos = finalY + 5;
 
             // Round Off display in PDF
@@ -532,9 +538,9 @@ export default function SecondSalaryPayslipDetail() {
                                     <span className="text-2xl md:text-4xl font-black tracking-tighter">₹{record.netSalary.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                                     <span className="text-indigo-400/60 text-xs font-medium">INR</span>
                                 </div>
-                                {record.roundOff !== 0 && (
+                                {record.roundOff != null && record.roundOff !== 0 && (
                                     <p className="text-slate-400 text-[10px] mt-1 italic font-medium">
-                                        Adjusted by ₹{record.roundOff?.toFixed(2)} round-off
+                                        Adjusted by ₹{Number(record.roundOff).toFixed(2)} round-off
                                     </p>
                                 )}
                             </div>

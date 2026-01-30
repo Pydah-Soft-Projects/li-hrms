@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { api } from '@/lib/api';
 import { auth } from '@/lib/auth';
 import { toast, ToastContainer } from 'react-toastify';
@@ -937,6 +937,10 @@ export default function LoansPage() {
     </svg>
   );
 
+  const computedStats = useMemo(() => ({
+    totalDisbursed: loans.filter(l => l.status === 'approved').length + advances.filter(a => a.status === 'approved').length,
+  }), [loans, advances]);
+
   return (
     <div className="max-w-[1920px] mx-auto">
       {/* Header Section */}
@@ -999,7 +1003,7 @@ export default function LoansPage() {
           },
           {
             label: 'Total Disbursed (Approved)',
-            value: loans.filter(l => l.status === 'approved').length + advances.filter(a => a.status === 'approved').length,
+            value: computedStats.totalDisbursed,
             icon: <CheckIcon />,
             color: 'green',
             gradient: 'from-green-500 to-green-600',
@@ -1033,14 +1037,14 @@ export default function LoansPage() {
       {/* Premium Tabs */}
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <div className="flex gap-1 rounded-2xl bg-slate-100/80 p-1.5 dark:bg-slate-900/80">
-          {[
+          {([
             { id: 'loans', label: 'Loans', count: loans.length },
             { id: 'advances', label: 'Advances', count: advances.length },
             { id: 'pending', label: 'Pending Approvals', count: pendingLoans.length + pendingAdvances.length }
-          ].map((tab) => (
+          ] as const).map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => setActiveTab(tab.id)}
               className={`relative flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold transition-all duration-300 ${activeTab === tab.id
                 ? 'bg-white text-emerald-600 shadow-md ring-1 ring-slate-200/50 dark:bg-slate-800 dark:text-emerald-400 dark:ring-slate-700'
                 : 'text-slate-500 hover:bg-white/50 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800/50 dark:hover:text-slate-200'

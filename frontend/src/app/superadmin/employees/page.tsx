@@ -4580,9 +4580,10 @@ export default function EmployeesPage() {
                         setError(res.message || 'Upload failed');
                       }
                     } catch (err: any) {
-                      setError(err.message || 'Upload failed');
+                        setError(err.message || 'Upload failed');
                     } finally {
                       setLoading(false);
+                      e.target.value = '';
                     }
                   }}
                   className="hidden"

@@ -545,10 +545,10 @@ export default function PayRegisterPage() {
   };
 
   const handleViewPayslip = (employee: Employee) => {
-    // Navigate to payslip or open payslip modal
-    // Use emp_no for search as per PayrollTransactionsPage filter logic
-    const searchParam = employee.emp_no || employee._id;
-    router.push(`/payroll-transactions?search=${searchParam}&month=${monthStr}`);
+    const params = new URLSearchParams();
+    params.set('search', String(employee.emp_no || employee._id));
+    params.set('month', monthStr);
+    router.push(`/payroll-transactions?${params.toString()}`);
   };
 
   const handleCalculatePayroll = async (employee: Employee) => {
@@ -1266,7 +1266,7 @@ export default function PayRegisterPage() {
                                     <button
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        if (employee) handleCalculatePayroll(employee);
+                                        handleCalculatePayroll(employee ?? pr.employeeId);
                                       }}
                                       className="rounded-md px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:shadow-md bg-amber-500 hover:bg-amber-600"
                                       title="Calculate Payroll"
@@ -1275,7 +1275,7 @@ export default function PayRegisterPage() {
                                     </button>
                                   ) : (
                                     <Link
-                                      href={`/payroll-transactions?search=${employee?.emp_no || employeeId}&month=${monthStr}`}
+                                      href={`/payroll-transactions?${new URLSearchParams({ search: String(employee?.emp_no || employeeId), month: monthStr }).toString()}`}
                                       onClick={(e) => e.stopPropagation()}
                                       className="rounded-md px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:shadow-md bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 inline-block"
                                       title="View Payslip"

@@ -1025,7 +1025,7 @@ export default function LoansPage() {
         {[
           {
             label: 'Total Active Loans',
-            value: loans.length,
+            value: loans.filter(l => ['disbursed', 'active'].includes(l.status)).length,
             icon: <LoanIcon />,
             color: 'emerald',
             gradient: 'from-emerald-500 to-emerald-600',
@@ -1033,7 +1033,7 @@ export default function LoansPage() {
           },
           {
             label: 'Active Salary Advances',
-            value: advances.length,
+            value: advances.filter(a => ['disbursed', 'active'].includes(a.status)).length,
             icon: <AdvanceIcon />,
             color: 'teal',
             gradient: 'from-teal-500 to-teal-600',
@@ -1050,7 +1050,7 @@ export default function LoansPage() {
           },
           {
             label: 'Total Disbursed (Approved)',
-            value: loans.filter(l => l.status === 'approved').length + advances.filter(a => a.status === 'approved').length,
+            value: loans.filter(l => l.status === 'disbursed').length + advances.filter(a => a.status === 'disbursed').length,
             icon: <CheckIcon />,
             color: 'green',
             gradient: 'from-green-500 to-green-600',
@@ -1084,14 +1084,14 @@ export default function LoansPage() {
       {/* Premium Tabs */}
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <div className="flex gap-1 rounded-2xl bg-slate-100/80 p-1.5 dark:bg-slate-900/80">
-          {[
+          {([
             { id: 'loans', label: 'Loans', count: loans.length },
             { id: 'advances', label: 'Advances', count: advances.length },
             { id: 'pending', label: 'Pending Approvals', count: pendingLoans.length + pendingAdvances.length }
-          ].map((tab) => (
+          ] as const).map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => setActiveTab(tab.id)}
               className={`relative flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold transition-all duration-300 ${activeTab === tab.id
                 ? 'bg-white text-emerald-600 shadow-md ring-1 ring-slate-200/50 dark:bg-slate-800 dark:text-emerald-400 dark:ring-slate-700'
                 : 'text-slate-500 hover:bg-white/50 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800/50 dark:hover:text-slate-200'
@@ -1110,15 +1110,17 @@ export default function LoansPage() {
 
         {/* Search Input Integrated next to tabs if space permits */}
         {(activeTab === 'loans' || activeTab === 'advances') && (
-          <div className="relative flex-1 min-w-[300px]">
-            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
+          <div className="relative flex-1 min-w-0 sm:min-w-[300px]">
+            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true">
               <SearchIcon />
             </div>
             <input
+              id="loans-search"
               type="text"
               placeholder="Search by employee name, ID, or reason..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
+              aria-label="Search loans and advances by employee name, ID, or reason"
               className="w-full rounded-2xl border border-slate-200/60 bg-white/80 py-2.5 pl-11 pr-4 text-sm font-medium transition-all focus:border-emerald-400 focus:outline-none focus:ring-4 focus:ring-emerald-400/10 dark:border-slate-800/60 dark:bg-slate-950/80 dark:text-white"
             />
           </div>

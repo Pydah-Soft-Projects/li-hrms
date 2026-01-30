@@ -1515,13 +1515,13 @@ export default function EmployeesPage() {
   };
 
   const handleViewEmployee = async (employee: Employee) => {
+    const requestedEmpNo = employee.emp_no;
     setViewingEmployee(employee);
     setShowViewDialog(true);
 
-    // Fetch full employee so view always has both employeeAllowances and employeeDeductions
     try {
       const response = await api.getEmployee(employee.emp_no);
-      if (response.success && response.data) {
+      if (response.success && response.data && response.data.emp_no === requestedEmpNo) {
         setViewingEmployee(response.data);
       }
     } catch (error) {

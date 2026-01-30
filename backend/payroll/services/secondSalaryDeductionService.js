@@ -271,16 +271,20 @@ async function calculatePermissionDeduction(employeeId, month, departmentId, per
 /**
  * Calculate leave deduction for Second Salary
  */
-function calculateLeaveDeduction(totalLeaves, paidLeaves, totalDaysInMonth, basicPay) {
-    const unpaidLeaves = Math.max(0, totalLeaves - (paidLeaves || 0));
+function calculateLeaveDeduction(totalLeaves = 0, paidLeaves = 0, totalDaysInMonth = 0, basicPay = 0) {
+    const t = Number(totalLeaves) || 0;
+    const p = Number(paidLeaves) || 0;
+    const days = Number(totalDaysInMonth) || 0;
+    const pay = Number(basicPay) || 0;
+    const unpaidLeaves = Math.max(0, t - p);
     const daysDeducted = unpaidLeaves;
-    const leaveDeduction = totalDaysInMonth > 0 ? (daysDeducted / totalDaysInMonth) * basicPay : 0;
+    const leaveDeduction = days > 0 ? (daysDeducted / days) * pay : 0;
 
     return {
         leaveDeduction: Math.round(leaveDeduction * 100) / 100,
         breakdown: {
-            totalLeaves: totalLeaves || 0,
-            paidLeaves: paidLeaves || 0,
+            totalLeaves: t,
+            paidLeaves: p,
             unpaidLeaves,
             daysDeducted,
         },

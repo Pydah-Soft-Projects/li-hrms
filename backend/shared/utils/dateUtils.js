@@ -1,5 +1,12 @@
 const Settings = require('../../settings/model/Settings');
 
+let payrollSettingsCache = { startDay: null, endDay: null, expiresAt: 0 };
+const CACHE_TTL_MS = 30 * 1000;
+
+function invalidatePayrollSettingsCache() {
+    payrollSettingsCache = { startDay: null, endDay: null, expiresAt: 0 };
+}
+
 /**
  * Get the date range for a payroll month based on settings
  * @param {number} year - Target year (e.g., 2026)
@@ -7,12 +14,28 @@ const Settings = require('../../settings/model/Settings');
  * @returns {Promise<{startDate: string, endDate: string, totalDays: number}>}
  */
 async function getPayrollDateRange(year, monthNumber) {
-    // Fetch start and end days from settings
-    const startDaySetting = await Settings.findOne({ key: 'payroll_cycle_start_day' });
-    const endDaySetting = await Settings.findOne({ key: 'payroll_cycle_end_day' });
+    const y = Number(year);
+    const m = Number(monthNumber);
+    if (!Number.isFinite(y) || !Number.isInteger(y) || y < 1) {
+        throw new Error(`Invalid year: ${year}`);
+    }
+    if (!Number.isFinite(m) || !Number.isInteger(m) || m < 1 || m > 12) {
+        throw new Error(`Invalid monthNumber: ${monthNumber} (must be 1-12)`);
+    }
+    year = y;
+    monthNumber = m;
 
-    const startDay = startDaySetting ? parseInt(startDaySetting.value) : 1;
-    const endDay = endDaySetting ? parseInt(endDaySetting.value) : 31;
+    let startDay = payrollSettingsCache.startDay;
+    let endDay = payrollSettingsCache.endDay;
+    if (Date.now() > payrollSettingsCache.expiresAt) {
+        const [startDaySetting, endDaySetting] = await Promise.all([
+            Settings.findOne({ key: 'payroll_cycle_start_day' }),
+            Settings.findOne({ key: 'payroll_cycle_end_day' }),
+        ]);
+        startDay = startDaySetting ? parseInt(startDaySetting.value, 10) : 1;
+        endDay = endDaySetting ? parseInt(endDaySetting.value, 10) : 31;
+        payrollSettingsCache = { startDay, endDay, expiresAt: Date.now() + CACHE_TTL_MS };
+    }
 
     if (startDay === 1 && endDay >= 28) {
         // Treat as full calendar month
@@ -76,15 +99,17 @@ async function getPayrollDateRange(year, monthNumber) {
 }
 
 /**
- * Get all dates between two date strings (inclusive)
+ * Get all dates between two date strings (inclusive), UTC
  * @param {string} startDate - YYYY-MM-DD
  * @param {string} endDate - YYYY-MM-DD
  * @returns {string[]}
  */
 function getAllDatesInRange(startDate, endDate) {
+    const [sy, sm, sd] = startDate.split('-').map(Number);
+    const [ey, em, ed] = endDate.split('-').map(Number);
+    let d = new Date(Date.UTC(sy, sm - 1, sd));
+    const e = new Date(Date.UTC(ey, em - 1, ed));
     const result = [];
-    let d = new Date(startDate);
-    const e = new Date(endDate);
     while (d <= e) {
         result.push(d.toISOString().split('T')[0]);
         d.setUTCDate(d.getUTCDate() + 1);
@@ -94,5 +119,6 @@ function getAllDatesInRange(startDate, endDate) {
 
 module.exports = {
     getPayrollDateRange,
-    getAllDatesInRange
+    getAllDatesInRange,
+    invalidatePayrollSettingsCache,
 };

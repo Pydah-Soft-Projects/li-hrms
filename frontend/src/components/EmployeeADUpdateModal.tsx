@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { X, Upload, FileSpreadsheet, AlertCircle, Download } from 'lucide-react';
 import { api } from '@/lib/api';
 
@@ -42,6 +42,16 @@ export default function EmployeeADUpdateModal({ onClose, onSuccess }: EmployeeAD
     }
   };
 
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      handleFileChange({ target: { files } } as React.ChangeEvent<HTMLInputElement>);
+    }
+  };
+
   const handleUpload = async () => {
     if (!file) {
       setError('Please select a file first');
@@ -61,7 +71,8 @@ export default function EmployeeADUpdateModal({ onClose, onSuccess }: EmployeeAD
       if (res.success) {
         setSuccess(res.message || 'Update successful');
         setStats(res.data);
-        setTimeout(() => {
+        if (successTimerRef.current) clearTimeout(successTimerRef.current);
+        successTimerRef.current = setTimeout(() => {
           onSuccess();
         }, 1500);
       } else {
@@ -122,8 +133,14 @@ export default function EmployeeADUpdateModal({ onClose, onSuccess }: EmployeeAD
                 </ul>
               </div>
 
-              <div className={`relative flex flex-col items-center justify-center rounded-2xl border-2 border-dashed p-10 transition-all ${file ? 'border-emerald-500 bg-emerald-50/30 dark:border-emerald-500/50 dark:bg-emerald-900/10' : 'border-slate-300 hover:border-indigo-400 hover:bg-slate-50 dark:border-slate-700 dark:hover:border-indigo-500/50 dark:hover:bg-slate-800'
-                }`}>
+              <div
+                className={`relative flex flex-col items-center justify-center rounded-2xl border-2 border-dashed p-10 transition-all ${file ? 'border-emerald-500 bg-emerald-50/30 dark:border-emerald-500/50 dark:bg-emerald-900/10' : isDragOver ? 'border-indigo-500 bg-indigo-50/30 dark:bg-indigo-900/10' : 'border-slate-300 hover:border-indigo-400 hover:bg-slate-50 dark:border-slate-700 dark:hover:border-indigo-500/50 dark:hover:bg-slate-800'
+                }`}
+                onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(true); }}
+                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(false); }}
+                onDrop={onDrop}
+              >
                 <input type="file" accept=".xlsx, .xls" onChange={handleFileChange} className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0" />
                 <div className="flex h-16 w-16 items-center justify-center rounded-full bg-white shadow-sm dark:bg-slate-800">
                   <FileSpreadsheet className={`h-8 w-8 ${file ? 'text-emerald-500' : 'text-slate-400'}`} />

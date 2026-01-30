@@ -4343,7 +4343,11 @@ export default function SettingsPage() {
                         min="1"
                         max="31"
                         value={payrollCycleStartDay}
-                        onChange={(e) => setPayrollCycleStartDay(parseInt(e.target.value) || 1)}
+                        onChange={(e) => {
+                          const v = Number.parseInt(e.target.value, 10);
+                          const clamped = Number.isNaN(v) ? payrollCycleStartDay : Math.min(31, Math.max(1, v));
+                          setPayrollCycleStartDay(clamped);
+                        }}
                         className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-400/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                       />
                       <p className="mt-1 text-[10px] text-slate-500">Day of month when cycle starts (e.g., 26)</p>
@@ -4357,7 +4361,11 @@ export default function SettingsPage() {
                         min="1"
                         max="31"
                         value={payrollCycleEndDay}
-                        onChange={(e) => setPayrollCycleEndDay(parseInt(e.target.value) || 31)}
+                        onChange={(e) => {
+                          const v = Number.parseInt(e.target.value, 10);
+                          const clamped = Number.isNaN(v) ? payrollCycleEndDay : Math.min(31, Math.max(1, v));
+                          setPayrollCycleEndDay(clamped);
+                        }}
                         className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-400/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                       />
                       <p className="mt-1 text-[10px] text-slate-500">Day of month when cycle ends (e.g., 25)</p>
@@ -4372,8 +4380,7 @@ export default function SettingsPage() {
                           if (payrollCycleStartDay < payrollCycleEndDay) {
                             return `${payrollCycleEndDay - payrollCycleStartDay + 1} Days`;
                           } else {
-                            // Spans months - calculate based on a 30-day month average for visualization
-                            const duration = (31 - payrollCycleStartDay) + payrollCycleEndDay;
+                            const duration = (31 - payrollCycleStartDay) + payrollCycleEndDay + 1;
                             return `~${duration} Days (Spans Months)`;
                           }
                         })()}

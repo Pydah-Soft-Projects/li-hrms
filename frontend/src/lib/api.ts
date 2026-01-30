@@ -279,14 +279,21 @@ export async function apiRequest<T>(
       headers,
     });
 
-    const data = await response.json();
+    const text = await response.text();
+    let data: any;
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      data = {};
+    }
     console.log(`[API Response] ${response.status} ${url}`, data);
 
     if (!response.ok) {
+      const message = data?.message ?? data?.error ?? text ?? `HTTP ${response.status}`;
       return {
         success: false,
-        message: data.message || 'An error occurred',
-        error: data.error || data.message || `HTTP ${response.status}`,
+        message: message || 'An error occurred',
+        error: message,
       };
     }
 
@@ -318,24 +325,19 @@ async function apiRequestWithTimeout<T>(
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-  try {
-    const response = await apiRequest<T>(endpoint, {
-      ...options,
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    return response;
-  } catch (error: any) {
-    clearTimeout(timeoutId);
-    if (error.name === 'AbortError') {
-      return {
-        success: false,
-        message: 'Request timed out. The operation is taking longer than expected. Please check the server logs.',
-        error: 'Request timeout',
-      };
-    }
-    throw error;
+  const response = await apiRequest<T>(endpoint, {
+    ...options,
+    signal: controller.signal,
+  });
+  clearTimeout(timeoutId);
+  if (controller.signal.aborted) {
+    return {
+      success: false,
+      message: 'Request timed out. The operation is taking longer than expected. Please check the server logs.',
+      error: 'Request timeout',
+    };
   }
+  return response;
 }
 
 
@@ -1445,39 +1447,15 @@ export const api = {
 
   // Generic PUT method
   put: async <T = any>(url: string, data: any): Promise<ApiResponse<T>> => {
-    const response = await fetch(`${API_BASE_URL}${url}`, {
+    return apiRequest<T>(url, {
       method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(await auth.getAuthHeader())
-      },
       body: JSON.stringify(data),
     });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Request failed');
-    }
-
-    return response.json();
   },
 
   // Generic DELETE method
   delete: async <T = any>(url: string): Promise<ApiResponse<T>> => {
-    const response = await fetch(`${API_BASE_URL}${url}`, {
-      method: 'DELETE',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(await auth.getAuthHeader())
-      },
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Request failed');
-    }
-
-    return response.json();
+    return apiRequest<T>(url, { method: 'DELETE' });
   },
 
   // Generic POST method
@@ -2922,7 +2900,7 @@ export const api = {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     let url = `${API_BASE_URL}/employees/bulk-update/template`;
     if (fields && fields.length > 0) {
-      url += `?fields=${fields.join(',')}`;
+      url += '?fields=' + fields.map(f => encodeURIComponent(f)).join(',');
     }
     const response = await fetch(url, {
       method: 'GET',

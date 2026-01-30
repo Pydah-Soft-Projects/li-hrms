@@ -937,19 +937,38 @@ export default function PayslipsPage() {
               >
                 Previous
               </button>
-              <div className="flex gap-1 md:gap-2">
-                {[...Array(totalPages)].map((_, i) => (
-                  <button
-                    key={i + 1}
-                    onClick={() => setCurrentPage(i + 1)}
-                    className={`min-w-[40px] h-10 px-2 rounded-xl text-sm font-medium transition-all ${currentPage === i + 1
-                      ? 'bg-emerald-600 text-white shadow-md'
-                      : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
-                      }`}
-                  >
-                    {i + 1}
-                  </button>
-                ))}
+              <div className="flex gap-1 md:gap-2 items-center flex-wrap">
+                {(() => {
+                  const delta = 2;
+                  const pagesToShow: (number | 'ellipsis')[] = [];
+                  if (totalPages <= 7) {
+                    for (let p = 1; p <= totalPages; p++) pagesToShow.push(p);
+                  } else {
+                    pagesToShow.push(1);
+                    if (currentPage > delta + 2) pagesToShow.push('ellipsis');
+                    for (let p = Math.max(2, currentPage - delta); p <= Math.min(totalPages - 1, currentPage + delta); p++) {
+                      if (!pagesToShow.includes(p)) pagesToShow.push(p);
+                    }
+                    if (currentPage < totalPages - delta - 1) pagesToShow.push('ellipsis');
+                    if (totalPages > 1) pagesToShow.push(totalPages);
+                  }
+                  return pagesToShow.map((page, idx) =>
+                    page === 'ellipsis' ? (
+                      <span key={`e-${idx}`} className="px-1 text-slate-400">…</span>
+                    ) : (
+                      <button
+                        key={page}
+                        onClick={() => setCurrentPage(page)}
+                        className={`min-w-[40px] h-10 px-2 rounded-xl text-sm font-medium transition-all ${currentPage === page
+                          ? 'bg-emerald-600 text-white shadow-md'
+                          : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
+                          }`}
+                      >
+                        {page}
+                      </button>
+                    )
+                  );
+                })()}
               </div>
               <button
                 onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}

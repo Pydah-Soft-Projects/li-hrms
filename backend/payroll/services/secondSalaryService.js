@@ -2,7 +2,6 @@ const SecondSalaryBatch = require('../model/SecondSalaryBatch');
 const SecondSalaryRecord = require('../model/SecondSalaryRecord');
 const Employee = require('../../employees/model/Employee');
 const Department = require('../../departments/model/Department');
-const mongoose = require('mongoose');
 const { calculateSecondSalary } = require('./secondSalaryCalculationService');
 const SecondSalaryBatchService = require('./secondSalaryBatchService');
 
@@ -133,20 +132,25 @@ class SecondSalaryService {
      * Update batch status
      */
     async updateBatchStatus(batchId, status, userId, reason = '') {
+        const allowedStatuses = ['pending', 'approved', 'freeze', 'complete'];
+        const normalizedStatus = (typeof status === 'string' ? status.trim().toLowerCase() : String(status)).toLowerCase();
+        if (!allowedStatuses.includes(normalizedStatus)) {
+            throw new Error(`Invalid status: ${status}`);
+        }
         const batch = await SecondSalaryBatch.findById(batchId);
         if (!batch) throw new Error('Batch not found');
 
-        batch.status = status;
+        batch.status = normalizedStatus;
         batch.statusHistory.push({
-            status,
+            status: normalizedStatus,
             changedBy: userId,
             reason
         });
 
-        if (status === 'approved') {
+        if (normalizedStatus === 'approved') {
             batch.approvedBy = userId;
             batch.approvedAt = new Date();
-        } else if (status === 'complete') {
+        } else if (normalizedStatus === 'complete') {
             batch.completedBy = userId;
             batch.completedAt = new Date();
         }
@@ -187,22 +191,15 @@ class SecondSalaryService {
     }
     async getRecordById(id) {
         return await SecondSalaryRecord.findById(id)
-            .populate('employeeId', 'employee_name emp_no designation_id department_id bank_account_no location pf_number esi_number uan_number pan_number')
-            .populate('division_id', 'code name')
             .populate({
                 path: 'employeeId',
-                populate: {
-                    path: 'designation_id',
-                    select: 'name'
-                }
+                select: 'employee_name emp_no designation_id department_id bank_account_no location pf_number esi_number uan_number pan_number',
+                populate: [
+                    { path: 'designation_id', select: 'name' },
+                    { path: 'department_id', select: 'name' },
+                ]
             })
-            .populate({
-                path: 'employeeId',
-                populate: {
-                    path: 'department_id',
-                    select: 'name'
-                }
-            });
+            .populate('division_id', 'code name');
     }
 }
 

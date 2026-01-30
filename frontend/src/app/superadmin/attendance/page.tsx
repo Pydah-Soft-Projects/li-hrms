@@ -108,20 +108,25 @@ interface Designation {
 export default function AttendancePage() {
   const [tableType, setTableType] = useState<'complete' | 'present_absent' | 'in_out' | 'leaves' | 'od' | 'ot'>('complete');
 
-  // Helper to format time in IST
+  // Helper to format time in IST; when showDateIfDifferent and recordDate are set, show date + time if IST date differs from record date
   const formatTimeIST = (timeStr: string | null, showDateIfDifferent?: boolean, recordDate?: string) => {
     if (!timeStr) return '-';
     try {
       const date = new Date(timeStr);
-      let formattedTime = date.toLocaleTimeString('en-US', {
+      const formattedTime = date.toLocaleTimeString('en-US', {
         timeZone: 'Asia/Kolkata',
         hour: '2-digit',
         minute: '2-digit',
         hour12: true
       });
-      // Logic for showDateIfDifferent could be added here if needed, 
-      // but matching the signature at least prevents the call site error.
-      // For now, minimal implementation to satisfy type checker.
+      if (showDateIfDifferent && recordDate) {
+        const istDateStr = date.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' });
+        const recordDateObj = new Date(recordDate + 'T12:00:00Z');
+        const recordDateIST = recordDateObj.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' });
+        if (istDateStr !== recordDateIST) {
+          return `${istDateStr} • ${formattedTime}`;
+        }
+      }
       return formattedTime;
     } catch {
       return '-';
@@ -2020,16 +2025,10 @@ export default function AttendancePage() {
                                 onClick={() => {
                                   setEditingInTime(true);
                                   if (attendanceDetail.inTime) {
-                                    const date = new Date(attendanceDetail.inTime);
-                                    // Adjust for local input (HH:mm) from the ISO string
-                                    // Note: datetime-local inputs work best with local time string. 
-                                    // If we use type="time", we just need HH:mm.
-                                    // But we need to handle Time Zone carefully.
-                                    // The helper `formatTimeIST` does formatting for display.
-                                    // For Input: `date.getHours()` gets local hours of the browser.
-                                    // If we want IST specifically, we might need to adjust. 
-                                    // But typically admin is in IST. Sticking to simple extraction for now.
-                                    setInTimeInput(`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`);
+                                    const d = new Date(attendanceDetail.inTime);
+                                    const hrs = d.toLocaleString('en-CA', { timeZone: 'Asia/Kolkata', hour: '2-digit', hour12: false });
+                                    const mins = d.toLocaleString('en-CA', { timeZone: 'Asia/Kolkata', minute: '2-digit' });
+                                    setInTimeInput(`${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}`);
                                   }
                                 }}
                                 className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"

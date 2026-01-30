@@ -96,13 +96,6 @@ Employee.findOne = () => ({
   select: () => Promise.resolve({ _id: 'mock_emp_id' })
 });
 
-OD.find = () => Promise.resolve([]); // Correct: returns Promise resolving to array (or has conditions) -> wait.
-// In service: `const approvedODs = await OD.find(...)`
-// Correct. `find` returns a Thenable.
-OD.find = () => ({ select: () => ({ lean: () => Promise.resolve([]) }), sort: () => Promise.resolve([]) });
-// OD.find used in line 255. It just awaits `OD.find(...)`. 
-// My previous mock using `select` was for summary calc. Here it is `OD.find(...)`.
-// Let's make it robust.
 const mockMongooseQuery = (result) => ({
   select: () => mockMongooseQuery(result),
   sort: () => mockMongooseQuery(result),
@@ -116,18 +109,13 @@ Leave.find = () => mockMongooseQuery([]);
 // --- 4. Load Service ---
 const { processAndAggregateLogs } = require('../attendance/services/attendanceSyncService');
 
-// --- 5. Test Runner ---
-async function runTest(scenarioName, logs) {
-  console.log(`\n==================================================`);
-  console.log(`SCENARIO: ${scenarioName}`);
-  console.log(`INPUT LOGS:`);
-  logs.forEach(l => console.log(`  - ${l.time} [${l.type}]`));
+// --- 5. Test Runner (with assertions) ---
+const assert = require('assert');
 
-  // Reset
+async function runTest(scenarioName, logs, expected) {
   mockRawLogs.length = 0;
   for (const prop of Object.keys(mockDailyRecords)) delete mockDailyRecords[prop];
 
-  // Populate
   logs.forEach(l => {
     mockRawLogs.push({
       employeeNumber: 'TEST_EMP',
@@ -139,52 +127,57 @@ async function runTest(scenarioName, logs) {
     });
   });
 
-  try {
-    const stats = await processAndAggregateLogs(mockRawLogs, false, true);
-    if (stats.errors.length > 0) console.log('ERRORS:', stats.errors);
-
-    const result = mockDailyRecords['TEST_EMP:2025-01-01'];
-    if (result) {
-      console.log(`RESULT RECORD (2025-01-01):`);
-      console.log(`  In Time:  ${result.inTime ? new Date(result.inTime).toISOString().split('T')[1].substr(0, 8) : 'NULL'}`);
-      console.log(`  Out Time: ${result.outTime ? new Date(result.outTime).toISOString().split('T')[1].substr(0, 8) : 'NULL'}`);
-      console.log(`  Status:   ${result.status}`);
-    } else {
-      console.log(`RESULT: No Daily Record Created/Updated`);
+  const stats = await processAndAggregateLogs(mockRawLogs, false, true);
+  if (expected.errorsCount !== undefined) {
+    assert.strictEqual(stats.errors.length, expected.errorsCount, `${scenarioName}: expected ${expected.errorsCount} errors, got ${stats.errors.length}`);
+  }
+  const result = mockDailyRecords['TEST_EMP:2025-01-01'];
+  if (expected.recordExists !== false) {
+    assert(result, `${scenarioName}: expected daily record TEST_EMP:2025-01-01 to exist`);
+    if (expected.status !== undefined) assert.strictEqual(result.status, expected.status, `${scenarioName}: status`);
+    if (expected.inTimeSubstr !== undefined && result.inTime) {
+      const inStr = new Date(result.inTime).toISOString().split('T')[1].substr(0, 8);
+      assert(inStr.includes(expected.inTimeSubstr) || inStr.startsWith(expected.inTimeSubstr), `${scenarioName}: inTime ~${expected.inTimeSubstr}`);
     }
-  } catch (e) {
-    console.error('TEST ERROR:', e);
+    if (expected.outTimeSubstr !== undefined && result.outTime) {
+      const outStr = new Date(result.outTime).toISOString().split('T')[1].substr(0, 8);
+      assert(outStr.includes(expected.outTimeSubstr) || outStr.startsWith(expected.outTimeSubstr), `${scenarioName}: outTime ~${expected.outTimeSubstr}`);
+    }
+  } else {
+    assert(!result, `${scenarioName}: expected no daily record`);
   }
 }
 
-// --- 6. Execute ---
+// --- 6. Execute (assertions) ---
 (async () => {
-  // Scenario 1
-  await runTest('Standard IN -> OUT', [
-    { time: '08:00', type: 'IN' },
-    { time: '17:00', type: 'OUT' }
-  ]);
+  try {
+    await runTest('Standard IN -> OUT', [
+      { time: '08:00', type: 'IN' },
+      { time: '17:00', type: 'OUT' }
+    ], { errorsCount: 0, recordExists: true, inTimeSubstr: '08', outTimeSubstr: '17' });
 
-  // Scenario 2
-  await runTest('Multiple INs (08:00 IN -> 09:00 IN -> 17:00 OUT)', [
-    { time: '08:00', type: 'IN' },
-    { time: '09:00', type: 'IN' },
-    { time: '17:00', type: 'OUT' }
-  ]);
+    await runTest('Multiple INs (08:00 IN -> 09:00 IN -> 17:00 OUT)', [
+      { time: '08:00', type: 'IN' },
+      { time: '09:00', type: 'IN' },
+      { time: '17:00', type: 'OUT' }
+    ], { errorsCount: 0, recordExists: true });
 
-  // Scenario 3
-  await runTest('Multiple OUTs (08:00 IN -> 12:00 OUT -> 17:00 OUT)', [
-    { time: '08:00', type: 'IN' },
-    { time: '12:00', type: 'OUT' },
-    { time: '17:00', type: 'OUT' }
-  ]);
+    await runTest('Multiple OUTs (08:00 IN -> 12:00 OUT -> 17:00 OUT)', [
+      { time: '08:00', type: 'IN' },
+      { time: '12:00', type: 'OUT' },
+      { time: '17:00', type: 'OUT' }
+    ], { errorsCount: 0, recordExists: true });
 
-  // Scenario 4
-  await runTest('Two Shifts (08:00-12:00, 13:00-17:00)', [
-    { time: '08:00', type: 'IN' },
-    { time: '12:00', type: 'OUT' },
-    { time: '13:00', type: 'IN' },
-    { time: '17:00', type: 'OUT' }
-  ]);
+    await runTest('Two Shifts (08:00-12:00, 13:00-17:00)', [
+      { time: '08:00', type: 'IN' },
+      { time: '12:00', type: 'OUT' },
+      { time: '13:00', type: 'IN' },
+      { time: '17:00', type: 'OUT' }
+    ], { errorsCount: 0, recordExists: true });
 
+    console.log('All assertions passed.');
+  } catch (e) {
+    console.error('TEST FAILED:', e.message);
+    process.exit(1);
+  }
 })();

@@ -1,4 +1,5 @@
 const { Server } = require('socket.io');
+const jwt = require('jsonwebtoken');
 
 let io;
 
@@ -16,14 +17,34 @@ const initSocket = (server, allowedOrigins) => {
         transports: ['websocket', 'polling'],
     });
 
+    io.use((socket, next) => {
+        const token = socket.handshake.auth?.token;
+        if (!token) {
+            return next(new Error('Missing auth token'));
+        }
+        try {
+            const decoded = jwt.verify(token, process.env.JWT_SECRET);
+            socket.user = { id: decoded.userId || decoded.id };
+            next();
+        } catch (err) {
+            next(new Error('Invalid token'));
+        }
+    });
+
     console.log('🔌 Socket.io initialized');
 
     io.on('connection', (socket) => {
         console.log(`🔌 New client connected: ${socket.id}`);
 
         socket.on('join_user_room', (userId) => {
-            console.log(`🔌 User ${userId} joined their private room`);
-            socket.join(userId);
+            const canonicalId = socket.user?.id?.toString?.();
+            const requestedId = userId?.toString?.();
+            if (requestedId && canonicalId && requestedId === canonicalId) {
+                socket.join(userId);
+                console.log(`🔌 User ${userId} joined their private room`);
+            } else {
+                console.warn(`🔌 join_user_room rejected: requested ${userId} vs auth ${canonicalId}`);
+            }
         });
 
         socket.on('disconnect', () => {
@@ -51,7 +72,10 @@ const getIO = () => {
  * @param {Object} data - Notification data { type, message, title }
  */
 const sendNotification = (userId, data) => {
-    if (!io) return;
+    if (!io) {
+        console.warn('sendNotification: Socket.io not initialized, skipping userId=', userId);
+        return;
+    }
     io.to(userId).emit('toast_notification', data);
 };
 
@@ -60,7 +84,10 @@ const sendNotification = (userId, data) => {
  * @param {Object} data - Notification data
  */
 const broadcastNotification = (data) => {
-    if (!io) return;
+    if (!io) {
+        console.warn('broadcastNotification: Socket.io not initialized');
+        return;
+    }
     io.emit('toast_notification', data);
 };
 

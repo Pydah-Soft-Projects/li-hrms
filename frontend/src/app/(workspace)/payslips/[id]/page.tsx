@@ -624,6 +624,7 @@ function StatusCard({ label, value, color = 'slate', highlight = false }: { labe
     emerald: 'text-emerald-600 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-900/40 border-emerald-100/50 dark:border-emerald-900/30',
     amber: 'text-amber-600 dark:text-amber-400 bg-amber-50/50 dark:bg-amber-900/40 border-amber-100/50 dark:border-amber-900/30',
     blue: 'text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-900/40 border-blue-100/50 dark:border-blue-900/30',
+    teal: 'text-teal-600 dark:text-teal-400 bg-teal-50/50 dark:bg-teal-900/40 border-teal-100/50 dark:border-teal-900/30',
   };
 
   return (

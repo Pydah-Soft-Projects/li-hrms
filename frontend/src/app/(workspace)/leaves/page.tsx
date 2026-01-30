@@ -379,6 +379,12 @@ export default function LeavesPage() {
   const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
 
+  // Local date for min constraints (YYYY-MM-DD in local time)
+  const localDateIso = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  })();
+
   // Form state
   const [formData, setFormData] = useState<{
     leaveType: string;
@@ -2260,7 +2266,7 @@ export default function LeavesPage() {
                       <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Date *</label>
                       <input
                         type="date"
-                        min={new Date().toISOString().split('T')[0]}
+                        min={localDateIso}
                         value={formData.fromDate} // Use fromDate as the single source of truth
                         onChange={(e) => setFormData({ ...formData, fromDate: e.target.value, toDate: e.target.value })}
                         required
@@ -2274,7 +2280,7 @@ export default function LeavesPage() {
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">From Date *</label>
                         <input
                           type="date"
-                          min={new Date().toISOString().split('T')[0]}
+                          min={localDateIso}
                           value={formData.fromDate}
                           onChange={(e) => setFormData({ ...formData, fromDate: e.target.value })}
                           required
@@ -2285,7 +2291,7 @@ export default function LeavesPage() {
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">To Date *</label>
                         <input
                           type="date"
-                          min={new Date().toISOString().split('T')[0]}
+                          min={formData.fromDate ? (formData.fromDate > localDateIso ? formData.fromDate : localDateIso) : localDateIso}
                           value={formData.toDate}
                           onChange={(e) => setFormData({ ...formData, toDate: e.target.value })}
                           required

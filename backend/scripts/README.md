@@ -36,7 +36,7 @@ Before running the script, ensure you have:
 
 #### Example Output
 
-```
+```text
 🚀 Starting application generation...
 
 ✓ MongoDB connected successfully

@@ -200,9 +200,18 @@ async function generateApplications() {
     let savedCount = 0;
     for (let i = 0; i < applications.length; i += batchSize) {
       const batch = applications.slice(i, i + batchSize);
-      await EmployeeApplication.insertMany(batch);
-      savedCount += batch.length;
-      console.log(`   Saved ${savedCount}/${applications.length} applications...`);
+      try {
+        const result = await EmployeeApplication.insertMany(batch, { ordered: false });
+        savedCount += result.length;
+        console.log(`   Saved ${savedCount}/${applications.length} applications...`);
+      } catch (err) {
+        if (err.name === 'BulkWriteError' && err.result) {
+          savedCount += err.result.insertedCount || 0;
+          console.error(`   Batch partial insert: ${err.result.insertedCount || 0} inserted, errors:`, err.writeErrors?.length || 0);
+        } else {
+          throw err;
+        }
+      }
     }
 
     console.log('\n✅ Success! Generated 50 employee applications');

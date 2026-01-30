@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { X, Upload, FileSpreadsheet, AlertCircle, CheckCircle, Download, ChevronRight, Check } from 'lucide-react';
 import { api } from '@/lib/api';
 
@@ -20,9 +20,16 @@ export default function EmployeeUpdateModal({ onClose, onSuccess }: EmployeeUpda
     const [formSettings, setFormSettings] = useState<any>(null);
     const [selectedFields, setSelectedFields] = useState<string[]>([]);
     const [loadingSettings, setLoadingSettings] = useState(true);
+    const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
         loadFormSettings();
+    }, []);
+
+    useEffect(() => {
+        return () => {
+            if (successTimerRef.current) clearTimeout(successTimerRef.current);
+        };
     }, []);
 
     const loadFormSettings = async () => {
@@ -53,7 +60,15 @@ export default function EmployeeUpdateModal({ onClose, onSuccess }: EmployeeUpda
             return;
         }
         try {
-            await api.downloadEmployeeUpdateTemplate(selectedFields);
+            const blob = await api.downloadEmployeeUpdateTemplate(selectedFields);
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `employee-update-template-${Date.now()}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
             setStep('upload');
             setError('');
         } catch (err: any) {
@@ -88,7 +103,8 @@ export default function EmployeeUpdateModal({ onClose, onSuccess }: EmployeeUpda
             if (res.success) {
                 setSuccess(res.message || 'Update successful');
                 setStats(res.data);
-                setTimeout(() => {
+                if (successTimerRef.current) clearTimeout(successTimerRef.current);
+                successTimerRef.current = setTimeout(() => {
                     onSuccess();
                 }, 2000);
             } else {

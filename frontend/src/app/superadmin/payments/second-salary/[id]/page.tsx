@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import {
@@ -13,25 +13,41 @@ import {
     Clock,
     Building2,
     Search,
-    Download,
-    User,
     Check
 } from 'lucide-react';
 import Link from 'next/link';
 
+interface EmployeePayrollItem {
+    _id?: string;
+    emp_no?: string;
+    employeeId?: { _id?: string; employee_name?: string };
+    earnings?: { netSalary?: number };
+    status?: string;
+}
+interface SecondSalaryBatch {
+    _id: string;
+    batchNumber?: string;
+    status?: string;
+    month?: string;
+    monthName?: string;
+    totalEmployees?: number;
+    totalNetSalary?: number;
+    department?: { name?: string };
+    division?: { name?: string };
+    createdAt?: string;
+    employeePayrolls?: EmployeePayrollItem[];
+}
+
 export default function SecondSalaryBatchDetailPage() {
     const { id } = useParams();
     const router = useRouter();
-    const [batch, setBatch] = useState<any>(null);
+    const [batch, setBatch] = useState<SecondSalaryBatch | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
-    useEffect(() => {
-        fetchBatchDetails();
-    }, [id]);
-
-    const fetchBatchDetails = async () => {
+    const fetchBatchDetails = useCallback(async () => {
+        if (!id) return;
         setIsLoading(true);
         try {
             const res = await api.get(`/second-salary/batches/${id}`);
@@ -43,7 +59,11 @@ export default function SecondSalaryBatchDetailPage() {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [id]);
+
+    useEffect(() => {
+        fetchBatchDetails();
+    }, [fetchBatchDetails]);
 
     const handleUpdateStatus = async (status: string) => {
         if (!confirm(`Are you sure you want to change status to ${status}?`)) return;

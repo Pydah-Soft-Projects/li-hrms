@@ -21,9 +21,11 @@ async function getResolvedOTSettings(departmentId, divisionId = null) {
         // Get department/division settings
         const deptSettings = await DepartmentSettings.getByDeptAndDiv(departmentId, divisionId);
 
-        // Get global OT settings
-        const globalPayPerHour = await Settings.findOne({ key: 'ot_pay_per_hour', category: 'overtime' }).lean();
-        const globalMinHours = await Settings.findOne({ key: 'ot_min_hours', category: 'overtime' }).lean();
+        // Get global OT settings (parallel)
+        const [globalPayPerHour, globalMinHours] = await Promise.all([
+            Settings.findOne({ key: 'ot_pay_per_hour', category: 'overtime' }).lean(),
+            Settings.findOne({ key: 'ot_min_hours', category: 'overtime' }).lean(),
+        ]);
 
         // Merge: Department settings override global
         resolved = {

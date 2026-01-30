@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { api, Division, Department } from '@/lib/api';
 import {
     Banknote,
@@ -13,8 +14,18 @@ import {
 import { format } from 'date-fns';
 import { toast } from 'react-toastify';
 
+interface SecondSalaryRecord {
+    _id: string;
+    emp_no?: string;
+    employeeId?: { _id?: string; employee_name?: string; designation_id?: { name?: string }; department_id?: { name?: string } };
+    netSalary?: number;
+    month?: string;
+    monthName?: string;
+}
+
 export default function SecondSalaryPayslipsPage() {
-    const [records, setRecords] = useState<any[]>([]);
+    const router = useRouter();
+    const [records, setRecords] = useState<SecondSalaryRecord[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
 
@@ -76,10 +87,18 @@ export default function SecondSalaryPayslipsPage() {
         }).format(amount);
     };
 
-    const filteredRecords = records.filter((record: any) =>
-        record.employeeId?.employee_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        record.emp_no?.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const searchLower = (searchTerm ?? '').toLowerCase();
+    const filteredRecords = records.filter((record) => {
+        const name = record.employeeId?.employee_name;
+        const empNo = record.emp_no;
+        const nameStr = name != null ? String(name) : '';
+        const empNoStr = empNo != null ? String(empNo) : '';
+        return nameStr.toLowerCase().includes(searchLower) || empNoStr.toLowerCase().includes(searchLower);
+    });
+
+    const handleDownloadPdf = (recordId: string) => {
+        router.push(`/superadmin/payslips/second-salary/${recordId}`);
+    };
 
     return (
         <div className="space-y-6 max-w-7xl mx-auto p-4 sm:p-6">
@@ -221,6 +240,7 @@ export default function SecondSalaryPayslipsPage() {
                                                     <Eye className="w-4 h-4" />
                                                 </a>
                                                 <button
+                                                    onClick={() => handleDownloadPdf(record._id)}
                                                     className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-all"
                                                     title="Download PDF"
                                                 >

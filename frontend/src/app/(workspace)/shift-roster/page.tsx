@@ -34,6 +34,13 @@ function shiftLabel(shift?: Shift | null) {
   return shift.name || '';
 }
 
+/** Normalize roster entry: preserve explicit status; do not auto-label legacy null shift as WO. */
+function normalizeShiftEntry(e: { shiftId?: string | null; shift?: unknown; status?: 'WO' | 'HOL' }): { shiftId: string | null; status?: 'WO' | 'HOL' } {
+  const shiftId = e.shiftId ?? (e.shift ? (e.shift as { _id?: string })._id ?? null : null) ?? null;
+  const status = e.status ?? (shiftId === null && !e.shift ? undefined : undefined);
+  return { shiftId, status };
+}
+
 function RosterPage() {
   const [month, setMonth] = useState(formatMonthInput(new Date()));
   const [strict, setStrict] = useState(false);
@@ -117,12 +124,10 @@ function RosterPage() {
         if (!emp) return;
         if (!map.has(emp)) map.set(emp, {});
         const row = map.get(emp)!;
-        // Backend now explicitly returns status: 'WO' or 'HOL'
-        // Also handle legacy data where shiftId is null (fallback)
-        const status = e.status || ((!e.shiftId && !e.shift) ? 'WO' : undefined);
+        const { shiftId, status } = normalizeShiftEntry(e);
         row[e.date] = {
-          shiftId: e.shiftId || null,
-          status: status as any
+          shiftId,
+          status: status as RosterCell['status']
         };
       });
 

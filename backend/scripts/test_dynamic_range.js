@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 require('dotenv').config();
 const Settings = require('../settings/model/Settings');
-const { getPayrollDateRange, getAllDatesInRange } = require('../shared/utils/dateUtils');
+const { getPayrollDateRange } = require('../shared/utils/dateUtils');
 
 async function testDynamicPayrollRange() {
     try {
@@ -44,9 +44,11 @@ async function testDynamicPayrollRange() {
         await Settings.findOneAndUpdate({ key: 'payroll_cycle_end_day' }, { value: 31 });
         console.log('\nReset defaults');
 
+        await mongoose.disconnect();
         process.exit(0);
     } catch (error) {
         console.error('Error in test:', error);
+        await mongoose.disconnect();
         process.exit(1);
     }
 }

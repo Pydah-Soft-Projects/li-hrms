@@ -214,6 +214,11 @@ export default function OTAndPermissionsPage() {
     setToasts(prev => prev.filter(toast => toast.id !== id));
   };
 
+  const localToday = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  })();
+
   // Form data
   const [otFormData, setOTFormData] = useState({
     employeeId: '',
@@ -1138,7 +1143,7 @@ export default function OTAndPermissionsPage() {
                     <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Date *</label>
                     <input
                       type="date"
-                      min={new Date().toISOString().split('T')[0]}
+                      min={localToday}
                       value={otFormData.date}
                       onChange={(e) => {
                         setOTFormData(prev => ({ ...prev, date: e.target.value }));

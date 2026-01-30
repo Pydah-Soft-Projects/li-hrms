@@ -98,14 +98,26 @@ async function processSalaryAdvance(employeeId, payableAmount) {
                 const advanceBalance = advance.repayment?.remainingBalance || 0;
                 const proportion = advanceBalance / totalAdvanceBalance;
                 const deductedAmount = payableAmount * proportion;
-                const carriedForward = advanceBalance - deductedAmount;
 
                 advanceBreakdown.push({
                     advanceId: advance._id,
                     advanceAmount: Math.round(deductedAmount * 100) / 100,
-                    carriedForward: Math.round(carriedForward * 100) / 100,
+                    carriedForward: 0,
+                    _originalBalance: advanceBalance,
                 });
             }
+            let sumAllocated = advanceBreakdown.reduce((s, e) => s + e.advanceAmount, 0);
+            const diff = Math.round((advanceDeduction - sumAllocated) * 100) / 100;
+            if (advanceBreakdown.length > 0 && diff !== 0) {
+                const last = advanceBreakdown[advanceBreakdown.length - 1];
+                last.advanceAmount = Math.round((last.advanceAmount + diff) * 100) / 100;
+            }
+            advanceBreakdown.forEach(e => {
+                if (e._originalBalance !== undefined) {
+                    e.carriedForward = Math.round((e._originalBalance - e.advanceAmount) * 100) / 100;
+                    delete e._originalBalance;
+                }
+            });
         } else {
             advanceDeduction = totalAdvanceBalance;
             for (const advance of advances) {
@@ -133,6 +145,7 @@ async function processSalaryAdvance(employeeId, payableAmount) {
  * Combined helper for 2nd Salary
  */
 async function calculateLoanAdvance(employeeId, month, payableAmount = 0) {
+    // TODO: use month for loan/advance period filtering when needed
     // IMPORTANT: For many implementations, loans are only deducted from the main salary.
     // We provide the functionality here to match "full calculation", but it can be
     // disabled by simply not calling it in calculationService if desired.

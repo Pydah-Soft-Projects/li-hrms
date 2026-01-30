@@ -186,26 +186,25 @@ export default function PayRegisterPage() {
   const monthStr = `${year}-${String(month).padStart(2, '0')}`;
   const daysInMonth = new Date(year, month, 0).getDate();
 
-  // Use the configured range from the backend if available, otherwise compute calendar month
+  // Use the configured range from the backend if available (UTC-based), otherwise compute calendar month
   const displayDays = payrollStartDate && payrollEndDate
     ? (() => {
-      const start = new Date(payrollStartDate);
-      const end = new Date(payrollEndDate);
-      const dates = [];
-      let curr = new Date(start);
-      // Safety break to prevent infinite loop
+      const [sy, sm, sd] = payrollStartDate.split('-').map(Number);
+      const [ey, em, ed] = payrollEndDate.split('-').map(Number);
+      let curr = new Date(Date.UTC(sy, sm - 1, sd));
+      const end = new Date(Date.UTC(ey, em - 1, ed));
+      const dates: string[] = [];
       let count = 0;
       while (curr <= end && count < 40) {
         dates.push(curr.toISOString().split('T')[0]);
-        curr.setDate(curr.getDate() + 1);
+        curr = new Date(curr.getTime() + 86400000);
         count++;
       }
       return dates;
     })()
     : Array.from({ length: daysInMonth }, (_, i) => {
-      const d = new Date(year, month - 1, i + 1);
-      // Using UTC to avoid local timezone shifts during string conversion
-      return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+      const d = new Date(Date.UTC(year, month - 1, i + 1));
+      return d.toISOString().split('T')[0];
     });
 
   const daysArray = displayDays; // For compatibility with existing loop names
@@ -314,8 +313,9 @@ export default function PayRegisterPage() {
         const payRegisterList = response.data || [];
         console.log('[Pay Register] Loaded page', pageToLoad, 'count:', payRegisterList.length);
 
-        if ((response as any).startDate) setPayrollStartDate((response as any).startDate);
-        if ((response as any).endDate) setPayrollEndDate((response as any).endDate);
+        const res = response as { startDate?: string; endDate?: string };
+        if (res.startDate) setPayrollStartDate(res.startDate);
+        if (res.endDate) setPayrollEndDate(res.endDate);
 
         if (append) {
           setPayRegisters(prev => [...prev, ...payRegisterList]);
@@ -1460,7 +1460,8 @@ export default function PayRegisterPage() {
                     {daysArray.map((day) => (
                       <th
                         key={day}
-                        className={`w-[calc((100%-180px-${activeTable === 'leaves' ? '320px' : '80px'})/${daysArray.length})] border-r border-slate-200 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300`}
+                        style={{ width: `calc((100% - 180px - ${activeTable === 'leaves' ? '320px' : '80px'}) / ${daysArray.length})` }}
+                        className="border-r border-slate-200 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
                       >
                         {parseInt(day.split('-')[2])}
                       </th>

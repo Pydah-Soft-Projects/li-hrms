@@ -8,7 +8,6 @@ const { initializeAllDatabases } = require('./config/init');
 const { checkConnection: checkS3Connection } = require('./shared/services/s3UploadService');
 
 const app = express();
-module.exports = app;
 const PORT = process.env.PORT || 5000;
 
 // Middleware

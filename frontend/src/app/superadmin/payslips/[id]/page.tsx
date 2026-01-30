@@ -471,16 +471,16 @@ export default function PayslipDetailPage() {
             {/* Reorganized Profile and Attendance sections into side-by-side columns */}
             <section>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="p-1 bg-emerald-50 dark:bg-emerald-900/40 rounded-lg">
-                    <svg className="w-4 h-4 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                    </svg>
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="p-1 bg-emerald-50 dark:bg-emerald-900/40 rounded-lg">
+                      <svg className="w-4 h-4 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      </svg>
+                    </div>
+                    <h2 className="text-[11px] font-black text-slate-900 dark:text-white uppercase tracking-wider">Employee Profile</h2>
                   </div>
-                  <h2 className="text-[11px] font-black text-slate-900 dark:text-white uppercase tracking-wider">Employee Profile</h2>
-                </div>
-                <div className="grid grid-cols-2 gap-x-6 gap-y-2.5 bg-slate-50/50 dark:bg-slate-900/30 p-3 rounded-2xl border border-slate-100 dark:border-slate-800">
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-2.5 bg-slate-50/50 dark:bg-slate-900/30 p-3 rounded-2xl border border-slate-100 dark:border-slate-800">
                   <DetailRow label="Name" value={employee.employee_name} />
                   <DetailRow label="Employee ID" value={employee.emp_no} />
                   <DetailRow label="Department" value={typeof employee.department_id === 'object' ? (employee.department_id as any).name : (employee.department_id || 'N/A')} />
@@ -489,10 +489,11 @@ export default function PayslipDetailPage() {
                   <DetailRow label="ESI No" value={employee.esi_number || 'N/A'} />
                   <DetailRow label="UAN No" value={employee.uan_number || 'N/A'} />
                   <DetailRow label="PAN No" value={employee.pan_number || 'N/A'} />
+                  </div>
                 </div>
-                <h2 className="text-base font-bold text-slate-800 dark:text-white uppercase tracking-tight">Attendance Summary</h2>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-9 gap-2">
+                <div>
+                  <h2 className="text-base font-bold text-slate-800 dark:text-white uppercase tracking-tight mb-2">Attendance Summary</h2>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-9 gap-2">
                 <StatusCard label="Month Days" value={payroll.attendance?.totalDaysInMonth} />
                 <StatusCard label="Present" value={payroll.attendance?.presentDays} color="indigo" />
                 <StatusCard label="Absents" value={payroll.attendance?.absentDays} color="rose" />
@@ -503,6 +504,8 @@ export default function PayslipDetailPage() {
                 <StatusCard label="OT Days" value={payroll.attendance?.otDays} color="amber" />
                 <StatusCard label="Extra Days" value={((payroll.attendance?.payableShifts || 0) - (payroll.attendance?.totalPaidDays || 0)) > 0 ? ((payroll.attendance?.payableShifts || 0) - (payroll.attendance?.totalPaidDays || 0)) : 0} color="gold" />
                 <StatusCard label="Net Paid Days" value={payroll.attendance?.totalPaidDays} highlight />
+                  </div>
+                </div>
               </div>
             </section>
 
@@ -546,7 +549,7 @@ export default function PayslipDetailPage() {
                   <div className="text-[9px] font-black text-slate-300 dark:text-slate-600 uppercase tracking-widest">Subtractive</div>
                 </div>
                 <div className="space-y-1.5">
-                  {/* <SalaryRow label="Attendance Deduct" value={payroll.deductions.attendanceDeduction} isDeduction /> */}
+                  <SalaryRow label="Attendance Deduct" value={payroll.deductions.attendanceDeduction} isDeduction />
                   {payroll.deductions.permissionDeduction > 0 && <SalaryRow label="Permission Deduct" value={payroll.deductions.permissionDeduction} isDeduction />}
                   {payroll.deductions.leaveDeduction > 0 && <SalaryRow label="Leave Deduction" value={payroll.deductions.leaveDeduction} isDeduction />}
                   {payroll.deductions.otherDeductions?.map((d, i) => (
@@ -619,6 +622,7 @@ function StatusCard({ label, value, color = 'slate', highlight = false }: { labe
     emerald: 'text-emerald-600 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-900/40 border-emerald-100/50 dark:border-emerald-900/30',
     amber: 'text-amber-600 dark:text-amber-400 bg-amber-50/50 dark:bg-amber-900/40 border-amber-100/50 dark:border-amber-900/30',
     blue: 'text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-900/40 border-blue-100/50 dark:border-blue-900/30',
+    gold: 'text-amber-700 dark:text-amber-300 bg-amber-50/60 dark:bg-amber-900/30 border-amber-200/60 dark:border-amber-800/40',
   };
 
   return (
