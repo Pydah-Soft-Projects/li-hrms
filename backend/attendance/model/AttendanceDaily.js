@@ -135,7 +135,7 @@ const attendanceDailySchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['PRESENT', 'ABSENT', 'PARTIAL', 'HALF_DAY'],
+      enum: ['PRESENT', 'ABSENT', 'PARTIAL', 'HALF_DAY', 'HOLIDAY', 'WEEK_OFF'],
       default: 'ABSENT',
     },
     isEdited: {
@@ -338,6 +338,21 @@ attendanceDailySchema.pre('save', async function () {
     let totalExtra = 0;
     let firstIn = null;
     let lastOut = null;
+  // Fetch roster status if not already known
+  let rosterStatus = null;
+  try {
+    const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
+    const rosterEntry = await PreScheduledShift.findOne({
+      employeeNumber: this.employeeNumber,
+      date: this.date,
+    });
+    rosterStatus = rosterEntry?.status; // 'WO' or 'HOL'
+  } catch (err) {
+    console.error('[AttendanceDaily Model] Error fetching roster status:', err);
+  }
+
+  if (this.inTime && this.outTime) {
+    this.calculateTotalHours();
 
     this.shifts.forEach((shift, index) => {
       totalWorking += shift.workingHours || 0;
@@ -424,6 +439,26 @@ attendanceDailySchema.pre('save', async function () {
     } else {
       this.status = 'ABSENT';
       this.payableShifts = 0;
+    // Special Requirement: If worked on Holiday/Week-Off, add remark
+    if (rosterStatus === 'HOL' || rosterStatus === 'WO') {
+      const dayLabel = rosterStatus === 'HOL' ? 'Holiday' : 'Week Off';
+      const remark = `Worked on ${dayLabel}`;
+      if (!this.notes) {
+        this.notes = remark;
+      } else if (!this.notes.includes(remark)) {
+        this.notes = `${this.notes} | ${remark}`;
+      }
+    }
+  } else if (this.inTime || this.outTime) {
+    this.status = 'PARTIAL';
+  } else {
+    // No punches - use roster status if available, else default to ABSENT
+    if (rosterStatus === 'HOL') {
+      this.status = 'HOLIDAY';
+    } else if (rosterStatus === 'WO') {
+      this.status = 'WEEK_OFF';
+    } else {
+      this.status = 'ABSENT';
     }
   }
 

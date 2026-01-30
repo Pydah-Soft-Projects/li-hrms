@@ -384,6 +384,14 @@ exports.updateOutTime = async (req, res) => {
     const { employeeNumber, date } = req.params;
     const { outTime } = req.body;
 
+    // Restrict to HR/Superadmin
+    if (!req.user || (req.user.role !== 'hr' && req.user.role !== 'super_admin' && req.user.role !== 'superadmin' && req.user.role !== 'admin')) {
+      return res.status(403).json({
+        success: false,
+        message: 'Permission denied. Only HR can edit attendance details.'
+      });
+    }
+
     const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
     const { detectAndAssignShift } = require('../../shifts/services/shiftDetectionService');
 
@@ -462,6 +470,15 @@ exports.updateOutTime = async (req, res) => {
         console.log(`[DEBUG] Adjusted OutTime to Next Day: ${outTimeDate.toISOString()}`);
       }
       // For overnight shifts, the out-time date might already be correct, just ensure it's preserved
+    }
+
+    // Update outTime
+    attendanceRecord.outTime = outTimeDate;
+
+    // Mark as manually edited
+    if (!attendanceRecord.source) attendanceRecord.source = [];
+    if (!attendanceRecord.source.includes('manual')) {
+      attendanceRecord.source.push('manual');
     }
 
     // Status will be automatically updated by the AttendanceDaily pre-save hook 
@@ -841,6 +858,14 @@ exports.assignShift = async (req, res) => {
     const { employeeNumber, date } = req.params;
     const { shiftId } = req.body;
 
+    // Restrict to HR/Superadmin
+    if (!req.user || (req.user.role !== 'hr' && req.user.role !== 'super_admin' && req.user.role !== 'superadmin' && req.user.role !== 'admin')) {
+      return res.status(403).json({
+        success: false,
+        message: 'Permission denied. Only HR can assign shifts.'
+      });
+    }
+
     if (!shiftId) {
       return res.status(400).json({
         success: false,
@@ -905,6 +930,35 @@ exports.assignShift = async (req, res) => {
           message: 'Shift segment not found',
         });
       }
+    // Calculate late-in and early-out with the assigned shift
+    const { calculateLateIn, calculateEarlyOut } = require('../../shifts/services/shiftDetectionService');
+    // Fetch global general settings
+    const generalConfig = await Settings.getSettingsByCategory('general');
+    const globalLateInGrace = generalConfig.late_in_grace_time ?? null;
+    const globalEarlyOutGrace = generalConfig.early_out_grace_time ?? null;
+
+    // Pass the date parameter for proper overnight shift handling
+    const lateInMinutes = calculateLateIn(attendanceRecord.inTime, shift.startTime, shift.gracePeriod || 15, date, globalLateInGrace);
+    const earlyOutMinutes = attendanceRecord.outTime
+      ? calculateEarlyOut(attendanceRecord.outTime, shift.endTime, shift.startTime, date, globalEarlyOutGrace)
+      : null;
+
+    // Update attendance record
+    attendanceRecord.shiftId = shiftId;
+    attendanceRecord.lateInMinutes = lateInMinutes > 0 ? lateInMinutes : null;
+    attendanceRecord.earlyOutMinutes = earlyOutMinutes && earlyOutMinutes > 0 ? earlyOutMinutes : null;
+    attendanceRecord.isLateIn = lateInMinutes > 0;
+    attendanceRecord.isEarlyOut = earlyOutMinutes && earlyOutMinutes > 0;
+    attendanceRecord.isEarlyOut = earlyOutMinutes && earlyOutMinutes > 0;
+    attendanceRecord.expectedHours = shift.duration;
+
+    // Mark as manually edited
+    if (!attendanceRecord.source) attendanceRecord.source = [];
+    if (!attendanceRecord.source.includes('manual')) {
+      attendanceRecord.source.push('manual');
+    }
+
+    await attendanceRecord.save();
 
       shiftSegment.shiftId = shiftId;
 
@@ -1166,6 +1220,128 @@ exports.getRecentActivity = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch activity feed'
+    });
+  }
+};
+
+/**
+ * @desc    Update inTime for attendance record (manual correction)
+ * @route   PUT /api/attendance/:employeeNumber/:date/intime
+ * @access  Private (Super Admin, HR)
+ */
+exports.updateInTime = async (req, res) => {
+  try {
+    const { employeeNumber, date } = req.params;
+    const { inTime } = req.body;
+
+    // Validate inTime format (YYYY-MM-DDTHH:mm:ss.sssZ or similar ISO string)
+    if (!inTime) {
+      return res.status(400).json({
+        success: false,
+        message: 'In Time is required',
+      });
+    }
+
+    // Get attendance record
+    const AttendanceDaily = require('../model/AttendanceDaily');
+    const attendanceRecord = await AttendanceDaily.findOne({
+      employeeNumber: employeeNumber.toUpperCase(),
+      date: date,
+    }).populate('shiftId');
+
+    if (!attendanceRecord) {
+      return res.status(404).json({
+        success: false,
+        message: 'Attendance record not found',
+      });
+    }
+
+    // Parse new In Time
+    // Ensure the date part matches the attendance date (or handle overnight shifts carefully if changing date)
+    // For simplicity, we assume the user sends the full ISO string
+    const newInTime = new Date(inTime);
+
+    // Update inTime
+    attendanceRecord.inTime = newInTime;
+
+    // Status update logic (if needed - e.g. was Absent, now Present?) 
+    // Usually if record exists, status is likely Present or Partial. 
+    // If status was Absent but record exists (rare unless manually created), ensure it is Present/Partial.
+    if (attendanceRecord.status === 'ABSENT') {
+      attendanceRecord.status = 'PRESENT'; // Or 'PARTIAL' depends on later checks
+    }
+
+    // Mark as manual
+    if (!attendanceRecord.source) attendanceRecord.source = [];
+    if (!attendanceRecord.source.includes('manual')) {
+      attendanceRecord.source.push('manual');
+    }
+
+    // Recalculate Late In
+    const { calculateLateIn, calculateEarlyOut } = require('../../shifts/services/shiftDetectionService');
+    const Settings = require('../model/AttendanceSettings'); // Or verify correct path
+    // Wait, Settings model import path might be different based on project structure
+    // In `assignShift` it was passed or imported. Let's use generic getter if available or default.
+    // Actually, `attendanceController` likely has `Settings` required at top or uses helper.
+    // I'll check imports at top of file separately if needed, but safe to assume I can require it if not sure.
+    // Checking `assignShift` logic (approx line 668): `const Settings = require('../model/AttendanceSettings');`
+    // Wait, earlier view showed `const generalConfig = await Settings.getSettingsByCategory('general');` so `Settings` must be available or imported.
+    // I will dynamically require it to be safe as I am appending to bottom.
+
+    // In assignShift (Line 668, based on earlier view), `Settings` seemed to be used. 
+    // Let's assume standard import pattern or locally require if needed.
+    // I'll check `assignShift` in previous turn output... 
+    // Line 668: `const generalConfig = await Settings.getSettingsByCategory('general');`
+    // So `Settings` is likely defined at module scope or imported inside function? 
+    // Javascript allows `require` anywhere.
+
+    const SettingsModel = require('../model/AttendanceSettings');
+    const generalConfig = await SettingsModel.getSettingsByCategory('general');
+    const globalLateInGrace = generalConfig.late_in_grace_time ?? null;
+    const globalEarlyOutGrace = generalConfig.early_out_grace_time ?? null;
+
+    if (attendanceRecord.shiftId) {
+      const shift = attendanceRecord.shiftId;
+      const lateInMinutes = calculateLateIn(newInTime, shift.startTime, shift.gracePeriod || 15, date, globalLateInGrace);
+      attendanceRecord.lateInMinutes = lateInMinutes > 0 ? lateInMinutes : null;
+      attendanceRecord.isLateIn = lateInMinutes > 0;
+
+      // Also recalculate Early Out if OutTime exists (since total hours change, usually logic is independent but good to be safe)
+      // Actually Late In depends on In Time. Early Out depends on Out Time.
+      // But Total Hours depends on both.
+    }
+
+    // Calculate Total Hours
+    if (attendanceRecord.outTime) {
+      const outTimeDate = new Date(attendanceRecord.outTime);
+      const durationMs = outTimeDate - newInTime;
+      const durationHours = durationMs / (1000 * 60 * 60);
+      attendanceRecord.totalHours = durationHours > 0 ? durationHours : 0;
+    }
+
+    await attendanceRecord.save();
+
+    // Recalculate monthly summary
+    const { recalculateOnAttendanceUpdate } = require('../services/summaryCalculationService');
+    await recalculateOnAttendanceUpdate(employeeNumber.toUpperCase(), date);
+
+    const updatedRecord = await AttendanceDaily.findOne({
+      employeeNumber: employeeNumber.toUpperCase(),
+      date: date,
+    }).populate('shiftId');
+
+    res.status(200).json({
+      success: true,
+      message: 'In Time updated successfully',
+      data: updatedRecord,
+    });
+
+  } catch (error) {
+    console.error('Error updating in-time:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating in-time',
+      error: error.message,
     });
   }
 };

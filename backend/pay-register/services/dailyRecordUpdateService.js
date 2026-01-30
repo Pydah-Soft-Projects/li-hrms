@@ -74,7 +74,7 @@ async function normalizeLeaveType(leaveType) {
   if (!leaveType) return null;
 
   const normalized = leaveType.toLowerCase();
-  
+
   // If it's already a nature (paid, lop, without_pay), return it
   if (['paid', 'lop', 'loss_of_pay', 'without_pay'].includes(normalized)) {
     if (normalized === 'loss_of_pay') return 'lop';
@@ -172,7 +172,7 @@ async function updateDailyRecord(payRegister, date, updateData, editedBy) {
   // Update firstHalf
   if (updateData.firstHalf) {
     dailyRecord.firstHalf.status = updateData.firstHalf.status || dailyRecord.firstHalf.status;
-    
+
     if (updateData.firstHalf.status === 'leave') {
       dailyRecord.firstHalf.leaveType = updateData.firstHalf.leaveType || await normalizeLeaveType(updateData.firstHalf.leaveType);
       dailyRecord.firstHalf.leaveNature = updateData.firstHalf.leaveNature || dailyRecord.firstHalf.leaveNature || 'paid';
@@ -201,7 +201,7 @@ async function updateDailyRecord(payRegister, date, updateData, editedBy) {
   // Update secondHalf
   if (updateData.secondHalf) {
     dailyRecord.secondHalf.status = updateData.secondHalf.status || dailyRecord.secondHalf.status;
-    
+
     if (updateData.secondHalf.status === 'leave') {
       dailyRecord.secondHalf.leaveType = updateData.secondHalf.leaveType || await normalizeLeaveType(updateData.secondHalf.leaveType);
       dailyRecord.secondHalf.leaveNature = updateData.secondHalf.leaveNature || dailyRecord.secondHalf.leaveNature || 'paid';
@@ -302,7 +302,7 @@ async function updateDailyRecord(payRegister, date, updateData, editedBy) {
 
   // Add to edit history
   const changes = [];
-  
+
   if (oldValues.firstHalf.status !== dailyRecord.firstHalf.status) {
     changes.push({
       field: 'firstHalf.status',
@@ -310,7 +310,7 @@ async function updateDailyRecord(payRegister, date, updateData, editedBy) {
       newValue: dailyRecord.firstHalf.status,
     });
   }
-  
+
   if (oldValues.secondHalf.status !== dailyRecord.secondHalf.status) {
     changes.push({
       field: 'secondHalf.status',
@@ -318,7 +318,7 @@ async function updateDailyRecord(payRegister, date, updateData, editedBy) {
       newValue: dailyRecord.secondHalf.status,
     });
   }
-  
+
   if (oldValues.otHours !== dailyRecord.otHours) {
     changes.push({
       field: 'otHours',
@@ -326,7 +326,7 @@ async function updateDailyRecord(payRegister, date, updateData, editedBy) {
       newValue: dailyRecord.otHours,
     });
   }
-  
+
   if (oldValues.shiftId?.toString() !== dailyRecord.shiftId?.toString()) {
     changes.push({
       field: 'shiftId',
@@ -348,6 +348,11 @@ async function updateDailyRecord(payRegister, date, updateData, editedBy) {
       editedAt: new Date(),
       remarks: updateData.remarks || null,
     });
+  }
+
+  // Set manual edit flag if there are changes
+  if (changes.length > 0 || updateData.remarks) {
+    dailyRecord.isManuallyEdited = true;
   }
 
   // Update last edited tracking

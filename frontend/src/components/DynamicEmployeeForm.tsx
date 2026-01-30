@@ -193,6 +193,12 @@ export default function DynamicEmployeeForm({
       : formData[field.id];
     const error = errors[field.id] || errors[fieldId];
     const fieldKey = `${groupId}-${field.id}${arrayIndex !== undefined ? `-${arrayIndex}` : ''}`;
+    const displayLabel =
+      // In employee edit flows, salary is stored as `gross_salary` but settings may expose it as `proposedSalary`.
+      // Show a clearer label so users understand they're editing the employee gross salary.
+      field.id === 'proposedSalary' && formData?.gross_salary !== undefined
+        ? 'Gross Salary'
+        : field.label;
 
     // Special handling for division_id, department_id and designation_id
     if (field.id === 'division_id') {
@@ -296,7 +302,7 @@ export default function DynamicEmployeeForm({
         return (
           <div key={fieldKey}>
             <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-              {field.label} {field.isRequired && '*'}
+              {displayLabel} {field.isRequired && '*'}
             </label>
             <input
               type={field.type}
@@ -320,7 +326,7 @@ export default function DynamicEmployeeForm({
         return (
           <div key={fieldKey} className={field.id === 'address' ? 'sm:col-span-2' : ''}>
             <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-              {field.label} {field.isRequired && '*'}
+              {displayLabel} {field.isRequired && '*'}
             </label>
             <textarea
               value={value || ''}
@@ -341,7 +347,7 @@ export default function DynamicEmployeeForm({
         return (
           <div key={fieldKey}>
             <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-              {field.label} {field.isRequired && '*'}
+              {displayLabel} {field.isRequired && '*'}
             </label>
             <input
               type="number"
@@ -364,7 +370,7 @@ export default function DynamicEmployeeForm({
         return (
           <div key={fieldKey}>
             <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-              {field.label} {field.isRequired && '*'}
+              {displayLabel} {field.isRequired && '*'}
             </label>
             <input
               type="date"
@@ -382,7 +388,7 @@ export default function DynamicEmployeeForm({
         return (
           <div key={fieldKey}>
             <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-              {field.label} {field.isRequired && '*'}
+              {displayLabel} {field.isRequired && '*'}
             </label>
             <select
               value={value || ''}
@@ -408,7 +414,7 @@ export default function DynamicEmployeeForm({
           <div key={fieldKey} className="space-y-4">
             <div className="flex items-center justify-between">
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                {field.label} {field.isRequired && '*'}
+                {displayLabel} {field.isRequired && '*'}
               </label>
               {!isViewMode && (
                 <button
@@ -551,7 +557,7 @@ export default function DynamicEmployeeForm({
         return (
           <div key={fieldKey}>
             <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-              {field.label} {field.isRequired && '*'}
+              {displayLabel} {field.isRequired && '*'}
             </label>
             <input
               type="email"
@@ -570,7 +576,7 @@ export default function DynamicEmployeeForm({
         return (
           <div key={fieldKey}>
             <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-              {field.label} {field.isRequired && '*'}
+              {displayLabel} {field.isRequired && '*'}
             </label>
             <input
               type="tel"
@@ -589,7 +595,7 @@ export default function DynamicEmployeeForm({
         return (
           <div key={fieldKey}>
             <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-              {field.label} {field.isRequired && '*'}
+              {displayLabel} {field.isRequired && '*'}
             </label>
             <input
               type="file"
@@ -614,7 +620,7 @@ export default function DynamicEmployeeForm({
         return (
           <div key={fieldKey}>
             <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-              {field.label} {field.isRequired && '*'}
+              {displayLabel} {field.isRequired && '*'}
             </label>
             <div className="space-y-2">
               {field.options?.map((opt) => {
@@ -661,7 +667,7 @@ export default function DynamicEmployeeForm({
         return (
           <div key={fieldKey} className="space-y-4">
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-              {field.label} {field.isRequired && '*'}
+              {displayLabel} {field.isRequired && '*'}
             </label>
             <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -774,7 +780,7 @@ export default function DynamicEmployeeForm({
         return (
           <div key={fieldKey} className="sm:col-span-2">
             <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-              {field.label} {field.isRequired && '*'}
+              {displayLabel} {field.isRequired && '*'}
               {maxUsers > 1 && (
                 <span className="ml-2 text-xs font-normal text-slate-500 dark:text-slate-400">
                   (Select up to {maxUsers})

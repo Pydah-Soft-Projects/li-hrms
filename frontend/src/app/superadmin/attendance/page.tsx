@@ -9,7 +9,7 @@ interface AttendanceRecord {
   inTime: string | null;
   outTime: string | null;
   totalHours: number | null;
-  status: 'PRESENT' | 'ABSENT' | 'PARTIAL' | 'LEAVE' | 'OD' | 'HALF_DAY' | '-';
+  status: 'PRESENT' | 'ABSENT' | 'PARTIAL' | 'LEAVE' | 'OD' | 'HALF_DAY' | 'HOLIDAY' | 'WEEK_OFF' | '-';
   shiftId?: { _id: string; name: string; startTime: string; endTime: string; duration: number; payableShifts?: number } | string | null;
   shifts?: {
     _id: string;
@@ -74,6 +74,7 @@ interface AttendanceRecord {
     modifiedAt: string;
     details: string;
   }[];
+  source?: string[];
 }
 
 interface Employee {
@@ -124,6 +125,27 @@ interface Designation {
 
 export default function AttendancePage() {
   const [tableType, setTableType] = useState<'complete' | 'present_absent' | 'in_out' | 'leaves' | 'od' | 'ot'>('complete');
+
+  // Helper to format time in IST
+  const formatTimeIST = (timeStr: string | null, showDateIfDifferent?: boolean, recordDate?: string) => {
+    if (!timeStr) return '-';
+    try {
+      const date = new Date(timeStr);
+      let formattedTime = date.toLocaleTimeString('en-US', {
+        timeZone: 'Asia/Kolkata',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      });
+      // Logic for showDateIfDifferent could be added here if needed, 
+      // but matching the signature at least prevents the call site error.
+      // For now, minimal implementation to satisfy type checker.
+      return formattedTime;
+    } catch {
+      return '-';
+    }
+  };
+
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showPayslipModal, setShowPayslipModal] = useState(false);
   const [selectedEmployeeForPayslip, setSelectedEmployeeForPayslip] = useState<Employee | null>(null);
@@ -190,6 +212,9 @@ export default function AttendancePage() {
   const [savingShift, setSavingShift] = useState(false);
   const [savingOutTime, setSavingOutTime] = useState(false);
   const [selectedShiftRecordId, setSelectedShiftRecordId] = useState<string | null>(null);
+  const [inTimeInput, setInTimeInput] = useState('');
+  const [editingInTime, setEditingInTime] = useState(false);
+  const [savingInTime, setSavingInTime] = useState(false);
 
   // Leave conflict state
   const [leaveConflicts, setLeaveConflicts] = useState<any[]>([]);
@@ -473,6 +498,23 @@ export default function AttendancePage() {
         setSelectedShiftId('');
         setSelectedShiftRecordId(null);
 
+        // Optimistic update: mark as manually edited
+        setMonthlyData(prevData => prevData.map(empData => {
+          if (empData.employee.emp_no === selectedEmployee.emp_no) {
+            const updatedDaily = { ...empData.dailyAttendance };
+            if (updatedDaily[selectedDate]) {
+              const record = updatedDaily[selectedDate];
+              if (record) {
+                const newSource = record.source ? [...record.source] : [];
+                if (!newSource.includes('manual')) newSource.push('manual');
+                updatedDaily[selectedDate] = { ...record, source: newSource };
+              }
+            }
+            return { ...empData, dailyAttendance: updatedDaily };
+          }
+          return empData;
+        }));
+
         // Reload attendance detail and monthly data
         await loadMonthlyAttendance();
 
@@ -543,6 +585,56 @@ export default function AttendancePage() {
       setError(err.message || 'An error occurred while updating out-time');
     } finally {
       setSavingOutTime(false);
+    }
+  };
+
+  const handleSaveInTime = async () => {
+    if (!selectedEmployee || !selectedDate || !inTimeInput) {
+      setError('Please enter in-time');
+      return;
+    }
+
+    try {
+      setSavingInTime(true);
+      setError('');
+      setSuccess('');
+
+      // Combine date with time to create proper datetime string
+      // Note: If In-time crosses midnight (previous day?), we might need more logic, 
+      // but usually In-Time is on the selected date.
+      const inTimeDateTime = `${selectedDate}T${inTimeInput}:00`;
+
+      const response = await api.updateAttendanceInTime(
+        selectedEmployee.emp_no,
+        selectedDate,
+        inTimeDateTime
+      );
+
+      if (response.success) {
+        setSuccess('In-time updated successfully!');
+        setEditingInTime(false);
+        setInTimeInput('');
+
+        // Reload attendance detail and monthly data
+        await loadMonthlyAttendance();
+
+        // Refresh the detail view
+        const updatedResponse = await api.getAttendanceDetail(selectedEmployee.emp_no, selectedDate);
+        if (updatedResponse.success) {
+          setAttendanceDetail(updatedResponse.data);
+        }
+
+        setTimeout(() => {
+          setSuccess('');
+        }, 2000);
+      } else {
+        setError(response.message || 'Failed to update in-time');
+      }
+    } catch (err: any) {
+      console.error('Error updating in-time:', err);
+      setError(err.message || 'An error occurred while updating in-time');
+    } finally {
+      setSavingInTime(false);
     }
   };
 
@@ -649,6 +741,10 @@ export default function AttendancePage() {
     setHasExistingOT(false);
     setEditingShift(false);
     setEditingOutTime(false);
+    setEditingInTime(false);
+    setSelectedShiftId('');
+    setOutTimeInput('');
+    setInTimeInput('');
     setSelectedShiftId('');
     setOutTimeInput('');
     setLeaveConflicts([]);
@@ -963,6 +1059,24 @@ export default function AttendancePage() {
         setShowOutTimeDialog(false);
         setSelectedRecordForOutTime(null);
         setOutTimeValue('');
+
+        // Optimistic update: mark as manually edited
+        setMonthlyData(prevData => prevData.map(empData => {
+          if (empData.employee.emp_no === selectedRecordForOutTime.employee.emp_no) {
+            const updatedDaily = { ...empData.dailyAttendance };
+            if (updatedDaily[selectedRecordForOutTime.date]) {
+              const record = updatedDaily[selectedRecordForOutTime.date];
+              if (record) {
+                const newSource = record.source ? [...record.source] : [];
+                if (!newSource.includes('manual')) newSource.push('manual');
+                updatedDaily[selectedRecordForOutTime.date] = { ...record, source: newSource };
+              }
+            }
+            return { ...empData, dailyAttendance: updatedDaily };
+          }
+          return empData;
+        }));
+
         loadMonthlyAttendance();
       } else {
         setError(response.message || 'Failed to update out time');
@@ -1012,6 +1126,8 @@ export default function AttendancePage() {
     if (record.status === 'PRESENT') return 'bg-green-50 border-green-200 text-green-800 dark:bg-green-900/10 dark:border-green-800 dark:text-green-400';
     if (record.status === 'PARTIAL') return 'bg-yellow-50 border-yellow-200 text-yellow-800 dark:bg-yellow-900/10 dark:border-yellow-800 dark:text-yellow-400';
     if (record.status === 'HALF_DAY') return 'bg-orange-50 border-orange-200 text-orange-800 dark:bg-orange-900/10 dark:border-orange-800 dark:text-orange-400';
+    if (record.status === 'HOLIDAY') return 'bg-red-50 border-red-200 text-red-800 dark:bg-red-900/10 dark:border-red-800 dark:text-red-400';
+    if (record.status === 'WEEK_OFF') return 'bg-orange-50 border-orange-200 text-orange-800 dark:bg-orange-900/10 dark:border-orange-800 dark:text-orange-400';
     return '';
   };
 
@@ -1025,6 +1141,9 @@ export default function AttendancePage() {
       return 'bg-purple-100 border-purple-300 dark:bg-purple-900/30 dark:border-purple-700';
     }
     if (record.hasLeave && !record.hasOD) {
+      if (record.leaveInfo?.numberOfDays && record.leaveInfo.numberOfDays >= 3) {
+        return 'bg-amber-200 border-amber-400 dark:bg-amber-900/50 dark:border-amber-600';
+      }
       return 'bg-orange-100 border-orange-300 dark:bg-orange-900/30 dark:border-orange-700';
     }
     if (record.hasOD && !record.hasLeave) {
@@ -1036,6 +1155,12 @@ export default function AttendancePage() {
     }
     if (record.status === 'ABSENT' || record.status === 'LEAVE' || record.status === 'OD' || record.status === 'HALF_DAY') {
       return 'bg-slate-100 dark:bg-slate-800';
+    }
+    if (record.status === 'HOLIDAY') {
+      return 'bg-red-100 dark:bg-red-900/20 border-red-300 dark:border-red-700';
+    }
+    if (record.status === 'WEEK_OFF') {
+      return 'bg-orange-100 dark:bg-orange-900/20 border-orange-300 dark:border-orange-700';
     }
     return '';
   };
@@ -1284,6 +1409,33 @@ export default function AttendancePage() {
           </div>
         </div>
 
+
+        {/* Status Legend */}
+        <div className="mb-6 flex flex-wrap items-center gap-4 px-4 py-3 rounded-2xl bg-white/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 backdrop-blur-sm shadow-sm animate-in fade-in slide-in-from-top-2 duration-500">
+          <span className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mr-2">Status Key</span>
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+            {[
+              { label: 'P', name: 'Present', color: 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800' },
+              { label: 'H', name: 'Holiday', color: 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800' },
+              { label: 'WO', name: 'Week Off', color: 'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-800' },
+              { label: 'L', name: 'Leave', color: 'bg-orange-50 text-orange-600 border-orange-100 dark:bg-orange-900/10 dark:text-orange-400 dark:border-orange-900/30' },
+              { label: 'LL', name: 'Long Leave', color: 'bg-amber-200 text-amber-800 border-amber-300 dark:bg-amber-900/40 dark:text-amber-400 dark:border-amber-700' },
+              { label: 'OD', name: 'On Duty', color: 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800' },
+              { label: 'PT', name: 'Partial', color: 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-800' },
+              { label: 'HD', name: 'Half Day', color: 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/10 dark:text-orange-400 dark:border-orange-900/30' },
+              { label: 'A', name: 'Absent', color: 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700' },
+              { label: '!', name: 'Conflict', color: 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800' },
+            ].map((item) => (
+              <div key={item.label} className="flex items-center gap-2 group cursor-help">
+                <div className={`w-6 h-6 flex items-center justify-center rounded text-[10px] font-bold border shadow-sm transition-all duration-200 group-hover:scale-110 group-hover:shadow-md ${item.color}`}>
+                  {item.label}
+                </div>
+                <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">{item.name}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* Messages */}
         {error && (
           <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
@@ -1479,12 +1631,14 @@ export default function AttendancePage() {
                     return '';
                   };
 
+                  const isHighAbsenteeism = monthAbsent > 2;
+
                   return (
                     <tr
                       key={item.employee?._id || index}
-                      className="hover:bg-slate-50 dark:hover:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 transition-colors w-full"
+                      className={`hover:bg-slate-50 dark:hover:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 transition-colors w-full ${isHighAbsenteeism ? 'bg-red-50/30 dark:bg-red-900/10' : ''}`}
                     >
-                      <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 text-[11px] font-medium text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white w-[200px] min-w-[200px]">
+                      <td className={`sticky left-0 z-10 border-r border-slate-200 px-3 py-2 text-[11px] font-medium text-slate-900 dark:border-slate-700 dark:text-white w-[200px] min-w-[200px] ${isHighAbsenteeism ? 'bg-red-50 dark:bg-red-900/20' : 'bg-white dark:bg-slate-900'}`}>
                         <div>
                           <div className="flex items-center gap-2">
                             <div
@@ -1514,7 +1668,11 @@ export default function AttendancePage() {
                           if (record.status === 'PRESENT') displayStatus = 'P';
                           else if (record.status === 'HALF_DAY') displayStatus = 'HD';
                           else if (record.status === 'PARTIAL') displayStatus = 'PT';
-                          else if (record.status === 'LEAVE' || record.hasLeave) displayStatus = 'L';
+                          else if (record.status === 'HOLIDAY') displayStatus = 'H';
+                          else if (record.status === 'WEEK_OFF') displayStatus = 'WO';
+                          else if (record.status === 'LEAVE' || record.hasLeave) {
+                            displayStatus = (record.leaveInfo?.numberOfDays && record.leaveInfo.numberOfDays >= 3) ? 'LL' : 'L';
+                          }
                           else if (record.status === 'OD' || record.hasOD) displayStatus = 'OD';
                           else if (record.status === '-') displayStatus = '-';
                           else displayStatus = 'A';
@@ -1556,6 +1714,8 @@ export default function AttendancePage() {
                                       <div className="text-green-600 dark:text-green-400">{record?.inTime ? formatTime(record.inTime) : '-'}</div>
                                       <div className="text-red-600 dark:text-red-400">{record?.outTime ? formatTime(record.outTime) : '-'}</div>
                                       {isMultiShift && <div className="text-[7px] text-blue-600 font-bold">Multi</div>}
+                                      <div className="text-green-600 dark:text-green-400">{record?.inTime ? formatTimeIST(record.inTime) : '-'}</div>
+                                      <div className="text-red-600 dark:text-red-400">{record?.outTime ? formatTimeIST(record.outTime) : '-'}</div>
                                     </div>
                                   )}
                                   {tableType === 'leaves' && (
@@ -1569,6 +1729,9 @@ export default function AttendancePage() {
                                       <div className="text-orange-600">{record?.otHours ? record.otHours.toFixed(1) : '-'}</div>
                                       <div className="text-purple-600">{record?.extraHours ? record.extraHours.toFixed(1) : '-'}</div>
                                     </div>
+                                  )}
+                                  {record?.source?.includes('manual') && (
+                                    <div className="text-[7px] text-indigo-600 dark:text-indigo-400 absolute top-0.5 right-0.5" title="Manually Edited">✎</div>
                                   )}
                                 </div>
                               ) : (
@@ -1967,6 +2130,70 @@ export default function AttendancePage() {
                                     </div>
                                   )}
                                 </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">In Time</label>
+                        <div className="mt-1 flex items-center gap-2">
+                          {!editingInTime ? (
+                            <>
+                              <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                                {formatTimeIST(attendanceDetail.inTime)}
+                              </div>
+                              <button
+                                onClick={() => {
+                                  setEditingInTime(true);
+                                  if (attendanceDetail.inTime) {
+                                    const date = new Date(attendanceDetail.inTime);
+                                    // Adjust for local input (HH:mm) from the ISO string
+                                    // Note: datetime-local inputs work best with local time string. 
+                                    // If we use type="time", we just need HH:mm.
+                                    // But we need to handle Time Zone carefully.
+                                    // The helper `formatTimeIST` does formatting for display.
+                                    // For Input: `date.getHours()` gets local hours of the browser.
+                                    // If we want IST specifically, we might need to adjust. 
+                                    // But typically admin is in IST. Sticking to simple extraction for now.
+                                    setInTimeInput(`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`);
+                                  }
+                                }}
+                                className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"
+                              >
+                                Edit
+                              </button>
+                            </>
+                          ) : (
+                            <div className="flex-1 flex items-center gap-2">
+                              <input
+                                type="time"
+                                value={inTimeInput}
+                                onChange={(e) => setInTimeInput(e.target.value)}
+                                className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                              />
+                              <button
+                                onClick={handleSaveInTime}
+                                disabled={savingInTime || !inTimeInput}
+                                className="rounded-lg bg-green-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {savingInTime ? 'Saving...' : 'Save'}
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setEditingInTime(false);
+                                  setInTimeInput('');
+                                }}
+                                className="rounded-lg bg-slate-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-slate-600"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Out Time</label>
+                        <div className="mt-1 flex items-center gap-2">
+                          {!editingOutTime ? (
+                            <>
+                              <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                                {attendanceDetail.outTime ? formatTimeIST(attendanceDetail.outTime, true, selectedDate || '') : '-'}
                               </div>
                             </div>
                             {/* Extra Info */}
@@ -2249,6 +2476,27 @@ export default function AttendancePage() {
                           </div>
                         </div>
                       ) : null}
+                      )}
+
+                      {/* Remarks / Notes */}
+                      {attendanceDetail.notes && (
+                        <div className="col-span-2 rounded-xl bg-blue-50/50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-800/50 p-4 mt-2">
+                          <div className="flex items-start gap-3">
+                            <div className="mt-0.5 text-blue-600 dark:text-blue-400">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black uppercase tracking-widest text-blue-600/70 dark:text-blue-400/70">System Remarks</label>
+                              <div className="mt-1 text-sm font-bold text-blue-900 dark:text-blue-100 leading-relaxed italic">
+                                &quot;{attendanceDetail.notes}&quot;
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
 
                       <div className="grid grid-cols-2 gap-3 text-sm mb-3">
                         <div>

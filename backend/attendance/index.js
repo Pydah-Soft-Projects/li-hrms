@@ -50,6 +50,9 @@ router.get('/:employeeNumber/:date/available-shifts', attendanceController.getAv
 // Update outTime for PARTIAL attendance (Super Admin, Sub Admin, HR, HOD)
 router.put('/:employeeNumber/:date/outtime', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), attendanceController.updateOutTime);
 
+// Update inTime for attendance check-in correction (Super Admin, HR)
+router.put('/:employeeNumber/:date/intime', authorize('super_admin', 'sub_admin', 'hr'), attendanceController.updateInTime);
+
 // Assign shift to attendance record (Super Admin, Sub Admin, HR, HOD)
 router.put('/:employeeNumber/:date/shift', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), attendanceController.assignShift);
 

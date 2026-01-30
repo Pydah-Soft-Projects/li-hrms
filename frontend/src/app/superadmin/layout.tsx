@@ -9,7 +9,7 @@ export default function SuperAdminLayout({
 }) {
   return (
     <SidebarProvider>
-      <div className="flex min-h-screen bg-slate-50/50">
+      <div className="flex min-h-screen bg-white dark:bg-slate-900">
         <Sidebar />
         <MainContent>{children}</MainContent>
       </div>

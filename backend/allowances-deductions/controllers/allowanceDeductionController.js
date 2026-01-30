@@ -1,5 +1,10 @@
 const AllowanceDeductionMaster = require('../model/AllowanceDeductionMaster');
 const Department = require('../../departments/model/Department');
+const Employee = require('../../employees/model/Employee');
+const XLSX = require('xlsx');
+
+/** Batch size for template download to avoid loading all employees into memory */
+const TEMPLATE_DOWNLOAD_BATCH_SIZE = 500;
 
 /**
  * @desc    Get all allowances and deductions
@@ -552,6 +557,181 @@ exports.getResolvedRule = async (req, res) => {
 };
 
 /**
+ * Build one template row from an employee doc (aggregation shape: deptDoc, divDoc, designDoc).
+ * @param {Object} emp - Employee doc with deptDoc, divDoc, designDoc from $lookup
+ * @param {Object[]} allowances - Allowance masters
+ * @param {Object[]} deductions - Deduction masters
+ * @returns {Record<string, string|number>}
+ */
+function buildRowFromEmp(emp, allowances, deductions) {
+  const deptDoc = emp.deptDoc;
+  const divDoc = emp.divDoc;
+  const designDoc = emp.designDoc;
+
+  const row = {
+    'Employee ID': emp.emp_no,
+    'Name': emp.employee_name,
+    'Department': (deptDoc && deptDoc.name) ? deptDoc.name : '',
+    'Designation': (designDoc && designDoc.name) ? designDoc.name : ''
+  };
+
+  const allowMap = new Map();
+  (Array.isArray(emp.employeeAllowances) ? emp.employeeAllowances : []).forEach(a => {
+    if (a && a.masterId) allowMap.set(String(a.masterId), a);
+  });
+  const deductMap = new Map();
+  (Array.isArray(emp.employeeDeductions) ? emp.employeeDeductions : []).forEach(d => {
+    if (d && d.masterId) deductMap.set(String(d.masterId), d);
+  });
+
+  const deptId = emp.department_id ? String(emp.department_id) : null;
+  const divId = emp.division_id ? String(emp.division_id) : null;
+
+  const resolveAmount = (master, overrideMap) => {
+    const override = overrideMap.get(String(master._id));
+    if (override) {
+      if (override.type === 'percentage') return 0;
+      return override.amount !== null && override.amount !== undefined ? override.amount : 0;
+    }
+    if (deptId && master.departmentRules?.length > 0) {
+      if (divId) {
+        const divRule = master.departmentRules.find(r =>
+          r.divisionId && String(r.divisionId) === divId &&
+          r.departmentId && String(r.departmentId) === deptId
+        );
+        if (divRule) {
+          if (divRule.type === 'percentage') return 0;
+          return divRule.amount != null ? divRule.amount : 0;
+        }
+      }
+      const deptRule = master.departmentRules.find(r =>
+        !r.divisionId && r.departmentId && String(r.departmentId) === deptId
+      );
+      if (deptRule) {
+        if (deptRule.type === 'percentage') return 0;
+        return deptRule.amount != null ? deptRule.amount : 0;
+      }
+    }
+    if (master.globalRule) {
+      if (master.globalRule.type === 'percentage') return 0;
+      return master.globalRule.amount != null ? master.globalRule.amount : 0;
+    }
+    return 0;
+  };
+
+  allowances.forEach(allowance => {
+    row[`${allowance.name} (${allowance.category})`] = resolveAmount(allowance, allowMap);
+  });
+  deductions.forEach(deduction => {
+    const amount = resolveAmount(deduction, deductMap);
+    row[`${deduction.name} (${deduction.category})`] = -Math.abs(amount);
+  });
+
+  return row;
+}
+
+/**
+ * @desc    Download A&D Template with Master Amounts (batched to avoid OOM, output XLSX)
+ * @route   GET /api/allowances-deductions/template
+ * @access  Private
+ */
+exports.downloadTemplate = async (req, res) => {
+  console.log('Starting downloadTemplate...');
+  try {
+    const allowances = await AllowanceDeductionMaster.find({ category: 'allowance', isActive: true }).sort({ name: 1 });
+    const deductions = await AllowanceDeductionMaster.find({ category: 'deduction', isActive: true }).sort({ name: 1 });
+    console.log(`Found ${allowances.length} allowances and ${deductions.length} deductions.`);
+
+    const pipeline = [
+      { $match: { is_active: true } },
+      { $sort: { emp_no: 1 } },
+      {
+        $lookup: {
+          from: 'departments',
+          localField: 'department_id',
+          foreignField: '_id',
+          as: 'deptDoc'
+        }
+      },
+      { $unwind: { path: '$deptDoc', preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: 'divisions',
+          localField: 'division_id',
+          foreignField: '_id',
+          as: 'divDoc'
+        }
+      },
+      { $unwind: { path: '$divDoc', preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: 'designations',
+          localField: 'designation_id',
+          foreignField: '_id',
+          as: 'designDoc'
+        }
+      },
+      { $unwind: { path: '$designDoc', preserveNullAndEmptyArrays: true } },
+      {
+        $project: {
+          emp_no: 1,
+          employee_name: 1,
+          department_id: 1,
+          division_id: 1,
+          designation_id: 1,
+          employeeAllowances: 1,
+          employeeDeductions: 1,
+          deptDoc: 1,
+          divDoc: 1,
+          designDoc: 1
+        }
+      }
+    ];
+
+    const rows = [];
+    let skip = 0;
+
+    while (true) {
+      const batch = await Employee.aggregate([
+        ...pipeline,
+        { $skip: skip },
+        { $limit: TEMPLATE_DOWNLOAD_BATCH_SIZE }
+      ]);
+      if (batch.length === 0) break;
+
+      for (const emp of batch) {
+        try {
+          rows.push(buildRowFromEmp(emp, allowances, deductions));
+        } catch (err) {
+          console.error(`Error processing employee ${emp.emp_no}:`, err);
+          throw err;
+        }
+      }
+      skip += TEMPLATE_DOWNLOAD_BATCH_SIZE;
+      console.log(`Template download: processed batch, total rows ${rows.length}...`);
+    }
+
+    console.log('Generating Excel...');
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, ws, 'A&D Template');
+    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+    res.setHeader('Content-Disposition', 'attachment; filename="AD_Template.xlsx"');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.send(buffer);
+    console.log(`Template download complete. Total rows: ${rows.length}.`);
+  } catch (error) {
+    console.error('Error downloading template:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error downloading template',
+      error: error.message
+    });
+  }
+};
+
+/**
  * @desc    Delete allowance/deduction master
  * @route   DELETE /api/allowances-deductions/:id
  * @access  Private (Super Admin, Sub Admin)
@@ -583,3 +763,155 @@ exports.deleteAllowanceDeduction = async (req, res) => {
   }
 };
 
+/**
+ * @desc    Bulk update employee allowances/deductions from Excel
+ * @route   POST /api/allowances-deductions/bulk-update
+ * @access  Private (Super Admin)
+ */
+exports.bulkUpdateAllowancesDeductions = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please upload an Excel file',
+      });
+    }
+
+    const { buffer } = req.file;
+    const workbook = XLSX.read(buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+
+    if (!jsonData || jsonData.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'The uploaded file is empty',
+      });
+    }
+
+    // 1. Fetch all active allowances & deductions to map names -> IDs/details
+    const [allowances, deductions] = await Promise.all([
+      AllowanceDeductionMaster.find({ category: 'allowance', isActive: true }),
+      AllowanceDeductionMaster.find({ category: 'deduction', isActive: true }),
+    ]);
+
+    // Create lookup maps: "Name (category)" -> Master Object
+    // Update: User requested headers without ID, so we must map by Name+Category.
+    const headerMap = new Map();
+
+    const addToMap = (list) => {
+      list.forEach(item => {
+        // Must match the format generated in downloadTemplate: `${name} (${category})`
+        const headerKey = `${item.name} (${item.category})`;
+        headerMap.set(headerKey, item);
+      });
+    };
+
+    addToMap(allowances);
+    addToMap(deductions);
+
+    const results = {
+      updated: 0,
+      failed: 0,
+      errors: [],
+    };
+
+    // 2. Process each row
+    for (const [index, row] of jsonData.entries()) {
+      const empNo = row['Employee ID'];
+
+      if (!empNo) {
+        results.errors.push(`Row ${index + 2}: Missing Employee ID`);
+        results.failed++;
+        continue;
+      }
+
+      const employee = await Employee.findOne({ emp_no: String(empNo).toUpperCase() });
+      if (!employee) {
+        results.errors.push(`Row ${index + 2}: Employee with ID ${empNo} not found`);
+        results.failed++;
+        continue;
+      }
+
+      const newAllowances = [];
+      const newDeductions = [];
+
+      // Iterate through row keys to find A&D columns
+      Object.keys(row).forEach(key => {
+        const master = headerMap.get(key);
+        if (master) {
+          let val = row[key];
+
+          if (val !== '' && val !== null && val !== undefined) {
+            // Handle deduction negative input if user kept it negative
+            if (master.category === 'deduction' && val < 0) {
+              val = Math.abs(val);
+            }
+
+            const amount = Number(val);
+            if (!isNaN(amount)) {
+              const overrideObj = {
+                masterId: master._id,
+                name: master.name,
+                category: master.category,
+                type: 'fixed', // Overrides are typically fixed amounts in this context
+                amount: amount,
+                basedOnPresentDays: master.departmentRules?.[0]?.basedOnPresentDays || master.globalRule?.basedOnPresentDays || false, // Best guess fallback, ideally should come from user input but simplistic for now
+                isOverride: true
+              };
+
+              if (master.category === 'allowance') {
+                newAllowances.push(overrideObj);
+              } else {
+                newDeductions.push(overrideObj);
+              }
+            }
+          }
+        }
+      });
+
+      // Update employee
+      // We REPLACE existing overrides with the ones found in the sheet for the columns present.
+      // However, we should preserve overrides for components NOT in the sheet?
+      // Usually bulk upload implies "this is the state".
+      // But if the sheet only had "Bonus", we shouldn't wipe "HRA".
+      // The template download includes ALL active components. So safe to replace?
+      // Let's merge: Remove old overrides for components present in the sheet, keep others.
+      // Actually, since template has ALL active components, we can probably rebuild the lists.
+      // But safest is: 
+      // 1. Keep existing overrides for masters NOT in headerMap (maybe inactive ones?)
+      // 2. Use new values for masters IN headerMap
+
+      // Filter out assignments in existing arrays that match masters we are updating
+      const mapKeys = Array.from(headerMap.values()).map(m => String(m._id));
+
+      const keptAllowances = (employee.employeeAllowances || []).filter(
+        a => a.masterId && !mapKeys.includes(String(a.masterId))
+      );
+      const keptDeductions = (employee.employeeDeductions || []).filter(
+        d => d.masterId && !mapKeys.includes(String(d.masterId))
+      );
+
+      employee.employeeAllowances = [...keptAllowances, ...newAllowances];
+      employee.employeeDeductions = [...keptDeductions, ...newDeductions];
+
+      await employee.save();
+      results.updated++;
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Processed ${jsonData.length} rows. Updated: ${results.updated}, Failed: ${results.failed}`,
+      errors: results.errors,
+    });
+
+  } catch (error) {
+    console.error('Error in bulk update:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error processing bulk update',
+      error: error.message,
+    });
+  }
+};

@@ -48,6 +48,11 @@ const employeeSchema = new mongoose.Schema(
       type: Number,
       default: null,
     },
+    salary_mode: {
+      type: String,
+      enum: ['Bank', 'Cash'],
+      default: 'Bank',
+    },
     gender: {
       type: String,
       enum: ['Male', 'Female', 'Other', null],
@@ -135,11 +140,6 @@ const employeeSchema = new mongoose.Schema(
       trim: true,
       uppercase: true,
       default: null,
-    },
-    salary_mode: {
-      type: String,
-      enum: ['Bank', 'Cash'],
-      default: 'Bank',
     },
     paidLeaves: {
       type: Number,
@@ -250,9 +250,6 @@ employeeSchema.index({ phone_number: 1 });
 employeeSchema.index({ email: 1 });
 employeeSchema.index({ division_id: 1 });
 
-// Compound index for efficient scoped/filtered discovery at 1M scale
-employeeSchema.index({ division_id: 1, department_id: 1, is_active: 1 }, { background: true });
-
 // Virtual for department population
 employeeSchema.virtual('department', {
   ref: 'Department',
@@ -260,6 +257,8 @@ employeeSchema.virtual('department', {
   foreignField: '_id',
   justOne: true,
 });
+
+
 
 // Virtual for division population
 employeeSchema.virtual('division', {
@@ -276,6 +275,8 @@ employeeSchema.virtual('designation', {
   foreignField: '_id',
   justOne: true,
 });
+// Compound index for efficient scoped/filtered discovery at 1M scale
+employeeSchema.index({ division_id: 1, department_id: 1, is_active: 1 }, { background: true });
 
 // Virtual getter for unified qualifications (backward compatibility)
 // Returns dynamicFields.qualifications if exists, otherwise falls back to old qualifications string

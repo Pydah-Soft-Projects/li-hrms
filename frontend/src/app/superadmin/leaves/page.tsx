@@ -1740,6 +1740,7 @@ export default function LeavesPage() {
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Date *</label>
                   <input
                     type="date"
+                    min={new Date().toISOString().split('T')[0]}
                     value={formData.fromDate} // Use fromDate as the single source of truth
                     onChange={(e) => setFormData({ ...formData, fromDate: e.target.value, toDate: e.target.value })}
                     required
@@ -1753,6 +1754,7 @@ export default function LeavesPage() {
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">From Date *</label>
                     <input
                       type="date"
+                      min={new Date().toISOString().split('T')[0]}
                       value={formData.fromDate}
                       onChange={(e) => setFormData({ ...formData, fromDate: e.target.value })}
                       required
@@ -1763,6 +1765,7 @@ export default function LeavesPage() {
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">To Date *</label>
                     <input
                       type="date"
+                      min={new Date().toISOString().split('T')[0]}
                       value={formData.toDate}
                       onChange={(e) => setFormData({ ...formData, toDate: e.target.value })}
                       required

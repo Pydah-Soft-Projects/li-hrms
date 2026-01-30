@@ -749,19 +749,91 @@ exports.bulkApproveApplications = async (req, res) => {
       });
     }
 
-    // Enqueue Bulk Approval Job
-    const job = await applicationQueue.add('approve-bulk', {
-      type: 'approve-bulk',
-      applicationIds,
-      bulkSettings,
-      approverId: req.user._id
-    });
+    // For small batches (≤10), process synchronously
+    // For larger batches, use queue
+    const SYNC_THRESHOLD = 10;
 
-    res.status(202).json({
-      success: true,
-      message: `Bulk approval job queued for ${applicationIds.length} applications.`,
-      jobId: job.id,
-    });
+    if (applicationIds.length <= SYNC_THRESHOLD) {
+      // Process synchronously
+      const results = {
+        successCount: 0,
+        failCount: 0,
+        errors: [],
+      };
+
+      for (const appId of applicationIds) {
+        try {
+          const approvalData = {
+            approvedSalary: bulkSettings.approvedSalary,
+            doj: bulkSettings.doj,
+            comments: bulkSettings.comments,
+          };
+          await approveSingleApplicationInternal(appId, approvalData, req.user._id);
+          results.successCount++;
+        } catch (err) {
+          results.failCount++;
+          results.errors.push({
+            applicationId: appId,
+            message: err.message,
+          });
+        }
+      }
+
+      return res.status(200).json({
+        success: results.failCount === 0,
+        message: `Bulk approval completed. ${results.successCount} succeeded, ${results.failCount} failed.`,
+        data: results,
+      });
+    } else {
+      // Enqueue for large batches
+      try {
+        const job = await applicationQueue.add('approve-bulk', {
+          type: 'approve-bulk',
+          applicationIds,
+          bulkSettings,
+          approverId: req.user._id
+        });
+
+        return res.status(202).json({
+          success: true,
+          message: `Bulk approval job queued for ${applicationIds.length} applications.`,
+          jobId: job.id,
+        });
+      } catch (queueError) {
+        // If queue fails (e.g., Redis not available), fall back to synchronous processing
+        console.warn('[BulkApprove] Queue unavailable, falling back to synchronous processing:', queueError.message);
+
+        const results = {
+          successCount: 0,
+          failCount: 0,
+          errors: [],
+        };
+
+        for (const appId of applicationIds) {
+          try {
+            const approvalData = {
+              approvedSalary: bulkSettings.approvedSalary,
+              doj: bulkSettings.doj,
+              comments: bulkSettings.comments,
+            };
+            await approveSingleApplicationInternal(appId, approvalData, req.user._id);
+            results.successCount++;
+          } catch (err) {
+            results.failCount++;
+            results.errors.push({
+              applicationId: appId,
+              message: err.message,
+            });
+          }
+        }
+
+        return res.status(200).json({
+          success: results.failCount === 0,
+          message: `Bulk approval completed (synchronous fallback). ${results.successCount} succeeded, ${results.failCount} failed.`,
+          data: results,
+        });
+      }
+    }
   } catch (error) {
     console.error('Error in bulk approving applications:', error);
     res.status(500).json({
