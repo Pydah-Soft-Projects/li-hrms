@@ -16,6 +16,7 @@ const earlyOutSettingsController = require('./controllers/earlyOutSettingsContro
 const attendanceSyncController = require('./controllers/attendanceSyncController');
 const attendanceUploadController = require('./controllers/attendanceUploadController');
 const monthlySummaryController = require('./controllers/monthlySummaryController');
+const liveAttendanceReportController = require('./controllers/liveAttendanceReportController');
 
 // Configure multer for file uploads (memory storage)
 const upload = multer({
@@ -90,6 +91,10 @@ router.get('/monthly-summary', applyScopeFilter, monthlySummaryController.getAll
 router.get('/monthly-summary/:employeeId', applyScopeFilter, monthlySummaryController.getEmployeeMonthlySummary);
 router.post('/monthly-summary/calculate/:employeeId', authorize('manager', 'super_admin', 'sub_admin', 'hr'), monthlySummaryController.calculateEmployeeSummary);
 router.post('/monthly-summary/calculate-all', applyScopeFilter, authorize('manager', 'super_admin', 'sub_admin', 'hr'), monthlySummaryController.calculateAllSummaries);
+
+// Live Attendance Report Routes (Super Admin only)
+router.get('/reports/live', authorize('super_admin'), liveAttendanceReportController.getLiveAttendanceReport);
+router.get('/reports/live/filters', authorize('super_admin'), liveAttendanceReportController.getFilterOptions);
 
 module.exports = router;
 
