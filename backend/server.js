@@ -150,6 +150,10 @@ app.use('/api/bonus', bonusRoutes);
 const dashboardRoutes = require('./dashboard/index.js');
 app.use('/api/dashboard', dashboardRoutes);
 
+// Salary updates (employee bulk update template/upload, second-salary template/upload)
+const salaryUpdateRoutes = require('./salary-updates/index.js');
+app.use('/api/salary-updates', salaryUpdateRoutes);
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({

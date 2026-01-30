@@ -2917,23 +2917,34 @@ export const api = {
     });
   },
 
-  // Bulk Employee Update
+  // Bulk Employee Update (backend: /api/salary-updates/bulk-update/*)
   downloadEmployeeUpdateTemplate: async (fields?: string[]) => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-    let url = `${API_BASE_URL}/employees/bulk-update/template`;
+    let url = `${API_BASE_URL}/salary-updates/bulk-update/template`;
     if (fields && fields.length > 0) {
-      url += `?fields=${fields.join(',')}`;
+      url += `?fields=${encodeURIComponent(fields.join(','))}`;
     }
     const response = await fetch(url, {
       method: 'GET',
       headers: { 'Authorization': `Bearer ${token}` }
     });
     if (!response.ok) throw new Error('Failed to download template');
-    return response.blob();
+    const blob = await response.blob();
+    if (typeof window !== 'undefined' && window.URL && document) {
+      const objectUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = 'EmployeeUpdateTemplate.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(objectUrl);
+      document.body.removeChild(a);
+    }
+    return blob;
   },
 
   updateEmployeeBulk: async (data: FormData) => {
-    return apiRequest<any>('/employees/bulk-update', {
+    return apiRequest<any>('/salary-updates/bulk-update/upload', {
       method: 'POST',
       body: data,
     });
