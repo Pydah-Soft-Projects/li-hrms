@@ -98,9 +98,12 @@ async function buildPayslipData(employeeId, month) {
     payrollRecord.earnings.otHours ??
     0;
   const monthDays = payrollRecord.totalDaysInMonth;
+  // Incentive = extra days only (payableShifts - present - paidLeave). Do NOT use (payableShifts - presentDays)
+  // or paid leave days would be counted twice: once in paidLeaveSalary and again in incentive.
+  // OD is already subsumed in presentDays in pay register, so we don't subtract it here.
   const incentiveDays =
-    presentDays !== null
-      ? (payableShifts - presentDays)
+    presentDays !== null && paidLeaveDays !== null
+      ? Math.max(0, payableShifts - presentDays - (paidLeaveDays || 0))
       : (payrollRecord.attendance?.extraDays || 0);
 
   const earnedSalary =
