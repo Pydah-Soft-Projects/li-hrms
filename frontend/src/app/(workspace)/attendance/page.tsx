@@ -109,6 +109,7 @@ export default function AttendancePage() {
   const { activeWorkspace } = useWorkspace();
 
   const isEmployee = user?.role === 'employee' || activeWorkspace?.type === 'employee';
+  const isHR = !isEmployee;
 
   const [currentDate, setCurrentDate] = useState(new Date());
 
@@ -2130,7 +2131,7 @@ export default function AttendancePage() {
                       {!editingOutTime ? (
                         <>
                           <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                            {attendanceDetail.outTime ? formatTimeIST(attendanceDetail.outTime, true, selectedDate || '') : '-'}
+                            {attendanceDetail.outTime ? formatTimeIST(attendanceDetail.outTime) : '-'}
                           </div>
                           {!attendanceDetail.outTime && (
                             <button
