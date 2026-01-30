@@ -200,6 +200,13 @@ export interface ApiResponse<T> {
   data?: T;
   error?: string;
   dataSource?: string;
+  jobId?: string;
+  pagination?: {
+    total: number;
+    totalPages: number;
+    page: number;
+    limit: number;
+  };
   // For backward compatibility with various response formats
   durations?: any[];
   count?: number;
@@ -776,7 +783,7 @@ export const api = {
     });
   },
 
-  assignShiftsToDivision: async (id: string, data: { shifts: string[]; targetType: string; targetId?: string | { designationId: string; departmentId: string } }) => {
+  assignShiftsToDivision: async (id: string, data: { shifts: (string | { shiftId: string; gender: string })[]; targetType: string; targetId?: string | { designationId: string; departmentId: string } }) => {
     return apiRequest<any>(`/divisions/${id}/shifts`, {
       method: 'POST',
       body: JSON.stringify(data),
@@ -795,8 +802,10 @@ export const api = {
   },
 
   // Department Settings
-  getDepartmentSettings: async (deptId: string) => {
-    return apiRequest<any>(`/departments/${deptId}/settings`, { method: 'GET' });
+  getDepartmentSettings: async (deptId: string, divisionId?: string) => {
+    let url = `/departments/${deptId}/settings`;
+    if (divisionId) url += `?divisionId=${divisionId}`;
+    return apiRequest<any>(url, { method: 'GET' });
   },
 
   // Bulk Allowance & Deduction
@@ -861,15 +870,18 @@ export const api = {
       deductFromSalary?: boolean | null;
       deductionAmount?: number | null;
     };
-  }) => {
-    return apiRequest<any>(`/departments/${deptId}/settings`, {
+  }, divisionId?: string) => {
+    let url = `/departments/${deptId}/settings`;
+    if (divisionId) url += `?divisionId=${divisionId}`;
+    return apiRequest<any>(url, {
       method: 'PUT',
       body: JSON.stringify(data),
     });
   },
 
-  getResolvedDepartmentSettings: async (deptId: string, type?: 'leaves' | 'loans' | 'salary_advance' | 'permissions' | 'ot' | 'overtime' | 'all') => {
-    const query = type ? `?type=${type}` : '';
+  getResolvedDepartmentSettings: async (deptId: string, type?: 'leaves' | 'loans' | 'salary_advance' | 'permissions' | 'ot' | 'overtime' | 'all', divisionId?: string) => {
+    let query = type ? `?type=${type}` : '';
+    if (divisionId) query += `${query ? '&' : '?'}divisionId=${divisionId}`;
     return apiRequest<any>(`/departments/${deptId}/settings/resolved${query}`, { method: 'GET' });
   },
 
@@ -887,7 +899,7 @@ export const api = {
     });
   },
 
-  assignShifts: async (id: string, shiftIds: string[]) => {
+  assignShifts: async (id: string, shiftIds: (string | { shiftId: string; gender: string })[]) => {
     return apiRequest<Department>(`/departments/${id}/shifts`, {
       method: 'PUT',
       body: JSON.stringify({ shiftIds }),
@@ -935,7 +947,7 @@ export const api = {
     return apiRequest<void>(`/departments/designations/${id}`, { method: 'DELETE' });
   },
 
-  assignShiftsToDesignation: async (id: string, shiftIds: string[], departmentId?: string) => {
+  assignShiftsToDesignation: async (id: string, shiftIds: (string | { shiftId: string; gender: string })[], departmentId?: string) => {
     return apiRequest<any>(`/departments/designations/${id}/shifts`, {
       method: 'PUT',
       body: JSON.stringify({ shiftIds, departmentId }),
@@ -1392,6 +1404,48 @@ export const api = {
         'Content-Type': 'application/json',
       },
     });
+  },
+
+  // Generic GET method
+  get: async <T = any>(url: string): Promise<ApiResponse<T>> => {
+    return apiRequest<T>(url, { method: 'GET' });
+  },
+
+  // Generic PUT method
+  put: async <T = any>(url: string, data: any): Promise<ApiResponse<T>> => {
+    const response = await fetch(`${API_BASE_URL}${url}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(await auth.getAuthHeader())
+      },
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Request failed');
+    }
+
+    return response.json();
+  },
+
+  // Generic DELETE method
+  delete: async <T = any>(url: string): Promise<ApiResponse<T>> => {
+    const response = await fetch(`${API_BASE_URL}${url}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(await auth.getAuthHeader())
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Request failed');
+    }
+
+    return response.json();
   },
 
   // Generic POST method
@@ -1921,8 +1975,20 @@ export const api = {
     return apiRequest<any>(`/attendance/employees${query}`, { method: 'GET' });
   },
 
-  getMonthlyAttendance: async (year: number, month: number) => {
-    return apiRequest<any>(`/attendance/monthly?year=${year}&month=${month}`, {
+  getMonthlyAttendance: async (year: number, month: number, filters?: { page?: number; limit?: number; search?: string; divisionId?: string; departmentId?: string; designationId?: string }) => {
+    const params = new URLSearchParams();
+    params.append('year', String(year));
+    params.append('month', String(month));
+
+    if (filters?.page) params.append('page', String(filters.page));
+    if (filters?.limit) params.append('limit', String(filters.limit));
+    if (filters?.search) params.append('search', filters.search);
+    if (filters?.divisionId) params.append('divisionId', filters.divisionId);
+    if (filters?.departmentId) params.append('departmentId', filters.departmentId);
+    if (filters?.designationId) params.append('designationId', filters.designationId);
+
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return apiRequest<any>(`/attendance/monthly${query}`, {
       method: 'GET',
     });
   },
@@ -2239,8 +2305,15 @@ export const api = {
   },
 
   // Update outTime for attendance
-  updateAttendanceOutTime: async (employeeNumber: string, date: string, outTime: string) => {
-    return apiRequest<any>(`/attendance/${employeeNumber}/${date}/outtime`, {
+  updateAttendanceInTime: async (empNo: string, date: string, inTime: string) => {
+    return apiRequest<any>('/attendance/in-time', {
+      method: 'PUT',
+      body: JSON.stringify({ empNo, date, inTime }),
+    });
+  },
+
+  updateAttendanceOutTime: async (empNo: string, date: string, outTime: string) => {
+    return apiRequest<any>(`/attendance/${empNo}/${date}/outtime`, {
       method: 'PUT',
       body: JSON.stringify({ outTime }),
     });
@@ -2324,6 +2397,7 @@ export const api = {
   },
 
   addOrUpdateDepartmentRule: async (id: string, data: {
+    divisionId?: string;
     departmentId: string;
     type: 'fixed' | 'percentage';
     amount?: number;
@@ -2339,8 +2413,11 @@ export const api = {
     });
   },
 
-  removeDepartmentRule: async (id: string, deptId: string) => {
-    return apiRequest<void>(`/allowances-deductions/${id}/department-rule/${deptId}`, {
+  removeDepartmentRule: async (id: string, deptId: string, divisionId?: string) => {
+    const url = divisionId
+      ? `/allowances-deductions/${id}/department-rule/${deptId}?divisionId=${encodeURIComponent(divisionId)}`
+      : `/allowances-deductions/${id}/department-rule/${deptId}`;
+    return apiRequest<void>(url, {
       method: 'DELETE',
     });
   },
@@ -2384,6 +2461,13 @@ export const api = {
         month,
         arrears: formattedArrears
       }),
+    });
+  },
+
+  calculatePayrollBulk: async (data: { month: string; divisionId?: string; departmentId?: string; strategy?: string }) => {
+    return apiRequest<any>('/payroll/bulk-calculate', {
+      method: 'POST',
+      body: JSON.stringify(data),
     });
   },
 
@@ -2585,11 +2669,13 @@ export const api = {
     });
   },
 
-  getEmployeesWithPayRegister: async (month: string, departmentId?: string, divisionId?: string, status?: string) => {
+  getEmployeesWithPayRegister: async (month: string, departmentId?: string, divisionId?: string, status?: string, page?: number, limit?: number) => {
     const query = new URLSearchParams();
     if (departmentId) query.append('departmentId', departmentId);
     if (divisionId) query.append('divisionId', divisionId);
     if (status) query.append('status', status);
+    if (page) query.append('page', page.toString());
+    if (limit) query.append('limit', limit.toString());
     return apiRequest<any>(`/pay-register/employees/${month}${query.toString() ? `?${query.toString()}` : ''}`, {
       method: 'GET',
     });
@@ -2784,6 +2870,58 @@ export const api = {
     return apiRequest<BonusRecord>(`/bonus/records/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
+    });
+  },
+
+  // Bulk Employee A&D Update
+  downloadEmployeeADUpdateTemplate: async () => {
+    return api.downloadAllowanceDeductionTemplate();
+  },
+
+  updateEmployeeADBulk: async (data: FormData) => {
+    return apiRequest<any>('/allowances-deductions/bulk-update', {
+      method: 'POST',
+      body: data,
+    });
+  },
+
+  // Bulk Employee Update
+  downloadEmployeeUpdateTemplate: async (fields?: string[]) => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    let url = `${API_BASE_URL}/employees/bulk-update/template`;
+    if (fields && fields.length > 0) {
+      url += `?fields=${fields.join(',')}`;
+    }
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!response.ok) throw new Error('Failed to download template');
+    return response.blob();
+  },
+
+  updateEmployeeBulk: async (data: FormData) => {
+    return apiRequest<any>('/employees/bulk-update', {
+      method: 'POST',
+      body: data,
+    });
+  },
+
+  // Second Salary Bulk Update
+  downloadSecondSalaryTemplate: async () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const response = await fetch(`${API_BASE_URL}/payroll/second-salary/bulk-update/template`, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!response.ok) throw new Error('Failed to download template');
+    return response.blob();
+  },
+
+  updateSecondSalaryBulk: async (data: FormData) => {
+    return apiRequest<any>('/payroll/second-salary/bulk-update', {
+      method: 'POST',
+      body: data,
     });
   },
 };
