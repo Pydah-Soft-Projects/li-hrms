@@ -206,8 +206,6 @@ async function calculatePayroll(employeeId, month, userId) {
     }
 
     // Get paid leaves: Check employee first, then department
-    // If employee has paidLeaves set (not null/undefined and > 0), use it
-    // Otherwise, use department paidLeaves
     let paidLeaves = 0;
     if (employee.paidLeaves !== null && employee.paidLeaves !== undefined && employee.paidLeaves > 0) {
       paidLeaves = employee.paidLeaves;
@@ -217,10 +215,8 @@ async function calculatePayroll(employeeId, month, userId) {
       console.log(`Using department paid leaves: ${paidLeaves}`);
     }
 
-    // Calculate remaining paid leaves and adjust payable shifts
-    // Remaining paid leaves = paid leaves - leaves taken
-    // If employee has remaining paid leaves, add them to payable shifts
-    const totalLeaves = attendanceSummary.totalLeaves || 0;
+    // Remaining paid leaves = quota - leaves taken; add to payable shifts so those days are paid
+    const totalLeaves = attendanceSummary.totalLeaveDays || 0;
     const remainingPaidLeaves = Math.max(0, paidLeaves - totalLeaves);
     console.log(`Remaining Paid Leaves: ${remainingPaidLeaves}`);
     const adjustedPayableShifts =
@@ -234,7 +230,6 @@ async function calculatePayroll(employeeId, month, userId) {
     console.log(`Original Payable Shifts: ${attendanceSummary.totalPayableShifts}`);
     console.log(`Adjusted Payable Shifts: ${adjustedPayableShifts}`);
 
-    // Create a modified attendance summary with adjusted payable shifts
     const modifiedAttendanceSummary = {
       ...attendanceSummary,
       totalPayableShifts: adjustedPayableShifts,

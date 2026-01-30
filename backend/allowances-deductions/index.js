@@ -11,7 +11,20 @@ router.get('/template', allowanceDeductionController.downloadTemplate);
 
 // Bulk update (Super Admin Only)
 const multer = require('multer');
-const upload = multer(); // Use memory storage for buffer access
+const upload = multer({
+ storage: multer.memoryStorage(),
+ limits: { fileSize: 50 * 1024 * 1024 }, // 50MB (adjust to your policy)
+ fileFilter: (req, file, cb) => {
+  if (
+    file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+    file.mimetype === 'application/vnd.ms-excel'
+  ) {
+    cb(null, true);
+  } else {
+    cb(new Error('Only Excel files (.xlsx, .xls) are allowed'), false);
+  }
+},
+});
 router.post('/bulk-update', authorize('super_admin'), upload.single('file'), allowanceDeductionController.bulkUpdateAllowancesDeductions);
 
 // Get all allowances and deductions

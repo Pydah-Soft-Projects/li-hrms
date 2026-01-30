@@ -3,6 +3,9 @@ const Department = require('../../departments/model/Department');
 const Employee = require('../../employees/model/Employee');
 const XLSX = require('xlsx');
 
+/** Batch size for template download to avoid loading all employees into memory */
+const TEMPLATE_DOWNLOAD_BATCH_SIZE = 500;
+
 /**
  * @desc    Get all allowances and deductions
  * @route   GET /api/allowances-deductions
@@ -554,144 +557,176 @@ exports.getResolvedRule = async (req, res) => {
 };
 
 /**
- * @desc    Download A&D Template with Master Amounts
+ * Build one template row from an employee doc (aggregation shape: deptDoc, divDoc, designDoc).
+ * @param {Object} emp - Employee doc with deptDoc, divDoc, designDoc from $lookup
+ * @param {Object[]} allowances - Allowance masters
+ * @param {Object[]} deductions - Deduction masters
+ * @returns {Record<string, string|number>}
+ */
+function buildRowFromEmp(emp, allowances, deductions) {
+  const deptDoc = emp.deptDoc;
+  const divDoc = emp.divDoc;
+  const designDoc = emp.designDoc;
+
+  const row = {
+    'Employee ID': emp.emp_no,
+    'Name': emp.employee_name,
+    'Department': (deptDoc && deptDoc.name) ? deptDoc.name : '',
+    'Designation': (designDoc && designDoc.name) ? designDoc.name : ''
+  };
+
+  const allowMap = new Map();
+  (Array.isArray(emp.employeeAllowances) ? emp.employeeAllowances : []).forEach(a => {
+    if (a && a.masterId) allowMap.set(String(a.masterId), a);
+  });
+  const deductMap = new Map();
+  (Array.isArray(emp.employeeDeductions) ? emp.employeeDeductions : []).forEach(d => {
+    if (d && d.masterId) deductMap.set(String(d.masterId), d);
+  });
+
+  const deptId = emp.department_id ? String(emp.department_id) : null;
+  const divId = emp.division_id ? String(emp.division_id) : null;
+
+  const resolveAmount = (master, overrideMap) => {
+    const override = overrideMap.get(String(master._id));
+    if (override) {
+      if (override.type === 'percentage') return 0;
+      return override.amount !== null && override.amount !== undefined ? override.amount : 0;
+    }
+    if (deptId && master.departmentRules?.length > 0) {
+      if (divId) {
+        const divRule = master.departmentRules.find(r =>
+          r.divisionId && String(r.divisionId) === divId &&
+          r.departmentId && String(r.departmentId) === deptId
+        );
+        if (divRule) {
+          if (divRule.type === 'percentage') return 0;
+          return divRule.amount != null ? divRule.amount : 0;
+        }
+      }
+      const deptRule = master.departmentRules.find(r =>
+        !r.divisionId && r.departmentId && String(r.departmentId) === deptId
+      );
+      if (deptRule) {
+        if (deptRule.type === 'percentage') return 0;
+        return deptRule.amount != null ? deptRule.amount : 0;
+      }
+    }
+    if (master.globalRule) {
+      if (master.globalRule.type === 'percentage') return 0;
+      return master.globalRule.amount != null ? master.globalRule.amount : 0;
+    }
+    return 0;
+  };
+
+  allowances.forEach(allowance => {
+    row[`${allowance.name} (${allowance.category})`] = resolveAmount(allowance, allowMap);
+  });
+  deductions.forEach(deduction => {
+    const amount = resolveAmount(deduction, deductMap);
+    row[`${deduction.name} (${deduction.category})`] = -Math.abs(amount);
+  });
+
+  return row;
+}
+
+/**
+ * @desc    Download A&D Template with Master Amounts (batched to avoid OOM, output XLSX)
  * @route   GET /api/allowances-deductions/template
  * @access  Private
  */
 exports.downloadTemplate = async (req, res) => {
   console.log('Starting downloadTemplate...');
   try {
-    // Fetch all active allowances and deductions
     const allowances = await AllowanceDeductionMaster.find({ category: 'allowance', isActive: true }).sort({ name: 1 });
     const deductions = await AllowanceDeductionMaster.find({ category: 'deduction', isActive: true }).sort({ name: 1 });
     console.log(`Found ${allowances.length} allowances and ${deductions.length} deductions.`);
 
-    // Fetch all active employees with necessary fields
-    const employees = await Employee.find({ is_active: true })
-      .select('emp_no employee_name department_id division_id designation_id employeeAllowances employeeDeductions')
-      .populate('department_id', 'name')
-      .populate('division_id', 'name')
-      .populate('designation_id', 'name')
-      .sort({ emp_no: 1 });
-    console.log(`Found ${employees.length} employees.`);
-
-    const rows = employees.map((emp, index) => {
-      try {
-        const deptObj = emp.department_id;
-        const divObj = emp.division_id;
-        const desigObj = emp.designation_id;
-
-        const row = {
-          'Employee ID': emp.emp_no,
-          'Name': emp.employee_name,
-          'Department': (deptObj && typeof deptObj === 'object') ? (deptObj.name || '') : '',
-          'Designation': (desigObj && typeof desigObj === 'object') ? (desigObj.name || '') : ''
-        };
-
-        // Create Maps for faster and safer lookup of overrides
-        const allowMap = new Map();
-        (Array.isArray(emp.employeeAllowances) ? emp.employeeAllowances : []).forEach(a => {
-          if (a && a.masterId) allowMap.set(String(a.masterId), a);
-        });
-
-        const deductMap = new Map();
-        (Array.isArray(emp.employeeDeductions) ? emp.employeeDeductions : []).forEach(d => {
-          if (d && d.masterId) deductMap.set(String(d.masterId), d);
-        });
-
-        // Helper to resolve amount
-        const resolveAmount = (master, overrideMap) => {
-          // 1. Check Employee Override
-          const override = overrideMap.get(String(master._id));
-
-          if (override) {
-            if (override.type === 'percentage') return 0;
-            return override.amount !== null && override.amount !== undefined ? override.amount : 0;
-          }
-
-          // Get Department and Division IDs safely
-          const deptId = deptObj?._id ? String(deptObj._id) : (deptObj ? String(deptObj) : null);
-          const divId = divObj?._id ? String(divObj._id) : (divObj ? String(divObj) : null);
-
-          // 2. Check Department Rule
-          if (deptId && master.departmentRules?.length > 0) {
-            // Division + Department Rule
-            if (divId) {
-              const divRule = master.departmentRules.find(r =>
-                r.divisionId && String(r.divisionId) === divId &&
-                r.departmentId && String(r.departmentId) === deptId
-              );
-              if (divRule) {
-                if (divRule.type === 'percentage') return 0;
-                return divRule.amount !== null && divRule.amount !== undefined ? divRule.amount : 0;
-              }
-            }
-
-            // Department Only Rule
-            const deptRule = master.departmentRules.find(r =>
-              !r.divisionId &&
-              r.departmentId && String(r.departmentId) === deptId
-            );
-            if (deptRule) {
-              if (deptRule.type === 'percentage') return 0;
-              return deptRule.amount !== null && deptRule.amount !== undefined ? deptRule.amount : 0;
-            }
-          }
-
-          // 3. Global Rule
-          if (master.globalRule) {
-            if (master.globalRule.type === 'percentage') return 0;
-            return master.globalRule.amount !== null && master.globalRule.amount !== undefined ? master.globalRule.amount : 0;
-          }
-
-          return 0;
-        };
-
-        // Fill Allowances
-        allowances.forEach(allowance => {
-          const header = `${allowance.name} (${allowance.category})`; // Removed ID
-          row[header] = resolveAmount(allowance, allowMap);
-        });
-
-        // Fill Deductions
-        deductions.forEach(deduction => {
-          const header = `${deduction.name} (${deduction.category})`; // Removed ID
-          const amount = resolveAmount(deduction, deductMap);
-          // Make deductions negative for clarity? Or keep absolute? User requirement: "display of negative values for deductions"
-          // If resolveAmount returns positive value for deduction, we should negated it?
-          // Let's assume resolveAmount returns the *value*.
-          // Usually deductions are stored as positive numbers in rules.
-          // I will negate it here for display in template as requested in prompt "Handling the display of negative values for deductions".
-          row[header] = -Math.abs(amount);
-        });
-
-        return row;
-      } catch (err) {
-        console.error(`Error processing employee ${emp.emp_no}:`, err);
-        throw err;
+    const pipeline = [
+      { $match: { is_active: true } },
+      { $sort: { emp_no: 1 } },
+      {
+        $lookup: {
+          from: 'departments',
+          localField: 'department_id',
+          foreignField: '_id',
+          as: 'deptDoc'
+        }
+      },
+      { $unwind: { path: '$deptDoc', preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: 'divisions',
+          localField: 'division_id',
+          foreignField: '_id',
+          as: 'divDoc'
+        }
+      },
+      { $unwind: { path: '$divDoc', preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: 'designations',
+          localField: 'designation_id',
+          foreignField: '_id',
+          as: 'designDoc'
+        }
+      },
+      { $unwind: { path: '$designDoc', preserveNullAndEmptyArrays: true } },
+      {
+        $project: {
+          emp_no: 1,
+          employee_name: 1,
+          department_id: 1,
+          division_id: 1,
+          designation_id: 1,
+          employeeAllowances: 1,
+          employeeDeductions: 1,
+          deptDoc: 1,
+          divDoc: 1,
+          designDoc: 1
+        }
       }
-    });
+    ];
+
+    const rows = [];
+    let skip = 0;
+
+    while (true) {
+      const batch = await Employee.aggregate([
+        ...pipeline,
+        { $skip: skip },
+        { $limit: TEMPLATE_DOWNLOAD_BATCH_SIZE }
+      ]);
+      if (batch.length === 0) break;
+
+      for (const emp of batch) {
+        try {
+          rows.push(buildRowFromEmp(emp, allowances, deductions));
+        } catch (err) {
+          console.error(`Error processing employee ${emp.emp_no}:`, err);
+          throw err;
+        }
+      }
+      skip += TEMPLATE_DOWNLOAD_BATCH_SIZE;
+      console.log(`Template download: processed batch, total rows ${rows.length}...`);
+    }
 
     console.log('Generating Excel...');
-    // Generate Excel
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.json_to_sheet(rows);
     XLSX.utils.book_append_sheet(wb, ws, 'A&D Template');
-
     const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-    console.log('Excel generated, sending response...');
 
     res.setHeader('Content-Disposition', 'attachment; filename="AD_Template.xlsx"');
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.send(buffer);
-
+    console.log(`Template download complete. Total rows: ${rows.length}.`);
   } catch (error) {
-    console.error('Error downloading template (Top Level):', error);
+    console.error('Error downloading template:', error);
     res.status(500).json({
       success: false,
       message: 'Error downloading template',
-      error: error.message,
-      stack: error.stack // Send stack to frontend for debugging
+      error: error.message
     });
   }
 };

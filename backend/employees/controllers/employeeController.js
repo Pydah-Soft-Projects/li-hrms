@@ -310,6 +310,15 @@ const transformEmployeeForResponse = async (employee, populateUsers = true) => {
     dynamicFields: populatedDynamicFields,
   };
 
+  // Schema-level employeeAllowances/employeeDeductions must not be overwritten by dynamicFields
+  // (dynamicFields can contain stale empty arrays; prefer the actual schema arrays)
+  if (Array.isArray(permanentFields.employeeAllowances)) {
+    merged.employeeAllowances = permanentFields.employeeAllowances;
+  }
+  if (Array.isArray(permanentFields.employeeDeductions)) {
+    merged.employeeDeductions = permanentFields.employeeDeductions;
+  }
+
   // Normalize reporting_to_ to reporting_to (handle field name inconsistency)
   // Ensure we move data if standard field is present but empty
   if (merged.reporting_to_) {

@@ -98,9 +98,12 @@ async function buildPayslipData(employeeId, month) {
     payrollRecord.earnings.otHours ??
     0;
   const monthDays = payrollRecord.totalDaysInMonth;
+  // Incentive = extra days only (payableShifts - present - paidLeave). Do NOT use (payableShifts - presentDays)
+  // or paid leave days would be counted twice: once in paidLeaveSalary and again in incentive.
+  // OD is already subsumed in presentDays in pay register, so we don't subtract it here.
   const incentiveDays =
-    presentDays !== null
-      ? (payableShifts - presentDays)
+    presentDays !== null && paidLeaveDays !== null
+      ? Math.max(0, payableShifts - presentDays - (paidLeaveDays || 0))
       : (payrollRecord.attendance?.extraDays || 0);
 
   const earnedSalary =
@@ -144,6 +147,10 @@ async function buildPayslipData(employeeId, month) {
       payableShifts: payrollRecord.attendance?.payableShifts || payableShifts,
       extraDays: payrollRecord.attendance?.extraDays || 0,
       totalPaidDays: payrollRecord.attendance?.totalPaidDays || 0,
+      // Late/attendance deducting days (days deducted due to late-in/early-out)
+      attendanceDeductionDays: payrollRecord.deductions?.attendanceDeductionBreakdown?.daysDeducted ?? 0,
+      // Final paid days = total paid days minus attendance deduction days
+      finalPaidDays: Math.max(0, (payrollRecord.attendance?.totalPaidDays ?? payrollRecord.attendance?.paidDays ?? 0) - (payrollRecord.deductions?.attendanceDeductionBreakdown?.daysDeducted ?? 0)),
       otHours: payrollRecord.attendance?.otHours || otHours,
       otDays: payrollRecord.attendance?.otDays || 0,
       earnedSalary: payrollRecord.attendance?.earnedSalary || earnedSalary,
@@ -165,6 +172,7 @@ async function buildPayslipData(employeeId, month) {
     },
     deductions: {
       attendanceDeduction: payrollRecord.deductions.attendanceDeduction,
+      attendanceDeductionBreakdown: payrollRecord.deductions.attendanceDeductionBreakdown || {},
       permissionDeduction: payrollRecord.deductions.permissionDeduction,
       leaveDeduction: payrollRecord.deductions.leaveDeduction,
       otherDeductions: payrollRecord.deductions.otherDeductions,
@@ -182,6 +190,10 @@ async function buildPayslipData(employeeId, month) {
     netSalary: payrollRecord.netSalary,
     totalPayableShifts: payrollRecord.totalPayableShifts,
     paidDays: payrollRecord.attendance?.paidDays || (presentDays + (payRegisterSummary?.totals?.totalWeeklyOffs || 0) + (payRegisterSummary?.totals?.totalHolidays || 0) + (odDays || 0) + (paidLeaveDays || 0)),
+    // Late/attendance deducting days (days deducted due to late-in/early-out rules)
+    attendanceDeductionDays: (payrollRecord.deductions?.attendanceDeductionBreakdown?.daysDeducted ?? 0),
+    // Final paid days = paid days minus attendance deduction days (clear picture for user)
+    finalPaidDays: Math.max(0, (payrollRecord.attendance?.paidDays ?? (presentDays + (payRegisterSummary?.totals?.totalWeeklyOffs || 0) + (payRegisterSummary?.totals?.totalHolidays || 0) + (odDays || 0) + (paidLeaveDays || 0))) - (payrollRecord.deductions?.attendanceDeductionBreakdown?.daysDeducted ?? 0)),
     roundOff: payrollRecord.roundOff || 0,
     status: payrollRecord.status,
   };
@@ -237,6 +249,8 @@ function buildPayslipExcelRowsNormalized(payslip, allAllowanceNames, allDeductio
   row['Payable Shifts'] = payslip.attendance?.payableShifts || 0;
   row['Extra Days'] = payslip.attendance?.extraDays || 0;
   row['Total Paid Days'] = payslip.paidDays || 0;
+  row['Attendance Deduction Days'] = payslip.attendanceDeductionDays ?? payslip.attendance?.attendanceDeductionDays ?? 0;
+  row['Final Paid Days'] = payslip.finalPaidDays ?? payslip.attendance?.finalPaidDays ?? (row['Total Paid Days'] - (row['Attendance Deduction Days'] || 0));
 
   // Net earnings
   row['Net Basic'] = payslip.attendance?.earnedSalary || payslip.earnings.earnedSalary || 0;
@@ -341,6 +355,8 @@ function buildPayslipExcelRowsOld(payslip) {
   row['Payable Shifts'] = payslip.attendance?.payableShifts || 0;
   row['Extra Days'] = payslip.attendance?.extraDays || 0;
   row['Total Paid Days'] = payslip.attendance?.totalPaidDays || 0;
+  row['Attendance Deduction Days'] = payslip.attendanceDeductionDays ?? payslip.attendance?.attendanceDeductionDays ?? 0;
+  row['Final Paid Days'] = payslip.finalPaidDays ?? payslip.attendance?.finalPaidDays ?? Math.max(0, (payslip.attendance?.totalPaidDays || 0) - (row['Attendance Deduction Days'] || 0));
 
   // ===== NET EARNINGS (Based on Attendance) =====
   row['Net Basic'] = payslip.attendance?.earnedSalary || payslip.earnings.earnedSalary || 0;
