@@ -51,6 +51,18 @@ interface AllowanceDeduction {
   updatedAt?: string;
 }
 
+/**
+ * Render the Allowances & Deductions management page.
+ *
+ * Provides a UI to view, create, edit, and delete allowance and deduction components,
+ * configure global calculation rules (fixed or percentage), and add or manage department- and
+ * division-scoped overrides. Loads items, departments, and divisions and exposes dialogs for
+ * creating/editing components and department rules.
+ *
+ * @returns The React element for the Allowances & Deductions page
+ *
+ * @public
+ */
 export default function AllowancesDeductionsPage() {
   const [activeTab, setActiveTab] = useState<'all' | 'allowances' | 'deductions'>('all');
   const [items, setItems] = useState<AllowanceDeduction[]>([]);
@@ -1324,4 +1336,3 @@ export default function AllowancesDeductionsPage() {
     </div>
   );
 }
-

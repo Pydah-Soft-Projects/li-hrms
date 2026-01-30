@@ -9,6 +9,17 @@ interface EmployeeADUpdateModalProps {
   onSuccess: () => void;
 }
 
+/**
+ * Modal UI for performing a two-step bulk employee allowances & deductions update.
+ *
+ * Presents a "download template" step and an "upload updated sheet" step, accepts an Excel file,
+ * displays process summary, and shows error/success banners. After a successful upload it invokes
+ * `onSuccess` after a 1.5 second delay.
+ *
+ * @param onClose - Called to close the modal (e.g., backdrop or close button).
+ * @param onSuccess - Called after a successful bulk update (invoked after a 1.5s delay).
+ * @returns The modal element that contains the download/upload workflow and status UI.
+ */
 export default function EmployeeADUpdateModal({ onClose, onSuccess }: EmployeeADUpdateModalProps) {
   const [step, setStep] = useState<'download' | 'upload'>('download');
   const [file, setFile] = useState<File | null>(null);
@@ -175,7 +186,6 @@ export default function EmployeeADUpdateModal({ onClose, onSuccess }: EmployeeAD
     </div>
   );
 }
-
 
 
 

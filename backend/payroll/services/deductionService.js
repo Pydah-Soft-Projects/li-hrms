@@ -12,9 +12,10 @@ const cacheService = require('../../shared/services/cacheService');
  */
 
 /**
- * Get resolved permission deduction rules
- * @param {String} departmentId - Department ID
- * @returns {Object} Resolved rules
+ * Resolve permission deduction settings for a department and optional division, falling back to global settings when values are not defined.
+ * @param {String} departmentId - Department identifier to resolve rules for.
+ * @param {String|null} [divisionId=null] - Optional division identifier to resolve division-specific overrides.
+ * @returns {{countThreshold: number|null, deductionType: string|null, deductionAmount: number|null, minimumDuration: number|null, calculationMode: string|null}} An object containing the resolved permission deduction fields. Each field will be the department/division-specific value if present, otherwise the global value if present, or `null` when no value is available (also returned as `null` for all fields on error).
  */
 async function getResolvedPermissionDeductionRules(departmentId, divisionId = null) {
   try {
@@ -50,9 +51,15 @@ async function getResolvedPermissionDeductionRules(departmentId, divisionId = nu
 }
 
 /**
- * Get resolved attendance deduction rules
- * @param {String} departmentId - Department ID
- * @returns {Object} Resolved rules
+ * Resolve attendance deduction rules for a department and optional division, preferring division/department-specific settings and falling back to global settings.
+ * @param {String} departmentId - Department identifier to resolve rules for.
+ * @param {String|null} [divisionId=null] - Optional division identifier to prefer division-level overrides.
+ * @returns {Object} An object containing resolved attendance deduction rule fields:
+ *  - {number|null} combinedCountThreshold - Threshold of combined late/early occurrences required to trigger a deduction.
+ *  - {string|null} deductionType - Type of deduction (e.g., "half_day", "full_day", "custom_amount").
+ *  - {number|null} deductionAmount - Amount used for custom_amount deductions (in days or currency depending on context).
+ *  - {number|null} minimumDuration - Minimum minutes required for a single late/early occurrence to be counted.
+ *  - {string|null} calculationMode - Mode used to calculate deductions (e.g., "proportional", "strict").
  */
 async function getResolvedAttendanceDeductionRules(departmentId, divisionId = null) {
   try {
@@ -123,12 +130,21 @@ function calculateDaysToDeduct(multiplier, remainder, threshold, deductionType, 
 }
 
 /**
- * Calculate attendance deduction (late-ins + early-outs)
- * @param {String} employeeId - Employee ID
- * @param {String} month - Month in YYYY-MM format
- * @param {String} departmentId - Department ID
- * @param {Number} perDayBasicPay - Per day basic pay
- * @returns {Object} Attendance deduction result
+ * Compute the attendance-based deduction (from late-ins and early-outs) for an employee for a given month.
+ * @param {String} employeeId - Employee identifier.
+ * @param {String} month - Month in `YYYY-MM` format for which to calculate the deduction.
+ * @param {String} departmentId - Department identifier used to resolve deduction rules.
+ * @param {Number} perDayBasicPay - Per-day basic pay used to convert deducted days into an amount.
+ * @param {String|null} [divisionId=null] - Optional division identifier used when resolving department/division-specific rules.
+ * @returns {Object} Result object containing:
+ *  - {Number} attendanceDeduction - Deduction amount rounded to 2 decimals.
+ *  - {Object} breakdown - Details including:
+ *      - {Number} lateInsCount
+ *      - {Number} earlyOutsCount
+ *      - {Number} combinedCount
+ *      - {Number} daysDeducted
+ *      - {String|null} deductionType
+ *      - {String|null} calculationMode
  */
 async function calculateAttendanceDeduction(employeeId, month, departmentId, perDayBasicPay, divisionId = null) {
   try {
@@ -420,13 +436,13 @@ async function getAllActiveDeductions(departmentId, divisionId = null) {
 }
 
 /**
- * Calculate other deductions (from AllowanceDeductionMaster)
- * NEW APPROACH: Get all deductions, separate by type, apply fixed first, then percentage
- * @param {String} departmentId - Department ID
- * @param {Number} basicPay - Basic pay
- * @param {Number} grossSalary - Gross salary (for percentage base = 'gross')
- * @returns {Array} Array of deduction objects
- */
+ * Calculate all applicable other deductions for a department and return them ordered: fixed, percentage based on basic, then percentage based on gross.
+ * @param {String} departmentId - Department identifier used to resolve active deduction masters.
+ * @param {Number} basicPay - Employee basic pay used as the primary base for calculations and prorating.
+ * @param {Number} [grossSalary] - Gross salary used when a deduction's percentage base is 'gross'; if omitted, gross-based deductions are skipped.
+ * @param {Object} [attendanceData] - Attendance data used when prorating fixed deductions; may include present, paidLeave, od, and monthDays.
+ * @param {String} [divisionId] - Division identifier used to resolve division-specific deduction rules.
+ * @returns {Array<Object>} Array of deduction objects in calculation order. Each object contains: masterId, name, amount, type ('fixed'|'percentage'), base (null|'basic'|'gross'), percentage, percentageBase, minAmount, maxAmount, and basedOnPresentDays.
 async function calculateOtherDeductions(departmentId, basicPay, grossSalary = null, attendanceData = null, divisionId = null) {
   try {
     // Get all active deductions
@@ -663,4 +679,3 @@ module.exports = {
   calculateDeductionAmount,
   calculateTotalOtherDeductions,
 };
-

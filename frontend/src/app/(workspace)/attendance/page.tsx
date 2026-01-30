@@ -104,6 +104,18 @@ interface Designation {
   department: string;
 }
 
+/**
+ * Render the Attendance Management page UI for viewing and managing monthly employee attendance.
+ *
+ * Renders a full-featured attendance interface including month/year navigation, search and filter controls,
+ * table views (complete, present/absent, in/out, leaves, OD, OT), status legend, paginated/infinite-scroll
+ * employee rows, and modals/dialogs for uploading Excel, viewing/editing daily attendance details, assigning
+ * shifts, updating out-times, converting extra hours to OT, resolving leave conflicts, and viewing payslips
+ * and monthly summaries. The component adapts behavior and visible controls based on the current user role
+ * (employee vs HR/admin) and exposes helper utilities for time and hour formatting.
+ *
+ * @returns The React element for the attendance management UI.
+ */
 export default function AttendancePage() {
   const { user } = useAuth();
   const { activeWorkspace } = useWorkspace();

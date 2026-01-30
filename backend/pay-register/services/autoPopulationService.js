@@ -41,11 +41,11 @@ async function getLeaveNature(leaveType) {
 }
 
 /**
- * Fetch attendance data for employee and date range
- * @param {String} emp_no - Employee number
- * @param {String} startDate - YYYY-MM-DD
- * @param {String} endDate - YYYY-MM-DD
- * @returns {Object} Map of date -> attendance record
+ * Builds a map of attendance records for an employee over a date range.
+ * @param {string} emp_no - Employee number.
+ * @param {string} startDate - Start date in `YYYY-MM-DD` format (inclusive).
+ * @param {string} endDate - End date in `YYYY-MM-DD` format (inclusive).
+ * @returns {Object} An object mapping `YYYY-MM-DD` date strings to AttendanceDaily documents (attendance records).
  */
 async function fetchAttendanceData(emp_no, startDate, endDate) {
   const attendanceRecords = await AttendanceDaily.find({
@@ -62,11 +62,26 @@ async function fetchAttendanceData(emp_no, startDate, endDate) {
 }
 
 /**
- * Fetch leave data for employee and date range
- * @param {String} employeeId - Employee ID
- * @param {String} startDate - YYYY-MM-DD
- * @param {String} endDate - YYYY-MM-DD
- * @returns {Object} Map of date -> leave data
+ * Build a map of per-date leave information for an employee within a date range.
+ *
+ * Fetches approved, active leaves that overlap the date range and approved leave splits for the given payroll month,
+ * then produces a map keyed by `YYYY-MM-DD` containing consolidated leave data. Leave splits override full-leave
+ * values for the specific dates they cover.
+ *
+ * @param {String} employeeId - Employee MongoDB ID.
+ * @param {String} startDate - Inclusive start date in `YYYY-MM-DD` format.
+ * @param {String} endDate - Inclusive end date in `YYYY-MM-DD` format.
+ * @param {String} payrollMonth - Payroll month identifier used to scope leave splits (format as used by LeaveSplit.month).
+ * @returns {Object} An object mapping date strings (`YYYY-MM-DD`) to leave info:
+ *   {
+ *     leaveIds: Array<ObjectId>,       // IDs of full leave documents covering the date
+ *     leaveSplitIds: Array<ObjectId>,  // IDs of leave-split documents for the date
+ *     isHalfDay: Boolean,              // true if the recorded leave for the date is a half day
+ *     halfDayType: String|null,        // half-day type (e.g., 'first_half'|'second_half') or null
+ *     leaveType: String|null,          // effective leave type for the date
+ *     originalLeaveType: String|null,  // original leave type from the full leave (when applicable)
+ *     leaveNature: String|undefined    // leave nature from split when present (e.g., 'paid'|'lop'|'without_pay')
+ *   }
  */
 async function fetchLeaveData(employeeId, startDate, endDate, payrollMonth) {
   const start = new Date(startDate);
@@ -150,11 +165,12 @@ async function fetchLeaveData(employeeId, startDate, endDate, payrollMonth) {
 }
 
 /**
- * Fetch OD data for employee and date range
- * @param {String} employeeId - Employee ID
- * @param {String} startDate - YYYY-MM-DD
- * @param {String} endDate - YYYY-MM-DD
- * @returns {Object} Map of date -> OD data
+ * Build a map of approved, active OD records for an employee across a date range.
+ *
+ * @param {String} employeeId - Employee Mongo ID.
+ * @param {String} startDate - Start date inclusive in 'YYYY-MM-DD' format.
+ * @param {String} endDate - End date inclusive in 'YYYY-MM-DD' format.
+ * @returns {Object} A map keyed by date string 'YYYY-MM-DD' to OD info objects containing `odIds` (array of OD ObjectIds), `isHalfDay` (boolean), `halfDayType` (string|null), and `odType` (string|null).
  */
 async function fetchODData(employeeId, startDate, endDate) {
   const start = new Date(startDate);
@@ -202,11 +218,11 @@ async function fetchODData(employeeId, startDate, endDate) {
 }
 
 /**
- * Fetch OT data for employee and date range
- * @param {String} employeeId - Employee ID
- * @param {String} startDate - YYYY-MM-DD
- * @param {String} endDate - YYYY-MM-DD
- * @returns {Object} Map of date -> OT hours
+ * Aggregate approved overtime entries for an employee into a date-keyed map.
+ * @param {String} employeeId - Employee's unique identifier.
+ * @param {String} startDate - Start date in YYYY-MM-DD (inclusive).
+ * @param {String} endDate - End date in YYYY-MM-DD (inclusive).
+ * @returns {Object} A map where each key is a date string and the value is an object with `otIds` (array of OT document IDs) and `totalHours` (number of OT hours for that date).
  */
 async function fetchOTData(employeeId, startDate, endDate) {
   const ots = await OT.find({
@@ -232,11 +248,12 @@ async function fetchOTData(employeeId, startDate, endDate) {
 }
 
 /**
- * Fetch shift data for employee and date range
- * @param {String} emp_no - Employee number
- * @param {String} startDate - YYYY-MM-DD
- * @param {String} endDate - YYYY-MM-DD
- * @returns {Object} Map of date -> shift data
+ * Builds a map of pre-scheduled shift information for an employee over an inclusive date range.
+ * @param {String} emp_no - Employee number.
+ * @param {String} startDate - Start date (inclusive) in `YYYY-MM-DD` format.
+ * @param {String} endDate - End date (inclusive) in `YYYY-MM-DD` format.
+ * @returns {Object} Map where keys are date strings (`YYYY-MM-DD`) and values are shift data objects:
+ *                   `{ shiftId: ObjectId|null, shiftName: string, payableShifts: number, status: string|null }`.
  */
 async function fetchShiftData(emp_no, startDate, endDate) {
   const preScheduledShifts = await PreScheduledShift.find({
@@ -267,7 +284,16 @@ async function fetchShiftData(emp_no, startDate, endDate) {
 }
 
 /**
- * Resolve conflicts and determine status for a date
+ * Determine the per-half-day status for a date by resolving attendance, leave, OD, and shift information.
+ * @param {Object} dateData - Aggregated source data for the date.
+ * @param {Object} [dateData.attendance] - Attendance record; may contain `status` values like `'PRESENT'`, `'HALF_DAY'`, or `'PARTIAL'`.
+ * @param {Object} [dateData.leave] - Leave information; may contain `isHalfDay`, `halfDayType` (`'first_half'|'second_half'`), `leaveType`, and `leaveNature`.
+ * @param {Object} [dateData.od] - Official duty information; may contain `isHalfDay`, `halfDayType` and `odType`.
+ * @param {Object} [dateData.shift] - Shift information; may contain `status` (`'HOL'` for holiday, `'WO'` for week off).
+ * @returns {Object} An object with `firstHalf` and `secondHalf` entries. Each entry has:
+ *  - `status` {string} — one of `'present'`, `'leave'`, `'od'`, `'absent'`, `'holiday'`, or `'week_off'`.
+ *  - `leaveType` {string|null} — the leave nature when status is `'leave'`, otherwise `null`.
+ *  - `isOD` {boolean} — `true` when the half is marked as official duty, otherwise `false`.
  */
 async function resolveConflicts(dateData) {
   const { attendance, leave, od, shift } = dateData;
@@ -341,12 +367,13 @@ async function resolveConflicts(dateData) {
 }
 
 /**
- * Populate pay register from all sources
- * @param {String} employeeId - Employee ID
- * @param {String} emp_no - Employee number
- * @param {Number} year - Year
- * @param {Number} monthNumber - Month number (1-12)
- * @returns {Array} Array of dailyRecords
+ * Builds daily pay register records for an employee for a payroll month by aggregating attendance, leave, OD, OT, and shift data.
+ *
+ * @param {String} employeeId - Employee database ID used to fetch leave, OD, and OT records.
+ * @param {String} emp_no - Employee number used to fetch attendance and pre-scheduled shift records.
+ * @param {Number} year - Year used to derive the payroll date range.
+ * @param {Number} monthNumber - Month number (1-12) used to derive the payroll date range.
+ * @returns {Array} Array of dailyRecords — each record aggregates attendance, leave, OD, OT, and shift information for a single date within the payroll range (includes per-half statuses, overall status, shift info, OT hours, related record IDs, and flags).
  */
 async function populatePayRegisterFromSources(employeeId, emp_no, year, monthNumber) {
   const month = `${year}-${String(monthNumber).padStart(2, '0')}`;

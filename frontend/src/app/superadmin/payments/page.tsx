@@ -24,6 +24,13 @@ const statusLabels: Record<PayrollBatchStatus, string> = {
 
 
 
+/**
+ * Renders the Payroll Payments page, providing filters, a paginated list of payroll batches, and actions to approve, freeze, or complete batches via a confirmation dialog.
+ *
+ * Fetches divisions, departments, and payroll batches based on selected filters (month, division, department, status, page) and displays loading, empty, and error states. Includes inline controls for viewing batch details and performing status transitions with optional reasons.
+ *
+ * @returns The JSX element for the payroll payments management UI.
+ */
 export default function PaymentsPage() {
     const router = useRouter();
     const user = auth.getUser();

@@ -107,6 +107,13 @@ interface Arrears {
   createdAt: string;
 }
 
+/**
+ * Renders the Arrears management page with dashboard statistics, a tabbed and searchable list, and dialogs for creating and viewing arrears.
+ *
+ * The component fetches arrears and employee data, derives filtered lists and summary counts, and exposes controls to open the create form and view details for a selected arrears entry.
+ *
+ * @returns The Arrears page React element containing stats cards, a tabbed/searchable table of arrears, and associated dialogs for detail and creation.
+ */
 export default function ArrearsPage() {
   const [arrears, setArrears] = useState<Arrears[]>([]);
   const [loading, setLoading] = useState(true);

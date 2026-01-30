@@ -101,12 +101,16 @@ async function normalizeLeaveType(leaveType) {
 }
 
 /**
- * Update daily record
- * @param {Object} payRegister - PayRegisterSummary document
- * @param {String} date - Date in YYYY-MM-DD format
- * @param {Object} updateData - Update data
- * @param {Object} editedBy - User who made the edit
- * @returns {Object} Updated daily record
+ * Apply the provided updates to a single day's attendance record in a pay register, creating the record if missing and recording edit history.
+ *
+ * Updates may modify firstHalf/secondHalf fields, full-day fields (status, leaveType, isOD, otHours, shift), remarks, and split status; changes are recorded in payRegister.editHistory and payRegister edit metadata is updated. If a daily record did not exist for the given date it will be created with sensible defaults.
+ *
+ * @param {Object} payRegister - Pay register document to modify (mutated in place).
+ * @param {string} date - Date string in YYYY-MM-DD format identifying the daily record to update.
+ * @param {Object} updateData - Partial update payload. Supported keys include: firstHalf, secondHalf, status, leaveType, leaveNature, isOD, isSplit, otHours, shiftId, shiftName, remarks.
+ * @param {Object} editedBy - User performing the edit (object or id). When an object is provided its _id, name/employee_name, and role are used for edit history entries.
+ * @returns {Object} The updated daily record object (the entry within payRegister.dailyRecords for the given date).
+ * @throws {Error} If updateData fails validation (validation errors are included in the error message).
  */
 async function updateDailyRecord(payRegister, date, updateData, editedBy) {
   // Validate update data
@@ -369,4 +373,3 @@ module.exports = {
   validateDailyRecord,
   normalizeLeaveType,
 };
-

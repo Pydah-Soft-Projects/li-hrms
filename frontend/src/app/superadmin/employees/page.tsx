@@ -199,6 +199,13 @@ const isEmployeeActive = (employee: any) => {
   return status === true || status === 1 || (status !== false && status !== 0 && status !== '0');
 };
 
+/**
+ * Render the Employee Management page including Employees and Applications tabs.
+ *
+ * This component manages state, data fetching, and UI for listing, creating, editing, viewing, approving/rejecting, and bulk-importing employees and employee applications, plus allowances/deductions defaults, overrides, dynamic form templates, pagination, filters, and related modal dialogs.
+ *
+ * @returns The EmployeesPage React element
+ */
 export default function EmployeesPage() {
   const [activeTab, setActiveTab] = useState<'employees' | 'applications'>('employees');
   const [employees, setEmployees] = useState<Employee[]>([]);

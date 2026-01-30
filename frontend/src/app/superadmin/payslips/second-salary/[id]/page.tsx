@@ -78,6 +78,14 @@ interface SecondSalaryRecord {
     roundOff?: number;
 }
 
+/**
+ * Displays a detailed view for a 2nd salary payslip identified by the route `id` and provides a PDF download action.
+ *
+ * Fetches the payslip record for the current route `id`, renders loading/error states, shows employee, attendance,
+ * earnings and deductions breakdowns, and includes a button to generate and save a detailed payslip PDF.
+ *
+ * @returns A JSX element that renders the payslip detail page.
+ */
 export default function SecondSalaryPayslipDetail() {
     const router = useRouter();
     const params = useParams();
@@ -558,7 +566,13 @@ export default function SecondSalaryPayslipDetail() {
     );
 }
 
-// Reusable UI Components
+/**
+ * Render a compact two-line detail row with an uppercase mono label and a bold, truncated value.
+ *
+ * @param label - Short label displayed above the value (uppercase, mono-style)
+ * @param value - Value to display below the label; long values are truncated
+ * @returns The JSX element for the detail row
+ */
 function DetailRow({ label, value }: { label: string; value: any }) {
     return (
         <div className="flex flex-col gap-1">
@@ -568,6 +582,15 @@ function DetailRow({ label, value }: { label: string; value: any }) {
     );
 }
 
+/**
+ * Renders a compact status tile that displays a short label and an emphasized value with configurable color and optional highlight.
+ *
+ * @param label - Short uppercase label shown above the value.
+ * @param value - Primary value displayed; falsy values render as `0`.
+ * @param color - Visual color theme for the card. Supported keys: `slate`, `indigo`, `rose`, `emerald`, `amber`, `blue`. Defaults to `slate`.
+ * @param highlight - When `true`, applies an emphasized highlight style (strong background, white text, shadow, and scale).
+ * @returns The JSX element representing the styled status card.
+ */
 function StatusCard({ label, value, color = 'slate', highlight = false }: { label: string; value: any; color?: string; highlight?: boolean }) {
     const colors: Record<string, string> = {
         slate: 'text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/40',
@@ -587,6 +610,16 @@ function StatusCard({ label, value, color = 'slate', highlight = false }: { labe
     );
 }
 
+/**
+ * Render a single salary row with label and INR-formatted amount, hiding zero-value rows except for certain required labels.
+ *
+ * Renders the amount prefixed with a minus sign and deduction styling when `isDeduction` is true. Rows with a value of zero are omitted except for the labels "Fixed 2nd Salary", "Earned Salary", and "Attendance Deduct", which are always rendered.
+ *
+ * @param label - The text label displayed on the left of the row
+ * @param value - The numeric amount in rupees; displayed formatted as `₹` with two decimal places
+ * @param isDeduction - When true, the amount is rendered as a deduction (prefixed with `-` and styled accordingly)
+ * @returns A JSX element for the salary row, or `null` when the row is omitted due to a zero value
+ */
 function SalaryRow({ label, value, isDeduction = false }: { label: string; value: number; isDeduction?: boolean }) {
     if (value === 0 && !['Fixed 2nd Salary', 'Earned Salary', 'Attendance Deduct'].includes(label)) return null;
 

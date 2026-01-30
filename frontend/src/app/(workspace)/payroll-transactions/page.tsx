@@ -30,6 +30,13 @@ interface Analytics {
   totalTransactions: number;
 }
 
+/**
+ * Render the payroll transactions page with analytics, month selection, search, and category filters.
+ *
+ * Loads payroll transactions and analytics for the selected month, displays loading and error states, and provides client-side filtering by category and text search.
+ *
+ * @returns The React element for the payroll transactions page containing controls, analytics summaries, and the transactions table.
+ */
 export default function PayrollTransactionsPage() {
   const searchParams = useSearchParams();
   const [transactions, setTransactions] = useState<PayrollTransaction[]>([]);
@@ -432,4 +439,3 @@ export default function PayrollTransactionsPage() {
     </div>
   );
 }
-

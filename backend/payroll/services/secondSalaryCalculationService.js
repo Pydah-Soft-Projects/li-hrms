@@ -32,7 +32,12 @@ const normalizeOverrides = (list, fallbackCategory) => {
 };
 
 /**
- * Simple merge with overrides (helper)
+ * Merge a base list of items with override entries, marking items that were overridden.
+ *
+ * @param {Array<Object>} baseList - Original list of items (each may contain `masterId`, `name`, `amount`).
+ * @param {Array<Object>} overrides - Override entries (each should contain `masterId` or `name`, and `amount`).
+ * @param {boolean} [includeMissing=true] - If true, append overrides that don't match any base item.
+ * @returns {Array<Object>} A new array where matching base items have their `amount` replaced and `isEmployeeOverride` set to `true`. If `includeMissing` is true, unmatched overrides are appended with `isEmployeeOverride: true` and `source: 'employee_override'`.
  */
 function mergeWithOverrides(baseList, overrides, includeMissing = true) {
     const result = [...baseList];
@@ -64,7 +69,19 @@ function mergeWithOverrides(baseList, overrides, includeMissing = true) {
  */
 
 /**
- * Calculate second salary for an employee
+ * Calculate and persist an employee's second salary for a given month and associate the result with a department/division batch.
+ *
+ * This performs attendance validation, computes basic pay, OT, allowances, deductions, loans/advances, final net (with rounding),
+ * saves or updates a SecondSalaryRecord, and ensures the record is added to a SecondSalaryBatch.
+ *
+ * @param {string|Object} employeeId - ID of the employee to calculate salary for.
+ * @param {string} month - Month in `YYYY-MM` format for which the salary is calculated.
+ * @param {string|Object} userId - ID of the user initiating the calculation (used when creating a batch).
+ * @returns {{ success: true, record: Object, batchId?: Object }} An object containing success status, the saved SecondSalaryRecord document, and the batch ID if a batch exists or was created.
+ * @throws {Error} If the employee is not found.
+ * @throws {Error} If Pay Register data for the given month is not found.
+ * @throws {Error} If the employee has no department assigned.
+ * @throws {Error} Rethrows any other errors encountered during calculation or persistence.
  */
 async function calculateSecondSalary(employeeId, month, userId) {
     try {

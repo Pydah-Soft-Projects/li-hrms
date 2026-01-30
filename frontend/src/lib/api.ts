@@ -245,6 +245,21 @@ export interface LoginResponse {
   activeWorkspace?: Workspace;
 }
 
+/**
+ * Sends an HTTP request to the configured API base URL and returns a normalized ApiResponse.
+ *
+ * This function automatically attaches a bearer token from localStorage (if present) as the
+ * `Authorization` header and sets `Content-Type: application/json` by default (removed when the
+ * request body is a FormData instance). It returns the server response merged into the ApiResponse
+ * shape used across the client, or a structured error response when the request fails.
+ *
+ * @param endpoint - Path and query string to append to the API base URL (e.g., `/users?page=1`).
+ * @param options - Fetch options (headers, method, body, etc.). If `options.headers` is provided,
+ *   its keys are merged with the default headers.
+ * @returns An ApiResponse<T> object. On success, contains `success: true` and the backend response
+ *   fields (including `data`). On failure, contains `success: false` and `message`/`error` describing
+ *   the problem.
+ */
 export async function apiRequest<T>(
   endpoint: string,
   options: RequestInit = {}
@@ -309,7 +324,15 @@ export async function apiRequest<T>(
   }
 }
 
-// Timeout wrapper for long-running operations
+/**
+ * Wraps apiRequest with an AbortController to enforce a timeout.
+ *
+ * @param endpoint - API endpoint path appended to the base URL
+ * @param options - Fetch options; an AbortSignal will be attached to allow cancellation
+ * @param timeoutMs - Timeout in milliseconds (default 60000)
+ * @returns The API response from the request; if the request times out returns an error ApiResponse with `success: false`.
+ * @throws Any non-timeout error thrown by apiRequest is rethrown.
+ */
 async function apiRequestWithTimeout<T>(
   endpoint: string,
   options: RequestInit = {},
@@ -2957,4 +2980,3 @@ export const api = {
     });
   },
 };
-

@@ -186,6 +186,14 @@ interface PermissionRequest {
   };
 }
 
+/**
+ * Render the OT & Permissions management page with tabs for Overtime, Permissions, and Pending items.
+ *
+ * Provides UI and state for listing, filtering, creating, approving, and rejecting OT and Permission requests,
+ * including dialogs for request creation, evidence capture, QR gate-pass generation, and evidence viewing.
+ *
+ * @returns The rendered React element for the OT & Permissions management page.
+ */
 export default function OTAndPermissionsPage() {
 
   const { user: currentUser } = useAuth();
@@ -2137,4 +2145,3 @@ export default function OTAndPermissionsPage() {
     </div>
   );
 }
-

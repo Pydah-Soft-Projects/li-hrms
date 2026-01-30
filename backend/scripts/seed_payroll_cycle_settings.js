@@ -2,6 +2,12 @@ const mongoose = require('mongoose');
 require('dotenv').config();
 const Settings = require('../settings/model/Settings');
 
+/**
+ * Seed payroll cycle start and end day settings into the Settings collection.
+ *
+ * Connects to MongoDB using MONGO_URI or a default, ensures two payroll settings exist
+ * (start and end day), logs actions, and exits the process with code 0 on success or 1 on error.
+ */
 async function seedPayrollCycle() {
     try {
         const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/li-hrms';

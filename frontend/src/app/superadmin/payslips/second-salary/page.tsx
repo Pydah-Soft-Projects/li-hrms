@@ -13,6 +13,11 @@ import {
 import { format } from 'date-fns';
 import { toast } from 'react-toastify';
 
+/**
+ * Renders the Second Salary Payslips page with filters, search, and a table of payslip records.
+ *
+ * @returns The page React element containing controls to filter by month, division, and department, a text search for employee name or ID, and a table listing matching 2nd salary payslips with actions to view or download each payslip.
+ */
 export default function SecondSalaryPayslipsPage() {
     const [records, setRecords] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);

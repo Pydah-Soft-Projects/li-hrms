@@ -86,6 +86,23 @@ interface DynamicEmployeeFormProps {
   excludeFields?: string[];
 }
 
+/**
+ * Render a dynamic employee form driven by runtime form settings and current form data.
+ *
+ * Renders groups and fields defined in form settings, manages cascading field updates (e.g., division → department → designation), array and object fields, qualifications (including optional certificate upload), and user selection widgets. Honors view mode and excluded fields.
+ *
+ * @param formData - Current form values object used to populate fields.
+ * @param onChange - Callback invoked with updated form data when any field changes.
+ * @param errors - Optional map of field validation errors keyed by field id or composite keys for nested/array fields.
+ * @param departments - List of department objects to populate department selects.
+ * @param designations - List of designation objects to populate designation selects.
+ * @param onSettingsLoaded - Optional callback invoked with loaded form settings after they are fetched or initialized.
+ * @param simpleUpload - When true, uses a basic file input for qualification certificate upload instead of the advanced uploader.
+ * @param isViewMode - When true, renders the form in read-only mode (inputs disabled and add/remove actions hidden).
+ * @param divisions - List of division objects to populate division selects and to filter departments when a division is selected.
+ * @param excludeFields - Array of field ids that should be omitted from rendering.
+ * @returns A React element representing the fully rendered dynamic employee form.
+ */
 export default function DynamicEmployeeForm({
   formData,
   onChange,
@@ -1180,4 +1197,3 @@ export default function DynamicEmployeeForm({
     </div>
   );
 }
-

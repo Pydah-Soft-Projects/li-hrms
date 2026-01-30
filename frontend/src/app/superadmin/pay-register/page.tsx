@@ -100,6 +100,22 @@ interface Shift {
 
 type TableType = 'present' | 'absent' | 'leaves' | 'od' | 'ot' | 'extraHours' | 'shifts';
 
+/**
+ * Renders the Pay Register page and manages payroll workflows, editing, exports, uploads, and arrears integration.
+ *
+ * This client-side component provides UI and state for:
+ * - loading and paginating employee pay registers for a selected month/period, divisions, and departments;
+ * - displaying a monthly summary and a day-wise grid with tabs (Present, Absent, Leaves, OD, OT, Extra Hours, Shifts);
+ * - editing daily records (full-day and half-day modes) via a modal and saving updates;
+ * - syncing attendance across a backend date range and syncing individual pay registers;
+ * - calculating payroll for a single employee or in bulk (with batch navigation and permission request flow for locked batches);
+ * - exporting payroll data to Excel and uploading a bulk summary Excel template;
+ * - integrating an arrears selection section for payroll processing.
+ *
+ * The component derives the displayed date range from backend-provided payrollStartDate/payrollEndDate when available, falling back to the calendar month otherwise.
+ *
+ * @returns The React element for the Pay Register page UI.
+ */
 export default function PayRegisterPage() {
   const router = useRouter();
   const [currentDate, setCurrentDate] = useState(new Date());

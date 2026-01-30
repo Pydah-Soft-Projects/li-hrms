@@ -336,6 +336,16 @@ const buildDateRange = (fromDate: string, toDate: string, isHalfDay?: boolean, h
   return dates;
 };
 
+/**
+ * Client React component providing a complete UI for managing leave and on-duty (OD) requests.
+ *
+ * Renders lists and dashboards for leaves/ODs, supports applying for leave/OD (with photo evidence and geolocation for ODs),
+ * viewing detailed requests, editing requests (for permitted users), approval workflows (approve/reject/forward/revoke),
+ * and split/approve flows for multi-day leaves. The component loads and synchronizes data with backend APIs,
+ * validates date/time and conflict conditions, and exposes dialogs for apply, detail, and edit operations.
+ *
+ * @returns The rendered Leaves & OD management UI as a JSX element.
+ */
 export default function LeavesPage() {
   const [activeTab, setActiveTab] = useState<'leaves' | 'od' | 'pending'>('leaves');
   const [leaves, setLeaves] = useState<LeaveApplication[]>([]);
@@ -3163,4 +3173,3 @@ export default function LeavesPage() {
     </div >
   );
 }
-

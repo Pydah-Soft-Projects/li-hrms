@@ -52,6 +52,13 @@ interface AllowanceDeduction {
   updatedAt?: string;
 }
 
+/**
+ * Page component for managing salary allowances and deductions, including global rules and department/division-specific overrides.
+ *
+ * Renders a UI to list, create, edit, and delete allowance/deduction components, manage global calculation rules, and add or modify department (optionally division-scoped) overrides with role-based access controls.
+ *
+ * @returns The React element that renders the allowances & deductions management interface.
+ */
 export default function AllowancesDeductionsPage() {
   const { user } = useAuth();  // NEW: Get current user for role checking
   const [activeTab, setActiveTab] = useState<'all' | 'allowances' | 'deductions'>('all');
@@ -1330,4 +1337,3 @@ export default function AllowancesDeductionsPage() {
     </div>
   );
 }
-

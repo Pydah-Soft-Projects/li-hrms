@@ -116,7 +116,17 @@ Leave.find = () => mockMongooseQuery([]);
 // --- 4. Load Service ---
 const { processAndAggregateLogs } = require('../attendance/services/attendanceSyncService');
 
-// --- 5. Test Runner ---
+/**
+ * Run a mocked attendance-processing scenario using the provided log entries and print the resulting daily record.
+ *
+ * Resets in-memory mocks, injects the given logs as raw entries for employee "TEST_EMP" on 2025-01-01, invokes
+ * the attendance processing pipeline, and prints errors or the created/updated daily record summary to stdout.
+ *
+ * @param {string} scenarioName - Human-readable name for the test scenario (printed to stdout).
+ * @param {Array<{time: string, type: string}>} logs - Array of log entries where each entry has:
+ *   - `time`: local time in "HH:MM" format (used to construct the timestamp for 2025-01-01),
+ *   - `type`: log type (e.g., "IN" or "OUT").
+ */
 async function runTest(scenarioName, logs) {
   console.log(`\n==================================================`);
   console.log(`SCENARIO: ${scenarioName}`);

@@ -78,6 +78,15 @@ interface PayrollRecord {
   endDate?: string;
 }
 
+/**
+ * Render the Employee Payslips management page with filters, search, pagination, and single/bulk PDF export.
+ *
+ * The page fetches divisions, departments, designations, employees, and payroll records for a selected month,
+ * provides client-side filtering (division, department, designation, employee, status, and search),
+ * displays paginated payslip rows, and supports generating individual or bulk payslip PDFs.
+ *
+ * @returns The JSX element for the Employee Payslips page.
+ */
 export default function PayslipsPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);

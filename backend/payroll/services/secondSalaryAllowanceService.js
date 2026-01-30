@@ -7,7 +7,15 @@ const cacheService = require('../../shared/services/cacheService');
  */
 
 /**
- * Get resolved allowance rule for a department
+ * Resolve the applicable allowance rule for a department and optional division from an allowance master.
+ *
+ * Searches department+division rules first, then department-only rules, then the master global rule.
+ *
+ * @param {Object} allowanceMaster - Allowance master record (must include `isActive`, optional `departmentRules`, optional `globalRule`).
+ * @param {(string|number|Object)} departmentId - Department identifier to match against department rules.
+ * @param {(string|number|Object)=} divisionId - Optional division identifier to match division-specific department rules.
+ * @returns {{type:string, amount?:number, percentage?:number, percentageBase?:string, minAmount?:number, maxAmount?:number, basedOnPresentDays:boolean}|null}
+ *          An object describing the resolved rule with fields: `type`, `amount`, `percentage`, `percentageBase`, `minAmount`, `maxAmount`, and `basedOnPresentDays` (defaults to `false`), or `null` if no applicable rule is found or the master is inactive.
  */
 function getResolvedAllowanceRule(allowanceMaster, departmentId, divisionId = null) {
     if (!allowanceMaster || !allowanceMaster.isActive) {
@@ -72,7 +80,19 @@ function getResolvedAllowanceRule(allowanceMaster, departmentId, divisionId = nu
 }
 
 /**
- * Calculate allowance amount from rule
+ * Compute the allowance amount defined by a resolved allowance rule.
+ *
+ * @param {Object} rule - Resolved allowance rule. Expected fields:
+ *   - type: 'fixed' or 'percentage'
+ *   - amount: fixed amount (for 'fixed')
+ *   - percentage: percentage value (for 'percentage')
+ *   - percentageBase: 'basic' or 'gross' (for 'percentage')
+ *   - minAmount, maxAmount: numeric bounds to apply after calculation
+ *   - basedOnPresentDays: boolean indicating pro‑ration for fixed amounts
+ * @param {number} basicPay - Base value used for percentage calculations (for second salary this should be the second_salary value).
+ * @param {number|null} grossSalary - Gross salary used when percentageBase === 'gross'.
+ * @param {Object|null} attendanceData - Attendance info used when pro‑rating fixed amounts. Shape: { presentDays, paidLeaveDays, odDays, monthDays } where monthDays defaults to 30.
+ * @returns {number} The calculated allowance amount rounded to two decimals.
  */
 function calculateAllowanceAmount(rule, basicPay, grossSalary = null, attendanceData = null) {
     if (!rule) {
@@ -110,8 +130,14 @@ function calculateAllowanceAmount(rule, basicPay, grossSalary = null, attendance
 }
 
 /**
- * Calculate all allowances for an employee for 2nd Salary
- */
+ * Compute all applicable second-salary allowances for an employee in a department or division.
+ * @param {string|number} departmentId - Department identifier used to resolve department-level rules.
+ * @param {number} basicPay - Basic pay used as the default percentage base.
+ * @param {number|null} grossSalary - Gross salary used when a rule's percentage base is `gross`; may be null.
+ * @param {boolean} useGrossBase - When true, prefer gross-based percentage rules; when false, prefer basic-based percentage rules.
+ * @param {Object|null} attendanceData - Optional attendance object used to prorate fixed allowances. Expected shape: { presentDays, paidLeaveDays, odDays, monthDays }.
+ * @param {string|number|null} divisionId - Optional division identifier used to resolve division-specific rules.
+ * @returns {Array<Object>} An array of allowance objects. Each object contains: masterId, name, amount, type, base (alias for percentageBase), percentage, percentageBase, minAmount, maxAmount, basedOnPresentDays.
 async function calculateAllowances(departmentId, basicPay, grossSalary = null, useGrossBase = false, attendanceData = null, divisionId = null) {
     try {
         const cacheKey = `settings:allowance:masters:all`;
@@ -168,6 +194,11 @@ async function calculateAllowances(departmentId, basicPay, grossSalary = null, u
     }
 }
 
+/**
+ * Compute the sum of amounts from an array of allowance objects.
+ * @param {Array<Object>} allowances - Array of allowance objects; each may have a numeric `amount` property.
+ * @returns {number} The numeric total of all `amount` values (treats missing or falsy amounts as 0).
+ */
 function calculateTotalAllowances(allowances) {
     return allowances.reduce((sum, allowance) => sum + (allowance.amount || 0), 0);
 }

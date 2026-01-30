@@ -22,6 +22,14 @@ const statusLabels: Record<PayrollBatchStatus, string> = {
     complete: "Completed"
 };
 
+/**
+ * Renders the PaymentsPage UI for viewing, filtering, and performing status actions on payroll batches.
+ *
+ * Provides month/department/status filters, paginated batch listing with totals and status badges, action controls
+ * (approve, freeze, complete) with a confirmation dialog and optional reason, and department data loading.
+ *
+ * @returns The React element for the payroll payments management page.
+ */
 export default function PaymentsPage() {
     const router = useRouter();
     const user = auth.getUser();

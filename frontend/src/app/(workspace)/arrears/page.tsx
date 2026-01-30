@@ -82,6 +82,13 @@ interface Arrears {
   createdAt: string;
 }
 
+/**
+ * Render the Arrears management page, displaying an arrears list, status statistics, tabs for filtering, and controls to create or view arrears.
+ *
+ * Loads arrears and active employees on mount, supports creating arrears (triggers an API call and reloads the list on success), viewing arrears details in a dialog, and client-side filtering and statistics computation.
+ *
+ * @returns The Arrears management page as a React element.
+ */
 export default function ArrearsPage() {
   const [arrears, setArrears] = useState<Arrears[]>([]);
   const [loading, setLoading] = useState(true);

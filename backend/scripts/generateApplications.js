@@ -51,6 +51,11 @@ const BANKS = ['SBI', 'HDFC', 'ICICI', 'Axis', 'PNB', 'BOB', 'Canara', 'Union', 
 const generateBankAccount = () => `${randomNumber(10000000000, 99999999999)}`;
 const generateIFSC = (bank) => `${bank}0${randomNumber(100000, 999999)}`;
 
+/**
+ * Establishes a connection to MongoDB using the URI from `process.env.MONGODB_URI` and exits the process on failure.
+ *
+ * Attempts to connect to the MongoDB instance specified by `process.env.MONGODB_URI`. On success logs a confirmation message; on failure logs the error and terminates the process with exit code 1.
+ */
 async function connectDB() {
   try {
     await mongoose.connect(process.env.MONGODB_URI);
@@ -61,6 +66,21 @@ async function connectDB() {
   }
 }
 
+/**
+ * Fetches active departments, divisions, designations, HR/Admin users, and a set of existing employee numbers.
+ *
+ * Throws if no active departments or no HR/Admin users are found.
+ *
+ * @throws {Error} If no departments exist: "No departments found! Please create departments first."
+ * @throws {Error} If no HR/Admin users exist: "No HR/Admin users found! Please create users first."
+ * @returns {{departments: Array, divisions: Array, designations: Array, users: Array, existingEmpNos: Set<string>}} 
+ * An object containing:
+ *  - departments: Array of active department documents.
+ *  - divisions: Array of active division documents.
+ *  - designations: Array of active designation documents.
+ *  - users: Array of user documents with roles in ['hr', 'super_admin', 'sub_admin'].
+ *  - existingEmpNos: Set of existing employee numbers (uppercased) from employees and employee applications.
+ */
 async function getExistingData() {
   console.log('\n📊 Fetching existing data...');
 
@@ -96,6 +116,12 @@ async function getExistingData() {
   return { departments, divisions, designations, users, existingEmpNos };
 }
 
+/**
+ * Generate a new employee number that does not exist in the provided set.
+ * @param {Set<string>} existingEmpNos - Set of already-used employee numbers; the generated number is added to this set.
+ * @param {number} startIndex - Integer index to start attempting employee number generation from.
+ * @returns {string} The unique employee number that was generated and added to `existingEmpNos`.
+ */
 function generateUniqueEmpNo(existingEmpNos, startIndex) {
   let empNo;
   let counter = startIndex;
@@ -107,6 +133,17 @@ function generateUniqueEmpNo(existingEmpNos, startIndex) {
   return empNo;
 }
 
+/**
+ * Builds a synthetic employee application object populated with realistic randomized fields.
+ *
+ * @param {number} index - Index used to derive a unique employee number seed.
+ * @param {Object} existingData - Reference data and state used to populate fields.
+ * @param {Array<Object>} existingData.departments - Active department documents.
+ * @param {Array<Object>} existingData.divisions - Active division documents.
+ * @param {Array<Object>} existingData.designations - Active designation documents.
+ * @param {Array<Object>} existingData.users - HR/admin user documents used as creators.
+ * @param {Set<string>} existingData.existingEmpNos - Set of existing employee numbers (case-insensitive) to ensure uniqueness.
+ * @returns {Object} An employee application object ready for insertion, containing keys such as `emp_no`, `employee_name`, `department_id`, `division_id`, `designation_id`, `doj`, `dob`, `proposedSalary`, contact and bank details, `qualifications`, `createdBy`, `status`, and `is_active`.
 function generateApplicationData(index, existingData) {
   const { departments, divisions, designations, users, existingEmpNos } = existingData;
 
@@ -173,6 +210,13 @@ function generateApplicationData(index, existingData) {
   };
 }
 
+/**
+ * Generate and insert 50 synthetic employee application records into the database.
+ *
+ * Connects to MongoDB, loads required reference data, creates 50 randomized application
+ * objects, inserts them in batches, and closes the database connection. On error the
+ * process exits with a non-zero status after logging the failure.
+ */
 async function generateApplications() {
   try {
     console.log('\n🚀 Starting application generation...\n');

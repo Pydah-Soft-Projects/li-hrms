@@ -29,9 +29,18 @@ function checkIfManuallyEdited(payRegister, date) {
 }
 
 /**
- * Sync pay register from leave approval
- * @param {Object} leave - Leave document
- * @returns {Promise<void>}
+ * Update affected PayRegisterSummary documents when an employee's leave may change payroll data.
+ *
+ * For each payroll month that overlaps the leave period (including adjacent calendar months), re-populates
+ * daily records from source systems, recalculates totals, and updates sync metadata (lastAutoSyncedAt and
+ * lastAutoSyncedFrom.leaves) unless any date in the payroll range was manually edited. Errors are logged
+ * and not propagated.
+ *
+ * @param {Object} leave - Leave document. Required properties:
+ *   - {string|ObjectId} leave.employeeId - Employee identifier.
+ *   - {string|Date} leave.fromDate - Leave start date (ISO string or Date).
+ *   - {string|Date} leave.toDate - Leave end date (ISO string or Date).
+ *   - {string|number} [leave.emp_no] - Employee number used when populating records.
  */
 async function syncPayRegisterFromLeave(leave) {
   try {
@@ -128,9 +137,15 @@ async function syncPayRegisterFromLeave(leave) {
 }
 
 /**
- * Sync pay register from OD approval
- * @param {Object} od - OD document
- * @returns {Promise<void>}
+ * Auto-sync affected PayRegisterSummary documents for payroll months impacted by an OD approval.
+ *
+ * Re-populates daily records and recalculates totals for each payroll month that intersects the OD date range,
+ * unless any date within the payroll month was manually edited on the existing pay register.
+ * Updates sync provenance fields on successful updates; errors are logged but not propagated.
+ *
+ * @param {Object} od - OD approval document containing the affected employee and date range.
+ *                       Required properties: `employeeId`, `fromDate`, `toDate`. Optional: `emp_no`.
+ * @returns {Promise<void>} Resolves when sync operations complete.
  */
 async function syncPayRegisterFromOD(od) {
   try {
@@ -215,9 +230,13 @@ async function syncPayRegisterFromOD(od) {
 }
 
 /**
- * Sync pay register from OT approval
- * @param {Object} ot - OT document
- * @returns {Promise<void>}
+ * Apply approved OT hours from an OT approval record to the corresponding pay register daily record(s).
+ *
+ * Finds PayRegisterSummary documents that cover the OT date (including the previous, current, and next calendar months),
+ * skips months where the OT date falls outside the payroll range or the date was manually edited, and—for the matching
+ * daily record—updates OT hours and OT IDs, recalculates totals, and updates auto-sync metadata.
+ *
+ * @param {Object} ot - OT approval document. Must include `employeeId` and `date` (ISO date string) identifying the employee and the OT date to apply.
  */
 async function syncPayRegisterFromOT(ot) {
   try {
@@ -292,10 +311,11 @@ async function syncPayRegisterFromOT(ot) {
 }
 
 /**
- * Manual sync trigger - re-populate entire pay register
- * @param {String} employeeId - Employee ID
- * @param {String} month - Month in YYYY-MM format
- * @returns {Promise<Object>} Updated pay register
+ * Re-populates and saves the pay register for the given employee and payroll month.
+ * @param {String} employeeId - Employee MongoDB ID.
+ * @param {String} month - Month in `YYYY-MM` format.
+ * @returns {Object} The updated PayRegisterSummary document.
+ * @throws {Error} If the employee with the given ID cannot be found.
  */
 async function manualSyncPayRegister(employeeId, month) {
   try {
@@ -382,4 +402,3 @@ module.exports = {
   manualSyncPayRegister,
   checkIfManuallyEdited,
 };
-
