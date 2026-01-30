@@ -377,7 +377,7 @@ export default function PayslipsPage() {
     const monthDays = record.totalDaysInMonth || record.attendance?.totalDaysInMonth || 0;
     const presentDays = record.attendance?.presentDays || 0;
     const paidLeaves = record.attendance?.paidLeaveDays || 0;
-    const totalLeaves = (record.attendance as any)?.totalLeaveDays ?? paidLeaves + ((record.attendance as any)?.totalLopDays ?? 0) ?? 0;
+    const totalLeaves = (record.attendance as any)?.totalLeaveDays ?? paidLeaves + ((record.attendance as any)?.totalLopDays ?? 0);
     const absents = record.attendance?.absentDays ?? 0;
     doc.setFontSize(9);
     doc.setTextColor(71, 85, 105);
