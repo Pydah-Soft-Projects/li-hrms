@@ -1587,6 +1587,10 @@ export const api = {
     return apiRequest<any>(`/shifts/roster?${query.toString()}`, { method: 'GET' });
   },
 
+  getMyRoster: async (month: string) => {
+    return apiRequest<any>(`/shifts/my-roster?month=${month}`, { method: 'GET' });
+  },
+
   saveRoster: async (data: { month: string; strict: boolean; entries: any[] }) => {
     return apiRequest<any>('/shifts/roster', {
       method: 'POST',

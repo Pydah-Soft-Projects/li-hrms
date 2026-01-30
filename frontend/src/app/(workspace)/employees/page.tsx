@@ -11,6 +11,7 @@ import { api, Department, Division, Designation } from '@/lib/api';
 import { auth } from '@/lib/auth';
 import BulkUpload from '@/components/BulkUpload';
 import DynamicEmployeeForm from '@/components/DynamicEmployeeForm';
+import EmployeeUpdateModal from '@/components/EmployeeUpdateModal';
 import Spinner from '@/components/Spinner';
 import {
   EMPLOYEE_TEMPLATE_HEADERS,
@@ -156,6 +157,11 @@ export default function EmployeesPage() {
   const [designations, setDesignations] = useState<Designation[]>([]);
   const [filteredDesignations, setFilteredDesignations] = useState<Designation[]>([]);
   const [filteredApplicationDesignations, setFilteredApplicationDesignations] = useState<Designation[]>([]);
+  // Bulk Action States
+  const [showEmployeeUpdateModal, setShowEmployeeUpdateModal] = useState(false);
+  const [showBulkAllowancesDeductions, setShowBulkAllowancesDeductions] = useState(false);
+
+  // existing state
   const [loading, setLoading] = useState(true);
   const [loadingApplications, setLoadingApplications] = useState(false);
   const [showDialog, setShowDialog] = useState(false);
@@ -745,7 +751,7 @@ export default function EmployeesPage() {
 
       if (response.success) {
         // BullMQ returns jobId, not immediate results
-        setSuccess(`Bulk approval job queued successfully! Processing ${selectedApplicationIds.length} applications in the background. Job ID: ${response.jobId || 'N/A'}`);
+        setSuccess(`Bulk approval job queued successfully! Processing ${selectedApplicationIds.length} applications in the background. Job ID: ${(response as any).jobId || 'N/A'}`);
       } else {
         setError(response.message || 'Bulk approval failed');
       }
@@ -867,7 +873,7 @@ export default function EmployeesPage() {
         setDataSource(response.dataSource || 'mongodb');
 
         // Update pagination state
-        const pagination = response.pagination;
+        const pagination = (response as any).pagination;
         if (pagination) {
           setHasMoreEmployees(pagination.page < pagination.totalPages);
           setCurrentPage(pagination.page);
@@ -2187,6 +2193,30 @@ export default function EmployeesPage() {
             {/* Import and New Application Buttons - RBAC Protected */}
             {showManagementButtons && (
               <>
+                {/* Bulk Update Button - Only for Employees Tab */}
+                {activeTab === 'employees' && (
+                  <button
+                    onClick={() => setShowEmployeeUpdateModal(true)}
+                    className="hidden sm:flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-medium text-blue-700 transition-all hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
+                  >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                    </svg>
+                    <span>Bulk Update</span>
+                  </button>
+                )}
+
+                {/* Bulk A&D Update Button */}
+                <button
+                  onClick={() => setShowBulkAllowancesDeductions(true)}
+                  className="hidden sm:flex items-center gap-2 rounded-xl border border-purple-200 bg-purple-50 px-4 py-2.5 text-sm font-medium text-purple-700 transition-all hover:bg-purple-100 dark:border-purple-800 dark:bg-purple-900/30 dark:text-purple-400"
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                  </svg>
+                  <span>Bulk A&D</span>
+                </button>
+
                 <button
                   onClick={() => setShowBulkUpload(true)}
                   className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-2.5 text-sm font-medium text-green-700 transition-all hover:bg-green-100 dark:border-green-800 dark:bg-green-900/30 dark:text-green-400"
@@ -4267,6 +4297,99 @@ export default function EmployeesPage() {
           </div>
         )
       }
+      {showEmployeeUpdateModal && (
+        <EmployeeUpdateModal
+          onClose={() => setShowEmployeeUpdateModal(false)}
+          onSuccess={() => {
+            setShowEmployeeUpdateModal(false);
+            loadEmployees(currentPage);
+          }}
+        />
+      )}
+
+      {showBulkAllowancesDeductions && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl dark:bg-slate-800">
+            <h3 className="mb-4 text-xl font-bold text-slate-800 dark:text-white">Bulk Allowances & Deductions Update</h3>
+            <p className="mb-6 text-slate-600 dark:text-slate-400">
+              Download the template with current values, modify them, and upload to update.
+            </p>
+
+            <div className="space-y-4">
+              <button
+                onClick={async () => {
+                  try {
+                    const blob = await api.downloadAllowanceDeductionTemplate();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'AD_Template.xlsx';
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                  } catch (e) {
+                    setError('Failed to download template');
+                  }
+                }}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-purple-200 bg-purple-50 p-4 text-purple-700 hover:bg-purple-100 dark:border-purple-800 dark:bg-purple-900/20 dark:text-purple-300"
+              >
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Download Current Template
+              </button>
+
+              <div className="relative">
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+
+                    try {
+                      setLoading(true);
+                      const res = await api.bulkUpdateAllowancesDeductions(file);
+                      if (res.success) {
+                        setSuccess(res.message || 'Updated successfully');
+                        setShowBulkAllowancesDeductions(false);
+                        loadEmployees(currentPage);
+                      } else {
+                        setError(res.message || 'Upload failed');
+                      }
+                    } catch (err: any) {
+                      setError(err.message || 'Upload failed');
+                    } finally {
+                      setLoading(false);
+                    }
+                  }}
+                  className="hidden"
+                  id="ad-bulk-upload"
+                />
+                <label
+                  htmlFor="ad-bulk-upload"
+                  className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-purple-600 p-4 font-medium text-white hover:bg-purple-700"
+                >
+                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                  </svg>
+                  Upload Updated Template
+                </label>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={() => setShowBulkAllowancesDeductions(false)}
+                className="rounded-lg px-4 py-2 text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div >
   );
 }

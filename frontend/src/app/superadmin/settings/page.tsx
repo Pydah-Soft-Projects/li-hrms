@@ -276,6 +276,7 @@ export default function SettingsPage() {
   const [featureControlEmployee, setFeatureControlEmployee] = useState<string[]>([]);
   const [featureControlHOD, setFeatureControlHOD] = useState<string[]>([]);
   const [featureControlHR, setFeatureControlHR] = useState<string[]>([]);
+  const [featureControlManager, setFeatureControlManager] = useState<string[]>([]);
   const [featureControlLoading, setFeatureControlLoading] = useState(false);
 
   // Payslip Settings state
@@ -343,10 +344,12 @@ export default function SettingsPage() {
       const resEmp = await api.getSetting('feature_control_employee');
       const resHOD = await api.getSetting('feature_control_hod');
       const resHR = await api.getSetting('feature_control_hr');
+      const resManager = await api.getSetting('feature_control_manager');
 
       if (resEmp.success && resEmp.data?.value?.activeModules) setFeatureControlEmployee(resEmp.data.value.activeModules);
       if (resHOD.success && resHOD.data?.value?.activeModules) setFeatureControlHOD(resHOD.data.value.activeModules);
       if (resHR.success && resHR.data?.value?.activeModules) setFeatureControlHR(resHR.data.value.activeModules);
+      if (resManager.success && resManager.data?.value?.activeModules) setFeatureControlManager(resManager.data.value.activeModules);
     } catch (err) {
       console.error('Failed to load feature control settings', err);
     } finally {
@@ -375,8 +378,14 @@ export default function SettingsPage() {
         category: 'feature_control',
         description: 'Active modules for HR role'
       });
+      const resManager = await api.upsertSetting({
+        key: 'feature_control_manager',
+        value: { activeModules: featureControlManager },
+        category: 'feature_control',
+        description: 'Active modules for Manager role'
+      });
 
-      if (resEmp.success && resHOD.success && resHR.success) {
+      if (resEmp.success && resHOD.success && resHR.success && resManager.success) {
         setMessage({ type: 'success', text: 'Feature control settings saved successfully' });
       } else {
         setMessage({ type: 'error', text: 'Failed to save feature control settings' });
@@ -4445,6 +4454,7 @@ export default function SettingsPage() {
                   { id: 'employee', label: 'Employee Role', state: featureControlEmployee, setState: setFeatureControlEmployee },
                   { id: 'hod', label: 'HOD Role', state: featureControlHOD, setState: setFeatureControlHOD },
                   { id: 'hr', label: 'HR Role', state: featureControlHR, setState: setFeatureControlHR },
+                  { id: 'manager', label: 'Manager Role', state: featureControlManager, setState: setFeatureControlManager },
                 ].map((role) => (
                   <div key={role.id} className="rounded-2xl border border-slate-200 bg-slate-50/50 p-6 dark:border-slate-700 dark:bg-slate-900/50">
                     <h3 className="mb-4 text-sm font-semibold text-slate-900 dark:text-slate-100 uppercase tracking-wider">{role.label}</h3>
@@ -4501,7 +4511,7 @@ export default function SettingsPage() {
                       <div>
                         <h4 className="mb-3 text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">⏰ Time & Attendance</h4>
                         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                          {['LEAVE_OD', 'ATTENDANCE', 'OT_PERMISSIONS', 'SHIFTS'].map((module) => (
+                          {['LEAVE_OD', 'ATTENDANCE', 'OT_PERMISSIONS', 'SHIFTS', 'MY_ROSTER', 'SHIFT_ROSTER', 'CONFUSED_SHIFTS'].map((module) => (
                             <label key={module} className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 transition-all hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800">
                               <input
                                 type="checkbox"
@@ -4516,7 +4526,13 @@ export default function SettingsPage() {
                                 className="h-4 w-4 rounded text-blue-600 focus:ring-blue-500"
                               />
                               <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                                {module === 'LEAVE_OD' ? 'Leave & OD' : module === 'OT_PERMISSIONS' ? 'OT & Permissions' : module === 'SHIFTS' ? 'Shifts' : 'Attendance'}
+                                {module === 'LEAVE_OD' ? 'Leave & OD' :
+                                  module === 'OT_PERMISSIONS' ? 'OT & Permissions' :
+                                    module === 'SHIFTS' ? 'Shifts' :
+                                      module === 'MY_ROSTER' ? 'My Roster' :
+                                        module === 'SHIFT_ROSTER' ? 'Shift Roster' :
+                                          module === 'CONFUSED_SHIFTS' ? 'Confused Shifts' :
+                                            'Attendance'}
                               </span>
                             </label>
                           ))}
