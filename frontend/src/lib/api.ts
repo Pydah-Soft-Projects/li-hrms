@@ -194,6 +194,69 @@ export interface PayrollBatch {
   monthName?: string;
 }
 
+/** Attendance deduction breakdown (late-in/early-out) */
+export interface AttendanceDeductionBreakdown {
+  lateInsCount?: number;
+  earlyOutsCount?: number;
+  combinedCount?: number;
+  daysDeducted?: number;
+  deductionType?: string | null;
+  calculationMode?: string | null;
+}
+
+/** Payroll record / payslip attendance with late deduction clarity */
+export interface PayrollAttendance {
+  totalDaysInMonth?: number;
+  presentDays?: number;
+  paidLeaveDays?: number;
+  odDays?: number;
+  weeklyOffs?: number;
+  holidays?: number;
+  absentDays?: number;
+  payableShifts?: number;
+  extraDays?: number;
+  totalPaidDays?: number;
+  paidDays?: number;
+  /** Days deducted due to late-in/early-out (attendance deduction) */
+  attendanceDeductionDays?: number;
+  /** Final paid days = total paid days minus attendance deduction days */
+  finalPaidDays?: number;
+  otHours?: number;
+  otDays?: number;
+  earnedSalary?: number;
+}
+
+/** Payroll record (from GET /payroll/record/:id) or payslip response */
+export interface PayrollRecordResponse {
+  _id: string;
+  employeeId?: any;
+  emp_no?: string;
+  month?: string;
+  monthName?: string;
+  year?: number;
+  monthNumber?: number;
+  attendance?: PayrollAttendance;
+  earnings?: any;
+  deductions?: {
+    attendanceDeduction?: number;
+    attendanceDeductionBreakdown?: AttendanceDeductionBreakdown;
+    permissionDeduction?: number;
+    leaveDeduction?: number;
+    totalOtherDeductions?: number;
+    otherDeductions?: any[];
+    totalDeductions?: number;
+  };
+  loanAdvance?: { totalEMI?: number; advanceDeduction?: number };
+  netSalary?: number;
+  status?: string;
+  arrearsAmount?: number;
+  roundOff?: number;
+  /** Top-level: days deducted for late (from breakdown) */
+  attendanceDeductionDays?: number;
+  /** Top-level: final paid days after late deduction */
+  finalPaidDays?: number;
+}
+
 export interface ApiResponse<T> {
   success: boolean;
   message?: string;
@@ -2552,7 +2615,7 @@ export const api = {
   },
 
   getPayrollById: async (payrollId: string) => {
-    return apiRequest<any>(`/payroll/record/${payrollId}`, { method: 'GET' });
+    return apiRequest<ApiResponse<PayrollRecordResponse>>(`/payroll/record/${payrollId}`, { method: 'GET' });
   },
 
 
