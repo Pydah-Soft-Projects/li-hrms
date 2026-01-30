@@ -856,21 +856,50 @@ export default function EmployeesPage() {
       const response = await api.bulkApproveEmployeeApplications(selectedApplicationIds, bulkSettings);
 
       if (response.success) {
-        setSuccess(`Bulk approval completed! Succeeded: ${response.data.successCount}, Failed: ${response.data.failCount}`);
+        // Handle both synchronous (≤10 apps) and asynchronous (>10 apps) responses
+        if (response.jobId || response.data?.jobId) {
+          // Async job queued (>10 applications)
+          setSuccess(`Bulk approval job queued for ${selectedApplicationIds.length} applications. Refreshing list in a moment...`);
+          setSelectedApplicationIds([]);
+          // Reload after delay to allow job to process
+          setTimeout(async () => {
+            await loadApplications();
+            await loadEmployees();
+            setLoadingApplications(false);
+          }, 3000);
+        } else if (response.data?.successCount !== undefined) {
+          // Synchronous response (≤10 applications)
+          setSuccess(`Bulk approval completed! Succeeded: ${response.data.successCount}, Failed: ${response.data.failCount}`);
+          setSelectedApplicationIds([]);
+          // Reload immediately
+          await loadApplications();
+          await loadEmployees();
+          setLoadingApplications(false);
+        } else {
+          // Fallback for unexpected response format
+          setSuccess(response.message || 'Bulk approval initiated successfully');
+          setSelectedApplicationIds([]);
+          setTimeout(async () => {
+            await loadApplications();
+            await loadEmployees();
+            setLoadingApplications(false);
+          }, 2000);
+        }
       } else {
-        setError(response.message || 'Bulk approval failed or partially failed');
+        setError(response.message || 'Bulk approval failed');
         if (response.data?.successCount > 0) {
           setSuccess(`Partially completed. Succeeded: ${response.data.successCount}`);
         }
+        setSelectedApplicationIds([]);
+        // Still reload to show any changes
+        await loadApplications();
+        await loadEmployees();
+        setLoadingApplications(false);
       }
-
-      setSelectedApplicationIds([]);
-      loadApplications();
-      loadEmployees();
     } catch (err: any) {
       setError(err.message || 'An error occurred during bulk approval');
       console.error(err);
-    } finally {
+      setSelectedApplicationIds([]);
       setLoadingApplications(false);
     }
   };
@@ -890,7 +919,7 @@ export default function EmployeesPage() {
       const response = await api.bulkRejectEmployeeApplications(selectedApplicationIds, 'Bulk rejected via dashboard');
 
       if (response.success) {
-        setSuccess(`Bulk rejection completed! Succeeded: ${response.data.successCount}, Failed: ${response.data.failCount}`);
+        setSuccess(`Bulk rejection completed! Succeeded: ${response?.data?.successCount}, Failed: ${response?.data?.failCount}`);
       } else {
         setError(response.message || 'Bulk rejection failed or partially failed');
         if (response.data?.successCount > 0) {

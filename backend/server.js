@@ -180,6 +180,15 @@ const startServer = async () => {
     const { startSyncJob } = require('./attendance/services/attendanceSyncJob');
     await startSyncJob();
 
+    // Start BullMQ Workers for background job processing
+    try {
+      const { startWorkers } = require('./shared/jobs/worker');
+      startWorkers();
+    } catch (workerError) {
+      console.warn('⚠️  BullMQ Workers failed to start (Redis may not be available):', workerError.message);
+      console.warn('⚠️  Jobs will fall back to synchronous processing');
+    }
+
     // Create HTTP server and initialize Socket.io
     const server = http.createServer(app);
     initSocket(server, allowedOrigins);
