@@ -387,38 +387,74 @@ export default function EmployeesPage() {
   const [approvalLoadingComponents, setApprovalLoadingComponents] = useState(false);
 
 
-  // Build override payload: only include rows user changed (matched by masterId or name)
+  // Build override payload: only actual overrides (pre-existing employee overrides + newly edited/added).
+  // When editing employee: include ALL allowances/deductions the employee has, with form values applied; plus any new overrides from global/dept.
   const buildOverridePayload = (
     defaults: any[],
     overrides: Record<string, number | null>,
     basedOnPresentDaysMap: Record<string, boolean>,
-    categoryFallback: 'allowance' | 'deduction'
+    categoryFallback: 'allowance' | 'deduction',
+    existingEmployeeItems?: any[]
   ) => {
-    return defaults
-      .map((item) => {
-        const key = item.masterId ? item.masterId.toString() : (item.name || '').toLowerCase();
-        if (Object.prototype.hasOwnProperty.call(overrides, key)) {
-          const amt = overrides[key];
-          const itemType = item.type || (item.base ? 'percentage' : 'fixed');
-          const basedOnPresentDays = itemType === 'fixed' ? (basedOnPresentDaysMap[key] ?? item.basedOnPresentDays ?? false) : false;
-          return {
-            masterId: item.masterId || null,
-            code: item.code || null,
-            name: item.name || '',
-            category: item.category || categoryFallback,
-            type: itemType,
-            amount: amt === null || amt === undefined ? null : Number(amt),
-            overrideAmount: amt === null || amt === undefined ? null : Number(amt),
-            percentage: item.type === 'percentage' ? (item.percentage ?? null) : null,
-            percentageBase: item.base || item.percentageBase || null,
-            minAmount: item.minAmount ?? null,
-            maxAmount: item.maxAmount ?? null,
-            basedOnPresentDays: basedOnPresentDays,
-          };
-        }
-        return null;
-      })
-      .filter(Boolean);
+    const existingList = Array.isArray(existingEmployeeItems) ? existingEmployeeItems : [];
+    const existingKeys = new Set(
+      existingList.map((ov: any) => ov.masterId?.toString() || (ov.name || '').toLowerCase()).filter(Boolean)
+    );
+
+    const buildEntry = (item: any, amt: number | null, key: string) => {
+      if (amt === null || amt === undefined) return null;
+      const itemType = item.type || (item.base ? 'percentage' : 'fixed');
+      const basedOnPresentDays = itemType === 'fixed' ? (basedOnPresentDaysMap[key] ?? item.basedOnPresentDays ?? false) : false;
+      return {
+        masterId: item.masterId || null,
+        code: item.code || null,
+        name: item.name || '',
+        category: item.category || categoryFallback,
+        type: itemType,
+        amount: Number(amt),
+        overrideAmount: Number(amt),
+        percentage: item.type === 'percentage' ? (item.percentage ?? null) : null,
+        percentageBase: item.base || item.percentageBase || null,
+        minAmount: item.minAmount ?? null,
+        maxAmount: item.maxAmount ?? null,
+        basedOnPresentDays,
+        isOverride: true,
+      };
+    };
+
+    const result: any[] = [];
+
+    // Part A: every existing employee override — include all, use form value if user edited
+    for (const ov of existingList) {
+      const key = ov.masterId?.toString() || (ov.name || '').toLowerCase();
+      if (!key) continue;
+      const amt = Object.prototype.hasOwnProperty.call(overrides, key) ? overrides[key] : (ov.amount ?? ov.overrideAmount ?? null);
+      const entry = buildEntry(ov, amt, key);
+      if (entry) result.push(entry);
+    }
+
+    // Part B: new overrides (in form overrides but not in employee's list — user added from global/dept)
+    for (const key of Object.keys(overrides)) {
+      if (existingKeys.has(key)) continue;
+      const amt = overrides[key];
+      if (amt === null || amt === undefined) continue;
+
+      let item = defaults.find((d: any) => (d.masterId?.toString() === key) || ((d.name || '').toLowerCase() === key));
+      if (!item && editingEmployee) {
+        const list = categoryFallback === 'allowance' ? editingEmployee.employeeAllowances : editingEmployee.employeeDeductions;
+        item = (list || []).find((ov: any) => (ov.masterId?.toString() === key) || ((ov.name || '').toLowerCase() === key));
+      }
+      if (!item && selectedApplication) {
+        const appList = categoryFallback === 'allowance' ? selectedApplication.employeeAllowances : selectedApplication.employeeDeductions;
+        item = (appList || []).find((ov: any) => (ov.masterId?.toString() === key) || ((ov.name || '').toLowerCase() === key));
+      }
+      if (!item) continue;
+
+      const entry = buildEntry(item, amt, key);
+      if (entry) result.push(entry);
+    }
+
+    return result;
   };
 
   // Fetch component defaults (allowances/deductions) for a dept + gross salary (+optional empNo to include existing overrides)
@@ -1100,34 +1136,21 @@ export default function EmployeesPage() {
     }
 
     try {
-      // Build allowances and deductions from form overrides
-      let employeeAllowances = buildOverridePayload(componentDefaults.allowances, overrideAllowances, overrideAllowancesBasedOnPresentDays, 'allowance');
-      let employeeDeductions = buildOverridePayload(componentDefaults.deductions, overrideDeductions, overrideDeductionsBasedOnPresentDays, 'deduction');
-
-      // When editing: always send both sides. If one side is empty but employee had data, preserve existing so we don't clear it
-      const toPayloadItem = (item: any, category: 'allowance' | 'deduction') => ({
-        masterId: item.masterId ?? null,
-        code: item.code ?? null,
-        name: item.name ?? '',
-        category: item.category || category,
-        type: item.type ?? null,
-        amount: item.amount ?? item.overrideAmount ?? null,
-        overrideAmount: item.overrideAmount ?? item.amount ?? null,
-        percentage: item.percentage ?? null,
-        percentageBase: item.percentageBase ?? null,
-        minAmount: item.minAmount ?? null,
-        maxAmount: item.maxAmount ?? null,
-        basedOnPresentDays: item.basedOnPresentDays ?? false,
-        isOverride: true,
-      });
-      if (editingEmployee) {
-        if (employeeAllowances.length === 0 && Array.isArray(editingEmployee.employeeAllowances) && editingEmployee.employeeAllowances.length > 0) {
-          employeeAllowances = editingEmployee.employeeAllowances.map((item: any) => toPayloadItem(item, 'allowance'));
-        }
-        if (employeeDeductions.length === 0 && Array.isArray(editingEmployee.employeeDeductions) && editingEmployee.employeeDeductions.length > 0) {
-          employeeDeductions = editingEmployee.employeeDeductions.map((item: any) => toPayloadItem(item, 'deduction'));
-        }
-      }
+      // Build allowances and deductions: all existing employee overrides (with form edits) + any new overrides from global/dept
+      let employeeAllowances = buildOverridePayload(
+        componentDefaults.allowances,
+        overrideAllowances,
+        overrideAllowancesBasedOnPresentDays,
+        'allowance',
+        editingEmployee?.employeeAllowances
+      );
+      let employeeDeductions = buildOverridePayload(
+        componentDefaults.deductions,
+        overrideDeductions,
+        overrideDeductionsBasedOnPresentDays,
+        'deduction',
+        editingEmployee?.employeeDeductions
+      );
 
       // Clean up enum fields - convert empty strings to null/undefined
       const submitData = {
@@ -1628,14 +1651,16 @@ export default function EmployeesPage() {
 
   const handleViewEmployee = async (employee: Employee) => {
     // Initial set to show dialog immediately with available data
+    console.log('DEBUG: handleViewEmployee triggered for:', employee.emp_no);
     setViewingEmployee(employee);
     setShowViewDialog(true);
 
     // Fetch latest data to ensure A&D overrides and other fields are fresh
     try {
       const response = await api.getEmployee(employee.emp_no);
+      console.log('DEBUG: api.getEmployee response:', response);
       if (response.success && response.data) {
-        console.log('Refreshed employee data for view dialog:', response.data);
+        console.log('DEBUG: Setting viewingEmployee with fresh data:', response.data);
         setViewingEmployee(response.data);
       }
     } catch (error) {
