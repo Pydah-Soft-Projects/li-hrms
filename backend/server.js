@@ -265,7 +265,7 @@ const startServer = async () => {
       console.log(`   - Pay Register: /api/pay-register`);
       console.log(`   - Bonus: /api/bonus`);
       console.log(`   - Arrears: /api/arrears`);
-      console.log(`   - Multi Shift: /api/multi-shift`);
+      console.log(`   - payabale shifts Multi Shift: /api/multi-shift`);
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error.message);
