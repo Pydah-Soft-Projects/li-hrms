@@ -2726,12 +2726,12 @@ export default function AttendancePage() {
                     </div>
                   )}
 
-                    </div>
-                  )
-                }
                 </div>
-              </div>
-            )}
+              )}
+
+            </div>
+          </div>
+        )}
 
           {/* Monthly Summary Modal */}
           {showSummaryModal && selectedEmployeeForSummary !== null && (
