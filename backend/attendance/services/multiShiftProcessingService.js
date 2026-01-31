@@ -428,6 +428,10 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
 
         console.log(`[Multi-Shift Processing] ✓ Daily record updated successfully`);
 
+        // findOneAndUpdate does not trigger post-save hook — recalculate monthly summary so totalPayableShifts etc. stay correct
+        const { recalculateOnAttendanceUpdate } = require('./summaryCalculationService');
+        await recalculateOnAttendanceUpdate(employeeNumber, date);
+
         return {
             success: true,
             dailyRecord,

@@ -717,6 +717,7 @@ exports.updateOutTime = async (req, res) => {
           }];
 
           attendanceRecord.totalShifts = 1;
+          attendanceRecord.payableShifts = payableShift;
         }
 
         // Update roster tracking if rosterRecordId exists
