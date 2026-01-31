@@ -1044,23 +1044,23 @@ export default function AttendancePage() {
     if (!time) return '-';
     try {
       const date = new Date(time);
-      // Use Local Time to match user's perspective (e.g., IST)
-      const h = String(date.getHours()).padStart(2, '0');
-      const m = String(date.getMinutes()).padStart(2, '0');
+      // Use UTC so we show the time as stored (no +5:30 IST conversion — backend sends UTC, value is already the office time)
+      const h = String(date.getUTCHours()).padStart(2, '0');
+      const m = String(date.getUTCMinutes()).padStart(2, '0');
       const timeStr = `${h}:${m}`;
 
       // If showDateIfDifferent is true and recordDate is provided, check if dates differ
       if (showDateIfDifferent && recordDate) {
-        // Compare Local Date vs recordDate
-        const y = date.getFullYear();
-        const mo = String(date.getMonth() + 1).padStart(2, '0');
-        const d = String(date.getDate()).padStart(2, '0');
+        // Compare UTC date vs recordDate
+        const y = date.getUTCFullYear();
+        const mo = String(date.getUTCMonth() + 1).padStart(2, '0');
+        const d = String(date.getUTCDate()).padStart(2, '0');
         const timeDateStr = `${y}-${mo}-${d}`;
 
         if (timeDateStr !== recordDate) {
           // Dates are different - show date with time
           const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-          const dateStr = `${monthNames[date.getMonth()]} ${date.getDate()}`;
+          const dateStr = `${monthNames[date.getUTCMonth()]} ${date.getUTCDate()}`;
           return `${dateStr}, ${timeStr}`;
         }
       }
@@ -1942,7 +1942,7 @@ export default function AttendancePage() {
                                           setSelectedShiftRecordId(shift._id);
                                           if (shift.outTime) {
                                             const d = new Date(shift.outTime);
-                                            setOutTimeInput(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
+                                            setOutTimeInput(`${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`);
                                           } else {
                                             setOutTimeInput('');
                                           }
@@ -2066,7 +2066,7 @@ export default function AttendancePage() {
                                       setEditingOutTime(true);
                                       if (attendanceDetail.outTime) {
                                         const date = new Date(attendanceDetail.outTime);
-                                        setOutTimeInput(`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`);
+                                        setOutTimeInput(`${String(date.getUTCHours()).padStart(2, '0')}:${String(date.getUTCMinutes()).padStart(2, '0')}`);
                                       }
                                     }}
                                     className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"
@@ -2079,7 +2079,7 @@ export default function AttendancePage() {
                                     onClick={() => {
                                       setEditingOutTime(true);
                                       const date = new Date(attendanceDetail.outTime);
-                                      setOutTimeInput(`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`);
+                                      setOutTimeInput(`${String(date.getUTCHours()).padStart(2, '0')}:${String(date.getUTCMinutes()).padStart(2, '0')}`);
                                     }}
                                     className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"
                                   >
