@@ -1938,8 +1938,7 @@ export default function AttendancePage() {
           }
 
           {/* Detail Dialog */}
-          {
-            showDetailDialog && attendanceDetail && (
+          {showDetailDialog && attendanceDetail && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
                 <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
                   <div className="mb-4 flex items-center justify-between">
@@ -2130,77 +2129,14 @@ export default function AttendancePage() {
                                     </div>
                                   )}
                                 </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">In Time</label>
-                        <div className="mt-1 flex items-center gap-2">
-                          {!editingInTime ? (
-                            <>
-                              <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                                {formatTimeIST(attendanceDetail.inTime)}
                               </div>
-                              <button
-                                onClick={() => {
-                                  setEditingInTime(true);
-                                  if (attendanceDetail.inTime) {
-                                    const date = new Date(attendanceDetail.inTime);
-                                    // Adjust for local input (HH:mm) from the ISO string
-                                    // Note: datetime-local inputs work best with local time string. 
-                                    // If we use type="time", we just need HH:mm.
-                                    // But we need to handle Time Zone carefully.
-                                    // The helper `formatTimeIST` does formatting for display.
-                                    // For Input: `date.getHours()` gets local hours of the browser.
-                                    // If we want IST specifically, we might need to adjust. 
-                                    // But typically admin is in IST. Sticking to simple extraction for now.
-                                    setInTimeInput(`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`);
-                                  }
-                                }}
-                                className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"
-                              >
-                                Edit
-                              </button>
-                            </>
-                          ) : (
-                            <div className="flex-1 flex items-center gap-2">
-                              <input
-                                type="time"
-                                value={inTimeInput}
-                                onChange={(e) => setInTimeInput(e.target.value)}
-                                className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                              />
-                              <button
-                                onClick={handleSaveInTime}
-                                disabled={savingInTime || !inTimeInput}
-                                className="rounded-lg bg-green-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
-                              >
-                                {savingInTime ? 'Saving...' : 'Save'}
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setEditingInTime(false);
-                                  setInTimeInput('');
-                                }}
-                                className="rounded-lg bg-slate-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-slate-600"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Out Time</label>
-                        <div className="mt-1 flex items-center gap-2">
-                          {!editingOutTime ? (
-                            <>
-                              <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                                {attendanceDetail.outTime ? formatTimeIST(attendanceDetail.outTime, true, selectedDate || '') : '-'}
+
+                              {/* Extra Info - use shift data for multi-shift view */}
+                              <div className="mt-2 text-xs text-slate-500 flex gap-4">
+                                <span>Late: {shift.lateInMinutes ?? 0}m</span>
+                                <span>Early: {shift.earlyOutMinutes ?? 0}m</span>
+                                <span>Status: {shift.status ?? '-'}</span>
                               </div>
-                            </div>
-                            {/* Extra Info */}
-                            <div className="mt-2 text-xs text-slate-500 flex gap-4">
-                              <span>Late: {shift.lateInMinutes || 0}m</span>
-                              <span>Early: {shift.earlyOutMinutes || 0}m</span>
-                              <span>Status: {shift.status}</span>
                             </div>
                           </div>
                         );
@@ -2414,7 +2350,6 @@ export default function AttendancePage() {
 
                       </div>
                     </div>
-                  )}
 
                   {/* Leave Conflicts - Show for BOTH modes */}
                   {attendanceDetail.status === 'PRESENT' && leaveConflicts.length > 0 && (
@@ -2476,7 +2411,6 @@ export default function AttendancePage() {
                           </div>
                         </div>
                       ) : null}
-                      )}
 
                       {/* Remarks / Notes */}
                       {attendanceDetail.notes && (
@@ -2496,8 +2430,6 @@ export default function AttendancePage() {
                           </div>
                         </div>
                       )}
-                    </div>
-
                       <div className="grid grid-cols-2 gap-3 text-sm mb-3">
                         <div>
                           <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Leave Type</label>
@@ -2794,14 +2726,15 @@ export default function AttendancePage() {
                     </div>
                   )}
 
+                    </div>
+                  )
+                }
                 </div>
               </div>
-            )
-          }
+            )}
 
           {/* Monthly Summary Modal */}
-          {
-            showSummaryModal && selectedEmployeeForSummary !== null && (
+          {showSummaryModal && selectedEmployeeForSummary !== null && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
                 <div className="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900 print:shadow-none">
                   <div className="mb-4 flex items-center justify-between print:hidden">
@@ -2917,12 +2850,10 @@ export default function AttendancePage() {
                   )}
                 </div>
               </div>
-            )
-          }
+            )}
 
           {/* Payslip Modal */}
-          {
-            showPayslipModal && selectedEmployeeForPayslip !== null && (
+          {showPayslipModal && selectedEmployeeForPayslip !== null && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
                 <div className="w-full max-w-5xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900 print:shadow-none print:max-w-full print:rounded-none">
                   <div className="mb-4 flex items-center justify-between print:hidden">
@@ -3155,11 +3086,10 @@ export default function AttendancePage() {
                   )}
                 </div>
               </div>
-            )
-          }
+            )}
         </div>
       </div>
-    </div >
+    </div>
   );
 }
 
