@@ -72,8 +72,14 @@ const seedData = async () => {
     const designations = {};
     for (const desig of designationsData) {
       let d = await Designation.findOne({ code: desig.code });
+      const dept = departments[desig.deptCode];
+
+      if (!d && dept) {
+        // Check by name + department to avoid unique index error
+        d = await Designation.findOne({ name: desig.name, department: dept._id });
+      }
+
       if (!d) {
-        const dept = departments[desig.deptCode];
         if (dept) {
           d = await Designation.create({
             name: desig.name,

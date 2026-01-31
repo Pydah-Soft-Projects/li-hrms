@@ -207,7 +207,8 @@ exports.getAttendanceDetail = async (req, res) => {
       employeeNumber: employeeNumber.toUpperCase(),
       date: date,
     })
-      .populate('shiftId', 'name startTime endTime duration gracePeriod');
+      .populate('shiftId', 'name startTime endTime duration gracePeriod')
+      .populate('shifts.shiftId', 'name startTime endTime duration gracePeriod');
 
     if (!record) {
       return res.status(404).json({
@@ -409,7 +410,7 @@ exports.updateOutTime = async (req, res) => {
     const attendanceRecord = await AttendanceDaily.findOne({
       employeeNumber: employeeNumber.toUpperCase(),
       date: date,
-    }).populate('shiftId');
+    }).populate('shiftId').populate('shifts.shiftId');
 
     if (!attendanceRecord) {
       return res.status(404).json({
@@ -425,8 +426,12 @@ exports.updateOutTime = async (req, res) => {
       });
     }
 
+    console.log(`[DEBUG] UpdateOutTime called for ${employeeNumber} on ${date}`);
+    console.log(`[DEBUG] OutTime provided: ${outTime}`);
+
     // Ensure outTime is a Date object
     let outTimeDate = outTime instanceof Date ? outTime : new Date(outTime);
+    console.log(`[DEBUG] Parsed OutTimeDate: ${outTimeDate.toISOString()}`);
 
     if (isNaN(outTimeDate.getTime())) {
       return res.status(400).json({
@@ -452,6 +457,7 @@ exports.updateOutTime = async (req, res) => {
       const [shiftEndHour] = attendanceRecord.shiftId.endTime.split(':').map(Number);
       isOvernightShift = shiftStartHour >= 20 || (shiftEndHour < shiftStartHour);
     }
+    console.log(`[DEBUG] isOvernightShift: ${isOvernightShift}`);
 
     // If shift is overnight or out-time is earlier than in-time and on same date, it's next day
     if (isOvernightShift || (outTimeOnly < inTimeOnly && outTimeDateStr === inTimeDateStr)) {
@@ -461,6 +467,7 @@ exports.updateOutTime = async (req, res) => {
         // Same date but out-time earlier - must be next day
         outTimeDate = new Date(outTimeDate);
         outTimeDate.setDate(outTimeDate.getDate() + 1);
+        console.log(`[DEBUG] Adjusted OutTime to Next Day: ${outTimeDate.toISOString()}`);
       }
       // For overnight shifts, the out-time date might already be correct, just ensure it's preserved
     }
@@ -477,51 +484,301 @@ exports.updateOutTime = async (req, res) => {
     // Status will be automatically updated by the AttendanceDaily pre-save hook 
     // based on total hours, OD hours and shift duration (70% threshold)
 
-    // Re-run shift detection with new outTime
-    const detectionResult = await detectAndAssignShift(
-      employeeNumber.toUpperCase(),
-      date,
-      attendanceRecord.inTime,
-      outTimeDate,
-      generalConfig
-    );
+    const { shiftRecordId } = req.body;
+    console.log(`[DEBUG] shiftRecordId: ${shiftRecordId}`);
 
-    if (detectionResult.success && detectionResult.assignedShift) {
-      attendanceRecord.shiftId = detectionResult.assignedShift;
-      attendanceRecord.lateInMinutes = detectionResult.lateInMinutes;
-      attendanceRecord.earlyOutMinutes = detectionResult.earlyOutMinutes;
-      attendanceRecord.isLateIn = detectionResult.isLateIn || false;
-      attendanceRecord.isEarlyOut = detectionResult.isEarlyOut || false;
-      attendanceRecord.expectedHours = detectionResult.expectedHours;
-
-      // Update roster tracking if rosterRecordId exists
-      if (detectionResult.rosterRecordId) {
-        await PreScheduledShift.findByIdAndUpdate(detectionResult.rosterRecordId, {
-          attendanceDailyId: attendanceRecord._id
+    if (shiftRecordId) {
+      // GRADULAR UPDATE MODE
+      const shiftSegment = attendanceRecord.shifts.id(shiftRecordId);
+      if (!shiftSegment) {
+        console.error(`[DEBUG] Shift Segment NOT FOUND for ID: ${shiftRecordId}`);
+        return res.status(404).json({
+          success: false,
+          message: 'Shift segment not found',
         });
       }
-    }
 
-    // Check and resolve ConfusedShift if exists
-    const ConfusedShift = require('../../shifts/model/ConfusedShift');
-    const confusedShift = await ConfusedShift.findOne({
-      employeeNumber: employeeNumber.toUpperCase(),
-      date: date,
-      status: 'pending',
-    });
+      // Update outTime
+      shiftSegment.outTime = outTimeDate;
+      console.log(`[DEBUG] Segment OutTime Updated`);
 
-    if (confusedShift && detectionResult.success && detectionResult.assignedShift) {
-      // Resolve ConfusedShift
-      confusedShift.status = 'resolved';
-      confusedShift.assignedShiftId = detectionResult.assignedShift;
-      confusedShift.reviewedBy = req.user?.userId || req.user?._id;
-      confusedShift.reviewedAt = new Date();
-      await confusedShift.save();
+      // Recalculate metrics for this segment if shift is assigned
+      if (shiftSegment.shiftId) {
+        // We likely need to fetch the shift details if not fully populated or if it returns just ID
+        // The populate('shifts.shiftId') above should handle it if it's a ref.
+        // But Mongoose sometimes returns just ID if populate fails or structure mismatch.
+        let shiftDetails = shiftSegment.shiftId;
+        // If it's just an ID or missing details, fetch it
+        if (!shiftDetails.startTime) {
+          console.log(`[DEBUG] Fetching Shift Details for ${shiftSegment.shiftId}`);
+          shiftDetails = await Shift.findById(shiftSegment.shiftId).select('name startTime endTime duration gracePeriod payableShifts');
+        }
+
+        if (shiftDetails) {
+          console.log(`[DEBUG] Shift Details: ${shiftDetails.name} (${shiftDetails.startTime}-${shiftDetails.endTime})`);
+          const { calculateLateIn, calculateEarlyOut } = require('../../shifts/services/shiftDetectionService');
+          const globalLateInGrace = generalConfig.late_in_grace_time ?? null;
+          const globalEarlyOutGrace = generalConfig.early_out_grace_time ?? null;
+
+          // 1. Recalculate Late In (using existing InTime)
+          // Even if InTime didn't change, re-verifying ensures consistency
+          if (shiftSegment.inTime) {
+            const lateIn = calculateLateIn(
+              shiftSegment.inTime,
+              shiftDetails.startTime,
+              shiftDetails.gracePeriod,
+              date,
+              globalLateInGrace
+            );
+            shiftSegment.lateInMinutes = lateIn > 0 ? lateIn : 0;
+            shiftSegment.isLateIn = lateIn > 0;
+          }
+
+          // 2. Recalculate Early Out
+          const earlyOutMinutes = calculateEarlyOut(
+            shiftSegment.outTime,
+            shiftDetails.endTime,
+            shiftDetails.startTime,
+            date, // Use the attendance date for reference
+            globalEarlyOutGrace
+          );
+
+          shiftSegment.earlyOutMinutes = earlyOutMinutes > 0 ? earlyOutMinutes : 0;
+          shiftSegment.isEarlyOut = earlyOutMinutes > 0;
+          console.log(`[DEBUG] EarlyOut: ${earlyOutMinutes}`);
+
+          // 3. Recalculate Extra Hours (Segment Specific)
+          // Logic similar to extraHoursService but for this segment
+          shiftSegment.extraHours = 0; // Reset first
+          if (shiftSegment.outTime) {
+            const [endH, endM] = shiftDetails.endTime.split(':').map(Number);
+            const [startH, startM] = shiftDetails.startTime.split(':').map(Number);
+
+            // Determine Shift End Date
+            let shiftEndDate = new Date(date);
+            shiftEndDate.setHours(endH, endM, 0, 0);
+
+            // Handle overnight
+            if ((endH * 60 + endM) < (startH * 60 + startM)) {
+              shiftEndDate.setDate(shiftEndDate.getDate() + 1);
+            }
+
+            // Add Grace
+            const grace = shiftDetails.gracePeriod || 15;
+            shiftEndDate.setMinutes(shiftEndDate.getMinutes() + grace);
+
+            if (shiftSegment.outTime > shiftEndDate) {
+              const diffMs = shiftSegment.outTime - shiftEndDate;
+              shiftSegment.extraHours = Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100;
+            }
+          }
+          console.log(`[DEBUG] ExtraHours: ${shiftSegment.extraHours}`);
+
+          // 4. Recalculate Working Hours
+          // Simple diff for now: out - in
+          if (shiftSegment.inTime && shiftSegment.outTime) {
+            const diffMs = shiftSegment.outTime - shiftSegment.inTime;
+            const hours = diffMs / (1000 * 60 * 60);
+            shiftSegment.punchHours = Math.round(hours * 100) / 100;
+
+            shiftSegment.workingHours = Math.round(((shiftSegment.punchHours || 0) + (shiftSegment.odHours || 0)) * 100) / 100;
+            console.log(`[DEBUG] Working Hours: ${shiftSegment.workingHours} (Diff: ${diffMs}ms)`);
+
+            // Update Status and Payable Shift with DYNAMIC Logic
+            let durationHours = shiftDetails.duration;
+            // specific check if duration is in minutes (e.g. > 20)
+            if (durationHours > 20) durationHours = durationHours / 60;
+
+            // Get Base Payable
+            // Check if shiftDetails has payableShifts, else default to 1.0
+            // Note: populate might not return payableShifts if not selected. 
+            // The previous populate just did name/times. We might need to refetch if missing.
+            let basePayable = 1.0;
+            if (shiftDetails.payableShifts !== undefined) {
+              basePayable = shiftDetails.payableShifts;
+            } else {
+              // Try to fetch if missing from populated doc
+              const fullShift = await Shift.findById(shiftDetails._id).select('payableShifts');
+              if (fullShift && fullShift.payableShifts !== undefined) basePayable = fullShift.payableShifts;
+            }
+
+            if (shiftSegment.workingHours >= (durationHours * 0.9)) {
+              shiftSegment.status = 'PRESENT';
+              shiftSegment.payableShift = basePayable;
+            } else if (shiftSegment.workingHours >= (durationHours * 0.45)) {
+              shiftSegment.status = 'HALF_DAY';
+              shiftSegment.payableShift = basePayable * 0.5;
+            } else {
+              shiftSegment.status = 'ABSENT';
+              shiftSegment.payableShift = 0;
+            }
+            console.log(`[DEBUG] Status: ${shiftSegment.status}, Payable: ${shiftSegment.payableShift}`);
+          }
+        } else {
+          console.warn(`[DEBUG] No Shift Details found for ${shiftSegment.shiftId}`);
+        }
+
+        // --- ADDED: Set Edited Flag & History ---
+        attendanceRecord.isEdited = true;
+        attendanceRecord.editHistory.push({
+          action: 'OUT_TIME_UPDATE',
+          modifiedBy: req.user._id,
+          modifiedAt: new Date(),
+          details: `Updated Out Time to ${outTimeDate.toLocaleTimeString()} for shift segment`
+        });
+        // ----------------------------------------
+
+      }
+
+      // Update aggregates
+      if (attendanceRecord.shifts && attendanceRecord.shifts.length > 0) {
+        attendanceRecord.totalWorkingHours = attendanceRecord.shifts.reduce((sum, s) => sum + (s.workingHours || 0), 0);
+        const totalPayable = attendanceRecord.shifts.reduce((sum, s) => sum + (s.payableShift || 0), 0);
+        attendanceRecord.payableShifts = totalPayable;
+        attendanceRecord.extraHours = attendanceRecord.shifts.reduce((sum, s) => sum + (s.extraHours || 0), 0);
+
+        console.log(`[DEBUG] Aggregates - Working: ${attendanceRecord.totalWorkingHours}, Payable: ${totalPayable}`);
+
+        // Recalculate Overall Status
+        const hasPresentShift = attendanceRecord.shifts.some(s => s.status === 'complete' || s.status === 'PRESENT' || (s.payableShift && s.payableShift >= 1));
+
+        if (hasPresentShift || attendanceRecord.payableShifts >= 1) {
+          attendanceRecord.status = 'PRESENT';
+        } else if (attendanceRecord.shifts.length === 1 && (attendanceRecord.shifts[0].status === 'HALF_DAY' || attendanceRecord.shifts[0].payableShift === 0.5)) {
+          attendanceRecord.status = 'HALF_DAY';
+        } else {
+          // Check if incomplete
+          const hasIncomplete = attendanceRecord.shifts.some(s => !s.outTime);
+          attendanceRecord.status = hasIncomplete ? 'PARTIAL' : 'ABSENT';
+        }
+
+        // UPDATE GLOBAL OUT TIME (Max of all shifts)
+        let maxOut = null;
+        attendanceRecord.shifts.forEach(s => {
+          if (s.outTime) {
+            if (!maxOut || s.outTime > maxOut) maxOut = s.outTime;
+          }
+        });
+        attendanceRecord.outTime = maxOut;
+      }
+
+    } else {
+      // LEGACY / GLOBAL MODE
+      // Explicitly set Global Out Time here
+      attendanceRecord.outTime = outTimeDate;
+
+      // Re-run shift detection with new outTime
+      const detectionResult = await detectAndAssignShift(
+        employeeNumber.toUpperCase(),
+        date,
+        attendanceRecord.inTime,
+        outTimeDate,
+        generalConfig
+      );
+
+      if (detectionResult.success && detectionResult.assignedShift) {
+        attendanceRecord.shiftId = detectionResult.assignedShift;
+        attendanceRecord.lateInMinutes = detectionResult.lateInMinutes;
+        attendanceRecord.earlyOutMinutes = detectionResult.earlyOutMinutes;
+        attendanceRecord.isLateIn = detectionResult.isLateIn || false;
+        attendanceRecord.isEarlyOut = detectionResult.isEarlyOut || false;
+        attendanceRecord.expectedHours = detectionResult.expectedHours;
+
+        // CRITICAL FIX: Sync 'shifts' array if it exists to prevent Pre-Save Hook reversion
+        // If we represent this as a single global shift now, update the shifts array to match
+        if (attendanceRecord.shifts && attendanceRecord.shifts.length > 0) {
+          // If multiple shifts existed, this "Global Edit" effectively merges them or updates the primary one.
+          // Best approach: Reset to a single shift segment representing this global state.
+
+          // Calculate working hours
+          let workingHours = 0;
+          if (attendanceRecord.inTime && outTimeDate) {
+            const diffMs = outTimeDate - attendanceRecord.inTime;
+            // Handle overnight/next day logic for diff if needed, but Dates usually absolute
+            workingHours = Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100;
+          }
+
+          // Determine Status/Payable matching the global detection
+          let status = 'ABSENT';
+          let payableShift = 0;
+
+          // Get shift details (detectionResult usually has name/times, we might need payableShifts)
+          const assignedShiftDoc = await Shift.findById(detectionResult.assignedShift).select('payableShifts duration');
+          let basePayable = assignedShiftDoc ? (assignedShiftDoc.payableShifts ?? 1) : 1;
+
+          if (workingHours >= (detectionResult.expectedHours * 0.9)) {
+            status = 'PRESENT';
+            payableShift = basePayable;
+          } else if (workingHours >= (detectionResult.expectedHours * 0.45)) {
+            status = 'HALF_DAY';
+            payableShift = basePayable * 0.5;
+          }
+
+          attendanceRecord.shifts = [{
+            shiftNumber: 1,
+            inTime: attendanceRecord.inTime,
+            outTime: outTimeDate,
+            shiftId: detectionResult.assignedShift,
+            shiftName: detectionResult.shiftName,
+            shiftStartTime: detectionResult.shiftStartTime,
+            shiftEndTime: detectionResult.shiftEndTime,
+            duration: detectionResult.expectedHours * 60,
+            workingHours: workingHours,
+            punchHours: workingHours,
+            status: status,
+            payableShift: payableShift,
+            lateInMinutes: detectionResult.lateInMinutes,
+            earlyOutMinutes: detectionResult.earlyOutMinutes,
+            isLateIn: detectionResult.isLateIn,
+            isEarlyOut: detectionResult.isEarlyOut
+          }];
+
+          attendanceRecord.totalShifts = 1;
+        }
+
+        // Update roster tracking if rosterRecordId exists
+        if (detectionResult.rosterRecordId) {
+          await PreScheduledShift.findByIdAndUpdate(detectionResult.rosterRecordId, {
+            attendanceDailyId: attendanceRecord._id
+          });
+        }
+
+        // Check and resolve ConfusedShift if exists (MOVED INSIDE ELSE)
+        const ConfusedShift = require('../../shifts/model/ConfusedShift');
+        const confusedShift = await ConfusedShift.findOne({
+          employeeNumber: employeeNumber.toUpperCase(),
+          date: date,
+          status: 'pending',
+        });
+
+        if (confusedShift) {
+          // Resolve ConfusedShift
+          confusedShift.status = 'resolved';
+          confusedShift.assignedShiftId = detectionResult.assignedShift;
+          confusedShift.reviewedBy = req.user?.userId || req.user?._id;
+          confusedShift.reviewedAt = new Date();
+          await confusedShift.save();
+        }
+      }
     }
 
     // If out-time is on next day (for overnight shifts), ensure it's stored with correct date
     // The attendance record date should remain as the shift date (in-time date)
     // But out-time can be on the next day
+
+    // Track Edit History
+    attendanceRecord.isEdited = true;
+    attendanceRecord.editHistory.push({
+      action: 'OUT_TIME_UPDATE',
+      modifiedBy: req.user?._id || req.user?.userId, // Handle different user object structures
+      modifiedAt: new Date(),
+      details: req.body.shiftRecordId
+        ? `Updated OutTime for specific shift segment`
+        : `Updated OutTime to ${outTimeDate.toLocaleTimeString()}`
+    });
+
+    // Ensure shifts array changes are detected
+    attendanceRecord.markModified('shifts');
 
     await attendanceRecord.save();
 
@@ -621,7 +878,7 @@ exports.assignShift = async (req, res) => {
     const attendanceRecord = await AttendanceDaily.findOne({
       employeeNumber: employeeNumber.toUpperCase(),
       date: date,
-    }).populate('shiftId');
+    }).populate('shiftId').populate('shifts.shiftId');
 
     if (!attendanceRecord) {
       return res.status(404).json({
@@ -662,6 +919,17 @@ exports.assignShift = async (req, res) => {
       await confusedShift.save();
     }
 
+    const { shiftRecordId } = req.body;
+
+    if (shiftRecordId) {
+      // GRANULAR UPDATE MODE
+      const shiftSegment = attendanceRecord.shifts.id(shiftRecordId);
+      if (!shiftSegment) {
+        return res.status(404).json({
+          success: false,
+          message: 'Shift segment not found',
+        });
+      }
     // Calculate late-in and early-out with the assigned shift
     const { calculateLateIn, calculateEarlyOut } = require('../../shifts/services/shiftDetectionService');
     // Fetch global general settings
@@ -692,19 +960,98 @@ exports.assignShift = async (req, res) => {
 
     await attendanceRecord.save();
 
-    // Update roster tracking for manual assignment
-    const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
-    const rosterRecord = await PreScheduledShift.findOne({
-      employeeNumber: employeeNumber.toUpperCase(),
-      date: date
-    });
+      shiftSegment.shiftId = shiftId;
 
-    if (rosterRecord) {
-      const isDeviation = rosterRecord.shiftId && rosterRecord.shiftId.toString() !== shiftId.toString();
-      rosterRecord.actualShiftId = shiftId;
-      rosterRecord.isDeviation = !!isDeviation;
-      rosterRecord.attendanceDailyId = attendanceRecord._id;
-      await rosterRecord.save();
+      // Recalculate metrics for this segment (reuse calculateLateIn, calculateEarlyOut and grace from above)
+      // Recalculate Late In
+      if (shiftSegment.inTime) {
+        const lateIn = calculateLateIn(shiftSegment.inTime, shift.startTime, shift.gracePeriod || 15, date, globalLateInGrace);
+        shiftSegment.lateInMinutes = lateIn > 0 ? lateIn : 0;
+        shiftSegment.isLateIn = lateIn > 0;
+      }
+
+      // Recalculate Early Out
+      if (shiftSegment.outTime) {
+        const earlyOut = calculateEarlyOut(shiftSegment.outTime, shift.endTime, shift.startTime, date, globalEarlyOutGrace);
+        shiftSegment.earlyOutMinutes = earlyOut > 0 ? earlyOut : 0;
+        shiftSegment.isEarlyOut = earlyOut > 0;
+      }
+
+      // Update Expected Hours for this segment?
+      // AttendanceDaily doesn't have expectedHours per segment explicitly in provided schema snippet, 
+      // but let's check legacy fields. The sub-schema usually mirrors needed fields.
+      // Assuming we rely on the shiftId ref for expected duration.
+
+      // Update Status?
+      // If working hours are sufficient against NEW shift duration.
+      // Need to recalc working hours? No, working hours (duration) don't change just by changing shift DEFINITION (unless we recalc based on strict shift windows, but usually it's punch based).
+      // But we DO need to check if they met the NEW requirement.
+
+      if (shiftSegment.workingHours >= (shift.duration * 0.5)) {
+        shiftSegment.status = 'PRESENT';
+      } else {
+        // shiftSegment.status = 'ABSENT'; // Or keep as is?
+      }
+
+      // Track Edit History
+      attendanceRecord.isEdited = true;
+      attendanceRecord.editHistory.push({
+        action: 'SHIFT_CHANGE',
+        modifiedBy: req.user?._id || req.user?.userId,
+        modifiedAt: new Date(),
+        details: `Changed shift for segment to ${shift.name}`
+      });
+
+      await attendanceRecord.save();
+
+    } else {
+      // LEGACY / GLOBAL MODE
+
+      // Calculate late-in and early-out with the assigned shift
+      const { calculateLateIn, calculateEarlyOut } = require('../../shifts/services/shiftDetectionService');
+      // Fetch global general settings
+      const generalConfig = await Settings.getSettingsByCategory('general');
+      const globalLateInGrace = generalConfig.late_in_grace_time ?? null;
+      const globalEarlyOutGrace = generalConfig.early_out_grace_time ?? null;
+
+      // Pass the date parameter for proper overnight shift handling
+      const lateInMinutes = calculateLateIn(attendanceRecord.inTime, shift.startTime, shift.gracePeriod || 15, date, globalLateInGrace);
+      const earlyOutMinutes = attendanceRecord.outTime
+        ? calculateEarlyOut(attendanceRecord.outTime, shift.endTime, shift.startTime, date, globalEarlyOutGrace)
+        : null;
+
+      // Update attendance record
+      attendanceRecord.shiftId = shiftId;
+      attendanceRecord.lateInMinutes = lateInMinutes > 0 ? lateInMinutes : null;
+      attendanceRecord.earlyOutMinutes = earlyOutMinutes && earlyOutMinutes > 0 ? earlyOutMinutes : null;
+      attendanceRecord.isLateIn = lateInMinutes > 0;
+      attendanceRecord.isEarlyOut = earlyOutMinutes && earlyOutMinutes > 0;
+      attendanceRecord.expectedHours = shift.duration;
+
+      attendanceRecord.isEdited = true;
+      attendanceRecord.editHistory.push({
+        action: 'SHIFT_CHANGE',
+        modifiedBy: req.user?._id || req.user?.userId,
+        modifiedAt: new Date(),
+        details: `Changed shift to ${shift.name}`
+      });
+
+      await attendanceRecord.save();
+
+      // Update roster tracking for manual assignment
+      const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
+      const rosterRecord = await PreScheduledShift.findOne({
+        employeeNumber: employeeNumber.toUpperCase(),
+        date: date
+      });
+
+      if (rosterRecord) {
+        const isDeviation = rosterRecord.shiftId && rosterRecord.shiftId.toString() !== shiftId.toString();
+        rosterRecord.actualShiftId = shiftId;
+        rosterRecord.isDeviation = !!isDeviation;
+        rosterRecord.attendanceDailyId = attendanceRecord._id;
+        await rosterRecord.save();
+      }
     }
 
     // Detect extra hours if out-time exists

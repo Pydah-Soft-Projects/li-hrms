@@ -183,20 +183,41 @@ export default function DashboardPage() {
             ) : (
               <div className="bg-black/10 rounded-2xl p-4 border border-white/10 backdrop-blur-sm">
                 {attendanceData && attendanceData.length > 0 ? (
-                  attendanceData.map((record: any, idx: number) => (
-                    <div key={idx} className="flex items-center justify-between">
-                      <div className="flex flex-col">
-                        <span className="text-[10px] md:text-xs font-semibold text-emerald-100 uppercase tracking-wider">Shift Info</span>
-                        <span className="text-xs md:text-sm font-bold text-white">{record.shiftId?.name || record.shift || 'General Shift'}</span>
-                      </div>
-                      <div className="flex flex-col items-center">
-                        <span className="text-[10px] md:text-xs font-semibold text-emerald-100 uppercase tracking-wider">In Time</span>
-                        <span className="text-sm md:text-base font-bold text-white font-mono">{record.inTime ? new Date(record.inTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}</span>
-                      </div>
-                      <div className="flex flex-col items-end">
-                        <span className="text-[10px] md:text-xs font-semibold text-emerald-100 uppercase tracking-wider">Out Time</span>
-                        <span className="text-sm md:text-base font-bold text-white font-mono">{record.outTime ? new Date(record.outTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}</span>
-                      </div>
+                  attendanceData.map((record: any, recordIdx: number) => (
+                    <div key={recordIdx} className="w-full">
+                      {record.shifts && record.shifts.length > 0 ? (
+                        record.shifts.map((shift: any, shiftIdx: number) => (
+                          <div key={`${recordIdx}-${shiftIdx}`} className={`flex items-center justify-between ${shiftIdx > 0 ? 'mt-4 pt-4 border-t border-white/10' : ''}`}>
+                            <div className="flex flex-col">
+                              <span className="text-[10px] md:text-xs font-semibold text-emerald-100 uppercase tracking-wider">Shift Info</span>
+                              <span className="text-xs md:text-sm font-bold text-white">{shift.shiftName || shift.shiftId?.name || 'General Shift'}</span>
+                            </div>
+                            <div className="flex flex-col items-center">
+                              <span className="text-[10px] md:text-xs font-semibold text-emerald-100 uppercase tracking-wider">In Time</span>
+                              <span className="text-sm md:text-base font-bold text-white font-mono">{shift.inTime ? new Date(shift.inTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}</span>
+                            </div>
+                            <div className="flex flex-col items-end">
+                              <span className="text-[10px] md:text-xs font-semibold text-emerald-100 uppercase tracking-wider">Out Time</span>
+                              <span className="text-sm md:text-base font-bold text-white font-mono">{shift.outTime ? new Date(shift.outTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}</span>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="flex items-center justify-between">
+                          <div className="flex flex-col">
+                            <span className="text-[10px] md:text-xs font-semibold text-emerald-100 uppercase tracking-wider">Shift Info</span>
+                            <span className="text-xs md:text-sm font-bold text-white">{record.shiftId?.name || record.shift || 'General Shift'}</span>
+                          </div>
+                          <div className="flex flex-col items-center">
+                            <span className="text-[10px] md:text-xs font-semibold text-emerald-100 uppercase tracking-wider">In Time</span>
+                            <span className="text-sm md:text-base font-bold text-white font-mono">{record.inTime ? new Date(record.inTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}</span>
+                          </div>
+                          <div className="flex flex-col items-end">
+                            <span className="text-[10px] md:text-xs font-semibold text-emerald-100 uppercase tracking-wider">Out Time</span>
+                            <span className="text-sm md:text-base font-bold text-white font-mono">{record.outTime ? new Date(record.outTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}</span>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))
                 ) : (
