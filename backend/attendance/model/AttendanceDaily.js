@@ -331,14 +331,7 @@ attendanceDailySchema.methods.calculateTotalHours = function () {
 
 // Pre-save hook to calculate aggregates from shifts array
 attendanceDailySchema.pre('save', async function () {
-  if (this.shifts && this.shifts.length > 0) {
-    // 1. Calculate Aggregate Totals
-    let totalWorking = 0;
-    let totalOT = 0;
-    let totalExtra = 0;
-    let firstIn = null;
-    let lastOut = null;
-  // Fetch roster status if not already known
+  // Fetch roster status once for both shifts-based and legacy logic (HOL/WO, remarks)
   let rosterStatus = null;
   try {
     const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
@@ -350,6 +343,14 @@ attendanceDailySchema.pre('save', async function () {
   } catch (err) {
     console.error('[AttendanceDaily Model] Error fetching roster status:', err);
   }
+
+  if (this.shifts && this.shifts.length > 0) {
+    // 1. Calculate Aggregate Totals
+    let totalWorking = 0;
+    let totalOT = 0;
+    let totalExtra = 0;
+    let firstIn = null;
+    let lastOut = null;
 
   if (this.inTime && this.outTime) {
     this.calculateTotalHours();
@@ -406,6 +407,7 @@ attendanceDailySchema.pre('save', async function () {
       this.isLateIn = this.shifts[0].isLateIn;
       this.lateInMinutes = this.shifts[0].lateInMinutes;
     }
+  }
 
   } else {
     // Legacy mapping for direct updates without shifts array
@@ -437,10 +439,18 @@ attendanceDailySchema.pre('save', async function () {
       this.status = 'PARTIAL';
       this.payableShifts = 0;
     } else {
-      this.status = 'ABSENT';
+      // No punches - use roster status if available, else default to ABSENT
       this.payableShifts = 0;
-    // Special Requirement: If worked on Holiday/Week-Off, add remark
-    if (rosterStatus === 'HOL' || rosterStatus === 'WO') {
+      if (rosterStatus === 'HOL') {
+        this.status = 'HOLIDAY';
+      } else if (rosterStatus === 'WO') {
+        this.status = 'WEEK_OFF';
+      } else {
+        this.status = 'ABSENT';
+      }
+    }
+    // Special Requirement: If worked on Holiday/Week-Off (have punches on HOL/WO day), add remark
+    if ((rosterStatus === 'HOL' || rosterStatus === 'WO') && (this.inTime || this.outTime)) {
       const dayLabel = rosterStatus === 'HOL' ? 'Holiday' : 'Week Off';
       const remark = `Worked on ${dayLabel}`;
       if (!this.notes) {
@@ -448,17 +458,6 @@ attendanceDailySchema.pre('save', async function () {
       } else if (!this.notes.includes(remark)) {
         this.notes = `${this.notes} | ${remark}`;
       }
-    }
-  } else if (this.inTime || this.outTime) {
-    this.status = 'PARTIAL';
-  } else {
-    // No punches - use roster status if available, else default to ABSENT
-    if (rosterStatus === 'HOL') {
-      this.status = 'HOLIDAY';
-    } else if (rosterStatus === 'WO') {
-      this.status = 'WEEK_OFF';
-    } else {
-      this.status = 'ABSENT';
     }
   }
 

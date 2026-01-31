@@ -962,15 +962,7 @@ exports.assignShift = async (req, res) => {
 
       shiftSegment.shiftId = shiftId;
 
-      // Recalculate metrics for this segment
-      // We need new shift details
-      // shift variable is already fetched above (Verify shift exists)
-
-      const { calculateLateIn, calculateEarlyOut } = require('../../shifts/services/shiftDetectionService');
-      const generalConfig = await Settings.getSettingsByCategory('general');
-      const globalLateInGrace = generalConfig.late_in_grace_time ?? null;
-      const globalEarlyOutGrace = generalConfig.early_out_grace_time ?? null;
-
+      // Recalculate metrics for this segment (reuse calculateLateIn, calculateEarlyOut and grace from above)
       // Recalculate Late In
       if (shiftSegment.inTime) {
         const lateIn = calculateLateIn(shiftSegment.inTime, shift.startTime, shift.gracePeriod || 15, date, globalLateInGrace);
