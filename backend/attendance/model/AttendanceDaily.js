@@ -407,10 +407,10 @@ attendanceDailySchema.pre('save', async function () {
         // Let's assume expectedHours is in HOURS.
         const durationHours = this.expectedHours;
 
-        if (effectiveHours >= (durationHours * 0.9)) {
+        if (effectiveHours >= (durationHours * 0.8)) {
           this.status = 'PRESENT';
           this.payableShifts = 1;
-        } else if (effectiveHours >= (durationHours * 0.45)) {
+        } else if (effectiveHours >= (durationHours * 0.35)) {
           this.status = 'HALF_DAY';
           this.payableShifts = 0.5;
         } else {

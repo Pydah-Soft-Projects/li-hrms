@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { FiUsers, FiCheckCircle, FiClock, FiFilter, FiCalendar, FiRefreshCw } from 'react-icons/fi';
+import { FiGrid } from 'react-icons/fi';
+import { LuUsers, LuClock, LuCircleCheck, LuActivity, LuCalendar, LuFilter, LuRefreshCw, LuSearch } from 'react-icons/lu';
 import { auth } from '@/lib/auth';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
@@ -29,12 +30,21 @@ interface Employee {
   extraHours: number;
 }
 
+interface ShiftStat {
+  name: string;
+  working: number;
+  completed: number;
+}
+
 interface ReportData {
   date: string;
   summary: {
     currentlyWorking: number;
     completedShift: number;
-    totalEmployees: number;
+    totalPresent: number;
+    totalActiveEmployees: number;
+    absentEmployees: number;
+    shiftBreakdown: ShiftStat[];
   };
   currentlyWorking: Employee[];
   completedShift: Employee[];
@@ -161,57 +171,85 @@ export default function LiveAttendancePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 p-6">
-      <div className="mx-auto max-w-7xl space-y-6">
+    <div className="min-h-screen bg-slate-50 text-slate-900 selection:bg-indigo-500/10">
+      {/* Background Orbs */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-[10%] -left-[10%] w-[40%] h-[40%] rounded-full bg-indigo-500/5 blur-[120px]" />
+        <div className="absolute top-[20%] -right-[10%] w-[35%] h-[35%] rounded-full bg-purple-500/5 blur-[120px]" />
+        <div className="absolute -bottom-[10%] left-[20%] w-[30%] h-[30%] rounded-full bg-blue-500/5 blur-[120px]" />
+      </div>
+
+      <div className="relative z-10 mx-auto w-full px-4 py-8 sm:px-8 lg:px-12 xl:px-16 space-y-8">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-slate-900 dark:text-white">
-              Live Attendance Report
-            </h1>
-            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-              Real-time attendance tracking and monitoring
-            </p>
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-500/10 text-indigo-600 shadow-sm border border-indigo-500/20">
+                <LuActivity className="h-7 w-7" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">
+                  Live Attendance <span className="text-indigo-600">Pulse</span>
+                </h1>
+                <div className="flex items-center gap-2 mt-1">
+                  <div className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                  </div>
+                  <p className="text-sm font-medium text-slate-500 border-l border-slate-200 pl-2">
+                    System active and monitoring in real-time
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
-          <button
-            onClick={fetchReportData}
-            className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 px-4 py-2 text-sm font-semibold text-white shadow-lg transition-all hover:from-indigo-600 hover:to-purple-600"
-          >
-            <FiRefreshCw className="h-4 w-4" />
-            Refresh
-          </button>
+          <div className="flex items-center gap-3">
+            <div className="hidden sm:block text-right">
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Last Synced</p>
+              <p className="text-sm font-mono font-bold text-indigo-600">{new Date().toLocaleTimeString()}</p>
+            </div>
+            <button
+              onClick={fetchReportData}
+              className="group flex items-center gap-2 rounded-2xl bg-white px-6 py-3 text-sm font-bold text-slate-900 border border-slate-200 shadow-sm transition-all hover:bg-slate-50 hover:border-slate-300 active:scale-95"
+            >
+              <LuRefreshCw className={`h-4 w-4 transition-transform group-hover:rotate-180 duration-500 ${loading ? 'animate-spin' : ''}`} />
+              Refresh Data
+            </button>
+          </div>
         </div>
 
         {/* Date Selection and Filters */}
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-          <div className="flex flex-wrap items-center gap-4">
+        <div className="rounded-3xl border border-slate-200 bg-white/70 p-4 backdrop-blur-xl shadow-sm border-b-2 border-slate-300/20 overflow-hidden relative group transition-all hover:shadow-md">
+          <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/5 to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+          <div className="relative flex flex-wrap items-center gap-4">
             {/* Date Selection */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 bg-slate-100/50 p-1.5 rounded-2xl border border-slate-200">
               <button
                 onClick={() => setSelectedDate(new Date().toISOString().split('T')[0])}
-                className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${selectedDate === new Date().toISOString().split('T')[0]
-                  ? 'bg-indigo-500 text-white'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300'
+                className={`rounded-xl px-4 py-2 text-sm font-bold transition-all ${selectedDate === new Date().toISOString().split('T')[0]
+                  ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white'
                   }`}
               >
                 Today
               </button>
               <button
                 onClick={() => setSelectedDate(getYesterday())}
-                className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${selectedDate === getYesterday()
-                  ? 'bg-indigo-500 text-white'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300'
+                className={`rounded-xl px-4 py-2 text-sm font-bold transition-all ${selectedDate === getYesterday()
+                  ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white'
                   }`}
               >
                 Yesterday
               </button>
-              <div className="relative">
-                <FiCalendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <div className="h-6 w-px bg-slate-200 mx-2" />
+              <div className="relative group/input">
+                <LuCalendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 transition-colors group-hover/input:text-indigo-600" />
                 <input
                   type="date"
                   value={selectedDate}
                   onChange={(e) => setSelectedDate(e.target.value)}
-                  className="rounded-lg border border-slate-300 bg-white py-2 pl-10 pr-4 text-sm dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="rounded-xl border-none bg-transparent py-2 pl-10 pr-4 text-sm font-bold text-slate-900 focus:ring-0 cursor-pointer"
                 />
               </div>
             </div>
@@ -219,66 +257,83 @@ export default function LiveAttendancePage() {
             {/* Filter Toggle */}
             <button
               onClick={() => setShowFilters(!showFilters)}
-              className="ml-auto flex items-center gap-2 rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 transition-all hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300"
+              className={`ml-auto flex items-center gap-2 rounded-2xl px-5 py-2.5 text-sm font-bold transition-all border ${showFilters
+                ? 'bg-indigo-600 text-white border-indigo-500 shadow-lg shadow-indigo-600/20'
+                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300'}`}
             >
-              <FiFilter className="h-4 w-4" />
-              Filters
+              <LuFilter className={`h-4 w-4 ${showFilters ? 'fill-current' : ''}`} />
+              Advanced Filters
             </button>
           </div>
 
           {/* Filters Dropdown */}
           {showFilters && (
-            <div className="mt-4 grid grid-cols-1 gap-4 border-t border-slate-200 pt-4 dark:border-slate-700 md:grid-cols-3">
-              <div>
-                <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
+            <div className="mt-4 grid grid-cols-1 gap-6 border-t border-slate-100 pt-6 md:grid-cols-3">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">
                   Division
                 </label>
-                <select
-                  value={selectedDiv}
-                  onChange={(e) => setSelectedDiv(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-700 dark:text-white"
-                >
-                  <option value="">All Divisions</option>
-                  {divisions.map((div) => (
-                    <option key={div.id} value={div.id}>
-                      {div.name}
-                    </option>
-                  ))}
-                </select>
+                <div className="relative group/select">
+                  <select
+                    value={selectedDiv}
+                    onChange={(e) => setSelectedDiv(e.target.value)}
+                    className="w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900 transition-all focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 group-hover/select:border-slate-300"
+                  >
+                    <option value="" className="bg-white">All Divisions</option>
+                    {divisions.map((div) => (
+                      <option key={div.id} value={div.id} className="bg-white">
+                        {div.name}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                    <FiGrid className="h-4 w-4" />
+                  </div>
+                </div>
               </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">
                   Department
                 </label>
-                <select
-                  value={selectedDept}
-                  onChange={(e) => setSelectedDept(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-700 dark:text-white"
-                >
-                  <option value="">All Departments</option>
-                  {departments.map((dept) => (
-                    <option key={dept.id} value={dept.id}>
-                      {dept.name}
-                    </option>
-                  ))}
-                </select>
+                <div className="relative group/select">
+                  <select
+                    value={selectedDept}
+                    onChange={(e) => setSelectedDept(e.target.value)}
+                    className="w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900 transition-all focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 group-hover/select:border-slate-300"
+                  >
+                    <option value="" className="bg-white">All Departments</option>
+                    {departments.map((dept) => (
+                      <option key={dept.id} value={dept.id} className="bg-white">
+                        {dept.name}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                    <FiGrid className="h-4 w-4" />
+                  </div>
+                </div>
               </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">
                   Shift
                 </label>
-                <select
-                  value={selectedShift}
-                  onChange={(e) => setSelectedShift(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-700 dark:text-white"
-                >
-                  <option value="">All Shifts</option>
-                  {shifts.map((shift) => (
-                    <option key={shift.id} value={shift.id}>
-                      {shift.name}
-                    </option>
-                  ))}
-                </select>
+                <div className="relative group/select">
+                  <select
+                    value={selectedShift}
+                    onChange={(e) => setSelectedShift(e.target.value)}
+                    className="w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-900 transition-all focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 group-hover/select:border-slate-300"
+                  >
+                    <option value="" className="bg-white">All Shifts</option>
+                    {shifts.map((shift) => (
+                      <option key={shift.id} value={shift.id} className="bg-white">
+                        {shift.name}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                    <FiGrid className="h-4 w-4" />
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -286,134 +341,240 @@ export default function LiveAttendancePage() {
 
         {/* Summary Cards */}
         {reportData && (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-blue-50 to-blue-100 p-6 shadow-sm dark:border-slate-700 dark:from-blue-900/20 dark:to-blue-800/20">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-blue-600 dark:text-blue-400">
-                    Total Employees
-                  </p>
-                  <p className="mt-2 text-3xl font-bold text-blue-900 dark:text-blue-100">
-                    {reportData.summary.totalEmployees}
-                  </p>
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+            {/* Total Workforce Card */}
+            <div className="relative group overflow-hidden rounded-3xl border border-slate-200 bg-white/70 p-6 backdrop-blur-xl shadow-sm transition-all hover:border-indigo-300 hover:shadow-md">
+              <div className="absolute top-0 right-0 -mr-8 -mt-8 h-24 w-24 rounded-full bg-slate-100 blur-2xl group-hover:bg-indigo-50 transition-colors" />
+              <div className="relative flex flex-col justify-between h-full space-y-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-600 group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-inner">
+                  <LuUsers className="h-6 w-6" />
                 </div>
-                <FiUsers className="h-12 w-12 text-blue-500 opacity-50" />
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Total Workforce</p>
+                  <p className="mt-1 text-3xl font-black text-slate-900">{reportData.summary.totalActiveEmployees}</p>
+                </div>
               </div>
             </div>
 
-            <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-green-50 to-green-100 p-6 shadow-sm dark:border-slate-700 dark:from-green-900/20 dark:to-green-800/20">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-green-600 dark:text-green-400">
-                    Currently Working
-                  </p>
-                  <p className="mt-2 text-3xl font-bold text-green-900 dark:text-green-100">
-                    {reportData.summary.currentlyWorking}
-                  </p>
+            {/* Currently Working Card */}
+            <div className="relative group overflow-hidden rounded-3xl border border-green-200 bg-green-50/50 p-6 backdrop-blur-xl shadow-sm transition-all hover:bg-green-50 hover:border-green-300 hover:shadow-md">
+              <div className="absolute top-0 right-0 -mr-8 -mt-8 h-24 w-24 rounded-full bg-green-100/50 blur-2xl group-hover:bg-green-100 transition-colors" />
+              <div className="relative flex flex-col justify-between h-full space-y-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-green-100 text-green-600 group-hover:bg-green-600 group-hover:text-white transition-all shadow-inner">
+                  <LuClock className="h-6 w-6" />
                 </div>
-                <FiClock className="h-12 w-12 text-green-500 opacity-50" />
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-green-600/80">Active Now</p>
+                  <p className="mt-1 text-3xl font-black text-green-700">{reportData.summary.currentlyWorking}</p>
+                </div>
               </div>
             </div>
 
-            <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-purple-50 to-purple-100 p-6 shadow-sm dark:border-slate-700 dark:from-purple-900/20 dark:to-purple-800/20">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-purple-600 dark:text-purple-400">
-                    Completed Shift
-                  </p>
-                  <p className="mt-2 text-3xl font-bold text-purple-900 dark:text-purple-100">
-                    {reportData.summary.completedShift}
-                  </p>
+            {/* Completed Shift Card */}
+            <div className="relative group overflow-hidden rounded-3xl border border-purple-200 bg-purple-50/50 p-6 backdrop-blur-xl shadow-sm transition-all hover:bg-purple-50 hover:border-purple-300 hover:shadow-md">
+              <div className="absolute top-0 right-0 -mr-8 -mt-8 h-24 w-24 rounded-full bg-purple-100/50 blur-2xl group-hover:bg-purple-100 transition-colors" />
+              <div className="relative flex flex-col justify-between h-full space-y-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-purple-100 text-purple-600 group-hover:bg-purple-600 group-hover:text-white transition-all shadow-inner">
+                  <LuCircleCheck className="h-6 w-6" />
                 </div>
-                <FiCheckCircle className="h-12 w-12 text-purple-500 opacity-50" />
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-purple-600/80">Completed</p>
+                  <p className="mt-1 text-3xl font-black text-purple-700">{reportData.summary.completedShift}</p>
+                </div>
               </div>
+            </div>
+
+            {/* Total Present Card */}
+            <div className="relative group overflow-hidden rounded-3xl border border-indigo-200 bg-indigo-50/50 p-6 backdrop-blur-xl shadow-sm transition-all hover:bg-indigo-50 hover:border-indigo-300 hover:shadow-md">
+              <div className="absolute top-0 right-0 -mr-8 -mt-8 h-24 w-24 rounded-full bg-indigo-100/50 blur-2xl group-hover:bg-indigo-100 transition-colors" />
+              <div className="relative flex flex-col justify-between h-full space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-inner">
+                    <LuActivity className="h-6 w-6" />
+                  </div>
+                  <span className="text-xl font-black text-indigo-600/30">
+                    {Math.round((reportData.summary.totalPresent / reportData.summary.totalActiveEmployees) * 100)}%
+                  </span>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-600/80">Total Present</p>
+                  <p className="mt-1 text-3xl font-black text-indigo-700">{reportData.summary.totalPresent}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Absent Card */}
+            <div className="relative group overflow-hidden rounded-3xl border border-orange-200 bg-orange-50/50 p-6 backdrop-blur-xl shadow-sm transition-all hover:bg-orange-50 hover:border-orange-300 hover:shadow-md">
+              <div className="absolute top-0 right-0 -mr-8 -mt-8 h-24 w-24 rounded-full bg-orange-100/50 blur-2xl group-hover:bg-orange-100 transition-colors" />
+              <div className="relative flex flex-col justify-between h-full space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-orange-100 text-orange-600 group-hover:bg-orange-600 group-hover:text-white transition-all shadow-inner">
+                    <LuUsers className="h-6 w-6" />
+                  </div>
+                  <span className="text-xl font-black text-orange-600/30">
+                    {Math.round((reportData.summary.absentEmployees / reportData.summary.totalActiveEmployees) * 100)}%
+                  </span>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-orange-600/80">Absent</p>
+                  <p className="mt-1 text-3xl font-black text-orange-700">{reportData.summary.absentEmployees}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Shift Overview Breakdown */}
+        {reportData && reportData.summary.shiftBreakdown.length > 0 && (
+          <div className="rounded-3xl border border-slate-200 bg-white/70 p-8 backdrop-blur-xl shadow-sm space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-black uppercase tracking-[0.2em] text-slate-500">
+                Shift Utilization Breakdown
+              </h2>
+              <div className="h-px flex-1 bg-slate-100 mx-6" />
+            </div>
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+              {reportData.summary.shiftBreakdown.map((s) => (
+                <div key={s.name} className="group relative rounded-2xl border border-slate-200 bg-white/50 p-5 transition-all hover:bg-white hover:border-indigo-200 hover:shadow-sm hover:-translate-y-1">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="space-y-1">
+                      <p className="text-sm font-black text-slate-900 group-hover:text-indigo-600 transition-colors">{s.name}</p>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                        Workforce Share
+                      </p>
+                    </div>
+                    <div className="rounded-lg bg-indigo-50 px-2 py-1 text-[10px] font-black text-indigo-600 border border-indigo-100">
+                      {Math.round(((s.working + s.completed) / reportData.summary.totalActiveEmployees) * 100)}%
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider">
+                        <span className="text-slate-400">Status Split</span>
+                        <div className="flex gap-2">
+                          <span className="text-green-600">{Math.round((s.working / (s.working + s.completed || 1)) * 100)}%</span>
+                          <span className="text-slate-300">/</span>
+                          <span className="text-purple-600">{Math.round((s.completed / (s.working + s.completed || 1)) * 100)}%</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-slate-500 font-bold">Working / Completed</span>
+                        <span className="font-mono font-black text-indigo-600">{s.working} / {s.completed}</span>
+                      </div>
+                    </div>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100 border border-slate-200 p-px flex">
+                      <div
+                        className="h-full bg-green-500 transition-all duration-1000"
+                        style={{ width: `${(s.working / (s.working + s.completed || 1)) * 100}%` }}
+                      />
+                      <div
+                        className="h-full bg-purple-500 transition-all duration-1000"
+                        style={{ width: `${(s.completed / (s.working + s.completed || 1)) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
 
         {/* Currently Working Table */}
         {reportData && reportData.currentlyWorking.length > 0 && (
-          <div className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
-            <div className="flex items-center justify-between border-b border-slate-200 p-4 dark:border-slate-700">
-              <h2 className="text-lg font-bold text-slate-900 dark:text-white">
-                Currently Working ({reportData.currentlyWorking.length})
-              </h2>
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as 'latest' | 'oldest')}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-700 dark:text-white"
-              >
-                <option value="latest">Latest First</option>
-                <option value="oldest">Oldest First</option>
-              </select>
+          <div className="group rounded-3xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <div className="flex flex-col gap-4 border-b border-slate-100 p-6 sm:flex-row sm:items-center sm:justify-between bg-slate-50/50">
+              <div className="flex items-center gap-3">
+                <div className="relative flex h-3 w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-green-600"></span>
+                </div>
+                <h2 className="text-xl font-black text-slate-900 italic tracking-tight uppercase">
+                  Currently <span className="text-green-600">Working</span>
+                  <span className="ml-2 text-xs font-bold not-italic text-slate-500 uppercase tracking-widest bg-slate-100 px-2 py-1 rounded-lg">
+                    {reportData.currentlyWorking.length} Active
+                  </span>
+                </h2>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="relative group/filter">
+                  <LuSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-hover/filter:text-indigo-600 transition-colors h-4 w-4" />
+                  <input placeholder="Quick search..." className="bg-white border border-slate-200 rounded-xl py-2 pl-10 pr-4 text-xs font-bold text-slate-900 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/5 transition-all w-48 shadow-sm" />
+                </div>
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as 'latest' | 'oldest')}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-600 transition-all hover:bg-slate-50 hover:border-slate-300 focus:border-indigo-500 cursor-pointer shadow-sm"
+                >
+                  <option value="latest">Latest First</option>
+                  <option value="oldest">Oldest First</option>
+                </select>
+              </div>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-slate-50 dark:bg-slate-900/50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      Emp No
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      Name
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      Department
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      Designation
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      Division
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      In Time
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      Hours Worked
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      Status
-                    </th>
+            <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent">
+              <table className="w-full text-left border-collapse min-w-[1000px]">
+                <thead>
+                  <tr className="bg-slate-50/80">
+                    {['Employee', 'Shift Info', 'Punched In', 'Progress', 'Hours', 'Live Status'].map((header) => (
+                      <th key={header} className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400 border-b border-slate-100">
+                        {header}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                <tbody className="divide-y divide-slate-100">
                   {sortEmployees(reportData.currentlyWorking).map((employee) => (
                     <tr
                       key={employee.id}
-                      className="transition-colors hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                      className="group/row transition-all hover:bg-indigo-50/30"
                     >
-                      <td className="px-4 py-3 text-sm font-medium text-slate-900 dark:text-white">
-                        {employee.empNo}
+                      <td className="px-6 py-5">
+                        <div className="flex flex-col">
+                          <span className="text-sm font-black text-slate-900 group-hover/row:text-indigo-600 transition-colors">{employee.name}</span>
+                          <span className="text-[10px] font-mono font-bold text-slate-400">{employee.empNo}</span>
+                        </div>
                       </td>
-                      <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-300">
-                        {employee.name}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">
-                        {employee.department}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">
-                        {employee.designation}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">
-                        {employee.division}
-                      </td>
-                      <td className="px-4 py-3 text-sm font-semibold text-green-600 dark:text-green-400">
-                        {formatTime(employee.inTime)}
-                      </td>
-                      <td className="px-4 py-3 text-sm font-bold text-indigo-600 dark:text-indigo-400">
-                        {formatHoursWorked(employee.hoursWorked)}
-                      </td>
-                      <td className="px-4 py-3">
+                      <td className="px-6 py-5">
                         <div className="flex flex-col gap-1">
+                          <span className="text-xs font-bold text-slate-600">{employee.shift}</span>
+                          <span className="text-[10px] text-slate-400 uppercase font-black">{employee.department}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5">
+                        <div className="flex items-center gap-2">
+                          <LuClock className="h-3 w-3 text-green-600" />
+                          <span className="text-sm font-black text-green-700 font-mono italic">
+                            {formatTime(employee.inTime)}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5">
+                        <div className="w-24">
+                          <div className="h-1.5 w-full rounded-full bg-slate-100 border border-slate-200 overflow-hidden">
+                            <div className="h-full rounded-full bg-green-500 shadow-sm" style={{ width: `${Math.min(100, (employee.hoursWorked / 8) * 100)}%` }} />
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5">
+                        <div className="inline-flex items-center gap-1.5 bg-indigo-50 px-3 py-1 rounded-full border border-indigo-100">
+                          <span className="text-xs font-black text-indigo-600 font-mono">
+                            {formatHoursWorked(employee.hoursWorked)}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5">
+                        <div className="flex flex-wrap gap-2">
+                          <span className="inline-flex items-center gap-1.5 rounded-lg bg-green-50 px-2.5 py-1 text-[10px] font-black text-green-600 uppercase tracking-wider border border-green-100">
+                            <span className="h-1 w-1 rounded-full bg-green-500 animate-pulse" />
+                            Working
+                          </span>
                           {employee.isLate && (
-                            <span className="inline-flex items-center rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
-                              Late: {employee.lateMinutes}m
+                            <span className="inline-flex items-center gap-1 rounded-lg bg-orange-50 px-2.5 py-1 text-[10px] font-black text-orange-600 uppercase tracking-wider border border-orange-100">
+                              Late {employee.lateMinutes}m
                             </span>
                           )}
                           {employee.otHours > 0 && (
-                            <span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
-                              OT: {employee.otHours.toFixed(1)}h
+                            <span className="inline-flex items-center gap-1 rounded-lg bg-purple-50 px-2.5 py-1 text-[10px] font-black text-purple-600 uppercase tracking-wider border border-purple-100">
+                              OT {employee.otHours.toFixed(1)}h
                             </span>
                           )}
                         </div>
@@ -428,84 +589,81 @@ export default function LiveAttendancePage() {
 
         {/* Completed Shift Table */}
         {reportData && reportData.completedShift.length > 0 && (
-          <div className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
-            <div className="border-b border-slate-200 p-4 dark:border-slate-700">
-              <h2 className="text-lg font-bold text-slate-900 dark:text-white">
-                Completed Shift ({reportData.completedShift.length})
-              </h2>
+          <div className="group rounded-3xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <div className="flex items-center justify-between border-b border-slate-100 p-6 bg-slate-50/50">
+              <div className="flex items-center gap-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-purple-100 text-purple-600 border border-purple-200 shadow-sm">
+                  <LuCircleCheck className="h-5 w-5" />
+                </div>
+                <h2 className="text-xl font-black text-slate-900 italic tracking-tight uppercase">
+                  Shift <span className="text-purple-600">Completed</span>
+                  <span className="ml-2 text-xs font-bold not-italic text-slate-500 uppercase tracking-widest bg-slate-100 px-2 py-1 rounded-lg">
+                    {reportData.completedShift.length} Finished
+                  </span>
+                </h2>
+              </div>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-slate-50 dark:bg-slate-900/50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      Emp No
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      Name
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      Department
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      Designation
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      In Time
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      Out Time
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      Hours Worked
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      Status
-                    </th>
+            <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent">
+              <table className="w-full text-left border-collapse min-w-[1000px]">
+                <thead>
+                  <tr className="bg-slate-50/80">
+                    {['Employee', 'Shift Info', 'Time Window', 'Duration', 'Metrics'].map((header) => (
+                      <th key={header} className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400 border-b border-slate-100">
+                        {header}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                <tbody className="divide-y divide-slate-100">
                   {reportData.completedShift.map((employee) => (
                     <tr
                       key={employee.id}
-                      className="transition-colors hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                      className="group/row transition-all hover:bg-purple-50/30"
                     >
-                      <td className="px-4 py-3 text-sm font-medium text-slate-900 dark:text-white">
-                        {employee.empNo}
+                      <td className="px-6 py-5">
+                        <div className="flex flex-col">
+                          <span className="text-sm font-black text-slate-900 group-hover/row:text-purple-600 transition-colors">{employee.name}</span>
+                          <span className="text-[10px] font-mono font-bold text-slate-400">{employee.empNo}</span>
+                        </div>
                       </td>
-                      <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-300">
-                        {employee.name}
+                      <td className="px-6 py-5">
+                        <div className="flex flex-col">
+                          <span className="text-xs font-bold text-slate-600">{employee.shift}</span>
+                          <span className="text-[10px] text-slate-400 uppercase font-black italic">{employee.designation}</span>
+                        </div>
                       </td>
-                      <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">
-                        {employee.department}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">
-                        {employee.designation}
-                      </td>
-                      <td className="px-4 py-3 text-sm font-semibold text-green-600 dark:text-green-400">
-                        {formatTime(employee.inTime)}
-                      </td>
-                      <td className="px-4 py-3 text-sm font-semibold text-red-600 dark:text-red-400">
-                        {formatTime(employee.outTime)}
-                      </td>
-                      <td className="px-4 py-3 text-sm font-bold text-indigo-600 dark:text-indigo-400">
-                        {formatHoursWorked(employee.hoursWorked)}
-                      </td>
-                      <td className="px-4 py-3">
+                      <td className="px-6 py-5">
                         <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-2">
+                            <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                            <span className="text-xs font-black text-slate-700 font-mono uppercase">{formatTime(employee.inTime)}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+                            <span className="text-xs font-black text-slate-700 font-mono uppercase">{formatTime(employee.outTime)}</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5">
+                        <div className="inline-flex items-center gap-1.5 bg-purple-50 px-3 py-1 rounded-full border border-purple-100">
+                          <span className="text-xs font-black text-purple-600 font-mono tracking-tighter">
+                            {formatHoursWorked(employee.hoursWorked)} TOTAL
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5">
+                        <div className="flex flex-wrap gap-2">
+                          <span className="inline-flex items-center gap-1 rounded-lg bg-blue-50 px-2 py-1 text-[10px] font-black text-blue-600 uppercase tracking-wider border border-blue-100">
+                            DONE
+                          </span>
                           {employee.isLate && (
-                            <span className="inline-flex items-center rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
-                              Late: {employee.lateMinutes}m
+                            <span className="inline-flex items-center gap-1 rounded-lg bg-orange-50 px-2 py-0.5 text-[10px] font-black text-orange-600 uppercase tracking-wider border border-orange-100">
+                              LATE {employee.lateMinutes}m
                             </span>
                           )}
                           {employee.isEarlyOut && (
-                            <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-                              Early: {employee.earlyOutMinutes}m
-                            </span>
-                          )}
-                          {employee.otHours > 0 && (
-                            <span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
-                              OT: {employee.otHours.toFixed(1)}h
+                            <span className="inline-flex items-center gap-1 rounded-lg bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-600 uppercase tracking-wider border border-amber-100">
+                              EARLY {employee.earlyOutMinutes}m
                             </span>
                           )}
                         </div>
@@ -520,9 +678,13 @@ export default function LiveAttendancePage() {
 
         {/* Empty State */}
         {reportData && reportData.currentlyWorking.length === 0 && reportData.completedShift.length === 0 && (
-          <div className="rounded-xl border border-slate-200 bg-white p-12 text-center shadow-sm dark:border-slate-700 dark:bg-slate-800">
-            <p className="text-slate-600 dark:text-slate-400">
-              No attendance records found for the selected date and filters.
+          <div className="rounded-3xl border border-slate-200 bg-white/70 p-20 text-center backdrop-blur-xl shadow-sm">
+            <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-3xl bg-slate-100 text-slate-300">
+              <LuActivity className="h-10 w-10 opacity-40" />
+            </div>
+            <h3 className="text-xl font-black text-slate-900 italic tracking-tight uppercase">No Pulse Detected</h3>
+            <p className="mt-2 text-sm font-bold text-slate-500 uppercase tracking-widest">
+              There are no attendance records for the selected filters today.
             </p>
           </div>
         )}

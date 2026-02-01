@@ -97,10 +97,10 @@ exports.receiveRealTimeLogs = async (req, res) => {
                     }
                 });
 
-                if (normalizedType) {
-                    uniqueEmployees.add(empId);
-                    uniqueDates.add(formatDate(timestamp));
-                }
+                // Trigger processing for ALL valid logs, not just normalized IN/OUT
+                // This allows generic punches to be handled by the processing engine
+                uniqueEmployees.add(empId);
+                uniqueDates.add(formatDate(timestamp));
             }
         }
 
@@ -145,14 +145,14 @@ exports.receiveRealTimeLogs = async (req, res) => {
                             $lte: formatDate(maxDate),
                         },
                         timestamp: { $gte: new Date('2020-01-01') },
-                        type: { $in: ['IN', 'OUT'] }, // Only IN/OUT logs
+                        // type: { $in: ['IN', 'OUT'] }, // REMOVED: Include all logs for intelligent pairing
                     }).sort({ timestamp: 1 }).lean();
 
                     // Convert to simple format
                     const logs = allLogs.map(log => ({
                         timestamp: new Date(log.timestamp),
                         type: log.type,
-                        punch_state: log.type === 'IN' ? 0 : 1,
+                        punch_state: log.type === 'IN' ? 0 : (log.type === 'OUT' ? 1 : null),
                         _id: log._id,
                     }));
 

@@ -68,9 +68,10 @@ exports.getLiveAttendanceReport = async (req, res) => {
       }, {});
     }
 
-    // Categorize employees
+    // Categorize employees and calculate shift-wise stats
     const currentlyWorking = [];
     const completedShift = [];
+    const shiftStats = {}; // { shiftId: { name, working, completed } }
 
     attendanceRecords.forEach(record => {
       const empNo = record.employeeNumber;
@@ -82,6 +83,15 @@ exports.getLiveAttendanceReport = async (req, res) => {
 
       // Shift filter if requested
       if (shift && record.shiftId?._id?.toString() !== shift) return;
+
+      const shiftId = record.shiftId?._id?.toString() || 'manual';
+      if (!shiftStats[shiftId]) {
+        shiftStats[shiftId] = {
+          name: record.shiftId?.name || 'Manual/Unknown',
+          working: 0,
+          completed: 0
+        };
+      }
 
       const employeeData = {
         id: employee._id,
@@ -96,9 +106,7 @@ exports.getLiveAttendanceReport = async (req, res) => {
         inTime: record.inTime || record.in_time || record.inTime || null,
         outTime: record.outTime || record.out_time || null,
         status: record.status,
-        statusText: null,
         date: record.date,
-        hoursWorked: null,
         isLate: record.isLateIn || record.is_late_in || false,
         lateMinutes: record.lateInMinutes || record.late_in_minutes || 0,
         isEarlyOut: record.isEarlyOut || record.is_early_out || false,
@@ -115,6 +123,7 @@ exports.getLiveAttendanceReport = async (req, res) => {
         employeeData.hoursWorked = calculateHoursWorked(employeeData.inTime);
         employeeData.statusText = 'Working';
         currentlyWorking.push(employeeData);
+        shiftStats[shiftId].working++;
       } else if (hasIn && hasOut) {
         const inDateTime = new Date(employeeData.inTime);
         const outDateTime = new Date(employeeData.outTime);
@@ -122,11 +131,12 @@ exports.getLiveAttendanceReport = async (req, res) => {
         employeeData.hoursWorked = diffMs / (1000 * 60 * 60);
         employeeData.statusText = 'Completed';
         completedShift.push(employeeData);
-      } else {
-        employeeData.hoursWorked = 0;
-        employeeData.statusText = 'Absent';
+        shiftStats[shiftId].completed++;
       }
     });
+
+    // Fetch total active employees count
+    const totalActiveEmployees = await Employee.countDocuments({ is_active: { $ne: false } });
 
     // Sort currently working by latest in_time first (default)
     currentlyWorking.sort((a, b) => new Date(b.inTime) - new Date(a.inTime));
@@ -141,7 +151,10 @@ exports.getLiveAttendanceReport = async (req, res) => {
         summary: {
           currentlyWorking: currentlyWorking.length,
           completedShift: completedShift.length,
-          totalEmployees: currentlyWorking.length + completedShift.length
+          totalPresent: currentlyWorking.length + completedShift.length,
+          totalActiveEmployees: totalActiveEmployees,
+          absentEmployees: Math.max(0, totalActiveEmployees - (currentlyWorking.length + completedShift.length)),
+          shiftBreakdown: Object.values(shiftStats)
         },
         currentlyWorking,
         completedShift
