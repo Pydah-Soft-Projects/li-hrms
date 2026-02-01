@@ -421,7 +421,7 @@ exports.getMonthlyTableViewData = async (employees, year, month) => {
         odInfo,
         isConflict,
         isEdited: record?.isEdited || false,
-        editHistory: record?.editHistory || []
+        editHistory: record?.editHistory || [],
         source: record?.source || []
       };
     }
