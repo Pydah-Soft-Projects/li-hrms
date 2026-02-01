@@ -585,10 +585,10 @@ exports.updateOutTime = async (req, res) => {
               if (fullShift && fullShift.payableShifts !== undefined) basePayable = fullShift.payableShifts;
             }
 
-            if (shiftSegment.workingHours >= (durationHours * 0.9)) {
+            if (shiftSegment.workingHours >= (durationHours * 0.8)) {
               shiftSegment.status = 'PRESENT';
               shiftSegment.payableShift = basePayable;
-            } else if (shiftSegment.workingHours >= (durationHours * 0.45)) {
+            } else if (shiftSegment.workingHours >= (durationHours * 0.35)) {
               shiftSegment.status = 'HALF_DAY';
               shiftSegment.payableShift = basePayable * 0.5;
             } else {
@@ -689,10 +689,10 @@ exports.updateOutTime = async (req, res) => {
           const assignedShiftDoc = await Shift.findById(detectionResult.assignedShift).select('payableShifts duration');
           let basePayable = assignedShiftDoc ? (assignedShiftDoc.payableShifts ?? 1) : 1;
 
-          if (workingHours >= (detectionResult.expectedHours * 0.9)) {
+          if (workingHours >= (detectionResult.expectedHours * 0.8)) {
             status = 'PRESENT';
             payableShift = basePayable;
-          } else if (workingHours >= (detectionResult.expectedHours * 0.45)) {
+          } else if (workingHours >= (detectionResult.expectedHours * 0.35)) {
             status = 'HALF_DAY';
             payableShift = basePayable * 0.5;
           }
