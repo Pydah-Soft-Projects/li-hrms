@@ -327,7 +327,7 @@ const findCandidateShifts = (inTime, shifts, date, toleranceHours = 3) => {
         isStartBeforeLog: isStartBeforeLog,
         isPreferred: isPreferred,
         sourcePriority: shift.sourcePriority || 99, // Lower is better (2=Desig, 3=Dept)
-        matchReason: `In-time ${inTime.toLocaleTimeString()} is ${difference.toFixed(1)} minutes from shift ${shift.name} start (${shift.startTime})`,
+        matchReason: `In-time ${inTimeDate.toLocaleTimeString()} is ${difference.toFixed(1)} minutes from shift ${shift.name} start (${shift.startTime})`,
       });
     }
   }
@@ -924,6 +924,8 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
           success: true,
           assignedShift: nearestShift._id,
           shiftName: nearestShift.name,
+          shiftStartTime: nearestShift.startTime,
+          shiftEndTime: nearestShift.endTime,
           source: `${source}_nearest_fallback`,
           lateInMinutes: lateInMinutes > 0 ? lateInMinutes : null,
           earlyOutMinutes: earlyOutMinutes && earlyOutMinutes > 0 ? earlyOutMinutes : null,
@@ -968,6 +970,8 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
         success: true,
         assignedShift: shift._id,
         shiftName: shift.name,
+        shiftStartTime: shift.startTime,
+        shiftEndTime: shift.endTime,
         source: source,
         lateInMinutes: lateInMinutes > 0 ? lateInMinutes : null,
         earlyOutMinutes: earlyOutMinutes && earlyOutMinutes > 0 ? earlyOutMinutes : null,
@@ -1034,6 +1038,8 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
                 success: true,
                 assignedShift: shift._id,
                 shiftName: shift.name,
+                shiftStartTime: shift.startTime,
+                shiftEndTime: shift.endTime,
                 source: `${source}_outtime_disambiguated`,
                 lateInMinutes: lateInMinutes > 0 ? lateInMinutes : null,
                 earlyOutMinutes: earlyOutMinutes && earlyOutMinutes > 0 ? earlyOutMinutes : null,
@@ -1098,6 +1104,8 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
                   success: true,
                   assignedShift: shift._id,
                   shiftName: shift.name,
+                  shiftStartTime: shift.startTime,
+                  shiftEndTime: shift.endTime,
                   source: `${source}_outtime_disambiguated`,
                   lateInMinutes: lateInMinutes > 0 ? lateInMinutes : null,
                   earlyOutMinutes: earlyOutMinutes && earlyOutMinutes > 0 ? earlyOutMinutes : null,
@@ -1158,6 +1166,8 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
               success: true,
               assignedShift: shift._id,
               shiftName: shift.name,
+              shiftStartTime: shift.startTime,
+              shiftEndTime: shift.endTime,
               source: source,
               lateInMinutes: lateInMinutes > 0 ? lateInMinutes : null,
               earlyOutMinutes: earlyOutMinutes && earlyOutMinutes > 0 ? earlyOutMinutes : null,
@@ -1419,6 +1429,8 @@ const autoAssignNearestShift = async (employeeNumber, date, inTime, outTime = nu
       success: true,
       assignedShift: nearestShift._id,
       shiftName: nearestShift.name,
+      shiftStartTime: nearestShift.startTime,
+      shiftEndTime: nearestShift.endTime,
       source: 'auto_assign_nearest',
       sourcePriority: nearestShift.sourcePriority || 99,
       lateInMinutes: lateInMinutes > 0 ? lateInMinutes : null,
@@ -1453,6 +1465,8 @@ module.exports = {
   calculateEarlyOut,
   isWithinShiftWindow,
   syncShiftsForExistingRecords,
+  syncShiftsForExistingRecords,
   autoAssignNearestShift,
+  timeToMinutes
 };
 

@@ -31,7 +31,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber) {
         $lte: endDateStr,
       },
     })
-      .select('status shiftId totalHours extraHours earlyOutMinutes')
+      .select('status shiftId totalHours extraHours earlyOutMinutes payableShifts')
       .populate('shiftId', 'payableShifts name')
       .lean();
 
@@ -54,16 +54,21 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber) {
 
     let totalPayableShifts = 0;
     for (const record of activeAttendanceDays) {
-      let basePayable = 1;
-      if (record.shiftId && typeof record.shiftId === 'object' && record.shiftId.payableShifts !== undefined && record.shiftId.payableShifts !== null) {
-        basePayable = Number(record.shiftId.payableShifts);
-      }
-
-      // If it's a half day, they get half of the shift's payable value
-      if (record.status === 'HALF_DAY') {
-        totalPayableShifts += (basePayable / 2);
+      if (record.payableShifts !== undefined && record.payableShifts !== null) {
+        totalPayableShifts += Number(record.payableShifts);
       } else {
-        totalPayableShifts += basePayable;
+        // Fallback to legacy logic
+        let basePayable = 1;
+        if (record.shiftId && typeof record.shiftId === 'object' && record.shiftId.payableShifts !== undefined && record.shiftId.payableShifts !== null) {
+          basePayable = Number(record.shiftId.payableShifts);
+        }
+
+        // If it's a half day, they get half of the shift's payable value
+        if (record.status === 'HALF_DAY') {
+          totalPayableShifts += (basePayable / 2);
+        } else {
+          totalPayableShifts += basePayable;
+        }
       }
     }
 
