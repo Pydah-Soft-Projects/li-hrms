@@ -24,7 +24,6 @@ export const EMPLOYEE_TEMPLATE_HEADERS = [
   'doj',
   'dob',
   'proposedSalary',
-  'second_salary',
   'gender',
   'marital_status',
   'blood_group',
@@ -55,7 +54,6 @@ export const EMPLOYEE_TEMPLATE_SAMPLE = [
     doj: '2024-01-15',
     dob: '1990-05-20',
     proposedSalary: 50000,
-    second_salary: 0,
     gender: 'Male',
     marital_status: 'Single',
     blood_group: 'O+',
@@ -146,8 +144,40 @@ export const parseFile = (file: File): Promise<BulkUploadResult> => {
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
 
-        // Convert to JSON with raw values to get Date objects directly when possible
+        // 1. Get raw data as a 2D array to find the header row
+        const rawRows = XLSX.utils.sheet_to_json<unknown[]>(worksheet, {
+          header: 1,
+          raw: true,
+          defval: '',
+        });
+
+        if (rawRows.length === 0) {
+          resolve({
+            success: false,
+            data: [],
+            errors: ['File is empty or has no data rows'],
+            headers: [],
+          });
+          return;
+        }
+
+        // 2. Find the header row (look for keywords in the first 10 rows)
+        let headerRowIndex = 0;
+        const keywords = ['emp', 'name', 'gender', 'status', 'doj', 'dob', 'no', 's.no'];
+        for (let i = 0; i < Math.min(rawRows.length, 10); i++) {
+          const row = rawRows[i];
+          if (row && Array.isArray(row) && row.length > 0) {
+            const rowStr = row.join(' ').toLowerCase();
+            if (keywords.some(kw => rowStr.includes(kw))) {
+              headerRowIndex = i;
+              break;
+            }
+          }
+        }
+
+        // 3. Convert to JSON with identified header row
         const jsonData = XLSX.utils.sheet_to_json<ParsedRow>(worksheet, {
+          range: headerRowIndex,
           raw: true,
           defval: '',
         });
@@ -156,7 +186,7 @@ export const parseFile = (file: File): Promise<BulkUploadResult> => {
           resolve({
             success: false,
             data: [],
-            errors: ['File is empty or has no data rows'],
+            errors: ['No data rows found after headers'],
             headers: [],
           });
           return;
@@ -167,7 +197,7 @@ export const parseFile = (file: File): Promise<BulkUploadResult> => {
 
         // Clean and normalize data
         const cleanedData = jsonData.map((row, index) => {
-          const cleanedRow: ParsedRow = { _rowIndex: index + 2 }; // +2 for header row and 0-index
+          const cleanedRow: ParsedRow = { _rowIndex: index + headerRowIndex + 2 }; // Corrected index
           for (const key of headers) {
             let value: string | number | boolean | null = row[key] as string | number | boolean | null;
 
@@ -190,8 +220,6 @@ export const parseFile = (file: File): Promise<BulkUploadResult> => {
                 }
                 // 2. Handle Excel serial numbers (numbers)
                 else if (typeof value === 'number') {
-                  // Excel serial base is Dec 30 1899. 
-                  // XLSX already handles most, but if it remains a number:
                   parsedDate = new Date(Math.round((value - 25569) * 86400 * 1000));
                 }
                 // 3. Handle string dates
@@ -229,7 +257,6 @@ export const parseFile = (file: File): Promise<BulkUploadResult> => {
                 }
 
                 if (parsedDate && !isNaN(parsedDate.getTime())) {
-                  // Always output YYYY-MM-DD
                   const year = parsedDate.getFullYear();
                   const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
                   const day = String(parsedDate.getDate()).padStart(2, '0');
@@ -360,7 +387,64 @@ export const matchUserByName = (
 };
 
 /**
- * Validate employee row
+ * Header mapping configuration to support common Excel variations
+ */
+const HEADER_MAP: { [key: string]: string } = {
+  'emp_no': 'emp_no',
+  'employee_no': 'emp_no',
+  'emp no': 'emp_no',
+  'employee number': 'emp_no',
+  'employee_name': 'employee_name',
+  'name': 'employee_name',
+  'employee name': 'employee_name',
+  'name of the employee': 'employee_name',
+  'division_name': 'division_name',
+  'division': 'division_name',
+  'department_name': 'department_name',
+  'department': 'department_name',
+  'designation_name': 'designation_name',
+  'designation': 'designation_name',
+  'doj': 'doj',
+  'date of joining': 'doj',
+  'joining date': 'doj',
+  'date of joining1': 'doj',
+  'dob': 'dob',
+  'date of birth': 'dob',
+  'birth date': 'dob',
+  'date of birth1': 'dob',
+  'proposedsalary': 'proposedSalary',
+  'gross salary': 'proposedSalary',
+  'gross_salary': 'proposedSalary',
+  'salary': 'proposedSalary',
+  'gender': 'gender',
+  'sex': 'gender',
+  'marital_status': 'marital_status',
+  'marital status': 'marital_status',
+  'status': 'marital_status',
+  'aadhar_number': 'aadhar_number',
+  'aadhar no': 'aadhar_number',
+  'adhaar number': 'aadhar_number',
+  'aadhar': 'aadhar_number',
+  'phone_number': 'phone_number',
+  'phone no': 'phone_number',
+  'mobile': 'phone_number',
+  'mobile number': 'phone_number',
+  'email': 'email',
+  'email id': 'email',
+  'email_id': 'email',
+  'bank_account_no': 'bank_account_no',
+  'account no': 'bank_account_no',
+  'bank_name': 'bank_name',
+  'bank name': 'bank_name',
+  'ifsc_code': 'ifsc_code',
+  'ifsc code': 'ifsc_code',
+  'ifsc': 'ifsc_code',
+  'salary_mode': 'salary_mode',
+  'salary mode': 'salary_mode',
+};
+
+/**
+ * Validate employee row with robust field mapping and normalization
  */
 export const validateEmployeeRow = (
   row: ParsedRow,
@@ -371,90 +455,88 @@ export const validateEmployeeRow = (
 ): { isValid: boolean; errors: string[]; mappedRow: ParsedRow; fieldErrors: { [key: string]: string } } => {
   const errors: string[] = [];
   const fieldErrors: { [key: string]: string } = {};
-  const mappedRow: ParsedRow = { ...row };
 
-  // Required fields
-  if (!row.emp_no) {
+  // Normalize row keys using HEADER_MAP
+  const normalizedRow: ParsedRow = {};
+  Object.entries(row).forEach(([key, value]) => {
+    if (key.startsWith('_')) {
+      normalizedRow[key] = value;
+      return;
+    }
+    const cleanKey = key.toLowerCase().trim();
+    const mappedKey = HEADER_MAP[cleanKey] || cleanKey;
+    normalizedRow[mappedKey] = value;
+  });
+
+  const mappedRow: ParsedRow = { ...normalizedRow };
+
+  // Required fields normalization
+  if (normalizedRow.emp_no !== undefined && normalizedRow.emp_no !== null) {
+    mappedRow.emp_no = String(normalizedRow.emp_no).trim();
+  }
+
+  // Required validation
+  if (!mappedRow.emp_no) {
     errors.push('Employee No is required');
     fieldErrors.emp_no = 'Required';
   }
-  if (!row.employee_name) {
+  if (!normalizedRow.employee_name) {
     errors.push('Employee Name is required');
     fieldErrors.employee_name = 'Required';
   }
 
   // Map division
   let div = null;
-  if (row.division_name) {
-    div = divisions.find(d => d.name.toLowerCase().trim() === String(row.division_name).toLowerCase().trim());
-  } else if (row.division_id) {
-    div = divisions.find(d => d._id === String(row.division_id));
+  const divInput = normalizedRow.division_name || normalizedRow.division;
+  if (divInput) {
+    div = divisions.find(d => d.name.toLowerCase().trim() === String(divInput).toLowerCase().trim());
   }
 
   if (div) {
     mappedRow.division_id = div._id;
     mappedRow.division_name = div.name;
-    // Clear error if previously set by name mismatch
-  } else {
-    if (row.division_name) {
-      errors.push(`Division "${row.division_name}" not found`);
-      fieldErrors.division_name = 'Not found';
-    } else if (!row.division_id) {
-      errors.push('Division is required');
-      fieldErrors.division_name = 'Required';
-    }
+  } else if (divInput) {
+    errors.push(`Division "${divInput}" not found`);
+    fieldErrors.division_name = 'Not found';
   }
 
   // Map department
   let dept = null;
-  if (row.department_name) {
-    dept = departments.find(d => d.name.toLowerCase().trim() === String(row.department_name).toLowerCase().trim());
-  } else if (row.department_id) {
-    dept = departments.find(d => d._id === String(row.department_id));
+  const deptInput = normalizedRow.department_name || normalizedRow.department;
+  if (deptInput) {
+    dept = departments.find(d => d.name.toLowerCase().trim() === String(deptInput).toLowerCase().trim());
   }
 
   if (dept) {
     mappedRow.department_id = dept._id;
     mappedRow.department_name = dept.name;
-  } else {
-    // Department is not strictly required by some logic configs, but let's assume it is if provided
-    if (row.department_name) {
-      errors.push(`Department "${row.department_name}" not found`);
-      fieldErrors.department_name = 'Not found';
-    }
-    // If not provided, we don't enforce required here unless it was required in template. 
-    // Wait, original code strictly checked name presence if provided. 
-    // If user provided nothing, original code did nothing. 
-    // So we invoke name check only if provided.
+  } else if (deptInput) {
+    errors.push(`Department "${deptInput}" not found`);
+    fieldErrors.department_name = 'Not found';
   }
 
   // Map designation
   let desig = null;
-  const desigInput = row.designation_name ? String(row.designation_name).toLowerCase().trim() : null;
-
+  const desigInput = normalizedRow.designation_name || normalizedRow.designation;
   if (desigInput) {
+    const cleanDesig = String(desigInput).toLowerCase().trim();
     desig = designations.find(d =>
-      d.name?.toLowerCase().trim() === desigInput ||
-      (d.code && String(d.code).toLowerCase().trim() === desigInput)
+      d.name?.toLowerCase().trim() === cleanDesig ||
+      (d.code && String(d.code).toLowerCase().trim() === cleanDesig)
     );
-  } else if (row.designation_id) {
-    desig = designations.find(d => d._id === String(row.designation_id));
   }
 
   if (desig) {
     mappedRow.designation_id = desig._id;
     mappedRow.designation_name = desig.name;
-  } else {
-    if (row.designation_name) {
-      errors.push(`Designation "${row.designation_name}" not found`);
-      fieldErrors.designation_name = 'Not found';
-    }
+  } else if (desigInput) {
+    errors.push(`Designation "${desigInput}" not found`);
+    fieldErrors.designation_name = 'Not found';
   }
 
   // Map reporting_to (if provided by name)
-  if (row.reporting_to && typeof row.reporting_to === 'string' && users.length > 0) {
-    // If it's a comma separated list of names
-    const names = row.reporting_to.split(',').map(n => n.trim());
+  if (normalizedRow.reporting_to && typeof normalizedRow.reporting_to === 'string' && users.length > 0) {
+    const names = normalizedRow.reporting_to.split(',').map(n => n.trim());
     const ids: string[] = [];
     let hasError = false;
     names.forEach(name => {
@@ -462,7 +544,6 @@ export const validateEmployeeRow = (
       if (id) {
         ids.push(id);
       } else if (name.length > 24 && /^[0-9a-fA-F]{24}$/.test(name)) {
-        // Assume it's already an ID
         ids.push(name);
       } else {
         errors.push(`Reporting manager "${name}" not found`);
@@ -470,47 +551,70 @@ export const validateEmployeeRow = (
       }
     });
 
-    if (hasError) {
-      fieldErrors.reporting_to = 'One or more managers not found';
-    }
+    if (hasError) fieldErrors.reporting_to = 'One or more managers not found';
     mappedRow.reporting_to = ids.length > 0 ? ids : null;
-  } else if (row.reporting_to && Array.isArray(row.reporting_to)) {
-    // Already an array of IDs
-    mappedRow.reporting_to = row.reporting_to;
   }
 
-  // Validate gender
-  if (row.gender && !['Male', 'Female', 'Other'].includes(row.gender as string)) {
-    errors.push('Gender must be Male, Female, or Other');
-    fieldErrors.gender = 'Invalid gender';
+  // Helper for case-insensitive normalization
+  const normalizeValue = (val: string | number | boolean | null | undefined | string[], options: string[]): string | null => {
+    if (!val || Array.isArray(val)) return null;
+    const input = String(val).toLowerCase().trim();
+    const match = options.find(o => o.toLowerCase() === input);
+    return match || null;
+  };
+
+  // Gender normalization
+  const genderMatch = normalizeValue(normalizedRow.gender, ['Male', 'Female', 'Other']);
+  if (normalizedRow.gender) {
+    if (genderMatch) {
+      mappedRow.gender = genderMatch;
+    } else {
+      errors.push('Gender must be Male, Female, or Other');
+      fieldErrors.gender = 'Invalid gender';
+    }
   }
 
-  // Validate dates
-  if (row.dob && isNaN(new Date(row.dob as string).getTime())) {
+  // Marital Status normalization
+  const maritalMatch = normalizeValue(normalizedRow.marital_status, ['Single', 'Married', 'Divorced', 'Widowed']);
+  if (normalizedRow.marital_status) {
+    if (maritalMatch) {
+      mappedRow.marital_status = maritalMatch;
+    } else {
+      errors.push('Invalid marital status');
+      fieldErrors.marital_status = 'Invalid status';
+    }
+  }
+
+  // Blood Group normalization
+  if (normalizedRow.blood_group) {
+    const bg = String(normalizedRow.blood_group).toUpperCase().trim();
+    if (['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].includes(bg)) {
+      mappedRow.blood_group = bg;
+    } else {
+      errors.push('Invalid blood group');
+      fieldErrors.blood_group = 'Invalid group';
+    }
+  }
+
+  // Salary Mode normalization
+  const salaryModeMatch = normalizeValue(normalizedRow.salary_mode, ['Bank', 'Cash']);
+  if (normalizedRow.salary_mode) {
+    if (salaryModeMatch) {
+      mappedRow.salary_mode = salaryModeMatch;
+    } else {
+      errors.push('Salary Mode must be Bank or Cash');
+      fieldErrors.salary_mode = 'Invalid mode';
+    }
+  }
+
+  // Date validation
+  if (mappedRow.dob && isNaN(new Date(mappedRow.dob as string).getTime())) {
     errors.push('Invalid Date of Birth format');
     fieldErrors.dob = 'Invalid date';
   }
-  if (row.doj && isNaN(new Date(row.doj as string).getTime())) {
+  if (mappedRow.doj && isNaN(new Date(mappedRow.doj as string).getTime())) {
     errors.push('Invalid Date of Joining format');
     fieldErrors.doj = 'Invalid date';
-  }
-
-  // Validate marital status
-  if (row.marital_status && !['Single', 'Married', 'Divorced', 'Widowed'].includes(row.marital_status as string)) {
-    errors.push('Invalid marital status');
-    fieldErrors.marital_status = 'Invalid status';
-  }
-
-  // Validate blood group
-  if (row.blood_group && !['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].includes(row.blood_group as string)) {
-    errors.push('Invalid blood group');
-    fieldErrors.blood_group = 'Invalid group';
-  }
-
-  // Validate salary mode
-  if (row.salary_mode && !['Bank', 'Cash'].includes(row.salary_mode as string)) {
-    errors.push('Salary Mode must be Bank or Cash');
-    fieldErrors.salary_mode = 'Invalid mode';
   }
 
   return {
