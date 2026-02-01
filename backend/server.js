@@ -16,6 +16,7 @@ const logger = require('./middleware/logger');
 app.use(logger); // Log all requests
 
 const allowedOrigins = [
+  "*",
   process.env.FRONTEND_URL,
   'http://192.168.3.147:3000',
   'http://192.168.3.198:3000',
