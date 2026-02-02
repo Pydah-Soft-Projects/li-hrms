@@ -42,6 +42,7 @@ export default function SecondSalaryPaymentsPage() {
     // Comparison Data
     const [comparisonData, setComparisonData] = useState<any[]>([]);
     const [isComparing, setIsComparing] = useState(false);
+    const [exportingExcel, setExportingExcel] = useState(false);
 
     useEffect(() => {
         fetchInitialData();
@@ -117,20 +118,34 @@ export default function SecondSalaryPaymentsPage() {
     };
 
     const handleRunPayroll = async () => {
-        if (!selectedDivision || !selectedDepartment || !month) {
+        if (!month) {
             Swal.fire({
                 icon: 'warning',
-                title: 'Missing Selection',
-                text: 'Please select Division, Department and Month',
+                title: 'Missing Month',
+                text: 'Please select a Month',
             });
             return;
+        }
+
+        const isGlobal = (!selectedDivision || selectedDivision === 'all') && (!selectedDepartment || selectedDepartment === 'all');
+
+        if (isGlobal) {
+            const confirmAll = await Swal.fire({
+                title: 'Global Calculation?',
+                text: `This will calculate 2nd salary for ALL employees across ALL divisions and departments for ${month}. Continue?`,
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonText: 'Yes, calculate all',
+                cancelButtonText: 'Cancel'
+            });
+            if (!confirmAll.isConfirmed) return;
         }
 
         setIsCalculating(true);
         try {
             const res = await api.post('/second-salary/calculate', {
-                divisionId: selectedDivision,
-                departmentId: selectedDepartment,
+                divisionId: selectedDivision || 'all',
+                departmentId: selectedDepartment || 'all',
                 month
             });
 
@@ -174,59 +189,48 @@ export default function SecondSalaryPaymentsPage() {
         }
     };
 
-    const handleCalculateAll = async () => {
-        if (!month) {
-            alert('Please select Month');
-            return;
-        }
 
-        const confirmReset = window.confirm(`This will calculate 2nd salary for ALL employees across ALL divisions and departments for ${month}. Continue?`);
-        if (!confirmReset) return;
-
-        setIsCalculating(true);
+    const handleExportExcel = async () => {
+        setExportingExcel(true);
         try {
-            const res = await api.post('/second-salary/calculate', {
-                divisionId: 'all',
-                departmentId: 'all',
-                month
+            const blob = await api.exportSecondSalaryExcel({
+                month,
+                divisionId: selectedDivision,
+                departmentId: selectedDepartment,
+                search: searchTerm
             });
 
-            if (res.success) {
-                const { successCount, failCount } = res.data || {};
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Second_Salary_Export_${month}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
 
-                if (failCount === 0) {
-                    Swal.fire({
-                        icon: 'success',
-                        title: 'Global Success',
-                        text: `2nd Salary calculated for ${successCount} employees.`,
-                    });
-                } else {
-                    Swal.fire({
-                        icon: 'warning',
-                        title: 'Global Processing Complete',
-                        text: `${successCount} success, ${failCount} failed.`,
-                    });
-                }
-                fetchBatches();
-            } else {
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Global Calculation Failed',
-                    text: res.message || 'Failed to calculate',
-                });
-            }
+            Swal.fire({
+                icon: 'success',
+                title: 'Export Complete',
+                text: 'Excel file has been downloaded successfully.',
+                timer: 2000,
+                showConfirmButton: false,
+                toast: true,
+                position: 'top-end'
+            });
         } catch (error: any) {
+            console.error('Export error:', error);
             Swal.fire({
                 icon: 'error',
-                title: 'Error',
-                text: error.message || 'Error running global calculation',
+                title: 'Export Failed',
+                text: error.message || 'Failed to export to Excel',
             });
         } finally {
-            setIsCalculating(false);
+            setExportingExcel(false);
         }
     };
 
-    const handleExportExcel = () => {
+    const handleExportComparisonExcel = () => {
         if (comparisonData.length === 0) {
             Swal.fire({
                 icon: 'warning',
@@ -292,6 +296,15 @@ export default function SecondSalaryPaymentsPage() {
 
                 <div className="flex items-center gap-3">
                     <button
+                        onClick={handleExportExcel}
+                        disabled={exportingExcel || !month}
+                        className="inline-flex items-center px-4 py-2 text-sm font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl hover:bg-emerald-100 transition-all shadow-sm"
+                    >
+                        {exportingExcel ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
+                        Export Excel
+                    </button>
+
+                    <button
                         onClick={() => setViewMode(viewMode === 'batches' ? 'comparison' : 'batches')}
                         className={`inline-flex items-center px-4 py-2 text-sm font-medium rounded-xl transition-all shadow-sm ${viewMode === 'comparison'
                             ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 ring-2 ring-indigo-500/20'
@@ -304,14 +317,6 @@ export default function SecondSalaryPaymentsPage() {
 
                     {viewMode === 'batches' && (
                         <>
-                            <button
-                                onClick={handleCalculateAll}
-                                disabled={isCalculating || !month}
-                                className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 transition-all shadow-sm shadow-indigo-200 disabled:opacity-50"
-                            >
-                                {isCalculating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
-                                Calculate for All
-                            </button>
                             <Link
                                 href="/superadmin/payslips/second-salary"
                                 className="inline-flex items-center px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-all shadow-sm"
@@ -341,7 +346,7 @@ export default function SecondSalaryPaymentsPage() {
                                     onChange={(e) => setSelectedDivision(e.target.value)}
                                     className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 transition-all"
                                 >
-                                    <option value="">Select Division</option>
+                                    <option value="all">All Divisions</option>
                                     {divisions.map(div => <option key={div._id} value={div._id}>{div.name}</option>)}
                                 </select>
                             </div>
@@ -353,9 +358,9 @@ export default function SecondSalaryPaymentsPage() {
                                     onChange={(e) => setSelectedDepartment(e.target.value)}
                                     className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 transition-all"
                                 >
-                                    <option value="">Select Department</option>
+                                    <option value="all">All Departments</option>
                                     {departments
-                                        .filter(dept => !selectedDivision || dept.divisions?.includes(selectedDivision as any))
+                                        .filter(dept => !selectedDivision || selectedDivision === 'all' || dept.divisions?.includes(selectedDivision as any))
                                         .map(dept => <option key={dept._id} value={dept._id}>{dept.name}</option>)}
                                 </select>
                             </div>
@@ -373,7 +378,7 @@ export default function SecondSalaryPaymentsPage() {
                             <div className="flex items-end">
                                 <button
                                     onClick={handleRunPayroll}
-                                    disabled={isCalculating || !selectedDepartment || !selectedDivision}
+                                    disabled={isCalculating || !month}
                                     className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 dark:disabled:bg-slate-800 text-white font-semibold py-2.5 rounded-xl transition-all shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2"
                                 >
                                     {isCalculating ? (
@@ -403,7 +408,7 @@ export default function SecondSalaryPaymentsPage() {
                             Salary Comparison
                         </h2>
                         <button
-                            onClick={handleExportExcel}
+                            onClick={handleExportComparisonExcel}
                             className="inline-flex items-center px-4 py-2 text-sm font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl hover:bg-emerald-100 transition-all"
                         >
                             <Download className="w-4 h-4 mr-2" />
