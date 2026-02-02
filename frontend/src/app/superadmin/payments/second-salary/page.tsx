@@ -18,7 +18,7 @@ import {
     Search
 } from 'lucide-react';
 import Link from 'next/link';
-import { toast } from 'react-toastify';
+import Swal from 'sweetalert2';
 import { format } from 'date-fns';
 import * as XLSX from 'xlsx';
 
@@ -106,7 +106,11 @@ export default function SecondSalaryPaymentsPage() {
             }
         } catch (error) {
             console.error('Error fetching comparison:', error);
-            toast.error('Failed to load comparison data');
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: 'Failed to load comparison data',
+            });
         } finally {
             setIsComparing(false);
         }
@@ -114,7 +118,11 @@ export default function SecondSalaryPaymentsPage() {
 
     const handleRunPayroll = async () => {
         if (!selectedDivision || !selectedDepartment || !month) {
-            toast.error('Please select Division, Department and Month');
+            Swal.fire({
+                icon: 'warning',
+                title: 'Missing Selection',
+                text: 'Please select Division, Department and Month',
+            });
             return;
         }
 
@@ -127,18 +135,40 @@ export default function SecondSalaryPaymentsPage() {
             });
 
             if (res.success) {
-                const { successCount, failCount } = res.data || res;
+                // Backend now returns successCount/failCount inside data
+                const { successCount, failCount } = res.data || {};
+
                 if (failCount === 0) {
-                    toast.success(`Success: 2nd Salary calculated for ${successCount} employees.`);
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Success',
+                        text: `2nd Salary calculated for ${successCount} employees.`,
+                        timer: 3000,
+                        showConfirmButton: false,
+                        toast: true,
+                        position: 'top-end'
+                    });
                 } else {
-                    toast.warning(`Calculated ${successCount} successfully, but ${failCount} failed.`);
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Partial Success',
+                        text: `Calculated ${successCount} successfully, but ${failCount} failed.`,
+                    });
                 }
                 fetchBatches();
             } else {
-                toast.error(res.message || 'Failed to calculate');
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Calculation Failed',
+                    text: res.message || 'Failed to calculate',
+                });
             }
         } catch (error: any) {
-            toast.error(error.message || 'Error running 2nd salary payroll');
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: error.message || 'Error running 2nd salary payroll',
+            });
         } finally {
             setIsCalculating(false);
         }
@@ -162,18 +192,35 @@ export default function SecondSalaryPaymentsPage() {
             });
 
             if (res.success) {
-                const { successCount, failCount } = res.data || res;
+                const { successCount, failCount } = res.data || {};
+
                 if (failCount === 0) {
-                    toast.success(`Global success: 2nd Salary calculated for ${successCount} employees.`);
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Global Success',
+                        text: `2nd Salary calculated for ${successCount} employees.`,
+                    });
                 } else {
-                    toast.warning(`Global processing complete. ${successCount} success, ${failCount} failed.`);
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Global Processing Complete',
+                        text: `${successCount} success, ${failCount} failed.`,
+                    });
                 }
                 fetchBatches();
             } else {
-                toast.error(res.message || 'Failed to calculate');
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Global Calculation Failed',
+                    text: res.message || 'Failed to calculate',
+                });
             }
         } catch (error: any) {
-            toast.error(error.message || 'Error running global calculation');
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: error.message || 'Error running global calculation',
+            });
         } finally {
             setIsCalculating(false);
         }
@@ -181,7 +228,15 @@ export default function SecondSalaryPaymentsPage() {
 
     const handleExportExcel = () => {
         if (comparisonData.length === 0) {
-            toast.warning('No data to export');
+            Swal.fire({
+                icon: 'warning',
+                title: 'No Data',
+                text: 'No data to export',
+                timer: 2000,
+                showConfirmButton: false,
+                toast: true,
+                position: 'top-end'
+            });
             return;
         }
 
