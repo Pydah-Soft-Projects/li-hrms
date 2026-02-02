@@ -24,10 +24,10 @@ function buildSecondSalaryExcelRowsNormalized(record, allAllowanceNames, allDedu
         'Payment Mode': employee?.salary_mode || '',
         'Bank Name': employee?.bank_name || '',
         'Bank Account No': employee?.bank_account_no || '',
-        '2ND SALARY BASIC': record.earnings?.basicPay || 0,
+        'BASIC': record.earnings?.basicPay || 0,
     };
 
-    // Allowances
+    // Allowances (Gross)
     const employeeAllowances = {};
     if (record.earnings && Array.isArray(record.earnings.allowances)) {
         record.earnings.allowances.forEach(allowance => {
@@ -41,24 +41,30 @@ function buildSecondSalaryExcelRowsNormalized(record, allAllowanceNames, allDedu
         row[allowanceName] = employeeAllowances[allowanceName] || 0;
     });
 
-    row['TOTAL GROSS'] = record.earnings?.grossSalary || 0;
+    row['TOTAL GROSS SALARY'] = record.earnings?.grossSalary || 0;
 
     // Attendance
     row['Month Days'] = record.totalDaysInMonth || 0;
     row['Present Days'] = record.attendance?.presentDays || 0;
+    row['Week Offs'] = record.attendance?.weeklyOffs || 0;
     row['Paid Leaves'] = record.attendance?.paidLeaveDays || 0;
     row['OD Days'] = record.attendance?.odDays || 0;
-    row['Weekly Offs'] = record.attendance?.weeklyOffs || 0;
-    row['Holidays'] = record.attendance?.holidays || 0;
-    row['Absent Days'] = record.attendance?.absentDays || 0;
+    row['Absents'] = record.attendance?.absentDays || 0;
+    row['LOP\'s'] = record.attendance?.lopDays || 0;
     row['Payable Shifts'] = record.attendance?.payableShifts || 0;
     row['Extra Days'] = record.attendance?.extraDays || 0;
     row['Total Paid Days'] = record.attendance?.totalPaidDays || 0;
+    row['Attendance Deduction Days'] = record.deductions?.attendanceDeductionBreakdown?.daysDeducted || 0;
+    row['Final Paid Days'] = Math.max(0, (row['Total Paid Days'] - (row['Attendance Deduction Days'] || 0)));
 
-    // OT
-    row['OT Days'] = record.attendance?.otDays || 0;
-    row['OT Hours'] = record.attendance?.otHours || 0;
-    row['OT Amount'] = record.earnings?.otPay || 0;
+    // Net earnings
+    row['Net Basic'] = record.attendance?.earnedSalary || record.earnings?.payableAmount || 0;
+
+    allAllowanceNames.forEach(allowanceName => {
+        row[`Net ${allowanceName}`] = employeeAllowances[allowanceName] || 0; // Assuming allowances are same in net for 2nd salary
+    });
+
+    row['Total Earnings'] = (row['Net Basic'] || 0) + (record.earnings?.totalAllowances || 0);
 
     // Deductions
     const employeeDeductions = {};
@@ -74,11 +80,20 @@ function buildSecondSalaryExcelRowsNormalized(record, allAllowanceNames, allDedu
         row[deductionName] = employeeDeductions[deductionName] || 0;
     });
 
-    row['Attendance Deduction'] = record.deductions?.attendanceDeduction || 0;
-    row['Permission Deduction'] = record.deductions?.permissionDeduction || 0;
-    row['Leave Deduction'] = record.deductions?.leaveDeduction || 0;
-    row['Advance Deduction'] = record.loanAdvance?.advanceDeduction || 0;
+    row['Fines'] = 0;
+    row['Salary Advance'] = record.loanAdvance?.advanceDeduction || 0;
     row['Total Deductions'] = record.deductions?.totalDeductions || 0;
+
+    // OT & Incentives
+    row['OT Days'] = record.attendance?.otDays || 0;
+    row['OT Hours'] = record.attendance?.otHours || 0;
+    row['OT Amount'] = record.earnings?.otPay || 0;
+    row['Incentives'] = (record.earnings?.incentive || 0) + (record.extraDaysPay || 0);
+    row['Other Amount'] = 0;
+    row['Total Other Earnings'] = (row['OT Amount'] || 0) + (row['Incentives'] || 0);
+
+    // Arrears
+    row['Arrears'] = record.arrearsAmount || 0;
 
     // Final
     row['NET SALARY'] = record.netSalary || 0;
