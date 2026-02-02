@@ -1089,7 +1089,7 @@ export default function EmployeesPage() {
       };
 
       const headers = EXPORT_FIELDS.filter((f) => selectedKeys.includes(f.key)).map((f) => f.label);
-      const rows = employeesData.map((emp) => {
+      const rows = employeesData.map((emp: any) => {
         const row: Record<string, string | number> = {};
         EXPORT_FIELDS.filter((f) => selectedKeys.includes(f.key)).forEach((f) => {
           row[f.label] = getValue(emp, f.key);
@@ -4046,8 +4046,8 @@ export default function EmployeesPage() {
                   {EXPORT_FIELDS.filter((field) =>
                     field.label.toLowerCase().includes(exportFieldSearch.toLowerCase())
                   ).length === 0 && (
-                    <p className="col-span-2 py-4 text-center text-sm text-slate-500 dark:text-slate-400">No fields match your search</p>
-                  )}
+                      <p className="col-span-2 py-4 text-center text-sm text-slate-500 dark:text-slate-400">No fields match your search</p>
+                    )}
                 </div>
               </div>
               <div className="flex gap-3">
