@@ -1182,7 +1182,7 @@ export default function PayRegisterPage() {
                           if (response.success) {
                             const allEmployees = response.data || [];
                             const headers = ["Employee Code", "Employee Name", "Department", "Division", "Total Present", "Total Absent", "Paid Leaves", "LOP Count", "Total OD", "Total Extra Days", "Total OT Hours", "Holidays", "Lates"];
-                            const sampleData = allEmployees.map(pr => ({
+                            const sampleData = allEmployees.map((pr: any) => ({
                               "Employee Code": typeof pr.employeeId === 'object' ? pr.employeeId.emp_no : pr.emp_no,
                               "Employee Name": typeof pr.employeeId === 'object' ? pr.employeeId.employee_name : '',
                               "Department": (typeof pr.employeeId === 'object' && pr.employeeId.department_id) ? (pr.employeeId.department_id as any).name : '',
