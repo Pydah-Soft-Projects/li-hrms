@@ -7,7 +7,7 @@ const Loan = require('../../loans/model/Loan');
 const payrollCalculationService = require('../services/payrollCalculationService');
 const XLSX = require('xlsx');
 const PayRegisterSummary = require('../../pay-register/model/PayRegisterSummary');
-const MonthlyAttendanceSummary = require('../../attendance/model/MonthlyAttendanceSummary');  
+const MonthlyAttendanceSummary = require('../../attendance/model/MonthlyAttendanceSummary');
 /**
  * Payroll Controller
  * Handles payroll calculation, retrieval, and processing
@@ -250,7 +250,7 @@ function buildPayslipExcelRowsNormalized(payslip, allAllowanceNames, allDeductio
   row['Extra Days'] = payslip.attendance?.extraDays || 0;
   row['Total Paid Days'] = payslip.paidDays || 0;
   row['Attendance Deduction Days'] = payslip.attendanceDeductionDays ?? payslip.attendance?.attendanceDeductionDays ?? 0;
-  row['Final Paid Days'] = payslip.finalPaidDays ?? payslip.attendance?.finalPaidDays ?? (row['Total Paid Days'] - (row['Attendance Deduction Days'] || 0));
+  row['Final Paid Days'] = Math.max((row['Total Paid Days'] - (row['Attendance Deduction Days'] || 0)), 0);
 
   // Net earnings
   row['Net Basic'] = payslip.attendance?.earnedSalary || payslip.earnings.earnedSalary || 0;
@@ -485,7 +485,7 @@ exports.calculatePayroll = async (req, res) => {
  */
 exports.exportPayrollExcel = async (req, res) => {
   try {
-    const { month, departmentId, employeeIds } = req.query;
+    const { month, departmentId, divisionId, status, search, employeeIds } = req.query;
 
     if (!month || !/^\d{4}-\d{2}$/.test(month)) {
       return res.status(400).json({
@@ -500,11 +500,26 @@ exports.exportPayrollExcel = async (req, res) => {
         .split(',')
         .map((id) => id.trim())
         .filter(Boolean);
-    } else if (departmentId) {
-      const emps = await Employee.find({ ...req.scopeFilter, department_id: departmentId }).select('_id');
-      targetEmployeeIds = emps.map((e) => e._id.toString());
-    } else if (req.scopeFilter && Object.keys(req.scopeFilter).length > 0) {
-      const emps = await Employee.find(req.scopeFilter).select('_id');
+    } else {
+      // Build Employee Query based on filters
+      const employeeQuery = { ...req.scopeFilter };
+      if (departmentId) employeeQuery.department_id = departmentId;
+      if (divisionId) employeeQuery.division_id = divisionId;
+
+      if (status === 'active') {
+        employeeQuery.is_active = true;
+      } else if (status === 'inactive') {
+        employeeQuery.is_active = false;
+      }
+
+      if (search) {
+        employeeQuery.$or = [
+          { employee_name: { $regex: search, $options: 'i' } },
+          { emp_no: { $regex: search, $options: 'i' } }
+        ];
+      }
+
+      const emps = await Employee.find(employeeQuery).select('_id');
       targetEmployeeIds = emps.map((e) => e._id.toString());
     }
 

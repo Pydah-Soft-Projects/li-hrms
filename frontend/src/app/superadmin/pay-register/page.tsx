@@ -4,11 +4,10 @@ import { useState, useEffect } from 'react';
 import { useRouter } from "next/navigation";
 import Link from 'next/link';
 import { api, apiRequest, Employee, Division } from '@/lib/api';
-import { toast, ToastContainer } from 'react-toastify';
 import ArrearsPayrollSection from '@/components/Arrears/ArrearsPayrollSection';
 import Spinner from '@/components/Spinner';
 import * as XLSX from 'xlsx';
-import 'react-toastify/dist/ReactToastify.css';
+import Swal from 'sweetalert2';
 
 
 
@@ -333,19 +332,35 @@ export default function PayRegisterPage() {
         }
 
         if (payRegisterList.length === 0 && !append) {
-          toast.info('No employees found for this selection');
+          Swal.fire({
+            icon: 'info',
+            title: 'No Employees',
+            text: 'No employees found for this selection',
+            timer: 2000,
+            showConfirmButton: false,
+            toast: true,
+            position: 'top-end'
+          });
         }
       } else {
         console.error('[Pay Register] API call failed:', response);
         if (!append) setPayRegisters([]);
         if (response.message) {
-          toast.error(response.message);
+          Swal.fire({
+            icon: 'error',
+            title: 'API Error',
+            text: response.message,
+          });
         }
       }
     } catch (err: any) {
       console.error('[Pay Register] Error loading pay registers:', err);
       if (!append) setPayRegisters([]);
-      toast.error(err.message || 'Failed to load pay registers');
+      Swal.fire({
+        icon: 'error',
+        title: 'Load Failed',
+        text: err.message || 'Failed to load pay registers',
+      });
     } finally {
       setLoading(false);
       setLoadingMore(false);
@@ -365,7 +380,15 @@ export default function PayRegisterPage() {
       // 1. First trigger a global attendance sync for this payroll cycle's date range
       // This ensures MongoDB records are updated from MSSQL/Biometric for the spanned dates
       if (payrollStartDate && payrollEndDate) {
-        toast.info('Syncing logs from biometric source...', { autoClose: 2000 });
+        Swal.fire({
+          icon: 'info',
+          title: 'Syncing',
+          text: 'Syncing logs from biometric source...',
+          timer: 2000,
+          showConfirmButton: false,
+          toast: true,
+          position: 'top-end'
+        });
         await apiRequest('/attendance/sync', {
           method: 'POST',
           body: JSON.stringify({
@@ -383,10 +406,22 @@ export default function PayRegisterPage() {
 
       await Promise.all(syncPromises);
       await loadPayRegisters();
-      toast.success('All data synced successfully');
+      Swal.fire({
+        icon: 'success',
+        title: 'Synced',
+        text: 'All data synced successfully',
+        timer: 2000,
+        showConfirmButton: false,
+        toast: true,
+        position: 'top-end'
+      });
     } catch (err: any) {
       console.error('Error syncing pay registers:', err);
-      toast.error(err.message || 'Failed to sync pay registers');
+      Swal.fire({
+        icon: 'error',
+        title: 'Sync Failed',
+        text: err.message || 'Failed to sync pay registers',
+      });
     } finally {
       setSyncing(false);
     }
@@ -425,13 +460,29 @@ export default function PayRegisterPage() {
         setShowEditModal(false);
         setEditingRecord(null);
         setIsHalfDayMode(false);
-        toast.success('Date updated successfully');
+        Swal.fire({
+          icon: 'success',
+          title: 'Updated',
+          text: 'Date updated successfully',
+          timer: 2000,
+          showConfirmButton: false,
+          toast: true,
+          position: 'top-end'
+        });
       } else {
-        toast.error(response.message || 'Failed to update date');
+        Swal.fire({
+          icon: 'error',
+          title: 'Update Failed',
+          text: response.message || 'Failed to update date',
+        });
       }
     } catch (err: any) {
       console.error('Error updating date:', err);
-      toast.error(err.message || 'Failed to update date');
+      Swal.fire({
+        icon: 'error',
+        title: 'Update Failed',
+        text: err.message || 'Failed to update date',
+      });
     } finally {
       setSaving({ ...saving, [editingRecord.employeeId]: false });
     }
@@ -632,7 +683,15 @@ export default function PayRegisterPage() {
       const employeeId = typeof employee === 'object' ? employee._id : employee;
       const params = payrollStrategy === 'new' ? '?strategy=new' : '?strategy=legacy';
       setCalculatingId(employeeId);
-      toast.info('Calculating payroll...', { autoClose: 1200 });
+      Swal.fire({
+        icon: 'info',
+        title: 'Calculating',
+        text: 'Calculating payroll...',
+        timer: 1200,
+        showConfirmButton: false,
+        toast: true,
+        position: 'top-end'
+      });
 
       // Filter arrears for this specific employee
       // Note: ArrearsPayrollSection component stores arrears with employee info
@@ -645,13 +704,29 @@ export default function PayRegisterPage() {
       const response = await api.calculatePayroll(employeeId, monthStr, params, employeeArrears);
 
       if (response && response.data && response.data.batchId) {
-        toast.success('Payroll calculated! Redirecting to batch...');
+        Swal.fire({
+          icon: 'success',
+          title: 'Calculated',
+          text: 'Payroll calculated! Redirecting to batch...',
+          timer: 2000,
+          showConfirmButton: false,
+          toast: true,
+          position: 'top-end'
+        });
         // Small delay to let the toast be seen
         setTimeout(() => {
           router.push(`/superadmin/payments/${response.data.batchId}`);
         }, 1000);
       } else {
-        toast.success('Payroll calculated');
+        Swal.fire({
+          icon: 'success',
+          title: 'Success',
+          text: 'Payroll calculated',
+          timer: 2000,
+          showConfirmButton: false,
+          toast: true,
+          position: 'top-end'
+        });
       }
     } catch (err: any) {
       console.error('Error calculating payroll:', err);
@@ -680,7 +755,11 @@ export default function PayRegisterPage() {
         }
       }
 
-      toast.error(err.message || 'Failed to calculate payroll');
+      Swal.fire({
+        icon: 'error',
+        title: 'Calculation Error',
+        text: err.message || 'Failed to calculate payroll',
+      });
     } finally {
       setCalculatingId(null);
     }
@@ -691,25 +770,44 @@ export default function PayRegisterPage() {
     try {
       const response = await api.requestRecalculation(pendingBatchId, permissionReason);
       if (response.success) {
-        toast.success('Permission requested successfully');
+        Swal.fire({
+          icon: 'success',
+          title: 'Permission Requested',
+          text: 'Permission requested successfully',
+          timer: 2000,
+          showConfirmButton: false,
+          toast: true,
+          position: 'top-end'
+        });
         setShowPermissionModal(false);
         setPendingBatchId(null);
         setPermissionReason('');
       } else {
-        toast.error(response.message || 'Failed to request permission');
+        Swal.fire({
+          icon: 'error',
+          title: 'Request Failed',
+          text: response.message || 'Failed to request permission',
+        });
       }
     } catch (error: any) {
-      toast.error(error.message || 'Error asking for permission');
+      Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: error.message || 'Error asking for permission',
+      });
     }
   };
 
   const downloadPayrollExcel = async (employeeIds?: string[]) => {
     try {
       setExportingExcel(true);
+      const targetDeptId = selectedDepartment && selectedDepartment.trim() !== '' ? selectedDepartment : undefined;
+      const targetDivId = selectedDivision && selectedDivision.trim() !== '' ? selectedDivision : undefined;
+
       const blob = await api.exportPayrollExcel({
         month: monthStr,
-        departmentId:
-          selectedDepartment && selectedDepartment.trim() !== '' ? selectedDepartment : undefined,
+        departmentId: targetDeptId,
+        divisionId: targetDivId,
         employeeIds,
       });
       const url = window.URL.createObjectURL(blob);
@@ -720,14 +818,26 @@ export default function PayRegisterPage() {
       a.click();
       a.remove();
       window.URL.revokeObjectURL(url);
-      toast.success('Payroll Excel ready');
+      Swal.fire({
+        icon: 'success',
+        title: 'Ready',
+        text: 'Payroll Excel ready',
+        timer: 2000,
+        showConfirmButton: false,
+        toast: true,
+        position: 'top-end'
+      });
     } catch (err: any) {
       // Debug: Log the error details
       console.log('[Export Error]', err?.message || err);
       // Show user-friendly error message via toast
       const errorMessage = err?.message || 'Failed to export payroll Excel';
       console.log('[Showing Toast]', errorMessage);
-      toast.error(errorMessage);
+      Swal.fire({
+        icon: 'error',
+        title: 'Export Failed',
+        text: errorMessage,
+      });
     } finally {
       setExportingExcel(false);
     }
@@ -735,7 +845,15 @@ export default function PayRegisterPage() {
 
   const handleCalculatePayrollForAll = async () => {
     if (!payRegisters || payRegisters.length === 0) {
-      toast.info('No employees to calculate payroll for.');
+      Swal.fire({
+        icon: 'info',
+        title: 'No Employees',
+        text: 'No employees to calculate payroll for.',
+        timer: 2000,
+        showConfirmButton: false,
+        toast: true,
+        position: 'top-end'
+      });
       return;
     }
     const params = payrollStrategy === 'new' ? '?strategy=new' : '?strategy=legacy';
@@ -744,7 +862,15 @@ export default function PayRegisterPage() {
     const batchIds = new Set<string>(); // Store unique batch IDs
 
     setBulkCalculating(true);
-    toast.info('Calculating payroll for listed employees...');
+    Swal.fire({
+      icon: 'info',
+      title: 'Calculating',
+      text: 'Calculating payroll for listed employees...',
+      timer: 2000,
+      showConfirmButton: false,
+      toast: true,
+      position: 'top-end'
+    });
     try {
       const requestData = {
         month: monthStr,
@@ -767,25 +893,53 @@ export default function PayRegisterPage() {
         }
 
         if (failCount === 0) {
-          toast.success(`Payroll calculated for ${successCount} employees`);
+          Swal.fire({
+            icon: 'success',
+            title: 'Success',
+            text: 'Payroll calculated successfully for all employees',
+          });
         } else {
-          toast.error(`Calculated ${successCount}, failed ${failCount}`);
+          Swal.fire({
+            icon: 'warning',
+            title: 'Partial Success',
+            text: `Calculation completed with ${failCount} failures`,
+          });
         }
       } else {
-        toast.error(response.message || 'Bulk calculation failed');
+        Swal.fire({
+          icon: 'error',
+          title: 'Bulk Calculation Failed',
+          text: response.message || 'Bulk calculation failed',
+        });
       }
 
       // Redirect logic based on batches created
       if (batchIds.size === 1) {
         // Single batch -> Redirect to that batch
         const batchId = Array.from(batchIds)[0];
-        toast.info('Redirecting to Batch Details...');
+        Swal.fire({
+          icon: 'info',
+          title: 'Redirecting',
+          text: 'Redirecting to Batch Details...',
+          timer: 1500,
+          showConfirmButton: false,
+          toast: true,
+          position: 'top-end'
+        });
         setTimeout(() => {
           router.push(`/superadmin/payments/${batchId}`);
         }, 1500);
       } else if (batchIds.size > 1) {
         // Multiple batches -> Redirect to list
-        toast.info('Redirecting to Payments List...');
+        Swal.fire({
+          icon: 'info',
+          title: 'Redirecting',
+          text: 'Redirecting to Payments List...',
+          timer: 1500,
+          showConfirmButton: false,
+          toast: true,
+          position: 'top-end'
+        });
         setTimeout(() => {
           router.push('/superadmin/payments');
         }, 1500);
@@ -797,12 +951,24 @@ export default function PayRegisterPage() {
         );
         await downloadPayrollExcel(listedEmployeeIds);
       } else {
-        toast.warning('Calculation failed for all employees. Nothing to export.');
+        Swal.fire({
+          icon: 'warning',
+          title: 'No Export',
+          text: 'Calculation failed for all employees. Nothing to export.',
+          timer: 2000,
+          showConfirmButton: false,
+          toast: true,
+          position: 'top-end'
+        });
       }
 
     } catch (error: any) {
       console.log('[Bulk Calculate] Error:', error);
-      toast.error(error?.message || 'Failed to calculate payroll');
+      Swal.fire({
+        icon: 'error',
+        title: 'Calculation Failed',
+        text: error?.message || 'Failed to calculate payroll',
+      });
     } finally {
       setBulkCalculating(false);
     }
@@ -815,7 +981,11 @@ export default function PayRegisterPage() {
   const processPayroll = async () => {
     try {
       if (!selectedEmployee) {
-        toast.error('Please select an employee');
+        Swal.fire({
+          icon: 'error',
+          title: 'No Employee Selected',
+          text: 'Please select an employee',
+        });
         return;
       }
 
@@ -836,18 +1006,33 @@ export default function PayRegisterPage() {
       });
 
       // Process arrears settlement after successful payroll
-      if (selectedArrears.length > 0 && response.success) {
-        await settleArrears(response.data.payrollId);
-      }
-
       if (response.success) {
-        toast.success('Payroll processed successfully');
+        if (selectedArrears.length > 0) {
+          await settleArrears(response.data.payrollId);
+        }
+        Swal.fire({
+          icon: 'success',
+          title: 'Success',
+          text: 'Payroll processed successfully',
+          timer: 2000,
+          showConfirmButton: false,
+          toast: true,
+          position: 'top-end'
+        });
       } else {
-        toast.error(response.message || 'Failed to process payroll');
+        Swal.fire({
+          icon: 'error',
+          title: 'Processing Failed',
+          text: response.message || 'Failed to process payroll',
+        });
       }
     } catch (error: any) {
       console.error('Error processing payroll:', error);
-      toast.error('Failed to process payroll');
+      Swal.fire({
+        icon: 'error',
+        title: 'Processing Failed',
+        text: 'Failed to process payroll',
+      });
     }
   };
 
@@ -862,10 +1047,22 @@ export default function PayRegisterPage() {
           year: selectedYear,
         });
       }
-      toast.success('Arrears settled successfully');
+      Swal.fire({
+        icon: 'success',
+        title: 'Arrears Settled',
+        text: 'Arrears settled successfully',
+        timer: 2000,
+        showConfirmButton: false,
+        toast: true,
+        position: 'top-end'
+      });
     } catch (error) {
       console.error('Error settling arrears:', error);
-      toast.error('Failed to settle arrears');
+      Swal.fire({
+        icon: 'error',
+        title: 'Settlement Failed',
+        text: 'Failed to settle arrears',
+      });
     }
   };
 
@@ -1018,7 +1215,11 @@ export default function PayRegisterPage() {
                           setPendingBatchId(batchInfo.batchId);
                           setShowPermissionModal(true);
                         } else {
-                          toast.error("Batch ID not found");
+                          Swal.fire({
+                            icon: 'error',
+                            title: 'Error',
+                            text: "Batch ID not found",
+                          });
                         }
                       }}
                       className="h-9 px-4 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-xl shadow-sm transition-all"
@@ -1051,10 +1252,7 @@ export default function PayRegisterPage() {
 
                   <button
                     onClick={async () => {
-                      const listedEmployeeIds = payRegisters.map((pr) =>
-                        typeof pr.employeeId === 'object' ? pr.employeeId._id : pr.employeeId
-                      );
-                      await downloadPayrollExcel(listedEmployeeIds);
+                      await downloadPayrollExcel();
                     }}
                     disabled={exportingExcel || payRegisters.length === 0}
                     className="h-9 px-4 flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold rounded-xl shadow-sm disabled:opacity-50 transition-all"
@@ -1132,13 +1330,29 @@ export default function PayRegisterPage() {
 
                               if (response.success && response.data) {
                                 setUploadResults(response.data);
-                                toast.success("Upload processed successfully!");
+                                Swal.fire({
+                                  icon: 'success',
+                                  title: 'Uploaded',
+                                  text: "Upload processed successfully!",
+                                  timer: 2000,
+                                  showConfirmButton: false,
+                                  toast: true,
+                                  position: 'top-end'
+                                });
                                 loadPayRegisters(); // Refresh table
                               } else {
-                                toast.error(response.error || "Failed to process upload");
+                                Swal.fire({
+                                  icon: 'error',
+                                  title: 'Upload Failed',
+                                  text: response.error || "Failed to process upload",
+                                });
                               }
                             } catch (err: any) {
-                              toast.error(err.message || "Error parsing file");
+                              Swal.fire({
+                                icon: 'error',
+                                title: 'Error',
+                                text: err.message || "Error parsing file",
+                              });
                             } finally {
                               setUploadingSummary(false);
                             }
@@ -1202,13 +1416,29 @@ export default function PayRegisterPage() {
                             const wb = XLSX.utils.book_new();
                             XLSX.utils.book_append_sheet(wb, ws, "Attendance Summary");
                             XLSX.writeFile(wb, `Payroll_Summary_Template_${monthStr}.xlsx`);
-                            toast.success(`Template downloaded with ${allEmployees.length} employees`);
+                            Swal.fire({
+                              icon: 'success',
+                              title: 'Template Ready',
+                              text: `Template downloaded with ${allEmployees.length} employees`,
+                              timer: 2000,
+                              showConfirmButton: false,
+                              toast: true,
+                              position: 'top-end'
+                            });
                           } else {
-                            toast.error(response.message || "Failed to fetch employees for template");
+                            Swal.fire({
+                              icon: 'error',
+                              title: 'Fetch Failed',
+                              text: response.message || "Failed to fetch employees for template",
+                            });
                           }
                         } catch (err: any) {
                           console.error('Error downloading template:', err);
-                          toast.error(err.message || 'Error generating template');
+                          Swal.fire({
+                            icon: 'error',
+                            title: 'Generation Failed',
+                            text: err.message || 'Error generating template',
+                          });
                         } finally {
                           setDownloadingTemplate(false);
                         }
@@ -2333,7 +2563,6 @@ export default function PayRegisterPage() {
           onArrearsSelected={handleArrearsSelected}
         />
       </div>
-      <ToastContainer position="top-right" autoClose={3000} />
     </div >
   );
 }
