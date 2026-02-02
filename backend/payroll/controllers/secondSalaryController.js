@@ -27,7 +27,11 @@ exports.calculateSecondSalary = async (req, res) => {
         res.status(201).json({
             success: true,
             message: '2nd Salary payroll calculation completed',
-            data: result.batch,
+            data: {
+                ...result.batch?._doc,
+                successCount: result.successCount,
+                failCount: result.failCount
+            },
             summary: result.results
         });
     } catch (error) {
