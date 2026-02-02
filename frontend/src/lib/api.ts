@@ -2566,10 +2566,20 @@ export const api = {
     });
   },
 
-  exportPayrollExcel: async (params: { month: string; departmentId?: string; employeeIds?: string[] }) => {
+  exportPayrollExcel: async (params: {
+    month: string;
+    departmentId?: string;
+    divisionId?: string;
+    status?: string;
+    search?: string;
+    employeeIds?: string[]
+  }) => {
     const query = new URLSearchParams();
     query.append('month', params.month);
     if (params.departmentId) query.append('departmentId', params.departmentId);
+    if (params.divisionId) query.append('divisionId', params.divisionId);
+    if (params.status) query.append('status', params.status);
+    if (params.search) query.append('search', params.search);
     if (params.employeeIds && params.employeeIds.length > 0) {
       query.append('employeeIds', params.employeeIds.join(','));
     }
