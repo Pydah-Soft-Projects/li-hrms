@@ -44,6 +44,7 @@ const PERMANENT_FIELDS = [
   'ctcSalary',
   'calculatedSalary',
   'is_active',
+  'second_salary',
 ];
 
 /**
