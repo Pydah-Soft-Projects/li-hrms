@@ -49,7 +49,8 @@ const normalizeOverrides = (list, fallbackCategory) => {
     })
     .map((ov) => {
       // Create a clean copy of the override
-      const override = { ...ov };
+      // Use toObject() if it's a Mongoose subdocument, otherwise spread properties
+      const override = (ov && typeof ov.toObject === 'function') ? ov.toObject() : { ...ov };
 
       // Ensure category is set
       override.category = override.category || fallbackCategory;
@@ -314,7 +315,18 @@ async function calculatePayroll(employeeId, month, userId) {
     });
 
     // Merge allowances and apply employee overrides
-    const allAllowances = [...allowances, ...allowancesWithGrossBase];
+    const rawAllAllowances = [...allowances, ...allowancesWithGrossBase];
+
+    // Deduplicate base allowances (masterId or name)
+    const uniqueBaseAllowancesMap = new Map();
+    rawAllAllowances.forEach(allow => {
+      const key = allow.masterId ? allow.masterId.toString() : allow.name?.trim().toLowerCase();
+      if (key && !uniqueBaseAllowancesMap.has(key)) {
+        uniqueBaseAllowancesMap.set(key, allow);
+      }
+    });
+    const allAllowances = Array.from(uniqueBaseAllowancesMap.values());
+
     const includeMissing = await getIncludeMissingFlag(departmentId, employee.division_id);
 
     // Accept employee overrides even if category was missing/old; normalize to 'allowance'
@@ -330,6 +342,11 @@ async function calculatePayroll(employeeId, month, userId) {
     console.log(`\n--- Base Allowances (Dept/Global): ${allAllowances.length} items ---`);
     allAllowances.forEach((base, idx) => {
       console.log(`  [${idx + 1}] ${base.name} (masterId: ${base.masterId}, amount: ${base.amount})`);
+    });
+
+    console.log(`\n--- Normalized Allowance Overrides: ${allowanceOverrides.length} items ---`);
+    allowanceOverrides.forEach((ov, idx) => {
+      console.log(`  [${idx + 1}] ${ov.name} (masterId: ${ov.masterId}, amount: ${ov.amount}, category: ${ov.category})`);
     });
 
     const mergedAllowances = mergeWithOverrides(allAllowances, allowanceOverrides, includeMissing);
@@ -484,6 +501,11 @@ async function calculatePayroll(employeeId, month, userId) {
     console.log(`\n--- Base Deductions (Dept/Global): ${allOtherDeductions.length} items ---`);
     allOtherDeductions.forEach((base, idx) => {
       console.log(`  [${idx + 1}] ${base.name} (masterId: ${base.masterId}, amount: ${base.amount})`);
+    });
+
+    console.log(`\n--- Normalized Deduction Overrides: ${deductionOverrides.length} items ---`);
+    deductionOverrides.forEach((ov, idx) => {
+      console.log(`  [${idx + 1}] ${ov.name} (masterId: ${ov.masterId}, amount: ${ov.amount}, category: ${ov.category})`);
     });
 
     const mergedDeductions = mergeWithOverrides(allOtherDeductions, deductionOverrides, includeMissing);

@@ -443,7 +443,9 @@ export default function SettingsPage() {
         description: 'The day of the month when the payroll cycle ends. Default is 31 (end of month).'
       });
 
-      if (resRelease.success && resHistory.success && resLimit.success && resStartDay.success && resEndDay.success) {
+      const resIncludeMissing = await api.saveIncludeMissingSetting(includeMissing);
+
+      if (resRelease.success && resHistory.success && resLimit.success && resStartDay.success && resEndDay.success && resIncludeMissing.success) {
         setMessage({ type: 'success', text: 'Payroll settings saved successfully' });
       } else {
         setMessage({ type: 'error', text: 'Failed to save payroll settings' });
