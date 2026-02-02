@@ -990,11 +990,17 @@ export default function PayRegisterPage() {
               {syncing ? 'Syncing...' : 'Sync All'}
             </button>
 
+            <button
+              onClick={() => setShowUploadModal(true)}
+              className="h-9 px-4 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-sm transition-all"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+              Upload Summary
+            </button>
+
             {(() => {
-              if (isPastMonth) {
-                const hasPayrollRecords = payRegisters.some(pr => !!pr.payrollId);
-                if (hasPayrollRecords) return null;
-              }
 
               if (selectedDepartment) {
                 const batchInfo = departmentBatchStatus.get(selectedDepartment);
@@ -1040,16 +1046,6 @@ export default function PayRegisterPage() {
                     className="h-9 px-4 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-xl shadow-sm disabled:opacity-50 transition-all"
                   >
                     {bulkCalculating ? 'Calculating...' : 'Calculate Payroll'}
-                  </button>
-
-                  <button
-                    onClick={() => setShowUploadModal(true)}
-                    className="h-9 px-4 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-sm transition-all"
-                  >
-                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                    </svg>
-                    Upload Summary
                   </button>
 
                   <button
@@ -1124,9 +1120,9 @@ export default function PayRegisterPage() {
                               const ws = wb.Sheets[wsname];
                               const data = XLSX.utils.sheet_to_json(ws);
 
-                              const monthStr = currentDate.toISOString().slice(0, 7);
+                              const uploadMonthStr = monthStr;
                               const response = await apiRequest<{ success: number; failed: number; total: number; errors: string[] }>(
-                                `/pay-register/upload-summary/${monthStr}`,
+                                `/pay-register/upload-summary/${uploadMonthStr}`,
                                 {
                                   method: 'POST',
                                   body: JSON.stringify({ data })
@@ -1303,91 +1299,93 @@ export default function PayRegisterPage() {
       </div>
 
       {/* Summary Table */}
-      {!loading && payRegisters.length > 0 && (
-        <div className="mt-4 mb-8 rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-lg dark:border-slate-700 dark:bg-slate-900/80 overflow-x-auto">
-          <div className="p-4">
-            <h3 className="text-base font-semibold text-slate-900 dark:text-white mb-3">Monthly Summary</h3>
-            <table className="w-full border-collapse text-xs">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
-                  <th className="sticky left-0 z-10 w-[180px] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                    Employee
-                  </th>
-                  {[
-                    'Total Present',
-                    'Total Absent',
-                    'Total Leaves',
-                    'Paid Leaves',
-                    'LOP Count',
-                    'Total OD',
-                    'Total OT Hours',
-                    'Total Extra Days',
-                    'Lates',
-                    'Holidays & Weekoffs',
-                    'Paid Days',
-                    'Month Days',
-                    'Counted Days',
-                  ].map((label) => (
-                    <th
-                      key={label}
-                      className="border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 last:border-r-0"
-                    >
-                      {label}
+      {
+        !loading && payRegisters.length > 0 && (
+          <div className="mt-4 mb-8 rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-lg dark:border-slate-700 dark:bg-slate-900/80 overflow-x-auto">
+            <div className="p-4">
+              <h3 className="text-base font-semibold text-slate-900 dark:text-white mb-3">Monthly Summary</h3>
+              <table className="w-full border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
+                    <th className="sticky left-0 z-10 w-[180px] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                      Employee
                     </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                {getSummaryRows().map((row) => {
-                  const employee = typeof row.pr.employeeId === 'object' ? row.pr.employeeId : null;
-                  const empNo =
-                    typeof row.pr.employeeId === 'object' ? row.pr.employeeId.emp_no : row.pr.emp_no;
-                  const empName = typeof row.pr.employeeId === 'object' ? row.pr.employeeId.employee_name : '';
-                  const department =
-                    typeof row.pr.employeeId === 'object' && row.pr.employeeId.department_id
-                      ? typeof row.pr.employeeId.department_id === 'object'
-                        ? row.pr.employeeId.department_id.name
-                        : ''
-                      : '';
-                  return (
-                    <tr key={row.pr._id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                      <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 text-[11px] font-medium text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white">
-                        <div>
-                          <div className="font-semibold truncate">{empName}</div>
-                          <div className="text-[9px] text-slate-500 dark:text-slate-400 truncate">
-                            {empNo}
-                            {department && ` • ${department}`}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="text-center px-2 py-2">{row.present.toFixed(1)}</td>
-                      <td className="text-center px-2 py-2">{row.absent.toFixed(1)}</td>
-                      <td className="text-center px-2 py-2">{row.leave.toFixed(1)}</td>
-                      <td className="text-center px-2 py-2 font-medium text-green-600 dark:text-green-400">{row.paidLeave.toFixed(1)}</td>
-                      <td className="text-center px-2 py-2 font-medium text-red-600 dark:text-red-400">{row.lop.toFixed(1)}</td>
-                      <td className="text-center px-2 py-2">{row.od.toFixed(1)}</td>
-                      <td className="text-center px-2 py-2">{row.ot.toFixed(1)}</td>
-                      <td className="text-center px-2 py-2">{row.extra.toFixed(1)}</td>
-                      <td className="text-center px-2 py-2 font-bold text-amber-600 dark:text-amber-400">{row.lateCount}</td>
-                      <td className="text-center px-2 py-2">{row.holidayAndWeekoffs.toFixed(1)}</td>
-                      <td className="text-center px-2 py-2 font-bold text-blue-600 dark:text-blue-400">{row.totalPaidDays.toFixed(1)}</td>
-                      <td className="text-center px-2 py-2">{row.monthDays}</td>
-                      <td
-                        className={`text-center px-2 py-2 font-semibold ${row.matchesMonth
-                          ? 'text-green-700 dark:text-green-400'
-                          : 'text-red-700 dark:text-red-400'
-                          }`}
+                    {[
+                      'Total Present',
+                      'Total Absent',
+                      'Total Leaves',
+                      'Paid Leaves',
+                      'LOP Count',
+                      'Total OD',
+                      'Total OT Hours',
+                      'Total Extra Days',
+                      'Lates',
+                      'Holidays & Weekoffs',
+                      'Paid Days',
+                      'Month Days',
+                      'Counted Days',
+                    ].map((label) => (
+                      <th
+                        key={label}
+                        className="border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 last:border-r-0"
                       >
-                        {row.countedDays.toFixed(1)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        {label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                  {getSummaryRows().map((row) => {
+                    const employee = typeof row.pr.employeeId === 'object' ? row.pr.employeeId : null;
+                    const empNo =
+                      typeof row.pr.employeeId === 'object' ? row.pr.employeeId.emp_no : row.pr.emp_no;
+                    const empName = typeof row.pr.employeeId === 'object' ? row.pr.employeeId.employee_name : '';
+                    const department =
+                      typeof row.pr.employeeId === 'object' && row.pr.employeeId.department_id
+                        ? typeof row.pr.employeeId.department_id === 'object'
+                          ? row.pr.employeeId.department_id.name
+                          : ''
+                        : '';
+                    return (
+                      <tr key={row.pr._id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                        <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 text-[11px] font-medium text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white">
+                          <div>
+                            <div className="font-semibold truncate">{empName}</div>
+                            <div className="text-[9px] text-slate-500 dark:text-slate-400 truncate">
+                              {empNo}
+                              {department && ` • ${department}`}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="text-center px-2 py-2">{row.present.toFixed(1)}</td>
+                        <td className="text-center px-2 py-2">{row.absent.toFixed(1)}</td>
+                        <td className="text-center px-2 py-2">{row.leave.toFixed(1)}</td>
+                        <td className="text-center px-2 py-2 font-medium text-green-600 dark:text-green-400">{row.paidLeave.toFixed(1)}</td>
+                        <td className="text-center px-2 py-2 font-medium text-red-600 dark:text-red-400">{row.lop.toFixed(1)}</td>
+                        <td className="text-center px-2 py-2">{row.od.toFixed(1)}</td>
+                        <td className="text-center px-2 py-2">{row.ot.toFixed(1)}</td>
+                        <td className="text-center px-2 py-2">{row.extra.toFixed(1)}</td>
+                        <td className="text-center px-2 py-2 font-bold text-amber-600 dark:text-amber-400">{row.lateCount}</td>
+                        <td className="text-center px-2 py-2">{row.holidayAndWeekoffs.toFixed(1)}</td>
+                        <td className="text-center px-2 py-2 font-bold text-blue-600 dark:text-blue-400">{row.totalPaidDays.toFixed(1)}</td>
+                        <td className="text-center px-2 py-2">{row.monthDays}</td>
+                        <td
+                          className={`text-center px-2 py-2 font-semibold ${row.matchesMonth
+                            ? 'text-green-700 dark:text-green-400'
+                            : 'text-red-700 dark:text-red-400'
+                            }`}
+                        >
+                          {row.countedDays.toFixed(1)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Table Tabs */}
       <div className="bg-white dark:bg-slate-800 rounded-lg shadow mb-8">
@@ -1542,11 +1540,7 @@ export default function PayRegisterPage() {
                       const batchStatus = batchInfo?.status || 'pending';
                       const hasPermission = batchInfo?.permissionGranted || false;
 
-                      const isPastMonth = new Date(year, month - 1, 1).getTime() < new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
-
-                      // Locked if Approved/Frozen/Complete AND no permission
-                      // OR if it is a past month (strict modification lock)
-                      const isLocked = (['approved', 'freeze', 'complete'].includes(batchStatus) && !hasPermission) || isPastMonth;
+                      const isLocked = (['approved', 'freeze', 'complete'].includes(batchStatus) && !hasPermission);
                       const isFrozenOrComplete = ['freeze', 'complete'].includes(batchStatus);
 
                       return (
@@ -1565,7 +1559,7 @@ export default function PayRegisterPage() {
                                   )}
                                 </div>
                                 <div className="flex gap-2">
-                                  {isPastMonth && !pr.payrollId ? (
+                                  {!pr.payrollId ? (
                                     <button
                                       onClick={(e) => {
                                         e.stopPropagation();
@@ -1767,337 +1761,83 @@ export default function PayRegisterPage() {
       </div>
 
       {/* Edit Modal - Tab-specific dialogs */}
-      {showEditModal && editingRecord && (
-        <div className="fixed inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto border border-slate-200 dark:border-slate-700">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                  Edit: {editingRecord.date} - {editingRecord.employee.employee_name}
-                </h2>
-                <button
-                  onClick={() => setShowEditModal(false)}
-                  className="text-slate-400 hover:text-slate-600"
-                >
-                  ✕
-                </button>
-              </div>
-
-              <div className="space-y-6">
-                {/* Half-Day Mode Toggle */}
-                <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={isHalfDayMode}
-                      onChange={(e) => {
-                        setIsHalfDayMode(e.target.checked);
-                        if (!e.target.checked) {
-                          // When disabling half-day mode, sync both halves to the same status
-                          const currentStatus = editData.status || editData.firstHalf?.status || 'absent';
-                          setEditData({
-                            ...editData,
-                            status: currentStatus,
-                            firstHalf: normalizeHalfDay(editData.firstHalf, currentStatus as any),
-                            secondHalf: normalizeHalfDay(editData.secondHalf, currentStatus as any),
-                            isSplit: false,
-                          });
-                        } else {
-                          setEditData({
-                            ...editData,
-                            isSplit: true,
-                          });
-                        }
-                      }}
-                      className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Enable Half-Day Mode
-                    </span>
-                  </label>
-                  {isHalfDayMode && (
-                    <span className="text-xs text-slate-500 dark:text-slate-400">
-                      (Edit first and second half separately)
-                    </span>
-                  )}
+      {
+        showEditModal && editingRecord && (
+          <div className="fixed inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto border border-slate-200 dark:border-slate-700">
+              <div className="p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                    Edit: {editingRecord.date} - {editingRecord.employee.employee_name}
+                  </h2>
+                  <button
+                    onClick={() => setShowEditModal(false)}
+                    className="text-slate-400 hover:text-slate-600"
+                  >
+                    ✕
+                  </button>
                 </div>
 
-                {/* First Half - Only show if half-day mode is enabled */}
-                {isHalfDayMode && (
-                  <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
-                    <h3 className="text-lg font-semibold mb-3 text-slate-900 dark:text-white">First Half</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          Status
-                        </label>
-                        <select
-                          value={editData.firstHalf?.status || 'absent'}
-                          onChange={(e) => setEditData({
-                            ...editData,
-                            firstHalf: {
-                              ...editData.firstHalf!,
-                              status: e.target.value as any,
-                              leaveType: e.target.value === 'leave' ? (editData.firstHalf?.leaveType || null) : null,
-                              leaveNature: e.target.value === 'leave' ? (editData.firstHalf?.leaveNature || null) : null,
-                              isOD: e.target.value === 'od',
-                            },
-                          })}
-                          className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                        >
-                          <option value="present">Present</option>
-                          <option value="absent">Absent</option>
-                          <option value="leave">Leave</option>
-                          <option value="od">OD</option>
-                          <option value="holiday">Holiday</option>
-                          <option value="week_off">Week Off</option>
-                        </select>
-                      </div>
-                      {editData.firstHalf?.status === 'leave' && (
-                        <>
-                          <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                              Leave Type
-                            </label>
-                            <select
-                              value={editData.firstHalf?.leaveType || ''}
-                              onChange={(e) => setEditData({
-                                ...editData,
-                                firstHalf: {
-                                  ...editData.firstHalf!,
-                                  leaveType: e.target.value,
-                                },
-                              })}
-                              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                            >
-                              <option value="">Select Leave Type</option>
-                              {leaveTypes.map((lt) => (
-                                <option key={lt.code} value={lt.code}>
-                                  {lt.name} ({lt.code})
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                              Leave Nature
-                            </label>
-                            <select
-                              value={editData.firstHalf?.leaveNature || 'paid'}
-                              onChange={(e) => setEditData({
-                                ...editData,
-                                firstHalf: {
-                                  ...editData.firstHalf!,
-                                  leaveNature: e.target.value as any,
-                                },
-                              })}
-                              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                            >
-                              <option value="paid">Paid</option>
-                              <option value="lop">LOP (Loss of Pay)</option>
-                            </select>
-                          </div>
-                        </>
-                      )}
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          OT Hours
-                        </label>
-                        <input
-                          type="number"
-                          step="0.5"
-                          min="0"
-                          value={editData.firstHalf?.otHours || 0}
-                          onChange={(e) => setEditData({
-                            ...editData,
-                            firstHalf: {
-                              ...editData.firstHalf!,
-                              otHours: parseFloat(e.target.value) || 0,
-                            },
-                          })}
-                          className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          Shift
-                        </label>
-                        <select
-                          value={editData.shiftId || ''}
-                          onChange={(e) => {
-                            const shift = shifts.find((s) => s._id === e.target.value);
+                <div className="space-y-6">
+                  {/* Half-Day Mode Toggle */}
+                  <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={isHalfDayMode}
+                        onChange={(e) => {
+                          setIsHalfDayMode(e.target.checked);
+                          if (!e.target.checked) {
+                            // When disabling half-day mode, sync both halves to the same status
+                            const currentStatus = editData.status || editData.firstHalf?.status || 'absent';
                             setEditData({
                               ...editData,
-                              shiftId: e.target.value || null,
-                              shiftName: shift?.name || null,
-                              firstHalf: {
-                                ...editData.firstHalf!,
-                                shiftId: e.target.value || null,
-                              },
-                              secondHalf: {
-                                ...editData.secondHalf!,
-                                shiftId: e.target.value || null,
-                              },
+                              status: currentStatus,
+                              firstHalf: normalizeHalfDay(editData.firstHalf, currentStatus as any),
+                              secondHalf: normalizeHalfDay(editData.secondHalf, currentStatus as any),
+                              isSplit: false,
                             });
-                          }}
-                          className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                        >
-                          <option value="">Select Shift</option>
-                          {shifts.map((shift) => (
-                            <option key={shift._id} value={shift._id}>
-                              {shift.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
+                          } else {
+                            setEditData({
+                              ...editData,
+                              isSplit: true,
+                            });
+                          }
+                        }}
+                        className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                        Enable Half-Day Mode
+                      </span>
+                    </label>
+                    {isHalfDayMode && (
+                      <span className="text-xs text-slate-500 dark:text-slate-400">
+                        (Edit first and second half separately)
+                      </span>
+                    )}
                   </div>
-                )}
 
-                {/* Second Half - Only show if half-day mode is enabled */}
-                {isHalfDayMode && (
-                  <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
-                    <h3 className="text-lg font-semibold mb-3 text-slate-900 dark:text-white">Second Half</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          Status
-                        </label>
-                        <select
-                          value={editData.secondHalf?.status || 'absent'}
-                          onChange={(e) => setEditData({
-                            ...editData,
-                            secondHalf: {
-                              ...editData.secondHalf!,
-                              status: e.target.value as any,
-                              leaveType: e.target.value === 'leave' ? (editData.secondHalf?.leaveType || null) : null,
-                              leaveNature: e.target.value === 'leave' ? (editData.secondHalf?.leaveNature || null) : null,
-                              isOD: e.target.value === 'od',
-                            },
-                          })}
-                          className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                        >
-                          <option value="present">Present</option>
-                          <option value="absent">Absent</option>
-                          <option value="leave">Leave</option>
-                          <option value="od">OD</option>
-                          <option value="holiday">Holiday</option>
-                          <option value="week_off">Week Off</option>
-                        </select>
-                      </div>
-                      {editData.secondHalf?.status === 'leave' && (
-                        <>
-                          <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                              Leave Type
-                            </label>
-                            <select
-                              value={editData.secondHalf?.leaveType || ''}
-                              onChange={(e) => setEditData({
-                                ...editData,
-                                secondHalf: {
-                                  ...editData.secondHalf!,
-                                  leaveType: e.target.value,
-                                },
-                              })}
-                              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                            >
-                              <option value="">Select Leave Type</option>
-                              {leaveTypes.map((lt) => (
-                                <option key={lt.code} value={lt.code}>
-                                  {lt.name} ({lt.code})
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                              Leave Nature
-                            </label>
-                            <select
-                              value={editData.secondHalf?.leaveNature || 'paid'}
-                              onChange={(e) => setEditData({
-                                ...editData,
-                                secondHalf: {
-                                  ...editData.secondHalf!,
-                                  leaveNature: e.target.value as any,
-                                },
-                              })}
-                              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                            >
-                              <option value="paid">Paid</option>
-                              <option value="lop">LOP (Loss of Pay)</option>
-                            </select>
-                          </div>
-                        </>
-                      )}
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          OT Hours
-                        </label>
-                        <input
-                          type="number"
-                          step="0.5"
-                          min="0"
-                          value={editData.secondHalf?.otHours || 0}
-                          onChange={(e) => setEditData({
-                            ...editData,
-                            secondHalf: {
-                              ...editData.secondHalf!,
-                              otHours: parseFloat(e.target.value) || 0,
-                            },
-                          })}
-                          className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Full Day Fields - Show when NOT in half-day mode OR for specific tabs */}
-                {!isHalfDayMode && (
-                  <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
-                    <h3 className="text-lg font-semibold mb-3 text-slate-900 dark:text-white">
-                      {activeTable === 'present' ? 'Present Status' :
-                        activeTable === 'absent' ? 'Absent Status' :
-                          activeTable === 'leaves' ? 'Leave Details' :
-                            activeTable === 'od' ? 'OD Details' :
-                              activeTable === 'ot' || activeTable === 'extraHours' ? 'OT Hours' :
-                                'Full Day'}
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {(activeTable === 'present' || activeTable === 'absent' || activeTable === 'leaves' || activeTable === 'od') && (
+                  {/* First Half - Only show if half-day mode is enabled */}
+                  {isHalfDayMode && (
+                    <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+                      <h3 className="text-lg font-semibold mb-3 text-slate-900 dark:text-white">First Half</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                             Status
                           </label>
                           <select
-                            value={editData.status || 'absent'}
-                            onChange={(e) => {
-                              const newStatus = e.target.value as any;
-                              setEditData({
-                                ...editData,
-                                status: newStatus,
-                                firstHalf: {
-                                  ...editData.firstHalf!,
-                                  status: newStatus,
-                                  leaveType: newStatus === 'leave' ? (editData.firstHalf?.leaveType || null) : null,
-                                  leaveNature: newStatus === 'leave' ? (editData.firstHalf?.leaveNature || null) : null,
-                                  isOD: newStatus === 'od',
-                                },
-                                secondHalf: {
-                                  ...editData.secondHalf!,
-                                  status: newStatus,
-                                  leaveType: newStatus === 'leave' ? (editData.secondHalf?.leaveType || null) : null,
-                                  leaveNature: newStatus === 'leave' ? (editData.secondHalf?.leaveNature || null) : null,
-                                  isOD: newStatus === 'od',
-                                },
-                                leaveType: newStatus === 'leave' ? (editData.leaveType || null) : null,
-                                leaveNature: newStatus === 'leave' ? (editData.leaveNature || null) : null,
-                                isOD: newStatus === 'od',
-                                isSplit: false,
-                              });
-                            }}
+                            value={editData.firstHalf?.status || 'absent'}
+                            onChange={(e) => setEditData({
+                              ...editData,
+                              firstHalf: {
+                                ...editData.firstHalf!,
+                                status: e.target.value as any,
+                                leaveType: e.target.value === 'leave' ? (editData.firstHalf?.leaveType || null) : null,
+                                leaveNature: e.target.value === 'leave' ? (editData.firstHalf?.leaveNature || null) : null,
+                                isOD: e.target.value === 'od',
+                              },
+                            })}
                             className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
                           >
                             <option value="present">Present</option>
@@ -2108,188 +1848,444 @@ export default function PayRegisterPage() {
                             <option value="week_off">Week Off</option>
                           </select>
                         </div>
-                      )}
-                      {editData.status === 'leave' && (activeTable === 'leaves' || !isHalfDayMode) && (
-                        <>
-                          <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                              Leave Type
-                            </label>
-                            <select
-                              value={editData.leaveType || ''}
-                              onChange={(e) => setEditData({
-                                ...editData,
-                                leaveType: e.target.value,
-                                firstHalf: {
-                                  ...editData.firstHalf!,
-                                  leaveType: e.target.value,
-                                },
-                                secondHalf: {
-                                  ...editData.secondHalf!,
-                                  leaveType: e.target.value,
-                                },
-                              })}
-                              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                            >
-                              <option value="">Select Leave Type</option>
-                              {leaveTypes.map((lt) => (
-                                <option key={lt.code} value={lt.code}>
-                                  {lt.name} ({lt.code})
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                              Leave Nature
-                            </label>
-                            <select
-                              value={editData.leaveNature || 'paid'}
-                              onChange={(e) => setEditData({
-                                ...editData,
-                                leaveNature: e.target.value as any,
-                                firstHalf: {
-                                  ...editData.firstHalf!,
-                                  leaveNature: e.target.value as any,
-                                },
-                                secondHalf: {
-                                  ...editData.secondHalf!,
-                                  leaveNature: e.target.value as any,
-                                },
-                              })}
-                              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                            >
-                              <option value="paid">Paid</option>
-                              <option value="lop">LOP (Loss of Pay)</option>
-                              <option value="without_pay">Without Pay</option>
-                            </select>
-                          </div>
-                        </>
-                      )}
-                      {/* Shift field for full day */}
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          Shift
-                        </label>
-                        <select
-                          value={editData.shiftId || ''}
-                          onChange={(e) => {
-                            const shift = shifts.find((s) => s._id === e.target.value);
-                            setEditData({
+                        {editData.firstHalf?.status === 'leave' && (
+                          <>
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                Leave Type
+                              </label>
+                              <select
+                                value={editData.firstHalf?.leaveType || ''}
+                                onChange={(e) => setEditData({
+                                  ...editData,
+                                  firstHalf: {
+                                    ...editData.firstHalf!,
+                                    leaveType: e.target.value,
+                                  },
+                                })}
+                                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                              >
+                                <option value="">Select Leave Type</option>
+                                {leaveTypes.map((lt) => (
+                                  <option key={lt.code} value={lt.code}>
+                                    {lt.name} ({lt.code})
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                Leave Nature
+                              </label>
+                              <select
+                                value={editData.firstHalf?.leaveNature || 'paid'}
+                                onChange={(e) => setEditData({
+                                  ...editData,
+                                  firstHalf: {
+                                    ...editData.firstHalf!,
+                                    leaveNature: e.target.value as any,
+                                  },
+                                })}
+                                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                              >
+                                <option value="paid">Paid</option>
+                                <option value="lop">LOP (Loss of Pay)</option>
+                              </select>
+                            </div>
+                          </>
+                        )}
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                            OT Hours
+                          </label>
+                          <input
+                            type="number"
+                            step="0.5"
+                            min="0"
+                            value={editData.firstHalf?.otHours || 0}
+                            onChange={(e) => setEditData({
                               ...editData,
-                              shiftId: e.target.value || null,
-                              shiftName: shift?.name || null,
                               firstHalf: {
                                 ...editData.firstHalf!,
+                                otHours: parseFloat(e.target.value) || 0,
+                              },
+                            })}
+                            className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                            Shift
+                          </label>
+                          <select
+                            value={editData.shiftId || ''}
+                            onChange={(e) => {
+                              const shift = shifts.find((s) => s._id === e.target.value);
+                              setEditData({
+                                ...editData,
                                 shiftId: e.target.value || null,
+                                shiftName: shift?.name || null,
+                                firstHalf: {
+                                  ...editData.firstHalf!,
+                                  shiftId: e.target.value || null,
+                                },
+                                secondHalf: {
+                                  ...editData.secondHalf!,
+                                  shiftId: e.target.value || null,
+                                },
+                              });
+                            }}
+                            className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                          >
+                            <option value="">Select Shift</option>
+                            {shifts.map((shift) => (
+                              <option key={shift._id} value={shift._id}>
+                                {shift.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Second Half - Only show if half-day mode is enabled */}
+                  {isHalfDayMode && (
+                    <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+                      <h3 className="text-lg font-semibold mb-3 text-slate-900 dark:text-white">Second Half</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                            Status
+                          </label>
+                          <select
+                            value={editData.secondHalf?.status || 'absent'}
+                            onChange={(e) => setEditData({
+                              ...editData,
+                              secondHalf: {
+                                ...editData.secondHalf!,
+                                status: e.target.value as any,
+                                leaveType: e.target.value === 'leave' ? (editData.secondHalf?.leaveType || null) : null,
+                                leaveNature: e.target.value === 'leave' ? (editData.secondHalf?.leaveNature || null) : null,
+                                isOD: e.target.value === 'od',
+                              },
+                            })}
+                            className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                          >
+                            <option value="present">Present</option>
+                            <option value="absent">Absent</option>
+                            <option value="leave">Leave</option>
+                            <option value="od">OD</option>
+                            <option value="holiday">Holiday</option>
+                            <option value="week_off">Week Off</option>
+                          </select>
+                        </div>
+                        {editData.secondHalf?.status === 'leave' && (
+                          <>
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                Leave Type
+                              </label>
+                              <select
+                                value={editData.secondHalf?.leaveType || ''}
+                                onChange={(e) => setEditData({
+                                  ...editData,
+                                  secondHalf: {
+                                    ...editData.secondHalf!,
+                                    leaveType: e.target.value,
+                                  },
+                                })}
+                                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                              >
+                                <option value="">Select Leave Type</option>
+                                {leaveTypes.map((lt) => (
+                                  <option key={lt.code} value={lt.code}>
+                                    {lt.name} ({lt.code})
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                Leave Nature
+                              </label>
+                              <select
+                                value={editData.secondHalf?.leaveNature || 'paid'}
+                                onChange={(e) => setEditData({
+                                  ...editData,
+                                  secondHalf: {
+                                    ...editData.secondHalf!,
+                                    leaveNature: e.target.value as any,
+                                  },
+                                })}
+                                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                              >
+                                <option value="paid">Paid</option>
+                                <option value="lop">LOP (Loss of Pay)</option>
+                              </select>
+                            </div>
+                          </>
+                        )}
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                            OT Hours
+                          </label>
+                          <input
+                            type="number"
+                            step="0.5"
+                            min="0"
+                            value={editData.secondHalf?.otHours || 0}
+                            onChange={(e) => setEditData({
+                              ...editData,
+                              secondHalf: {
+                                ...editData.secondHalf!,
+                                otHours: parseFloat(e.target.value) || 0,
+                              },
+                            })}
+                            className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Full Day Fields - Show when NOT in half-day mode OR for specific tabs */}
+                  {!isHalfDayMode && (
+                    <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+                      <h3 className="text-lg font-semibold mb-3 text-slate-900 dark:text-white">
+                        {activeTable === 'present' ? 'Present Status' :
+                          activeTable === 'absent' ? 'Absent Status' :
+                            activeTable === 'leaves' ? 'Leave Details' :
+                              activeTable === 'od' ? 'OD Details' :
+                                activeTable === 'ot' || activeTable === 'extraHours' ? 'OT Hours' :
+                                  'Full Day'}
+                      </h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {(activeTable === 'present' || activeTable === 'absent' || activeTable === 'leaves' || activeTable === 'od') && (
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                              Status
+                            </label>
+                            <select
+                              value={editData.status || 'absent'}
+                              onChange={(e) => {
+                                const newStatus = e.target.value as any;
+                                setEditData({
+                                  ...editData,
+                                  status: newStatus,
+                                  firstHalf: {
+                                    ...editData.firstHalf!,
+                                    status: newStatus,
+                                    leaveType: newStatus === 'leave' ? (editData.firstHalf?.leaveType || null) : null,
+                                    leaveNature: newStatus === 'leave' ? (editData.firstHalf?.leaveNature || null) : null,
+                                    isOD: newStatus === 'od',
+                                  },
+                                  secondHalf: {
+                                    ...editData.secondHalf!,
+                                    status: newStatus,
+                                    leaveType: newStatus === 'leave' ? (editData.secondHalf?.leaveType || null) : null,
+                                    leaveNature: newStatus === 'leave' ? (editData.secondHalf?.leaveNature || null) : null,
+                                    isOD: newStatus === 'od',
+                                  },
+                                  leaveType: newStatus === 'leave' ? (editData.leaveType || null) : null,
+                                  leaveNature: newStatus === 'leave' ? (editData.leaveNature || null) : null,
+                                  isOD: newStatus === 'od',
+                                  isSplit: false,
+                                });
+                              }}
+                              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                            >
+                              <option value="present">Present</option>
+                              <option value="absent">Absent</option>
+                              <option value="leave">Leave</option>
+                              <option value="od">OD</option>
+                              <option value="holiday">Holiday</option>
+                              <option value="week_off">Week Off</option>
+                            </select>
+                          </div>
+                        )}
+                        {editData.status === 'leave' && (activeTable === 'leaves' || !isHalfDayMode) && (
+                          <>
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                Leave Type
+                              </label>
+                              <select
+                                value={editData.leaveType || ''}
+                                onChange={(e) => setEditData({
+                                  ...editData,
+                                  leaveType: e.target.value,
+                                  firstHalf: {
+                                    ...editData.firstHalf!,
+                                    leaveType: e.target.value,
+                                  },
+                                  secondHalf: {
+                                    ...editData.secondHalf!,
+                                    leaveType: e.target.value,
+                                  },
+                                })}
+                                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                              >
+                                <option value="">Select Leave Type</option>
+                                {leaveTypes.map((lt) => (
+                                  <option key={lt.code} value={lt.code}>
+                                    {lt.name} ({lt.code})
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                Leave Nature
+                              </label>
+                              <select
+                                value={editData.leaveNature || 'paid'}
+                                onChange={(e) => setEditData({
+                                  ...editData,
+                                  leaveNature: e.target.value as any,
+                                  firstHalf: {
+                                    ...editData.firstHalf!,
+                                    leaveNature: e.target.value as any,
+                                  },
+                                  secondHalf: {
+                                    ...editData.secondHalf!,
+                                    leaveNature: e.target.value as any,
+                                  },
+                                })}
+                                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                              >
+                                <option value="paid">Paid</option>
+                                <option value="lop">LOP (Loss of Pay)</option>
+                                <option value="without_pay">Without Pay</option>
+                              </select>
+                            </div>
+                          </>
+                        )}
+                        {/* Shift field for full day */}
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                            Shift
+                          </label>
+                          <select
+                            value={editData.shiftId || ''}
+                            onChange={(e) => {
+                              const shift = shifts.find((s) => s._id === e.target.value);
+                              setEditData({
+                                ...editData,
+                                shiftId: e.target.value || null,
+                                shiftName: shift?.name || null,
+                                firstHalf: {
+                                  ...editData.firstHalf!,
+                                  shiftId: e.target.value || null,
+                                },
+                                secondHalf: {
+                                  ...editData.secondHalf!,
+                                  shiftId: e.target.value || null,
+                                },
+                              });
+                            }}
+                            className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                          >
+                            <option value="">Select Shift</option>
+                            {shifts.map((shift) => (
+                              <option key={shift._id} value={shift._id}>
+                                {shift.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Full Day OT Hours - Show for OT/Extra Hours tabs or when not in half-day mode */}
+                  {(activeTable === 'ot' || activeTable === 'extraHours' || !isHalfDayMode) && (
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                        {isHalfDayMode ? 'Total OT Hours (First + Second Half)' : 'Total OT Hours (Full Day)'}
+                      </label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="0"
+                        value={editData.otHours || 0}
+                        onChange={(e) => {
+                          const otValue = parseFloat(e.target.value) || 0;
+                          if (isHalfDayMode) {
+                            // Distribute OT hours equally between halves
+                            setEditData({
+                              ...editData,
+                              otHours: otValue,
+                              firstHalf: {
+                                ...editData.firstHalf!,
+                                otHours: otValue / 2,
                               },
                               secondHalf: {
                                 ...editData.secondHalf!,
-                                shiftId: e.target.value || null,
+                                otHours: otValue / 2,
                               },
                             });
-                          }}
-                          className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                        >
-                          <option value="">Select Shift</option>
-                          {shifts.map((shift) => (
-                            <option key={shift._id} value={shift._id}>
-                              {shift.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                          } else {
+                            setEditData({
+                              ...editData,
+                              otHours: otValue,
+                              firstHalf: {
+                                ...editData.firstHalf!,
+                                otHours: otValue,
+                              },
+                              secondHalf: {
+                                ...editData.secondHalf!,
+                                otHours: otValue,
+                              },
+                            });
+                          }
+                        }}
+                        className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                      />
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {/* Full Day OT Hours - Show for OT/Extra Hours tabs or when not in half-day mode */}
-                {(activeTable === 'ot' || activeTable === 'extraHours' || !isHalfDayMode) && (
+                  {/* Remarks */}
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      {isHalfDayMode ? 'Total OT Hours (First + Second Half)' : 'Total OT Hours (Full Day)'}
+                      Remarks
                     </label>
-                    <input
-                      type="number"
-                      step="0.5"
-                      min="0"
-                      value={editData.otHours || 0}
-                      onChange={(e) => {
-                        const otValue = parseFloat(e.target.value) || 0;
-                        if (isHalfDayMode) {
-                          // Distribute OT hours equally between halves
-                          setEditData({
-                            ...editData,
-                            otHours: otValue,
-                            firstHalf: {
-                              ...editData.firstHalf!,
-                              otHours: otValue / 2,
-                            },
-                            secondHalf: {
-                              ...editData.secondHalf!,
-                              otHours: otValue / 2,
-                            },
-                          });
-                        } else {
-                          setEditData({
-                            ...editData,
-                            otHours: otValue,
-                            firstHalf: {
-                              ...editData.firstHalf!,
-                              otHours: otValue,
-                            },
-                            secondHalf: {
-                              ...editData.secondHalf!,
-                              otHours: otValue,
-                            },
-                          });
-                        }
-                      }}
+                    <textarea
+                      value={editData.remarks || ''}
+                      onChange={(e) => setEditData({
+                        ...editData,
+                        remarks: e.target.value,
+                      })}
+                      rows={3}
                       className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
                     />
                   </div>
-                )}
-
-                {/* Remarks */}
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Remarks
-                  </label>
-                  <textarea
-                    value={editData.remarks || ''}
-                    onChange={(e) => setEditData({
-                      ...editData,
-                      remarks: e.target.value,
-                    })}
-                    rows={3}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                  />
                 </div>
-              </div>
 
-              <div className="flex justify-end gap-3 mt-6">
-                <button
-                  onClick={handleSaveDate}
-                  disabled={saving[editingRecord.employeeId]}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {saving[editingRecord.employeeId] ? 'Saving...' : 'Save'}
-                </button>
-                <button
-                  onClick={() => {
-                    setShowEditModal(false);
-                    setEditingRecord(null);
-                    setIsHalfDayMode(false);
-                  }}
-                  className="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-md text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
-                >
-                  Cancel
-                </button>
+                <div className="flex justify-end gap-3 mt-6">
+                  <button
+                    onClick={handleSaveDate}
+                    disabled={saving[editingRecord.employeeId]}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {saving[editingRecord.employeeId] ? 'Saving...' : 'Save'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowEditModal(false);
+                      setEditingRecord(null);
+                      setIsHalfDayMode(false);
+                    }}
+                    className="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-md text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Arrears Section - Placed at the bottom of the page */}
       <div className="mt-8 bg-white dark:bg-slate-800 rounded-lg shadow p-6">
@@ -2309,6 +2305,6 @@ export default function PayRegisterPage() {
         />
       </div>
       <ToastContainer position="top-right" autoClose={3000} />
-    </div>
+    </div >
   );
 }
