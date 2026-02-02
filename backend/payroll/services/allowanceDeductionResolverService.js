@@ -89,9 +89,10 @@ async function getAbsentDeductionSettings(departmentId, divisionId = null) {
  * - Preserves all properties from base items while applying override values
  */
 function mergeWithOverrides(baseList = [], overrides = [], includeMissing = true) {
-  // If no overrides, return base list or empty array based on includeMissing
+  // If no overrides, ALWAYS return the base list (fall back to global/dept defaults)
+  // This ensures that if the employee record has no overrides, they get the standard components.
   if (!overrides || overrides.length === 0) {
-    return includeMissing ? [...baseList] : [];
+    return [...baseList];
   }
 
   // Create maps for quick lookup of base items by ID and name
@@ -99,7 +100,7 @@ function mergeWithOverrides(baseList = [], overrides = [], includeMissing = true
   const baseNameMap = new Map();
 
   // Track which base items have been overridden
-  const overriddenBaseItems = new Set();
+  const overriddenBaseIndices = new Set();
 
   // Index base items
   baseList.forEach((item, index) => {
@@ -115,8 +116,7 @@ function mergeWithOverrides(baseList = [], overrides = [], includeMissing = true
   });
 
   const result = [];
-  const processedBaseIndices = new Set();
-  const overrideIds = new Set();
+  const processedOverrideKeys = new Set();
 
   // Process overrides first
   overrides.forEach(override => {
@@ -127,24 +127,29 @@ function mergeWithOverrides(baseList = [], overrides = [], includeMissing = true
 
     // Find matching base item
     let baseItem = null;
-    let baseItemIndex = -1;
 
-    // Try to find by masterId first
+    // Check for match by masterId
     if (ovMasterIdKey && baseMap.has(ovMasterIdKey)) {
-      const match = baseMap.get(ovMasterIdKey);
-      baseItem = match;
-      baseItemIndex = match._index;
+      baseItem = baseMap.get(ovMasterIdKey);
     }
     // Then try by name if no match by ID
     else if (ovNameKey && baseNameMap.has(ovNameKey)) {
-      const match = baseNameMap.get(ovNameKey);
-      baseItem = match;
-      baseItemIndex = match._index;
+      baseItem = baseNameMap.get(ovNameKey);
     }
 
-    // Mark base item as overridden if found
-    if (baseItemIndex >= 0) {
-      overriddenBaseItems.add(baseItemIndex);
+    // Mark ALL matching base items as overridden (handles duplicates in baseList)
+    if (baseItem) {
+      baseList.forEach((item, idx) => {
+        const itemMasterId = item.masterId ? item.masterId.toString() : null;
+        const itemName = item.name ? item.name.trim().toLowerCase() : null;
+
+        if (
+          (ovMasterIdKey && itemMasterId === override.masterId.toString()) ||
+          (ovNameKey && itemName === override.name.trim().toLowerCase())
+        ) {
+          overriddenBaseIndices.add(idx);
+        }
+      });
     }
 
     // Create merged item
@@ -165,21 +170,21 @@ function mergeWithOverrides(baseList = [], overrides = [], includeMissing = true
       merged.name = baseItem.name;
     }
 
-    // Track this override to avoid duplicates
+    // Prevent duplicate entries in result based on masterId/name
     const overrideKey = merged.masterId ? `id_${merged.masterId}` : `name_${merged.name?.toLowerCase()}`;
-    if (!overrideIds.has(overrideKey)) {
+    if (!processedOverrideKeys.has(overrideKey)) {
       result.push(merged);
-      overrideIds.add(overrideKey);
+      processedOverrideKeys.add(overrideKey);
     }
   });
 
-  // Add non-overridden base items if includeMissing is true
+  // Add non-overridden base items ONLY if includeMissing is true
   if (includeMissing) {
     baseList.forEach((item, index) => {
-      if (!overriddenBaseItems.has(index)) {
-        // Only add if not already in result (to prevent duplicates)
+      if (!overriddenBaseIndices.has(index)) {
+        // Prevent adding an item that matches one of the already processed overrides
         const itemKey = item.masterId ? `id_${item.masterId}` : `name_${item.name?.toLowerCase()}`;
-        if (!overrideIds.has(itemKey)) {
+        if (!processedOverrideKeys.has(itemKey)) {
           result.push({
             ...item,
             isEmployeeOverride: false
