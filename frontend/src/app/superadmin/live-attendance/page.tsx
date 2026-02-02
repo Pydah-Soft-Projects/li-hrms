@@ -2,8 +2,11 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { FiGrid } from 'react-icons/fi';
-import { LuUsers, LuClock, LuCircleCheck, LuActivity, LuCalendar, LuFilter, LuRefreshCw, LuSearch } from 'react-icons/lu';
+import { LuUsers, LuClock, LuCircleCheck, LuActivity, LuCalendar, LuFilter, LuRefreshCw, LuSearch, LuDownload } from 'react-icons/lu';
 import { auth } from '@/lib/auth';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { toast } from 'react-hot-toast';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
 
@@ -61,6 +64,7 @@ export default function LiveAttendancePage() {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [sortBy, setSortBy] = useState<'latest' | 'oldest'>('latest');
   const [showFilters, setShowFilters] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   // Filter states
   const [divisions, setDivisions] = useState<FilterOption[]>([]);
@@ -162,6 +166,164 @@ export default function LiveAttendancePage() {
     return date.toISOString().split('T')[0];
   };
 
+  const handleExportPDF = () => {
+    if (!reportData) return;
+    setExportingPdf(true);
+    const toastId = toast.loading('Generating Live Attendance PDF...');
+
+    try {
+      const doc = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = doc.internal.pageSize.getWidth();
+      let currentY = 15;
+
+      // Header Styling
+      doc.setFillColor(79, 70, 229); // indigo-600
+      doc.rect(0, 0, pageWidth, 40, 'F');
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(22);
+      doc.setFont('helvetica', 'bold');
+      doc.text('LIVE ATTENDANCE PULSE', 15, 18);
+
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Generated on: ${new Date().toLocaleString()}`, 15, 25);
+      doc.text(`Report Date: ${selectedDate}`, 15, 30);
+
+      // Filter info
+      const filterText = [
+        selectedDiv ? `Division: ${divisions.find(d => d.id === selectedDiv)?.name}` : 'All Divisions',
+        selectedDept ? `Department: ${departments.find(d => d.id === selectedDept)?.name}` : 'All Departments',
+        selectedShift ? `Shift: ${shifts.find(s => s.id === selectedShift)?.name}` : 'All Shifts'
+      ].join(' | ');
+      doc.text(filterText, 15, 35);
+
+      currentY = 50;
+
+      // Summary Cards (Stylized as a table or blocks)
+      doc.setTextColor(30, 41, 59); // slate-800
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Workforce Summary', 15, currentY);
+      currentY += 8;
+
+      autoTable(doc, {
+        startY: currentY,
+        head: [['Metric', 'Value', 'Percentage']],
+        body: [
+          ['Total Active Employees', reportData.summary.totalActiveEmployees.toString(), '100%'],
+          ['Currently Working', reportData.summary.currentlyWorking.toString(), `${Math.round((reportData.summary.currentlyWorking / reportData.summary.totalActiveEmployees) * 100)}%`],
+          ['Shift Completed', reportData.summary.completedShift.toString(), `${Math.round((reportData.summary.completedShift / reportData.summary.totalActiveEmployees) * 100)}%`],
+          ['Total Present', reportData.summary.totalPresent.toString(), `${Math.round((reportData.summary.totalPresent / reportData.summary.totalActiveEmployees) * 100)}%`],
+          ['Absent', reportData.summary.absentEmployees.toString(), `${Math.round((reportData.summary.absentEmployees / reportData.summary.totalActiveEmployees) * 100)}%`],
+        ],
+        theme: 'striped',
+        headStyles: { fillColor: [79, 70, 229] },
+        styles: { fontSize: 9 },
+        margin: { left: 15, right: 15 }
+      });
+
+      currentY = (doc as any).lastAutoTable.finalY + 15;
+
+      // Shift Breakdown
+      if (reportData.summary.shiftBreakdown.length > 0) {
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Shift Utilization Breakdown', 15, currentY);
+        currentY += 8;
+
+        const shiftBody = reportData.summary.shiftBreakdown.map(s => [
+          s.name,
+          s.working.toString(),
+          s.completed.toString(),
+          `${s.working + s.completed}`,
+          `${Math.round(((s.working + s.completed) / reportData.summary.totalActiveEmployees) * 100)}%`
+        ]);
+
+        autoTable(doc, {
+          startY: currentY,
+          head: [['Shift Name', 'Working', 'Completed', 'Total', 'Workforce Share']],
+          body: shiftBody,
+          theme: 'grid',
+          headStyles: { fillColor: [79, 70, 229] },
+          styles: { fontSize: 9 },
+          margin: { left: 15, right: 15 }
+        });
+
+        currentY = (doc as any).lastAutoTable.finalY + 15;
+      }
+
+      // Currently Working Table
+      if (reportData.currentlyWorking.length > 0) {
+        if (currentY > 240) { doc.addPage(); currentY = 20; }
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`Currently Working (${reportData.currentlyWorking.length})`, 15, currentY);
+        currentY += 8;
+
+        const workingBody = sortEmployees(reportData.currentlyWorking).map(emp => [
+          `${emp.name}\n(${emp.empNo})`,
+          `${emp.shift}\n${emp.department}`,
+          formatTime(emp.inTime),
+          formatHoursWorked(emp.hoursWorked),
+          emp.isLate ? `Late (${emp.lateMinutes}m)` : 'On Time'
+        ]);
+
+        autoTable(doc, {
+          startY: currentY,
+          head: [['Employee', 'Shift/Dept', 'Punch In', 'Duration', 'Live Status']],
+          body: workingBody,
+          theme: 'striped',
+          headStyles: { fillColor: [22, 163, 74] }, // green-600
+          styles: { fontSize: 8 },
+          margin: { left: 15, right: 15 }
+        });
+
+        currentY = (doc as any).lastAutoTable.finalY + 15;
+      }
+
+      // Completed Shift Table
+      if (reportData.completedShift.length > 0) {
+        if (currentY > 240) { doc.addPage(); currentY = 20; }
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`Shift Completed (${reportData.completedShift.length})`, 15, currentY);
+        currentY += 8;
+
+        const completedBody = reportData.completedShift.map(emp => [
+          `${emp.name}\n(${emp.empNo})`,
+          `${emp.shift}\n${emp.designation}`,
+          `${formatTime(emp.inTime)} - ${formatTime(emp.outTime)}`,
+          formatHoursWorked(emp.hoursWorked),
+          [
+            'Completed',
+            emp.isLate ? `Late In (${emp.lateMinutes}m)` : null,
+            emp.isEarlyOut ? `Early Out (${emp.earlyOutMinutes}m)` : null
+          ].filter(Boolean).join('\n')
+        ]);
+
+        autoTable(doc, {
+          startY: currentY,
+          head: [['Employee', 'Shift/Desig', 'Time Window', 'Duration', 'Metrics']],
+          body: completedBody,
+          theme: 'striped',
+          headStyles: { fillColor: [147, 51, 234] }, // purple-600
+          styles: { fontSize: 8 },
+          margin: { left: 15, right: 15 }
+        });
+      }
+
+      const filename = `Live_Attendance_${selectedDate}_${new Date().getTime()}.pdf`;
+      doc.save(filename);
+      toast.success('PDF generated successfully!', { id: toastId });
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      toast.error('Failed to generate PDF.', { id: toastId });
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -208,6 +370,14 @@ export default function LiveAttendancePage() {
               <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Last Synced</p>
               <p className="text-sm font-mono font-bold text-indigo-600">{new Date().toLocaleTimeString()}</p>
             </div>
+            <button
+              onClick={handleExportPDF}
+              disabled={exportingPdf || !reportData}
+              className="group flex items-center gap-2 rounded-2xl bg-indigo-600 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-600/20 transition-all hover:bg-indigo-700 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <LuDownload className={`h-4 w-4 ${exportingPdf ? 'animate-bounce' : ''}`} />
+              {exportingPdf ? 'Exporting...' : 'Export PDF'}
+            </button>
             <button
               onClick={fetchReportData}
               className="group flex items-center gap-2 rounded-2xl bg-white px-6 py-3 text-sm font-bold text-slate-900 border border-slate-200 shadow-sm transition-all hover:bg-slate-50 hover:border-slate-300 active:scale-95"
