@@ -113,6 +113,7 @@ export default function DivisionsPage() {
     const [managerId, setManagerId] = useState('');
     const [selectedDeptIds, setSelectedDeptIds] = useState<string[]>([]);
     const [selectedShifts, setSelectedShifts] = useState<{ shiftId: string; gender: string }[]>([]);
+    const [shiftSearch, setShiftSearch] = useState('');
 
     // Hierarchical Shift Assignment State
     const [targetScope, setTargetScope] = useState<'division' | 'department' | 'designation'>('division');
@@ -321,6 +322,7 @@ export default function DivisionsPage() {
             const res = await api.assignShiftsToDivision(showShiftDialog._id, payload as any);
             if (res.success) {
                 setShowShiftDialog(null);
+                setShiftSearch('');
                 loadData();
             } else {
                 setError(res.message || 'Failed to assign shifts');
@@ -595,7 +597,7 @@ export default function DivisionsPage() {
                 {/* Assign Shifts Dialog */}
                 {showShiftDialog && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowShiftDialog(null)} />
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => { setShowShiftDialog(null); setShiftSearch(''); }} />
                         <div className="relative z-50 w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950">
                             <h2 className="text-xl font-semibold mb-4">Assign Shifts - {showShiftDialog.name}</h2>
 
@@ -664,9 +666,30 @@ export default function DivisionsPage() {
                                     </div>
                                 )}
 
+                                <div className="space-y-2">
+                                    <label className="block text-xs font-semibold uppercase text-slate-500">Select Shifts</label>
+                                    <div className="relative">
+                                        <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                        </svg>
+                                        <input
+                                            type="text"
+                                            placeholder="Search shifts by name or time..."
+                                            value={shiftSearch}
+                                            onChange={(e) => setShiftSearch(e.target.value)}
+                                            className="w-full rounded-xl border border-slate-200 py-2 pl-9 pr-4 text-sm focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                                        />
+                                    </div>
+                                </div>
                                 <div className="max-h-60 overflow-y-auto rounded-2xl border border-slate-100 p-2 dark:border-slate-800">
-                                    <label className="mb-2 block px-2 text-xs font-semibold uppercase text-slate-500">Select Shifts</label>
-                                    {shifts.map(shift => {
+                                    {shifts.filter(shift => {
+                                        const search = shiftSearch.toLowerCase();
+                                        if (!search) return true;
+                                        const name = (shift.name || '').toLowerCase();
+                                        const startTime = (shift.startTime || '').toLowerCase();
+                                        const endTime = (shift.endTime || '').toLowerCase();
+                                        return name.includes(search) || startTime.includes(search) || endTime.includes(search);
+                                    }).map(shift => {
                                         const isSelected = selectedShifts.some(s => s.shiftId === shift._id);
                                         const selectedConfig = selectedShifts.find(s => s.shiftId === shift._id);
 
@@ -723,7 +746,7 @@ export default function DivisionsPage() {
                                     <button type="submit" className="flex-1 rounded-2xl bg-amber-600 px-4 py-3 text-sm font-semibold text-white hover:bg-amber-700 shadow-lg shadow-amber-500/30">
                                         Save Assignments
                                     </button>
-                                    <button type="button" onClick={() => setShowShiftDialog(null)} className="flex-1 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">Cancel</button>
+                                    <button type="button" onClick={() => { setShowShiftDialog(null); setShiftSearch(''); }} className="flex-1 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">Cancel</button>
                                 </div>
                             </form>
                         </div>

@@ -136,6 +136,7 @@ export default function DepartmentsPage() {
   const [showLinkDesignationDialog, setShowLinkDesignationDialog] = useState(false);
   const [unlinkedDesignations, setUnlinkedDesignations] = useState<any[]>([]);
   const [selectedLinkDesignationId, setSelectedLinkDesignationId] = useState<string>('');
+  const [linkDesignationSearch, setLinkDesignationSearch] = useState('');
 
   useEffect(() => {
     loadDepartments();
@@ -360,6 +361,7 @@ export default function DepartmentsPage() {
       if (response.success) {
         setShowLinkDesignationDialog(false);
         setSelectedLinkDesignationId('');
+        setLinkDesignationSearch('');
         loadDesignations(showDesignationDialog); // Refresh list
       } else {
         setError(response.message || 'Failed to link designation');
@@ -1159,6 +1161,18 @@ export default function DepartmentsPage() {
                     <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50/50 p-4 dark:border-indigo-800 dark:bg-indigo-900/10">
                       <h4 className="mb-3 text-sm font-semibold text-indigo-900 dark:text-indigo-300">Link Designation to Department</h4>
                       <div className="space-y-3">
+                        <div className="relative">
+                          <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                          </svg>
+                          <input
+                            type="text"
+                            placeholder="Search designations by name or code..."
+                            value={linkDesignationSearch}
+                            onChange={(e) => setLinkDesignationSearch(e.target.value)}
+                            className="w-full rounded-lg border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                          />
+                        </div>
                         <div>
                           <select
                             value={selectedLinkDesignationId}
@@ -1166,15 +1180,24 @@ export default function DepartmentsPage() {
                             className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
                           >
                             <option value="">Select a designation...</option>
-                            {unlinkedDesignations.length === 0 ? (
-                              <option disabled>No unlinked designations available</option>
-                            ) : (
-                              unlinkedDesignations.map((d) => (
-                                <option key={d._id} value={d._id}>
-                                  {d.name} {d.code ? `(${d.code})` : ''}
-                                </option>
-                              ))
-                            )}
+                            {(() => {
+                              const filtered = unlinkedDesignations.filter((d) => {
+                                const search = linkDesignationSearch.toLowerCase();
+                                if (!search) return true;
+                                const name = (d.name || '').toLowerCase();
+                                const code = (d.code || '').toLowerCase();
+                                return name.includes(search) || code.includes(search);
+                              });
+                              return filtered.length === 0 ? (
+                                <option disabled>No matching designations found</option>
+                              ) : (
+                                filtered.map((d) => (
+                                  <option key={d._id} value={d._id}>
+                                    {d.name} {d.code ? `(${d.code})` : ''}
+                                  </option>
+                                ))
+                              );
+                            })()}
                           </select>
                         </div>
                         <div className="flex gap-2">
@@ -1185,15 +1208,16 @@ export default function DepartmentsPage() {
                           >
                             Link
                           </button>
-                          <button
-                            onClick={() => {
-                              setShowLinkDesignationDialog(false);
-                              setSelectedLinkDesignationId('');
-                            }}
-                            className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
-                          >
-                            Cancel
-                          </button>
+                            <button
+                              onClick={() => {
+                                setShowLinkDesignationDialog(false);
+                                setSelectedLinkDesignationId('');
+                                setLinkDesignationSearch('');
+                              }}
+                              className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                            >
+                              Cancel
+                            </button>
                         </div>
                       </div>
                     </div>

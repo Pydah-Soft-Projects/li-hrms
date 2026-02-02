@@ -112,6 +112,7 @@ export default function DepartmentsPage() {
   const [showDesignationDialog, setShowDesignationDialog] = useState<string | null>(null);
   const [showLinkDesignationDialog, setShowLinkDesignationDialog] = useState<string | null>(null); // New dialog state
   const [selectedLinkDesignationId, setSelectedLinkDesignationId] = useState(''); // Added state for link selection
+  const [linkDesignationSearch, setLinkDesignationSearch] = useState(''); // Search filter for link designation
   const [showShiftDialog, setShowShiftDialog] = useState<Department | null>(null);
   const [showDesignationShiftDialog, setShowDesignationShiftDialog] = useState<Designation | null>(null);
   const [showShiftBreakdownDialog, setShowShiftBreakdownDialog] = useState<Designation | null>(null);
@@ -208,6 +209,7 @@ export default function DepartmentsPage() {
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [divisionHODMap, setDivisionHODMap] = useState<Record<string, string>>({}); // { divisionId: hodId }
   const [selectedDivisionId, setSelectedDivisionId] = useState<string>('all');
+  const [divisionSearch, setDivisionSearch] = useState('');
 
   // Designation form state
   const [designationName, setDesignationName] = useState('');
@@ -485,6 +487,7 @@ export default function DepartmentsPage() {
       if (response.success) {
         loadDepartments(); // Reload to get updated structure
         setShowLinkDesignationDialog(null);
+        setLinkDesignationSearch('');
       } else {
         alert(response.message || 'Failed to link designation');
       }
@@ -1101,7 +1104,7 @@ export default function DepartmentsPage() {
             <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
               <div
                 className="fixed inset-0 bg-slate-900/75 backdrop-blur-md transition-opacity"
-                onClick={() => setShowLinkDesignationDialog(null)}
+                onClick={() => { setShowLinkDesignationDialog(null); setLinkDesignationSearch(''); }}
               />
               <div className="relative z-[60] w-full max-w-md rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl shadow-blue-500/10 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/95">
                 <div className="mb-6 flex items-center justify-between">
@@ -1112,7 +1115,7 @@ export default function DepartmentsPage() {
                     </p>
                   </div>
                   <button
-                    onClick={() => setShowLinkDesignationDialog(null)}
+                    onClick={() => { setShowLinkDesignationDialog(null); setLinkDesignationSearch(''); }}
                     className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 focus:outline-none focus:ring-2 focus:ring-red-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
                   >
                     <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1121,11 +1124,34 @@ export default function DepartmentsPage() {
                   </button>
                 </div>
 
+                <div className="relative mb-4">
+                  <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <input
+                    type="text"
+                    placeholder="Search designations by name or code..."
+                    value={linkDesignationSearch}
+                    onChange={(e) => setLinkDesignationSearch(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-4 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  />
+                </div>
+
                 <div className="max-h-96 overflow-y-auto space-y-2">
-                  {unlinkedDesignations.length === 0 ? (
-                    <p className="text-center text-sm text-slate-500 py-4">No unlinked designations available.</p>
-                  ) : (
-                    unlinkedDesignations.map(d => (
+                  {(() => {
+                    const filtered = unlinkedDesignations.filter((d) => {
+                      const search = linkDesignationSearch.toLowerCase();
+                      if (!search) return true;
+                      const name = (d.name || '').toLowerCase();
+                      const code = (d.code || '').toLowerCase();
+                      return name.includes(search) || code.includes(search);
+                    });
+                    return filtered.length === 0 ? (
+                      <p className="text-center text-sm text-slate-500 py-4">
+                        {unlinkedDesignations.length === 0 ? 'No unlinked designations available.' : 'No matching designations found.'}
+                      </p>
+                    ) : (
+                      filtered.map(d => (
                       <div key={d._id} className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900/50">
                         <div>
                           <p className="font-medium text-slate-900 dark:text-slate-100">{d.name}</p>
@@ -1139,7 +1165,8 @@ export default function DepartmentsPage() {
                         </button>
                       </div>
                     ))
-                  )}
+                    );
+                  })()}
                 </div>
               </div>
             </div>
@@ -1532,6 +1559,18 @@ export default function DepartmentsPage() {
                       <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50/50 p-4 dark:border-indigo-800 dark:bg-indigo-900/10">
                         <h4 className="mb-3 text-sm font-semibold text-indigo-900 dark:text-indigo-300">Link Designation to Department</h4>
                         <div className="space-y-3">
+                          <div className="relative">
+                            <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                            </svg>
+                            <input
+                              type="text"
+                              placeholder="Search designations by name or code..."
+                              value={linkDesignationSearch}
+                              onChange={(e) => setLinkDesignationSearch(e.target.value)}
+                              className="w-full rounded-lg border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                            />
+                          </div>
                           <div>
                             <select
                               value={selectedLinkDesignationId}
@@ -1539,15 +1578,24 @@ export default function DepartmentsPage() {
                               className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
                             >
                               <option value="">Select a designation...</option>
-                              {unlinkedDesignations.length === 0 ? (
-                                <option disabled>No unlinked designations available</option>
-                              ) : (
-                                unlinkedDesignations.map((d) => (
-                                  <option key={d._id} value={d._id}>
-                                    {d.name} {d.code ? `(${d.code})` : ''}
-                                  </option>
-                                ))
-                              )}
+                              {(() => {
+                                const filtered = unlinkedDesignations.filter((d) => {
+                                  const search = linkDesignationSearch.toLowerCase();
+                                  if (!search) return true;
+                                  const name = (d.name || '').toLowerCase();
+                                  const code = (d.code || '').toLowerCase();
+                                  return name.includes(search) || code.includes(search);
+                                });
+                                return filtered.length === 0 ? (
+                                  <option disabled>No matching designations found</option>
+                                ) : (
+                                  filtered.map((d) => (
+                                    <option key={d._id} value={d._id}>
+                                      {d.name} {d.code ? `(${d.code})` : ''}
+                                    </option>
+                                  ))
+                                );
+                              })()}
                             </select>
                           </div>
                           <div className="flex gap-2">
@@ -1562,6 +1610,7 @@ export default function DepartmentsPage() {
                               onClick={() => {
                                 setShowLinkDesignationDialog(null);
                                 setSelectedLinkDesignationId('');
+                                setLinkDesignationSearch('');
                               }}
                               className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
                             >
@@ -1979,30 +2028,52 @@ export default function DepartmentsPage() {
               Organizational Units
             </h2>
 
-            {/* Division Filter */}
-            <div className="flex-1 min-w-[200px] max-w-xs">
-              <div className="relative group">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <svg className="h-4 w-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 8.293A1 1 0 013 7.586V4z" />
-                  </svg>
-                </div>
-                <select
-                  value={selectedDivisionId}
-                  onChange={(e) => setSelectedDivisionId(e.target.value)}
-                  className="w-full pl-11 pr-10 py-3 rounded-2xl border border-slate-200 bg-slate-50 text-sm font-medium text-slate-700 outline-none transition-all hover:bg-slate-100 hover:border-blue-300 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 dark:bg-slate-900/50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-900 dark:focus:border-blue-500/50 appearance-none shadow-sm cursor-pointer"
-                >
-                  <option value="all">All Divisions (Full View)</option>
-                  {divisions.map((div) => (
-                    <option key={div._id} value={div._id}>
-                      {div.name} ({div.code})
-                    </option>
-                  ))}
-                </select>
-                <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
-                  <svg className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
+            {/* Division Search & Filter */}
+            <div className="flex flex-col sm:flex-row gap-3 flex-1 min-w-0 max-w-2xl">
+              <div className="relative flex-1 min-w-[180px]">
+                <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  type="text"
+                  placeholder="Search divisions or departments by name or code..."
+                  value={divisionSearch}
+                  onChange={(e) => setDivisionSearch(e.target.value)}
+                  className="w-full pl-9 pr-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 text-sm font-medium text-slate-700 outline-none transition-all hover:bg-slate-100 hover:border-blue-300 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 dark:bg-slate-900/50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-900 dark:focus:border-blue-500/50 shadow-sm"
+                />
+              </div>
+              <div className="flex-1 min-w-[200px] max-w-xs">
+                <div className="relative group">
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                    <svg className="h-4 w-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 8.293A1 1 0 013 7.586V4z" />
+                    </svg>
+                  </div>
+                  <select
+                    value={selectedDivisionId}
+                    onChange={(e) => setSelectedDivisionId(e.target.value)}
+                    className="w-full pl-11 pr-10 py-3 rounded-2xl border border-slate-200 bg-slate-50 text-sm font-medium text-slate-700 outline-none transition-all hover:bg-slate-100 hover:border-blue-300 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 dark:bg-slate-900/50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-900 dark:focus:border-blue-500/50 appearance-none shadow-sm cursor-pointer"
+                  >
+                    <option value="all">All Divisions (Full View)</option>
+                    {divisions
+                      .filter((div) => {
+                        const search = divisionSearch.toLowerCase();
+                        if (!search) return true;
+                        const name = (div.name || '').toLowerCase();
+                        const code = (div.code || '').toLowerCase();
+                        return name.includes(search) || code.includes(search);
+                      })
+                      .map((div) => (
+                        <option key={div._id} value={div._id}>
+                          {div.name} ({div.code})
+                        </option>
+                      ))}
+                  </select>
+                  <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
+                    <svg className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2038,8 +2109,52 @@ export default function DepartmentsPage() {
                 <h3 className="text-xl font-bold text-slate-900">No departments yet</h3>
                 <p className="text-slate-500 mt-2">Start by creating your first department.</p>
               </div>
-            ) : (
-              departments.map((dept) => {
+            ) : (() => {
+              const filteredDepts = departments.filter((dept) => {
+                  // When searching: show departments that match division name/code OR department name/code
+                  if (divisionSearch.trim()) {
+                    const search = divisionSearch.toLowerCase();
+                    // Match by department's own name or code
+                    const deptName = (dept.name || '').toLowerCase();
+                    const deptCode = (dept.code || '').toLowerCase();
+                    if (deptName.includes(search) || deptCode.includes(search)) return true;
+                    // Match by linked division's name or code
+                    const divIds = dept.divisions || [];
+                    const matchesDivision = divIds.some((divId) => {
+                      const divIdStr = typeof divId === 'string' ? divId : (divId as any)?._id;
+                      if (!divIdStr) return false;
+                      const div = divisions.find((d) => String(d._id) === String(divIdStr));
+                      if (!div) return false;
+                      const name = (div.name || '').toLowerCase();
+                      const code = (div.code || '').toLowerCase();
+                      return name.includes(search) || code.includes(search);
+                    });
+                    if (!matchesDivision) return false;
+                  }
+                  // Division dropdown filter: when specific division selected, only show linked depts
+                  if (selectedDivisionId !== 'all') {
+                    const isInSelectedDivision = dept.divisions?.some((divId) => {
+                      const id = typeof divId === 'string' ? divId : (divId as any)?._id;
+                      return id && String(id) === String(selectedDivisionId);
+                    });
+                    return !!isInSelectedDivision;
+                  }
+                  return true;
+                });
+              if (filteredDepts.length === 0) {
+                return (
+                  <div className="col-span-full py-20 text-center">
+                    <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
+                      <svg className="w-10 h-10 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                    </div>
+                    <h3 className="text-xl font-bold text-slate-900">No matching units</h3>
+                    <p className="text-slate-500 mt-2">Try adjusting your search or division filter.</p>
+                  </div>
+                );
+              }
+              return filteredDepts.map((dept) => {
                 const isLinked = selectedDivisionId === 'all' || dept.divisions?.some(divId =>
                   (typeof divId === 'string' ? divId : (divId as any)._id) === selectedDivisionId
                 );
@@ -2113,8 +2228,8 @@ export default function DepartmentsPage() {
                     </div>
                   </div>
                 );
-              })
-            )}
+              });
+            })()}
           </div>
         </div>
 
