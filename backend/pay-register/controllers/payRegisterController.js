@@ -429,16 +429,21 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
       employeeQuery.division_id = divObjectId;
     }
 
-    // 1. Bulk Fetch Employees with Pagination
+    // 1. Bulk Fetch Employees
     const totalEmployees = await Employee.countDocuments(employeeQuery);
 
-    const employees = await Employee.find(employeeQuery)
+    let employeeFetch = Employee.find(employeeQuery)
       .select('_id employee_name emp_no department_id designation_id leftDate leftReason')
       .populate('department_id', 'name')
       .populate('designation_id', 'name')
-      .sort({ employee_name: 1 })
-      .skip(skip)
-      .limit(limitNum);
+      .sort({ employee_name: 1 });
+
+    // Bypass pagination if limit is -1
+    if (limitNum !== -1) {
+      employeeFetch = employeeFetch.skip(skip).limit(limitNum);
+    }
+
+    const employees = await employeeFetch;
 
     if (employees.length === 0) {
       return res.status(200).json({
@@ -554,9 +559,9 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
       endDate,
       pagination: {
         page: pageNum,
-        limit: limitNum,
+        limit: limitNum === -1 ? totalEmployees : limitNum,
         total: totalEmployees,
-        totalPages: Math.ceil(totalEmployees / limitNum)
+        totalPages: limitNum === -1 ? 1 : Math.ceil(totalEmployees / limitNum)
       }
     });
 

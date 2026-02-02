@@ -116,6 +116,7 @@ export default function PayRegisterPage() {
   const [leaveTypes, setLeaveTypes] = useState<any[]>([]);
   const [calculatingId, setCalculatingId] = useState<string | null>(null);
   const [bulkCalculating, setBulkCalculating] = useState(false);
+  const [downloadingTemplate, setDownloadingTemplate] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
 
 
@@ -1169,35 +1170,63 @@ export default function PayRegisterPage() {
 
                   <div className="flex justify-between items-center">
                     <button
-                      onClick={() => {
-                        const headers = ["Employee Code", "Employee Name", "Department", "Division", "Total Present", "Total Absent", "Paid Leaves", "LOP Count", "Total OD", "Total Extra Days", "Total OT Hours", "Holidays", "Lates"];
-                        const sampleData = payRegisters.map(pr => ({
-                          "Employee Code": typeof pr.employeeId === 'object' ? pr.employeeId.emp_no : pr.emp_no,
-                          "Employee Name": typeof pr.employeeId === 'object' ? pr.employeeId.employee_name : '',
-                          "Department": (typeof pr.employeeId === 'object' && pr.employeeId.department_id) ? (pr.employeeId.department_id as any).name : '',
-                          "Division": (typeof pr.employeeId === 'object' && pr.employeeId.division_id) ? (pr.employeeId.division_id as any).name : '',
-                          "Total Present": 0,
-                          "Total Absent": 0,
-                          "Paid Leaves": 0,
-                          "LOP Count": 0,
-                          "Total OD": 0,
-                          "Total Extra Days": 0,
-                          "Total OT Hours": 0,
-                          "Holidays": 0,
-                          "Lates": 0
-                        }));
+                      onClick={async () => {
+                        setDownloadingTemplate(true);
+                        try {
+                          // Fetch ALL employees for this month/division/dept by passing limit: -1
+                          const targetDeptId = selectedDepartment && selectedDepartment.trim() !== '' ? selectedDepartment : undefined;
+                          const targetDivId = selectedDivision && selectedDivision.trim() !== '' ? selectedDivision : undefined;
 
-                        const ws = XLSX.utils.json_to_sheet(sampleData);
-                        const wb = XLSX.utils.book_new();
-                        XLSX.utils.book_append_sheet(wb, ws, "Attendance Summary");
-                        XLSX.writeFile(wb, `Payroll_Summary_Template_${currentDate.toISOString().slice(0, 7)}.xlsx`);
+                          const response = await api.getEmployeesWithPayRegister(monthStr, targetDeptId, targetDivId, undefined, 1, -1);
+
+                          if (response.success) {
+                            const allEmployees = response.data || [];
+                            const headers = ["Employee Code", "Employee Name", "Department", "Division", "Total Present", "Total Absent", "Paid Leaves", "LOP Count", "Total OD", "Total Extra Days", "Total OT Hours", "Holidays", "Lates"];
+                            const sampleData = allEmployees.map(pr => ({
+                              "Employee Code": typeof pr.employeeId === 'object' ? pr.employeeId.emp_no : pr.emp_no,
+                              "Employee Name": typeof pr.employeeId === 'object' ? pr.employeeId.employee_name : '',
+                              "Department": (typeof pr.employeeId === 'object' && pr.employeeId.department_id) ? (pr.employeeId.department_id as any).name : '',
+                              "Division": (typeof pr.employeeId === 'object' && pr.employeeId.division_id) ? (pr.employeeId.division_id as any).name : '',
+                              "Total Present": 0,
+                              "Total Absent": 0,
+                              "Paid Leaves": 0,
+                              "LOP Count": 0,
+                              "Total OD": 0,
+                              "Total Extra Days": 0,
+                              "Total OT Hours": 0,
+                              "Holidays": 0,
+                              "Lates": 0
+                            }));
+
+                            const ws = XLSX.utils.json_to_sheet(sampleData);
+                            const wb = XLSX.utils.book_new();
+                            XLSX.utils.book_append_sheet(wb, ws, "Attendance Summary");
+                            XLSX.writeFile(wb, `Payroll_Summary_Template_${monthStr}.xlsx`);
+                            toast.success(`Template downloaded with ${allEmployees.length} employees`);
+                          } else {
+                            toast.error(response.message || "Failed to fetch employees for template");
+                          }
+                        } catch (err: any) {
+                          console.error('Error downloading template:', err);
+                          toast.error(err.message || 'Error generating template');
+                        } finally {
+                          setDownloadingTemplate(false);
+                        }
                       }}
+                      disabled={downloadingTemplate}
                       className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
                     >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      <svg className={`w-4 h-4 ${downloadingTemplate ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        {downloadingTemplate ? (
+                          <>
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </>
+                        ) : (
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        )}
                       </svg>
-                      Download Template
+                      {downloadingTemplate ? "Generating..." : "Download Template"}
                     </button>
                   </div>
                 </>
