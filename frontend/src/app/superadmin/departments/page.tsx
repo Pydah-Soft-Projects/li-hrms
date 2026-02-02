@@ -113,6 +113,8 @@ export default function DepartmentsPage() {
   const [showLinkDesignationDialog, setShowLinkDesignationDialog] = useState<string | null>(null); // New dialog state
   const [selectedLinkDesignationId, setSelectedLinkDesignationId] = useState(''); // Added state for link selection
   const [linkDesignationSearch, setLinkDesignationSearch] = useState(''); // Search filter for link designation
+  const [existingDesignationSearch, setExistingDesignationSearch] = useState(''); // Search filter for existing designations list
+  const [loadingDesignations, setLoadingDesignations] = useState(false);
   const [showShiftDialog, setShowShiftDialog] = useState<Department | null>(null);
   const [showDesignationShiftDialog, setShowDesignationShiftDialog] = useState<Designation | null>(null);
   const [showShiftBreakdownDialog, setShowShiftBreakdownDialog] = useState<Designation | null>(null);
@@ -284,27 +286,25 @@ export default function DepartmentsPage() {
   };
 
   const loadDesignations = async (departmentId: string) => {
-    // If global (departmentId === 'global'), fetch all designations
-    if (departmentId === 'global') {
-      try {
+    setLoadingDesignations(true);
+    try {
+      // If global (departmentId === 'global'), fetch all designations
+      if (departmentId === 'global') {
         const response = await api.getAllDesignations();
         if (response.success && response.data) {
           setDesignations(response.data);
         }
-      } catch (err) {
-        console.error('Error loading global designations:', err);
-      }
-      return;
-    }
-
-    // For department-specific, always call API to get resolved shifts
-    try {
-      const response = await api.getDesignations(departmentId);
-      if (response.success && response.data) {
-        setDesignations(response.data);
+      } else {
+        // For department-specific, always call API to get resolved shifts
+        const response = await api.getDesignations(departmentId);
+        if (response.success && response.data) {
+          setDesignations(response.data);
+        }
       }
     } catch (err) {
       console.error('Error loading designations:', err);
+    } finally {
+      setLoadingDesignations(false);
     }
   };
 
@@ -1403,6 +1403,7 @@ export default function DepartmentsPage() {
                 onClick={() => {
                   setShowDesignationDialog(null);
                   resetDesignationForm();
+                  setExistingDesignationSearch('');
                 }}
               />
               <div className="relative z-50 w-full max-w-6xl max-h-[90vh] overflow-hidden rounded-3xl border border-slate-200 bg-white/95 shadow-2xl shadow-blue-500/10 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/95">
@@ -1420,6 +1421,7 @@ export default function DepartmentsPage() {
                     onClick={() => {
                       setShowDesignationDialog(null);
                       resetDesignationForm();
+                      setExistingDesignationSearch('');
                     }}
                     className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 focus:outline-none focus:ring-2 focus:ring-red-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
                   >
@@ -1533,6 +1535,20 @@ export default function DepartmentsPage() {
                       )}
                     </h3>
 
+                    {/* Search designations */}
+                    <div className="relative mb-4">
+                      <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                      <input
+                        type="text"
+                        placeholder="Search designations by name or code..."
+                        value={existingDesignationSearch}
+                        onChange={(e) => setExistingDesignationSearch(e.target.value)}
+                        className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-4 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                      />
+                    </div>
+
                     {/* Add Link Designation Button if not global */}
                     {showDesignationDialog !== 'global' && (
                       <div className="mb-4">
@@ -1621,19 +1637,36 @@ export default function DepartmentsPage() {
                       </div>
                     )}
 
-                    {designations.length === 0 ? (
-                      <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center dark:border-slate-700 dark:bg-slate-900/50">
-                        <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
-                          <svg className="h-6 w-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-                          </svg>
-                        </div>
-                        <p className="text-sm font-medium text-slate-600 dark:text-slate-400">No designations yet</p>
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">Create your first designation using the form</p>
+                    {loadingDesignations ? (
+                      <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center dark:border-slate-700 dark:bg-slate-900/50">
+                        <Spinner />
+                        <p className="mt-4 text-sm font-medium text-slate-600 dark:text-slate-400">Loading designations...</p>
                       </div>
-                    ) : (
+                    ) : (() => {
+                      const filteredDesignations = designations.filter((d) => {
+                        const search = existingDesignationSearch.toLowerCase();
+                        if (!search) return true;
+                        const name = (d.name || '').toLowerCase();
+                        const code = (d.code || '').toLowerCase();
+                        return name.includes(search) || code.includes(search);
+                      });
+                      return filteredDesignations.length === 0 ? (
+                        <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center dark:border-slate-700 dark:bg-slate-900/50">
+                          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
+                            <svg className="h-6 w-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                            </svg>
+                          </div>
+                          <p className="text-sm font-medium text-slate-600 dark:text-slate-400">
+                            {designations.length === 0 ? 'No designations yet' : 'No matching designations found'}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">
+                            {designations.length === 0 ? 'Create your first designation using the form' : 'Try adjusting your search'}
+                          </p>
+                        </div>
+                      ) : (
                       <div className="space-y-3">
-                        {designations.map((designation) => (
+                        {filteredDesignations.map((designation) => (
                           <div
                             key={designation._id}
                             className="rounded-xl border border-slate-200 bg-white p-4 transition-all hover:border-blue-200 hover:shadow-md dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600"
@@ -1743,7 +1776,8 @@ export default function DepartmentsPage() {
                           </div>
                         ))}
                       </div>
-                    )}
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
