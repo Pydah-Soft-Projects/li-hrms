@@ -408,10 +408,10 @@ exports.getAllEmployees = async (req, res) => {
       const mssqlEmployees = await getAllEmployeesMSSQL(filters);
       total = mssqlEmployees.length;
       const sortedMssql = mssqlEmployees.slice(skip, skip + parseInt(limit));
-      
+
       // Resolve names/refs for MSSQL employees
       const resolved = await resolveEmployeeReferences(sortedMssql);
-      
+
       // MERGE with MongoDB data for fields not in SQL (allowances, dynamicFields, etc.)
       const empNos = resolved.map(e => e.emp_no);
       const mongoMatches = await Employee.find({ emp_no: { $in: empNos } });
@@ -423,7 +423,7 @@ exports.getAllEmployees = async (req, res) => {
 
         // Transform MongoDB extra data
         const transformed = await transformEmployeeForResponse(mongoEmp, true);
-        
+
         // Merge: MSSQL fields take priority for core fields, MongoDB for extra ones
         return {
           ...transformed,
@@ -714,7 +714,8 @@ exports.createEmployee = async (req, res) => {
       { snake: 'bank_name', camel: 'bankName' },
       { snake: 'bank_place', camel: 'bankPlace' },
       { snake: 'ifsc_code', camel: 'ifscCode' },
-      { snake: 'salary_mode', camel: 'salaryMode' }
+      { snake: 'salary_mode', camel: 'salaryMode' },
+      { snake: 'second_salary', camel: 'secondSalary' }
     ];
 
     bankFields.forEach(({ snake, camel }) => {
@@ -995,7 +996,8 @@ exports.updateEmployee = async (req, res) => {
       { snake: 'bank_name', camel: 'bankName' },
       { snake: 'bank_place', camel: 'bankPlace' },
       { snake: 'ifsc_code', camel: 'ifscCode' },
-      { snake: 'salary_mode', camel: 'salaryMode' }
+      { snake: 'salary_mode', camel: 'salaryMode' },
+      { snake: 'second_salary', camel: 'secondSalary' }
     ];
 
     bankFields.forEach(({ snake, camel }) => {
