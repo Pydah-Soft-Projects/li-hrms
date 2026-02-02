@@ -10,6 +10,7 @@ const secondSalaryAllowanceService = require('./secondSalaryAllowanceService');
 const secondSalaryDeductionService = require('./secondSalaryDeductionService');
 const secondSalaryLoanAdvanceService = require('./secondSalaryLoanAdvanceService');
 const SecondSalaryBatchService = require('./secondSalaryBatchService');
+const allowanceDeductionResolverService = require('./allowanceDeductionResolverService');
 
 /**
  * Normalize overrides (same logic as regular payroll)
@@ -19,7 +20,9 @@ const normalizeOverrides = (list, fallbackCategory) => {
     return list
         .filter(ov => ov && (ov.masterId || ov.name))
         .map((ov) => {
-            const override = { ...ov };
+            // Use toObject() if it's a Mongoose subdocument, otherwise spread properties
+            const override = (ov && typeof ov.toObject === 'function') ? ov.toObject() : { ...ov };
+
             override.category = override.category || fallbackCategory;
             if (override.amount === undefined || override.amount === null) {
                 override.amount = (override.overrideAmount !== undefined && override.overrideAmount !== null)
@@ -31,32 +34,6 @@ const normalizeOverrides = (list, fallbackCategory) => {
         });
 };
 
-/**
- * Simple merge with overrides (helper)
- */
-function mergeWithOverrides(baseList, overrides, includeMissing = true) {
-    const result = [...baseList];
-
-    overrides.forEach(ov => {
-        const index = result.findIndex(b =>
-            (ov.masterId && b.masterId && b.masterId.toString() === ov.masterId.toString()) ||
-            (ov.name && b.name === ov.name)
-        );
-
-        if (index !== -1) {
-            result[index].amount = ov.amount;
-            result[index].isEmployeeOverride = true;
-        } else if (includeMissing) {
-            result.push({
-                ...ov,
-                isEmployeeOverride: true,
-                source: 'employee_override'
-            });
-        }
-    });
-
-    return result;
-}
 
 /**
  * Main Second Salary Calculation Service
@@ -152,8 +129,7 @@ async function calculateSecondSalary(employeeId, month, userId) {
         // 3. Base Gross for deductions
         let grossAmountSalary = earnedSalary + otPay;
 
-        // 4. Allowances
-        // For 2nd salary, we use the same allowance masters but potentially different bases
+        // 4. Allowances (Two Pass - matching regular payroll)
         const attendanceData = {
             presentDays: attendanceSummary.totalPresentDays || 0,
             paidLeaveDays: attendanceSummary.totalPaidLeaveDays || 0,
@@ -161,18 +137,56 @@ async function calculateSecondSalary(employeeId, month, userId) {
             monthDays: attendanceSummary.totalDaysInMonth,
         };
 
-        const baseAllowances = await secondSalaryAllowanceService.calculateAllowances(
+        // Pass 1: Basic-based allowances
+        const basicBasedAllowances = await secondSalaryAllowanceService.calculateAllowances(
             departmentId.toString(),
             basicPay,
-            grossAmountSalary,
-            false, // First pass
+            null, // grossSalary not available yet
+            false,
             attendanceData,
             divisionId?.toString()
         );
 
-        // Merge with employee overrides (normalized to 2nd salary context if needed, but usually same)
+        const currentGross = basicPay + basicBasedAllowances.reduce((sum, a) => sum + (a.amount || 0), 0) + otPay;
+
+        // Pass 2: Gross-based allowances
+        const grossBasedAllowances = await secondSalaryAllowanceService.calculateAllowances(
+            departmentId.toString(),
+            basicPay,
+            currentGross,
+            true, // second pass
+            attendanceData,
+            divisionId?.toString()
+        );
+
+        const allAllowances = [...basicBasedAllowances, ...grossBasedAllowances];
+
+        // Deduplicate base allowances
+        const uniqueAllowances = [];
+        const seenAllowanceKeys = new Set();
+        allAllowances.forEach(a => {
+            const key = a.masterId ? `id_${a.masterId.toString()}` : `name_${a.name.toLowerCase()}`;
+            if (!seenAllowanceKeys.has(key)) {
+                uniqueAllowances.push(a);
+                seenAllowanceKeys.add(key);
+            }
+        });
+
+        // Merge with employee overrides
+        const includeMissing = await allowanceDeductionResolverService.getIncludeMissingFlag(departmentId, divisionId);
         const allowanceOverrides = normalizeOverrides(employee.employeeAllowances || [], 'allowance');
-        const mergedAllowances = mergeWithOverrides(baseAllowances, allowanceOverrides, true);
+
+        console.log(`\n--- Normalized Second Salary Allowance Overrides: ${allowanceOverrides.length} items ---`);
+        allowanceOverrides.forEach((ov, idx) => {
+            console.log(`  [${idx + 1}] ${ov.name} (masterId: ${ov.masterId}, amount: ${ov.amount})`);
+        });
+
+        const mergedAllowances = allowanceDeductionResolverService.mergeWithOverrides(uniqueAllowances, allowanceOverrides, includeMissing);
+
+        console.log(`\n--- Merged Second Salary Allowances: ${mergedAllowances.length} items (includeMissing: ${includeMissing}) ---`);
+        mergedAllowances.forEach((m, idx) => {
+            console.log(`  [${idx + 1}] ${m.name}: ${m.amount} ${m.isEmployeeOverride ? '(OVERRIDDEN)' : ''}`);
+        });
 
         const totalAllowances = secondSalaryAllowanceService.calculateTotalAllowances(mergedAllowances);
         grossAmountSalary += totalAllowances;
@@ -199,7 +213,18 @@ async function calculateSecondSalary(employeeId, month, userId) {
         );
 
         const deductionOverrides = normalizeOverrides(employee.employeeDeductions || [], 'deduction');
-        const mergedDeductions = mergeWithOverrides(baseDeductions, deductionOverrides, true);
+
+        console.log(`\n--- Normalized Second Salary Deduction Overrides: ${deductionOverrides.length} items ---`);
+        deductionOverrides.forEach((ov, idx) => {
+            console.log(`  [${idx + 1}] ${ov.name} (masterId: ${ov.masterId}, amount: ${ov.amount})`);
+        });
+
+        const mergedDeductions = allowanceDeductionResolverService.mergeWithOverrides(baseDeductions, deductionOverrides, includeMissing);
+
+        console.log(`\n--- Merged Second Salary Deductions: ${mergedDeductions.length} items (includeMissing: ${includeMissing}) ---`);
+        mergedDeductions.forEach((m, idx) => {
+            console.log(`  [${idx + 1}] ${m.name}: ${m.amount} ${m.isEmployeeOverride ? '(OVERRIDDEN)' : ''}`);
+        });
 
         const totalOtherDeductions = secondSalaryDeductionService.calculateTotalOtherDeductions(mergedDeductions);
         totalDeductions += totalOtherDeductions;

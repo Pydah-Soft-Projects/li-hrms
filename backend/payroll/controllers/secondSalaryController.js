@@ -1,5 +1,92 @@
 const SecondSalaryService = require('../services/secondSalaryService');
 const SecondSalaryBatch = require('../model/SecondSalaryBatch');
+const SecondSalaryRecord = require('../model/SecondSalaryRecord');
+const Employee = require('../../employees/model/Employee');
+const XLSX = require('xlsx');
+
+/**
+ * Build Excel row with normalized columns (all employees have same columns)
+ * @param {Object} record - SecondSalaryRecord data
+ * @param {Set} allAllowanceNames - All unique allowance names across all employees
+ * @param {Set} allDeductionNames - All unique deduction names across all employees
+ * @param {Number} serialNo - Serial number for S.No column
+ */
+function buildSecondSalaryExcelRowsNormalized(record, allAllowanceNames, allDeductionNames, serialNo) {
+    const employee = record.employeeId;
+    const row = {
+        'S.No': serialNo,
+        'Employee Code': record.emp_no || employee?.emp_no || '',
+        'Name': employee?.employee_name || 'N/A',
+        'Designation': employee?.designation_id?.name || 'N/A',
+        'Department': employee?.department_id?.name || 'N/A',
+        'Division': record.division_id?.name || employee?.division_id?.name || 'N/A',
+        'Date of Joining': employee?.doj ? new Date(employee.doj).toLocaleDateString() : '',
+        'Payment Mode': employee?.salary_mode || '',
+        'Bank Name': employee?.bank_name || '',
+        'Bank Account No': employee?.bank_account_no || '',
+        '2ND SALARY BASIC': record.earnings?.basicPay || 0,
+    };
+
+    // Allowances
+    const employeeAllowances = {};
+    if (record.earnings && Array.isArray(record.earnings.allowances)) {
+        record.earnings.allowances.forEach(allowance => {
+            if (allowance && allowance.name) {
+                employeeAllowances[allowance.name] = allowance.amount || 0;
+            }
+        });
+    }
+
+    allAllowanceNames.forEach(allowanceName => {
+        row[allowanceName] = employeeAllowances[allowanceName] || 0;
+    });
+
+    row['TOTAL GROSS'] = record.earnings?.grossSalary || 0;
+
+    // Attendance
+    row['Month Days'] = record.totalDaysInMonth || 0;
+    row['Present Days'] = record.attendance?.presentDays || 0;
+    row['Paid Leaves'] = record.attendance?.paidLeaveDays || 0;
+    row['OD Days'] = record.attendance?.odDays || 0;
+    row['Weekly Offs'] = record.attendance?.weeklyOffs || 0;
+    row['Holidays'] = record.attendance?.holidays || 0;
+    row['Absent Days'] = record.attendance?.absentDays || 0;
+    row['Payable Shifts'] = record.attendance?.payableShifts || 0;
+    row['Extra Days'] = record.attendance?.extraDays || 0;
+    row['Total Paid Days'] = record.attendance?.totalPaidDays || 0;
+
+    // OT
+    row['OT Days'] = record.attendance?.otDays || 0;
+    row['OT Hours'] = record.attendance?.otHours || 0;
+    row['OT Amount'] = record.earnings?.otPay || 0;
+
+    // Deductions
+    const employeeDeductions = {};
+    if (record.deductions && Array.isArray(record.deductions.otherDeductions)) {
+        record.deductions.otherDeductions.forEach(deduction => {
+            if (deduction && deduction.name) {
+                employeeDeductions[deduction.name] = deduction.amount || 0;
+            }
+        });
+    }
+
+    allDeductionNames.forEach(deductionName => {
+        row[deductionName] = employeeDeductions[deductionName] || 0;
+    });
+
+    row['Attendance Deduction'] = record.deductions?.attendanceDeduction || 0;
+    row['Permission Deduction'] = record.deductions?.permissionDeduction || 0;
+    row['Leave Deduction'] = record.deductions?.leaveDeduction || 0;
+    row['Advance Deduction'] = record.loanAdvance?.advanceDeduction || 0;
+    row['Total Deductions'] = record.deductions?.totalDeductions || 0;
+
+    // Final
+    row['NET SALARY'] = record.netSalary || 0;
+    row['Round Off'] = record.roundOff || 0;
+    row['FINAL SALARY'] = record.netSalary || 0;
+
+    return row;
+}
 
 /**
  * @desc    Run 2nd salary payroll for a department
@@ -225,6 +312,111 @@ exports.getSalaryComparison = async (req, res) => {
         res.status(500).json({
             success: false,
             message: error.message || 'Error fetching comparison data'
+        });
+    }
+};
+/**
+ * @desc    Export 2nd salary records to Excel
+ * @route   GET /api/second-salary/export
+ */
+exports.exportSecondSalaryExcel = async (req, res) => {
+    try {
+        const { month, departmentId, divisionId, employeeIds, search } = req.query;
+
+        if (!month) {
+            return res.status(400).json({
+                success: false,
+                message: 'Month is required'
+            });
+        }
+
+        let targetEmployeeIds = [];
+        if (employeeIds) {
+            targetEmployeeIds = String(employeeIds)
+                .split(',')
+                .map((id) => id.trim())
+                .filter(Boolean);
+        } else {
+            // Build Employee Query based on filters
+            const employeeQuery = {};
+            if (departmentId && departmentId !== 'all') employeeQuery.department_id = departmentId;
+            if (divisionId && divisionId !== 'all') employeeQuery.division_id = divisionId;
+
+            if (search) {
+                employeeQuery.$or = [
+                    { employee_name: { $regex: search, $options: 'i' } },
+                    { emp_no: { $regex: search, $options: 'i' } }
+                ];
+            }
+
+            const emps = await Employee.find(employeeQuery).select('_id');
+            targetEmployeeIds = emps.map((e) => e._id.toString());
+        }
+
+        const query = { month };
+        if (targetEmployeeIds.length > 0) {
+            query.employeeId = { $in: targetEmployeeIds };
+        }
+
+        const records = await SecondSalaryRecord.find(query)
+            .populate({
+                path: 'employeeId',
+                select: 'employee_name emp_no department_id division_id designation_id gross_salary location bank_account_no bank_name salary_mode doj pf_number esi_number',
+                populate: [
+                    { path: 'department_id', select: 'name' },
+                    { path: 'division_id', select: 'name' },
+                    { path: 'designation_id', select: 'name' },
+                ],
+            })
+            .populate('division_id', 'name')
+            .lean();
+
+        if (!records || records.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'No 2nd salary records found for export. Please calculate first.'
+            });
+        }
+
+        // Collect ALL unique allowances and deductions across all employees
+        const allAllowanceNames = new Set();
+        const allDeductionNames = new Set();
+
+        records.forEach(record => {
+            if (Array.isArray(record.earnings?.allowances)) {
+                record.earnings.allowances.forEach(allowance => {
+                    if (allowance.name) allAllowanceNames.add(allowance.name);
+                });
+            }
+            if (Array.isArray(record.deductions?.otherDeductions)) {
+                record.deductions.otherDeductions.forEach(deduction => {
+                    if (deduction.name) allDeductionNames.add(deduction.name);
+                });
+            }
+        });
+
+        // Build rows
+        const rows = records.map((record, index) =>
+            buildSecondSalaryExcelRowsNormalized(record, allAllowanceNames, allDeductionNames, index + 1)
+        );
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.json_to_sheet(rows);
+        XLSX.utils.book_append_sheet(wb, ws, 'Second Salary Payslips');
+        const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+        const filename = `second_salary_payslips_${month}.xlsx`;
+        res.setHeader(
+            'Content-Type',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        );
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        return res.send(buf);
+    } catch (error) {
+        console.error('Error exporting second salary:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Error exporting second salary'
         });
     }
 };
