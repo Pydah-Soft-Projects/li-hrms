@@ -16,6 +16,8 @@ class SecondSalaryService {
      */
     async runSecondSalaryPayroll({ departmentId, divisionId, month, userId }) {
         try {
+            const { payrollQueue } = require('../../shared/jobs/queueManager');
+
             // 1. Fetch Department and Division (if provided)
             let department = null;
             if (departmentId && departmentId !== 'all') {
@@ -31,71 +33,30 @@ class SecondSalaryService {
             if (departmentId && departmentId !== 'all') query.department_id = departmentId;
             if (divisionId && divisionId !== 'all') query.division_id = divisionId;
 
-            const employees = await Employee.find(query);
+            const employeesCount = await Employee.countDocuments(query);
 
-            if (employees.length === 0) {
+            if (employeesCount === 0) {
                 throw new Error('No employees with 2nd salary found matching the filters');
             }
 
-            // 3. Create or Update Batch (using service)
-            // Note: If departmentId is 'all', batch creation might need logic change.
-            // But usually batches are per department.
-            // For "Calculate All", we might need to handle batching per department inside the loop.
+            // 3. Queue the job for background processing
+            const job = await payrollQueue.add('second_salary_calculation', {
+                action: 'second_salary_batch',
+                departmentId: departmentId === 'all' ? null : departmentId,
+                divisionId: divisionId === 'all' ? null : divisionId,
+                month,
+                userId
+            }, {
+                jobId: `second_salary_${month}_${departmentId || 'all'}_${divisionId || 'all'}`
+            });
 
-            // To maintain parity with regular payroll, we loop departments if "all" is selected?
-            // Actually, calculateSecondSalary handles batch creation per employee's department.
-            // So we don't strictly need a "main" batch here if calculating for all.
-
-            let mainBatch = null;
-            if (departmentId && departmentId !== 'all') {
-                mainBatch = await SecondSalaryBatchService.createBatch(departmentId, divisionId, month, userId);
-                if (mainBatch && ['approved', 'freeze', 'complete'].includes(mainBatch.status)) {
-                    throw new Error(`Batch is already ${mainBatch.status} and cannot be recalculated.`);
-                }
-            }
-
-            // 4. Calculate for each employee using the new robust calculation service
-            const results = {
-                successCount: 0,
-                failCount: 0,
-                success: [],
-                failed: []
-            };
-
-            const batchIds = new Set();
-
-            for (const employee of employees) {
-                try {
-                    const result = await calculateSecondSalary(employee._id, month, userId);
-                    results.successCount++;
-                    results.success.push({
-                        employeeId: employee._id,
-                        emp_no: employee.emp_no,
-                        name: employee.employee_name
-                    });
-                    if (result.batchId) batchIds.add(result.batchId.toString());
-                } catch (err) {
-                    console.error(`Failed to calculate second salary for ${employee.emp_no}:`, err);
-                    results.failCount++;
-                    results.failed.push({
-                        employeeId: employee._id,
-                        emp_no: employee.emp_no,
-                        error: err.message
-                    });
-                }
-            }
-
-            // 5. Finalize Batch Totals for all involved batches
-            for (const batchId of batchIds) {
-                await SecondSalaryBatchService.recalculateBatchTotals(batchId);
-            }
+            console.log(`[SecondSalaryService] Queued background job ${job.id} for ${employeesCount} employees`);
 
             return {
-                batch: mainBatch,
-                batchIds: Array.from(batchIds),
-                successCount: results.successCount,
-                failCount: results.failCount,
-                results
+                queued: true,
+                jobId: job.id,
+                totalEmployees: employeesCount,
+                message: `Calculation for ${employeesCount} employees has been queued in the background.`
             };
         } catch (error) {
             console.error('Error in runSecondSalaryPayroll:', error);
