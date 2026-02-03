@@ -1152,6 +1152,9 @@ export default function EmployeesPage() {
         editingEmployee?.employeeDeductions
       );
 
+      // DEBUG: Check formData before creating submitData
+      console.log('DEBUG: formData.gross_salary:', formData.gross_salary);
+
       // Clean up enum fields - convert empty strings to null/undefined
       const submitData = {
         ...formData,
@@ -1162,6 +1165,9 @@ export default function EmployeesPage() {
         ctcSalary: salarySummary.ctcSalary,
         calculatedSalary: salarySummary.netSalary,
       };
+
+      // DEBUG: Check submitData after creation
+      console.log('DEBUG: submitData.gross_salary:', (submitData as any).gross_salary);
 
       // Consolidate 'reporting_to' and 'reporting_to_' - ensure we use 'reporting_to' only
       // If reporting_to_ has data and reporting_to is empty, use the data from reporting_to_
@@ -3467,7 +3473,10 @@ export default function EmployeesPage() {
                 <form onSubmit={handleSubmit} className="space-y-6">
                   <DynamicEmployeeForm
                     formData={formData}
-                    onChange={setFormData}
+                    onChange={(newData) => {
+                      console.log('DEBUG: DynamicEmployeeForm onChange - gross_salary:', newData.gross_salary);
+                      setFormData(newData);
+                    }}
                     errors={{}}
                     divisions={divisions}
                     departments={departments}
