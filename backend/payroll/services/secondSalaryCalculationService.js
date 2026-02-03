@@ -43,7 +43,7 @@ const normalizeOverrides = (list, fallbackCategory) => {
 /**
  * Calculate second salary for an employee
  */
-async function calculateSecondSalary(employeeId, month, userId) {
+async function calculateSecondSalary(employeeId, month, userId, sharedContext = null) {
     try {
         const employee = await Employee.findById(employeeId).populate('department_id designation_id division_id');
         if (!employee) throw new Error('Employee not found');
@@ -103,7 +103,13 @@ async function calculateSecondSalary(employeeId, month, userId) {
             throw new Error(`Employee ${employee.emp_no} has no department assigned. Calculation aborted.`);
         }
 
-        const department = await Department.findById(departmentId);
+        // Optimization: Use shared department object if available
+        let department;
+        if (sharedContext && sharedContext.department && sharedContext.department._id.toString() === departmentId.toString()) {
+            department = sharedContext.department;
+        } else {
+            department = await Department.findById(departmentId);
+        }
 
         // Get paid leaves: Check employee first, then department (Parity with Regular Payroll)
         let paidLeaves = 0;
@@ -207,7 +213,14 @@ async function calculateSecondSalary(employeeId, month, userId) {
         });
 
         // Merge with employee overrides
-        const includeMissing = await allowanceDeductionResolverService.getIncludeMissingFlag(departmentId, divisionId);
+        // Optimization: Use shared includeMissing flag if available
+        let includeMissing;
+        if (sharedContext && sharedContext.includeMissing !== undefined) {
+            includeMissing = sharedContext.includeMissing;
+        } else {
+            includeMissing = await allowanceDeductionResolverService.getIncludeMissingFlag(departmentId, divisionId);
+        }
+
         const allowanceOverrides = normalizeOverrides(employee.employeeAllowances || [], 'allowance');
 
         console.log(`\n--- Normalized Second Salary Allowance Overrides: ${allowanceOverrides.length} items ---`);

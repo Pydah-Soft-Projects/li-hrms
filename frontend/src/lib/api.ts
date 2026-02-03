@@ -3110,5 +3110,9 @@ export const api = {
     const blob = await response.blob();
     return blob;
   },
+
+  getJobStatus: async (jobId: string, queue: string = 'payroll') => {
+    return apiRequest<any>(`/jobs/status/${jobId}?queue=${queue}`, { method: 'GET' });
+  },
 };
 

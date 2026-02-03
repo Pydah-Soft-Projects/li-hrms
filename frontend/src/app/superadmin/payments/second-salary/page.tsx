@@ -26,6 +26,8 @@ export default function SecondSalaryPaymentsPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [isCalculating, setIsCalculating] = useState(false);
     const [viewMode, setViewMode] = useState<'batches' | 'comparison'>('batches');
+    const [calculatingJobId, setCalculatingJobId] = useState<string | null>(null);
+    const [calculationProgress, setCalculationProgress] = useState<{ processed: number, total: number, percentage: number, currentEmployee?: string } | null>(null);
 
     // Filters
     const [month, setMonth] = useState(format(new Date(), 'yyyy-MM'));
@@ -141,6 +143,7 @@ export default function SecondSalaryPaymentsPage() {
         }
 
         setIsCalculating(true);
+        setCalculationProgress(null);
         try {
             const res = await api.post('/second-salary/calculate', {
                 divisionId: selectedDivision || 'all',
@@ -149,33 +152,23 @@ export default function SecondSalaryPaymentsPage() {
             });
 
             if (res.success) {
-                // Backend now returns successCount/failCount inside data
-                const { successCount, failCount } = res.data || {};
-
-                if (failCount === 0) {
-                    Swal.fire({
-                        icon: 'success',
-                        title: 'Success',
-                        text: `2nd Salary calculated for ${successCount} employees.`,
-                        timer: 3000,
-                        showConfirmButton: false,
-                        toast: true,
-                        position: 'top-end'
-                    });
+                if (res.data?.status === 'queued' && res.data?.jobId) {
+                    setCalculatingJobId(res.data.jobId);
+                    startPollingProgress(res.data.jobId);
                 } else {
-                    Swal.fire({
-                        icon: 'warning',
-                        title: 'Partial Success',
-                        text: `Calculated ${successCount} successfully, but ${failCount} failed.`,
-                    });
+                    // Backend returned immediate success (fallback for small batches if implemented)
+                    const { successCount, failCount } = res.data || {};
+                    showSuccessMessage(successCount, failCount);
+                    fetchBatches();
+                    setIsCalculating(false);
                 }
-                fetchBatches();
             } else {
                 Swal.fire({
                     icon: 'error',
                     title: 'Calculation Failed',
                     text: res.message || 'Failed to calculate',
                 });
+                setIsCalculating(false);
             }
         } catch (error: any) {
             Swal.fire({
@@ -183,9 +176,73 @@ export default function SecondSalaryPaymentsPage() {
                 title: 'Error',
                 text: error.message || 'Error running 2nd salary payroll',
             });
-        } finally {
             setIsCalculating(false);
         }
+    };
+
+    const showSuccessMessage = (successCount: number, failCount: number) => {
+        if (failCount === 0) {
+            Swal.fire({
+                icon: 'success',
+                title: 'Success',
+                text: `2nd Salary calculated for ${successCount} employees.`,
+                timer: 3000,
+                showConfirmButton: false,
+                toast: true,
+                position: 'top-end'
+            });
+        } else {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Partial Success',
+                text: `Calculated ${successCount} successfully, but ${failCount} failed.`,
+            });
+        }
+    };
+
+    const startPollingProgress = async (jobId: string) => {
+        const interval = setInterval(async () => {
+            try {
+                const res = await (api as any).getJobStatus(jobId);
+                if (res.success) {
+                    const { state, progress } = res.data;
+
+                    if (progress) {
+                        setCalculationProgress(progress);
+                    }
+
+                    if (state === 'completed') {
+                        clearInterval(interval);
+                        setCalculatingJobId(null);
+                        setCalculationProgress(null);
+                        setIsCalculating(false);
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Calculation Complete',
+                            text: '2nd Salary background calculation finished successfully.',
+                            timer: 3000,
+                            showConfirmButton: false,
+                            toast: true,
+                            position: 'top-end'
+                        });
+                        fetchBatches();
+                    } else if (state === 'failed') {
+                        clearInterval(interval);
+                        setCalculatingJobId(null);
+                        setCalculationProgress(null);
+                        setIsCalculating(false);
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Calculation Failed',
+                            text: res.data.failedReason || 'Background calculation failed.',
+                        });
+                    }
+                }
+            } catch (error) {
+                console.error('Error polling job status:', error);
+                // We keep polling unless it fails many times or 404
+            }
+        }, 1500); // Poll every 1.5 seconds
     };
 
 
@@ -417,6 +474,27 @@ export default function SecondSalaryPaymentsPage() {
                                 </button>
                             </div>
                         </div>
+
+                        {isCalculating && calculationProgress && (
+                            <div className="mt-6 space-y-3 p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl border border-indigo-100 dark:border-indigo-900/30">
+                                <div className="flex justify-between items-center text-sm font-medium">
+                                    <span className="text-indigo-700 dark:text-indigo-300 flex items-center gap-2">
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                        {calculationProgress.currentEmployee ? `Calculating for: ${calculationProgress.currentEmployee}` : 'Processing batch...'}
+                                    </span>
+                                    <span className="text-indigo-600 dark:text-indigo-400">
+                                        {calculatingJobId && <span className="mr-3 opacity-50 font-mono text-[10px]">ID: {calculatingJobId}</span>}
+                                        {calculationProgress.processed} / {calculationProgress.total} ({calculationProgress.percentage}%)
+                                    </span>
+                                </div>
+                                <div className="w-full bg-indigo-200/50 dark:bg-indigo-900/50 rounded-full h-2.5 overflow-hidden">
+                                    <div
+                                        className="bg-indigo-600 h-2.5 rounded-full transition-all duration-500 ease-out"
+                                        style={{ width: `${calculationProgress.percentage}%` }}
+                                    ></div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
