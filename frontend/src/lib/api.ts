@@ -264,6 +264,7 @@ export interface ApiResponse<T> {
   error?: string;
   dataSource?: string;
   jobId?: string;
+  status?: string;
   pagination?: {
     total: number;
     totalPages: number;
