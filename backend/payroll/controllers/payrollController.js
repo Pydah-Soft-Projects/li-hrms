@@ -1494,45 +1494,26 @@ exports.calculatePayrollBulk = async (req, res) => {
       });
     }
 
-    const useLegacy = strategy === 'legacy';
-    const payrollCalculationService = require('../services/payrollCalculationService');
-    const calcFn = payrollCalculationService.calculatePayrollNew;
-
-    let successCount = 0;
-    let failCount = 0;
-    const batchIds = new Set();
-    const errors = [];
-
-    // Sequential processing to avoid overwhelming the database/S3/BullMQ
-    // and to safely handle batch locks individually
-    for (const emp of employees) {
-      try {
-        const result = await calcFn(emp._id.toString(), month, req.user._id, {
-          source: useLegacy ? 'all' : 'payregister',
-        });
-
-        if (result.batchId) {
-          batchIds.add(result.batchId.toString());
-        }
-        successCount++;
-      } catch (err) {
-        failCount++;
-        errors.push({ employeeId: emp._id, message: err.message });
-        console.error(`[Bulk Calc] Failed for ${emp._id}:`, err.message);
-      }
-    }
-
-    res.status(200).json({
-      success: true,
-      message: `Bulk calculation complete: ${successCount} success, ${failCount} failed`,
-      data: {
-        totalProcessed: employees.length,
-        successCount,
-        failCount,
-        batchIds: Array.from(batchIds),
-        errors: errors.slice(0, 10), // Return only first 10 errors for brevity
-      },
+    const { payrollQueue } = require('../../shared/jobs/queueManager');
+    const job = await payrollQueue.add('payroll_bulk_calculate', {
+      action: 'payroll_bulk_calculate',
+      month,
+      divisionId: divisionId === 'all' ? undefined : divisionId,
+      departmentId: departmentId === 'all' ? undefined : departmentId,
+      strategy,
+      userId: req.user._id
     });
+
+    res.status(202).json({
+      success: true,
+      status: 'queued',
+      message: 'Bulk payroll calculation queued',
+      jobId: job.id,
+      data: {
+        totalEmployees: employees.length
+      }
+    });
+
   } catch (error) {
     console.error('Error in bulk payroll calculation:', error);
     res.status(500).json({

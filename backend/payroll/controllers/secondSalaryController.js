@@ -185,6 +185,18 @@ exports.calculateSecondSalary = async (req, res) => {
             userId
         });
 
+        if (result.queued) {
+            return res.status(202).json({
+                success: true,
+                message: result.message,
+                data: {
+                    jobId: result.jobId,
+                    totalEmployees: result.totalEmployees,
+                    status: 'queued'
+                }
+            });
+        }
+
         res.status(201).json({
             success: true,
             message: '2nd Salary payroll calculation completed',

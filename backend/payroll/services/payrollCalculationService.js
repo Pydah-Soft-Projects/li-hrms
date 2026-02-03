@@ -885,7 +885,7 @@ async function calculatePayroll(employeeId, month, userId) {
  * @param {String} options.source - Data source ('payregister' or 'all')
  * @param {Array} options.arrearsSettlements - Array of arrears settlements {id, amount}
  */
-async function calculatePayrollNew(employeeId, month, userId, options = { source: 'payregister', arrearsSettlements: [] }) {
+async function calculatePayrollNew(employeeId, month, userId, options = { source: 'payregister', arrearsSettlements: [] }, sharedContext = null) {
   try {
     const employee = await Employee.findById(employeeId).populate('department_id designation_id division_id');
     if (!employee) throw new Error('Employee not found');
@@ -1051,7 +1051,12 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     console.log('========================================\n');
 
     // Get includeMissing setting (whether to include non-overridden base items)
-    const includeMissing = await getIncludeMissingFlag(departmentId, divisionId);
+    let includeMissing;
+    if (sharedContext && sharedContext.includeMissing !== undefined && sharedContext.department && sharedContext.department._id.toString() === departmentId.toString()) {
+      includeMissing = sharedContext.includeMissing;
+    } else {
+      includeMissing = await getIncludeMissingFlag(departmentId, divisionId);
+    }
 
     // Log the setting for debugging
     console.log(`[Payroll] Include missing allowances/deductions: ${includeMissing}`);
