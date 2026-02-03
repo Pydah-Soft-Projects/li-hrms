@@ -8,6 +8,11 @@ const Employee = require('../../employees/model/Employee');
 const { processAndAggregateLogs, formatDate } = require('../services/attendanceSyncService');
 const { processMultiShiftAttendance } = require('../services/multiShiftProcessingService');
 const Settings = require('../../settings/model/Settings');
+const dayjs = require('dayjs');
+const utc = require('dayjs/plugin/utc');
+const timezone = require('dayjs/plugin/timezone');
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 // Valid Log Types whitelist
 const VALID_LOG_TYPES = ['CHECK-IN', 'CHECK-OUT', 'BREAK-OUT', 'BREAK-IN', 'OVERTIME-IN', 'OVERTIME-OUT'];
@@ -77,9 +82,52 @@ exports.receiveRealTimeLogs = async (req, res) => {
             // They will be stored in rawData for break/OT tracking but won't trigger attendance processing
 
             if (VALID_LOG_TYPES.includes(typeUpper)) {
-                // Parse timestamp safe
-                const timestamp = new Date(log.timestamp);
-                if (isNaN(timestamp.getTime())) continue;
+                // Robust timestamp normalization
+                let timestamp;
+                const rawTimestampStr = log.timestamp;
+
+                // If the machine sends a bare string like "2026-02-03 10:54:04"
+                // it might be UTC or IST depending on the machine's reset state.
+                const parsed = dayjs(rawTimestampStr);
+
+                if (parsed.isValid()) {
+                    // Check if it has explicit offset
+                    const hasExplicitOffset = /Z|[+-]\d{2}(:?\d{2})?$/.test(String(rawTimestampStr));
+
+                    if (hasExplicitOffset) {
+                        // Trust explicit offsets (standard ISO format)
+                        timestamp = parsed.toDate();
+                    } else {
+                        // Heuristic: If it's a bare string, we need to decide if it's UTC or IST.
+                        // The user says devices keep resetting to UTC, but people are punching in IST.
+                        // However, many ZK devices just output local time as a bare string.
+
+                        // Let's assume the device *thinks* it's in the timezone it was configured with.
+                        // If we just use new Date(bare_string), it uses system local time (which is IST on this server).
+                        // If the machine is in UTC but the time LOOKS LIKE IST (e.g. machine says 11:00 AM but it's 11:00 AM IST),
+                        // then new Date("2026-02-03 11:00:00") will correctly result in 11:00 AM IST.
+
+                        // IF the machine is in UTC and says 05:30 AM (when it's 11:00 AM IST), 
+                        // then we need to detect this and ADD 5:30.
+
+                        const serverTime = dayjs();
+                        const timeDiff = Math.abs(serverTime.diff(parsed, 'hour'));
+
+                        if (timeDiff > 4 && timeDiff < 7) {
+                            // Likely machine is in UTC (off by ~5.5 hours)
+                            // Correct it by assuming the bare string WAS intended to be IST
+                            // or by adding 5.5 hours if it was actually UTC.
+                            // Decision: If machine is in UTC, it reports 05:30 when it's 11:00.
+                            // We should ADD 5.5 hours to get the real IST moment.
+                            timestamp = parsed.add(330, 'minute').toDate();
+                            console.log(`[RealTime] Timezone correction applied for ${empId}: ${rawTimestampStr} -> ${timestamp.toISOString()}`);
+                        } else {
+                            timestamp = parsed.toDate();
+                        }
+                    }
+                }
+
+                if (!timestamp || isNaN(timestamp.getTime())) continue;
 
                 rawLogsToSave.push({
                     insertOne: {
