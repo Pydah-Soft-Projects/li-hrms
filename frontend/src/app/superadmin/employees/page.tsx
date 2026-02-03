@@ -3474,7 +3474,6 @@ export default function EmployeesPage() {
                   <DynamicEmployeeForm
                     formData={formData}
                     onChange={(newData) => {
-                      console.log('DEBUG: DynamicEmployeeForm onChange - gross_salary:', newData.gross_salary);
                       setFormData(newData);
                     }}
                     errors={{}}
