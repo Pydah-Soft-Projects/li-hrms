@@ -715,8 +715,8 @@ export default function EmployeesPage() {
   useEffect(() => {
     const deptId = formData.department_id;
     // Check both gross_salary and proposedSalary (form might use either)
-    const gross = formData.gross_salary || (formData as any).proposedSalary;
-    if (deptId && gross !== undefined && gross !== null && gross > 0) {
+    const gross = (formData as any).proposedSalary || formData.gross_salary;
+    if (deptId && gross !== undefined && gross !== null && Number(gross) > 0) {
       // If editing and salary changed, preserve current overrides so user edits aren't lost
       const preserveOverrides = !!editingEmployee && (Object.keys(overrideAllowances).length > 0 || Object.keys(overrideDeductions).length > 0);
       fetchComponentDefaults(deptId as string, Number(gross), editingEmployee?.emp_no, preserveOverrides);
@@ -3473,7 +3473,7 @@ export default function EmployeesPage() {
                     departments={departments}
                     designations={designations as any}
                     onSettingsLoaded={setFormSettings}
-                    excludeFields={editingEmployee ? ['proposedSalary', 'gross_salary'] : []}
+                    excludeFields={[]}
                   />
 
                   {/* Leave Settings (Optional) */}
