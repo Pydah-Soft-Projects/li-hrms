@@ -9,6 +9,13 @@ import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { api, Department, Division, Designation } from '@/lib/api';
 import { auth } from '@/lib/auth';
+import {
+  canCreateEmployee,
+  canEditEmployee,
+  canDeleteEmployee,
+  canImportEmployees,
+  canExportEmployees
+} from '@/lib/permissions';
 import BulkUpload from '@/components/BulkUpload';
 import DynamicEmployeeForm from '@/components/DynamicEmployeeForm';
 import Spinner from '@/components/Spinner';
@@ -1991,8 +1998,13 @@ export default function EmployeesPage() {
     return eligibleDepts;
   }
 
-  // Helper for UI buttons
-  const showManagementButtons = !['employee', 'hod'].includes(userRole);
+  // Permission checks using granular permissions system
+  const user = auth.getUser();
+  const hasCreatePermission = user ? canCreateEmployee(user) : false;
+  const hasEditPermission = user ? canEditEmployee(user) : false;
+  const hasDeletePermission = user ? canDeleteEmployee(user) : false;
+  const hasImportPermission = user ? canImportEmployees(user) : false;
+  const hasExportPermission = user ? canExportEmployees(user) : false;
 
   const RenderFilterHeader = ({
     label,
@@ -2170,8 +2182,8 @@ export default function EmployeesPage() {
               </button>
             </div>
 
-            {/* Settings Button - RBAC Protected */}
-            {showManagementButtons && (
+            {/* Settings Button - Permission Protected */}
+            {hasEditPermission && (
               <Link
                 href="/employees/form-settings"
                 className="flex items-center justify-center rounded-xl border border-slate-200 bg-white p-2.5 text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
@@ -2184,29 +2196,30 @@ export default function EmployeesPage() {
               </Link>
             )}
 
-            {/* Import and New Application Buttons - RBAC Protected */}
-            {showManagementButtons && (
-              <>
-                <button
-                  onClick={() => setShowBulkUpload(true)}
-                  className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-2.5 text-sm font-medium text-green-700 transition-all hover:bg-green-100 dark:border-green-800 dark:bg-green-900/30 dark:text-green-400"
-                >
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                  </svg>
-                  <span className="hidden sm:inline">Import</span>
-                </button>
+            {/* Import Button - Permission Protected */}
+            {hasImportPermission && (
+              <button
+                onClick={() => setShowBulkUpload(true)}
+                className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-2.5 text-sm font-medium text-green-700 transition-all hover:bg-green-100 dark:border-green-800 dark:bg-green-900/30 dark:text-green-400"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                <span className="hidden sm:inline">Import</span>
+              </button>
+            )}
 
-                <button
-                  onClick={() => setShowApplicationDialog(true)}
-                  className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-500/20 transition-all hover:shadow-green-500/40 hover:scale-[1.02]"
-                >
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                  New Application
-                </button>
-              </>
+            {/* New Application Button - Permission Protected */}
+            {hasCreatePermission && (
+              <button
+                onClick={() => setShowApplicationDialog(true)}
+                className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-500/20 transition-all hover:shadow-green-500/40 hover:scale-[1.02]"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                New Application
+              </button>
             )}
 
           </div>
@@ -2362,101 +2375,109 @@ export default function EmployeesPage() {
                         </div>
                       </td>
                       <td className="whitespace-nowrap px-6 py-4 text-right">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleEdit(employee);
-                          }}
-                          className="mr-2 rounded-lg p-2 text-slate-400 transition-all hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/30 dark:hover:text-blue-400"
-                          title="Edit"
-                        >
-                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                          </svg>
-                        </button>
-                        {employee.leftDate ? (
+                        {hasEditPermission && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleRemoveLeftDate(employee);
+                              handleEdit(employee);
                             }}
-                            className="rounded-lg p-2 text-slate-400 transition-all hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/30 dark:hover:text-green-400"
-                            title="Reactivate Employee"
+                            className="mr-2 rounded-lg p-2 text-slate-400 transition-all hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/30 dark:hover:text-blue-400"
+                            title="Edit"
                           >
                             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                             </svg>
                           </button>
-                        ) : (
+                        )}
+                        {hasDeletePermission && (
                           <>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleSetLeftDate(employee);
-                              }}
-                              className="mr-2 rounded-lg p-2 text-slate-400 transition-all hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
-                              title="Set Left Date"
-                            >
-                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                              </svg>
-                            </button>
-                            <button
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                if (!confirm(`Resend credentials to ${employee.employee_name}? This will reset their password.`)) return;
-                                setIsResending(employee.emp_no);
-                                try {
-                                  const res = await api.resendEmployeeCredentials(employee.emp_no, {
-                                    passwordMode,
-                                    notificationChannels
-                                  });
-                                  if (res.success) setSuccess('Credentials sent successfully!');
-                                  else setError(res.message || 'Failed to send');
-                                } catch (err) {
-                                  setError('Failed to resend');
-                                } finally {
-                                  setIsResending(null);
-                                }
-                              }}
-                              disabled={isResending === employee.emp_no}
-                              className="ml-2 rounded-lg p-2 text-slate-400 transition-all hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/30 dark:hover:text-green-400 disabled:opacity-50"
-                              title="Resend Credentials"
-                            >
-                              {isResending === employee.emp_no ? (
-                                <div className="h-4 w-4 animate-spin rounded-full border-2 border-green-500 border-t-transparent" />
-                              ) : (
-                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                                </svg>
-                              )}
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (employee.is_active !== false) {
-                                  handleDeactivate(employee.emp_no, true);
-                                } else {
-                                  handleActivate(employee.emp_no);
-                                }
-                              }}
-                              className={`rounded-lg p-2 transition-all ${employee.is_active !== false
-                                ? 'text-slate-400 hover:bg-orange-50 hover:text-orange-600 dark:hover:bg-orange-900/30 dark:hover:text-orange-400'
-                                : 'text-slate-400 hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/30 dark:hover:text-green-400'
-                                }`}
-                              title={employee.is_active !== false ? 'Deactivate' : 'Activate'}
-                            >
-                              {employee.is_active !== false ? (
-                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                                </svg>
-                              ) : (
+                            {employee.leftDate ? (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRemoveLeftDate(employee);
+                                }}
+                                className="rounded-lg p-2 text-slate-400 transition-all hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/30 dark:hover:text-green-400"
+                                title="Reactivate Employee"
+                              >
                                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                                 </svg>
-                              )}
-                            </button>
+                              </button>
+                            ) : (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleSetLeftDate(employee);
+                                }}
+                                className="mr-2 rounded-lg p-2 text-slate-400 transition-all hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
+                                title="Set Left Date"
+                              >
+                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                                </svg>
+                              </button>
+                            )}
                           </>
+                        )}
+                        {hasEditPermission && !employee.leftDate && (
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              if (!confirm(`Resend credentials to ${employee.employee_name}? This will reset their password.`)) return;
+                              setIsResending(employee.emp_no);
+                              try {
+                                const res = await api.resendEmployeeCredentials(employee.emp_no, {
+                                  passwordMode,
+                                  notificationChannels
+                                });
+                                if (res.success) setSuccess('Credentials sent successfully!');
+                                else setError(res.message || 'Failed to send');
+                              } catch (err) {
+                                setError('Failed to resend');
+                              } finally {
+                                setIsResending(null);
+                              }
+                            }}
+                            disabled={isResending === employee.emp_no}
+                            className="ml-2 rounded-lg p-2 text-slate-400 transition-all hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/30 dark:hover:text-green-400 disabled:opacity-50"
+                            title="Resend Credentials"
+                          >
+                            {isResending === employee.emp_no ? (
+                              <div className="h-4 w-4 animate-spin rounded-full border-2 border-green-500 border-t-transparent" />
+                            ) : (
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                              </svg>
+                            )}
+                          </button>
+                        )}
+                        {hasDeletePermission && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (employee.is_active !== false) {
+                                handleDeactivate(employee.emp_no, true);
+                              } else {
+                                handleActivate(employee.emp_no);
+                              }
+                            }}
+                            className={`rounded-lg p-2 transition-all ${employee.is_active !== false
+                              ? 'text-slate-400 hover:bg-orange-50 hover:text-orange-600 dark:hover:bg-orange-900/30 dark:hover:text-orange-400'
+                              : 'text-slate-400 hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/30 dark:hover:text-green-400'
+                              }`}
+                            title={employee.is_active !== false ? 'Deactivate' : 'Activate'}
+                          >
+                            {employee.is_active !== false ? (
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                              </svg>
+                            ) : (
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                            )}
+                          </button>
                         )}
                       </td>
                     </tr>
@@ -2472,1801 +2493,1801 @@ export default function EmployeesPage() {
           </div>
         )}
 
-      </div>
+    </div>
 
-      {/* Application Creation Dialog */}
-      {
-        showApplicationDialog && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowApplicationDialog(false)} />
-            <div className="relative z-50 max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950/95">
-              <div className="mb-6 flex items-center justify-between">
-                <div>
-                  <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-                    New Employee Application
-                  </h2>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    Create an application for a new employee. Superadmin will review and approve.
-                  </p>
-                </div>
-                <button
-                  onClick={() => setShowApplicationDialog(false)}
-                  className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900"
-                >
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              {error && (
-                <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
-                  {error}
-                </div>
-              )}
-
-              <form onSubmit={handleCreateApplication} className="space-y-6">
-                <DynamicEmployeeForm
-                  formData={applicationFormData}
-                  onChange={setApplicationFormData}
-                  errors={formErrors}
-                  departments={getScopedDepartments(getEntityId(applicationFormData.division_id) || '')}
-                  divisions={scopedDivisions}
-                  designations={filteredApplicationDesignations as any}
-                />
-
-                {/* Allowances & Deductions Overrides */}
-                <div className="space-y-4 rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Allowances &amp; Deductions</h3>
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        Defaults come from Department/Global. Enter an amount to override for this employee.
-                      </p>
-                    </div>
-                    {loadingComponents && (
-                      <div className="text-xs text-slate-500 dark:text-slate-400">Loading components...</div>
-                    )}
-                  </div>
-
-                  {/* Salary summary */}
-                  <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60 md:grid-cols-4">
-                    <div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">Proposed / Gross Salary</p>
-                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                        ₹{Number((applicationFormData as any).proposedSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-green-700 dark:text-green-300">Total Allowances</p>
-                      <p className="text-sm font-semibold text-green-700 dark:text-green-300">
-                        ₹{applicationSalarySummary.totalAllowances.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-red-700 dark:text-red-300">Total Deductions</p>
-                      <p className="text-sm font-semibold text-red-700 dark:text-red-300">
-                        ₹{applicationSalarySummary.totalDeductions.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">Calculated / CTC</p>
-                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                        ₹{applicationSalarySummary.netSalary.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-4 md:grid-cols-2">
-                    {/* Allowances */}
-                    <div className="rounded-xl border border-green-100 bg-green-50/70 p-3 dark:border-green-900/40 dark:bg-green-900/20">
-                      <div className="mb-2 flex items-center justify-between">
-                        <h4 className="text-sm font-semibold text-green-800 dark:text-green-200">Allowances</h4>
-                        <span className="text-xs text-green-700 dark:text-green-300">
-                          {componentDefaults.allowances.length} items
-                        </span>
-                      </div>
-                      <div className="space-y-2">
-                        {componentDefaults.allowances.length === 0 && (
-                          <p className="text-xs text-green-700/70 dark:text-green-200/70">No allowances available.</p>
-                        )}
-                        {componentDefaults.allowances.map((item) => {
-                          const key = getKey(item);
-                          const current = overrideAllowances[key] ?? item.amount ?? 0;
-                          const isFixed = item.type === 'fixed';
-                          const basedOnPresentDays = overrideAllowancesBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
-                          return (
-                            <div key={key} className="rounded-lg border border-green-100 bg-white/70 px-3 py-2 text-xs dark:border-green-900/50 dark:bg-green-950/40">
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="flex-1">
-                                  <div className="font-semibold text-green-900 dark:text-green-100">{item.name}</div>
-                                  <div className="text-[11px] text-green-700 dark:text-green-300">
-                                    {item.type === 'percentage'
-                                      ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
-                                      : 'Fixed'}
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  <span className="text-[11px] text-green-700 dark:text-green-300">Override</span>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    value={current === null ? '' : current}
-                                    onChange={(e) => handleOverrideChange('allowance', item, e.target.value)}
-                                    className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100"
-                                  />
-                                </div>
-                              </div>
-                              {isFixed && (
-                                <div className="mt-2 pt-2 border-t border-green-100 dark:border-green-900/50">
-                                  <label className="flex items-start gap-1.5 cursor-pointer">
-                                    <input
-                                      type="checkbox"
-                                      checked={basedOnPresentDays}
-                                      onChange={(e) => {
-                                        setOverrideAllowancesBasedOnPresentDays({
-                                          ...overrideAllowancesBasedOnPresentDays,
-                                          [key]: e.target.checked
-                                        });
-                                      }}
-                                      className="mt-0.5 h-3 w-3 rounded border-green-300 text-green-600 focus:ring-green-500 dark:border-green-700"
-                                    />
-                                    <span className="text-[10px] leading-tight text-green-700 dark:text-green-300">
-                                      Prorate based on present days
-                                    </span>
-                                  </label>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Deductions */}
-                    <div className="rounded-xl border border-red-100 bg-red-50/70 p-3 dark:border-red-900/40 dark:bg-red-900/20">
-                      <div className="mb-2 flex items-center justify-between">
-                        <h4 className="text-sm font-semibold text-red-800 dark:text-red-200">Deductions</h4>
-                        <span className="text-xs text-red-700 dark:text-red-300">
-                          {componentDefaults.deductions.length} items
-                        </span>
-                      </div>
-                      <div className="space-y-2">
-                        {componentDefaults.deductions.length === 0 && (
-                          <p className="text-xs text-red-700/70 dark:text-red-200/70">No deductions available.</p>
-                        )}
-                        {componentDefaults.deductions.map((item) => {
-                          const key = getKey(item);
-                          const current = overrideDeductions[key] ?? item.amount ?? 0;
-                          const isFixed = item.type === 'fixed';
-                          const basedOnPresentDays = overrideDeductionsBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
-                          return (
-                            <div key={key} className="rounded-lg border border-red-100 bg-white/70 px-3 py-2 text-xs dark:border-red-900/50 dark:bg-red-950/40">
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="flex-1">
-                                  <div className="font-semibold text-red-900 dark:text-red-100">{item.name}</div>
-                                  <div className="text-[11px] text-red-700 dark:text-red-300">
-                                    {item.type === 'percentage'
-                                      ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
-                                      : 'Fixed'}
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  <span className="text-[11px] text-red-700 dark:text-red-300">Override</span>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    value={current === null ? '' : current}
-                                    onChange={(e) => handleOverrideChange('deduction', item, e.target.value)}
-                                    className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-red-950 dark:text-red-100"
-                                  />
-                                </div>
-                              </div>
-                              {isFixed && (
-                                <div className="mt-2 pt-2 border-t border-red-100 dark:border-red-900/50">
-                                  <label className="flex items-start gap-1.5 cursor-pointer">
-                                    <input
-                                      type="checkbox"
-                                      checked={basedOnPresentDays}
-                                      onChange={(e) => {
-                                        setOverrideDeductionsBasedOnPresentDays({
-                                          ...overrideDeductionsBasedOnPresentDays,
-                                          [key]: e.target.checked
-                                        });
-                                      }}
-                                      className="mt-0.5 h-3 w-3 rounded border-red-300 text-red-600 focus:ring-red-500 dark:border-red-700"
-                                    />
-                                    <span className="text-[10px] leading-tight text-red-700 dark:text-red-300">
-                                      Prorate based on present days
-                                    </span>
-                                  </label>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Actions */}
-                <div className="flex gap-3 pt-2">
-                  <button
-                    type="submit"
-                    className="flex-1 rounded-2xl bg-gradient-to-r from-green-500 to-green-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
-                  >
-                    Submit Application
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowApplicationDialog(false)}
-                    className="flex-1 rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
+      {/* Application Creation Dialog */ }
+  {
+    showApplicationDialog && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowApplicationDialog(false)} />
+        <div className="relative z-50 max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950/95">
+          <div className="mb-6 flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
+                New Employee Application
+              </h2>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                Create an application for a new employee. Superadmin will review and approve.
+              </p>
             </div>
+            <button
+              onClick={() => setShowApplicationDialog(false)}
+              className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900"
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
-        )
-      }
 
-      {/* Approval Dialog with Salary Modification */}
-      {
-        showApprovalDialog && selectedApplication && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowApprovalDialog(false)} />
-            <div className="relative z-50 max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950/95">
-              <div className="mb-6 flex items-center justify-between">
+          {error && (
+            <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={handleCreateApplication} className="space-y-6">
+            <DynamicEmployeeForm
+              formData={applicationFormData}
+              onChange={setApplicationFormData}
+              errors={formErrors}
+              departments={getScopedDepartments(getEntityId(applicationFormData.division_id) || '')}
+              divisions={scopedDivisions}
+              designations={filteredApplicationDesignations as any}
+            />
+
+            {/* Allowances & Deductions Overrides */}
+            <div className="space-y-4 rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
+              <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-                    Review Employee Application
-                  </h2>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    Review and approve or reject this employee application
+                  <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Allowances &amp; Deductions</h3>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Defaults come from Department/Global. Enter an amount to override for this employee.
                   </p>
                 </div>
-                <button
-                  onClick={() => setShowApprovalDialog(false)}
-                  className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900"
-                >
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+                {loadingComponents && (
+                  <div className="text-xs text-slate-500 dark:text-slate-400">Loading components...</div>
+                )}
               </div>
 
-              {error && (
-                <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
-                  {error}
+              {/* Salary summary */}
+              <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60 md:grid-cols-4">
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Proposed / Gross Salary</p>
+                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                    ₹{Number((applicationFormData as any).proposedSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  </p>
                 </div>
-              )}
+                <div>
+                  <p className="text-xs text-green-700 dark:text-green-300">Total Allowances</p>
+                  <p className="text-sm font-semibold text-green-700 dark:text-green-300">
+                    ₹{applicationSalarySummary.totalAllowances.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-red-700 dark:text-red-300">Total Deductions</p>
+                  <p className="text-sm font-semibold text-red-700 dark:text-red-300">
+                    ₹{applicationSalarySummary.totalDeductions.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Calculated / CTC</p>
+                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                    ₹{applicationSalarySummary.netSalary.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+              </div>
 
-              <div className="space-y-6">
-                {/* Application Details */}
-                <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                  <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Application Details</h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Employee No</p>
-                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{selectedApplication.emp_no}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Employee Name</p>
-                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{selectedApplication.employee_name}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Division</p>
-                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                        {(selectedApplication.division_id as any)?.name || (selectedApplication as any).division?.name || '-'}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Department</p>
-                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                        {(selectedApplication.department_id as any)?.name || selectedApplication.department?.name || '-'}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Designation</p>
-                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                        {(selectedApplication.designation_id as any)?.name || selectedApplication.designation?.name || '-'}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Created By</p>
-                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{selectedApplication.createdBy?.name || '-'}</p>
-                    </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                {/* Allowances */}
+                <div className="rounded-xl border border-green-100 bg-green-50/70 p-3 dark:border-green-900/40 dark:bg-green-900/20">
+                  <div className="mb-2 flex items-center justify-between">
+                    <h4 className="text-sm font-semibold text-green-800 dark:text-green-200">Allowances</h4>
+                    <span className="text-xs text-green-700 dark:text-green-300">
+                      {componentDefaults.allowances.length} items
+                    </span>
                   </div>
-                </div>
-
-                {/* Qualifications - Key Feature */}
-                <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                  <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Qualifications & Certificates</h3>
-                  {(() => {
-                    const quals = selectedApplication.qualifications;
-                    if (!quals || (Array.isArray(quals) && quals.length === 0)) {
-                      return <p className="text-sm italic text-slate-500 dark:text-slate-400">No qualifications provided.</p>;
-                    }
-
-                    if (Array.isArray(quals)) {
+                  <div className="space-y-2">
+                    {componentDefaults.allowances.length === 0 && (
+                      <p className="text-xs text-green-700/70 dark:text-green-200/70">No allowances available.</p>
+                    )}
+                    {componentDefaults.allowances.map((item) => {
+                      const key = getKey(item);
+                      const current = overrideAllowances[key] ?? item.amount ?? 0;
+                      const isFixed = item.type === 'fixed';
+                      const basedOnPresentDays = overrideAllowancesBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
                       return (
-                        <div className="grid gap-6 sm:grid-cols-2">
-                          {quals.map((qual: any, idx: number) => {
-                            const certificateUrl = qual.certificateUrl;
-                            const isPDF = certificateUrl?.toLowerCase().endsWith('.pdf');
-                            const displayEntries = Object.entries(qual).filter(([k, v]) =>
-                              k !== 'certificateUrl' && v !== null && v !== undefined && v !== ''
-                            );
-
-                            return (
-                              <div key={idx} className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white transition-all hover:border-blue-300 hover:shadow-lg dark:border-slate-700 dark:bg-slate-900 dark:hover:border-blue-700 flex flex-col h-full">
-                                {/* Card Image Area */}
-                                <div className="aspect-[3/2] w-full overflow-hidden bg-slate-100 dark:bg-slate-800 relative group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80 transition-colors">
-                                  {certificateUrl ? (
-                                    isPDF ? (
-                                      <div className="absolute inset-0 flex items-center justify-center">
-                                        <svg className="h-20 w-20 text-red-500 opacity-80 group-hover:scale-110 transition-transform duration-300" fill="currentColor" viewBox="0 0 24 24">
-                                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9v-2h2v2zm0-4H9V7h2v5z" />
-                                        </svg>
-                                        <span className="absolute bottom-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">PDF Document</span>
-                                      </div>
-                                    ) : (
-                                      <img
-                                        src={certificateUrl}
-                                        alt="Certificate Preview"
-                                        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                                      />
-                                    )
-                                  ) : (
-                                    <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 dark:text-slate-600">
-                                      <svg className="h-16 w-16 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                      </svg>
-                                      <span className="text-xs font-medium">No Certificate</span>
-                                    </div>
-                                  )}
-
-                                  {/* Overlay Action */}
-                                  {certificateUrl && (
-                                    <a
-                                      href={certificateUrl}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="absolute inset-0 z-10 flex items-center justify-center bg-black/0 opacity-0 transition-all duration-300 group-hover:bg-black/10 group-hover:opacity-100"
-                                    >
-                                      <div className="rounded-full bg-white/90 px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm backdrop-blur-sm hover:bg-white hover:scale-105 transition-all">
-                                        View Full {isPDF ? 'Document' : 'Image'}
-                                      </div>
-                                    </a>
-                                  )}
-                                </div>
-
-                                {/* Card Content Area */}
-                                <div className="flex flex-1 flex-col p-5">
-                                  <div className="space-y-3">
-                                    {displayEntries.length > 0 ? displayEntries.map(([key, value]) => {
-                                      const fieldLabel = formSettings?.qualifications?.fields?.find((f: any) => f.id === key)?.label || key.replace(/_/g, ' ');
-                                      return (
-                                        <div key={key} className="flex flex-col border-b border-slate-100 pb-2 last:border-0 last:pb-0 dark:border-slate-800">
-                                          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 dark:text-slate-500 mb-0.5">
-                                            {fieldLabel}
-                                          </span>
-                                          <span className="text-sm font-medium text-slate-900 dark:text-slate-100 line-clamp-1" title={String(value)}>
-                                            {String(value)}
-                                          </span>
-                                        </div>
-                                      );
-                                    }) : <span className="text-sm italic text-slate-400">No Qualification Details</span>}
-                                  </div>
-                                </div>
+                        <div key={key} className="rounded-lg border border-green-100 bg-white/70 px-3 py-2 text-xs dark:border-green-900/50 dark:bg-green-950/40">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex-1">
+                              <div className="font-semibold text-green-900 dark:text-green-100">{item.name}</div>
+                              <div className="text-[11px] text-green-700 dark:text-green-300">
+                                {item.type === 'percentage'
+                                  ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
+                                  : 'Fixed'}
                               </div>
-                            );
-                          })}
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="text-[11px] text-green-700 dark:text-green-300">Override</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={current === null ? '' : current}
+                                onChange={(e) => handleOverrideChange('allowance', item, e.target.value)}
+                                className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100"
+                              />
+                            </div>
+                          </div>
+                          {isFixed && (
+                            <div className="mt-2 pt-2 border-t border-green-100 dark:border-green-900/50">
+                              <label className="flex items-start gap-1.5 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={basedOnPresentDays}
+                                  onChange={(e) => {
+                                    setOverrideAllowancesBasedOnPresentDays({
+                                      ...overrideAllowancesBasedOnPresentDays,
+                                      [key]: e.target.checked
+                                    });
+                                  }}
+                                  className="mt-0.5 h-3 w-3 rounded border-green-300 text-green-600 focus:ring-green-500 dark:border-green-700"
+                                />
+                                <span className="text-[10px] leading-tight text-green-700 dark:text-green-300">
+                                  Prorate based on present days
+                                </span>
+                              </label>
+                            </div>
+                          )}
                         </div>
                       );
-                    }
-
-                    return <p className="text-sm text-slate-900 dark:text-slate-100">{String(quals)}</p>;
-                  })()}
-                </div>
-
-                {/* Salary Section - Key Feature */}
-                <div className="rounded-2xl border-2 border-green-200 bg-green-50/50 p-5 dark:border-green-800 dark:bg-green-900/20">
-                  <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-green-700 dark:text-green-400">Salary Approval</h3>
-                  <div className="space-y-4">
-                    {/* Proposed Salary - Strikethrough if modified */}
-                    <div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Proposed Salary (HR)</p>
-                      <p className={`text-lg font-semibold ${approvalData.approvedSalary !== selectedApplication.proposedSalary ? 'line-through text-slate-400' : 'text-slate-900 dark:text-slate-100'}`}>
-                        ₹{selectedApplication.proposedSalary.toLocaleString()}
-                      </p>
-                    </div>
-
-                    {/* Approved Salary Input */}
-                    <div>
-                      <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                        Approved Salary *
-                      </label>
-                      <input
-                        type="number"
-                        value={approvalData.approvedSalary || ''}
-                        onChange={(e) => setApprovalData({ ...approvalData, approvedSalary: Number(e.target.value) })}
-                        required
-                        min="0"
-                        step="0.01"
-                        className="w-full rounded-xl border-2 border-green-400 bg-white px-4 py-2.5 text-lg font-semibold transition-all focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-500/20 dark:border-green-600 dark:bg-slate-900 dark:text-slate-100"
-                        placeholder="Enter approved salary"
-                      />
-                      {approvalData.approvedSalary !== selectedApplication.proposedSalary && (
-                        <p className="mt-2 text-xs text-green-600 dark:text-green-400">
-                          ✓ Salary modified from proposed amount
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Date of Joining */}
-                    <div>
-                      <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                        Date of Joining *
-                      </label>
-                      <input
-                        type="date"
-                        value={approvalData.doj || ''}
-                        onChange={(e) => setApprovalData({ ...approvalData, doj: e.target.value })}
-                        required
-                        className="w-full rounded-xl border-2 border-green-400 bg-white px-4 py-2.5 text-sm font-semibold transition-all focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-500/20 dark:border-green-600 dark:bg-slate-900 dark:text-slate-100"
-                      />
-                      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                        Specify the employee&apos;s joining date
-                      </p>
-                    </div>
+                    })}
                   </div>
                 </div>
 
-                {/* Allowances & Deductions with summary in approval */}
-                <div className="space-y-4 rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Allowances &amp; Deductions</h3>
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        Based on department/global defaults. Adjust overrides as needed before approval.
-                      </p>
-                    </div>
-                    {approvalLoadingComponents && (
-                      <div className="text-xs text-slate-500 dark:text-slate-400">Loading components...</div>
+                {/* Deductions */}
+                <div className="rounded-xl border border-red-100 bg-red-50/70 p-3 dark:border-red-900/40 dark:bg-red-900/20">
+                  <div className="mb-2 flex items-center justify-between">
+                    <h4 className="text-sm font-semibold text-red-800 dark:text-red-200">Deductions</h4>
+                    <span className="text-xs text-red-700 dark:text-red-300">
+                      {componentDefaults.deductions.length} items
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {componentDefaults.deductions.length === 0 && (
+                      <p className="text-xs text-red-700/70 dark:text-red-200/70">No deductions available.</p>
                     )}
-                  </div>
-
-                  <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60 md:grid-cols-4">
-                    <div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">Approved / Gross Salary</p>
-                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                        ₹{Number(approvalData.approvedSalary || selectedApplication.proposedSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-green-700 dark:text-green-300">Total Allowances</p>
-                      <p className="text-sm font-semibold text-green-700 dark:text-green-300">
-                        ₹{approvalSalarySummary.totalAllowances.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-red-700 dark:text-red-300">Total Deductions</p>
-                      <p className="text-sm font-semibold text-red-700 dark:text-red-300">
-                        ₹{approvalSalarySummary.totalDeductions.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">Calculated / CTC</p>
-                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                        ₹{approvalSalarySummary.netSalary.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-4 md:grid-cols-2">
-                    {/* Allowances */}
-                    <div className="rounded-xl border border-green-100 bg-green-50/70 p-3 dark:border-green-900/40 dark:bg-green-900/20">
-                      <div className="mb-2 flex items-center justify-between">
-                        <h4 className="text-sm font-semibold text-green-800 dark:text-green-200">Allowances</h4>
-                        <span className="text-xs text-green-700 dark:text-green-300">
-                          {approvalComponentDefaults.allowances.length} items
-                        </span>
-                      </div>
-                      <div className="space-y-2">
-                        {approvalComponentDefaults.allowances.length === 0 && (
-                          <p className="text-xs text-green-700/70 dark:text-green-200/70">No allowances available.</p>
-                        )}
-                        {approvalComponentDefaults.allowances.map((item) => {
-                          const key = getKey(item);
-                          const current = approvalOverrideAllowances[key] ?? item.amount ?? 0;
-                          const isFixed = item.type === 'fixed';
-                          const basedOnPresentDays = approvalOverrideAllowancesBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
-                          return (
-                            <div key={key} className="rounded-lg border border-green-100 bg-white/70 px-3 py-2 text-xs dark:border-green-900/50 dark:bg-green-950/40">
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="flex-1">
-                                  <div className="font-semibold text-green-900 dark:text-green-100">{item.name}</div>
-                                  <div className="text-[11px] text-green-700 dark:text-green-300">
-                                    {item.type === 'percentage'
-                                      ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
-                                      : 'Fixed'}
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  <span className="text-[11px] text-green-700 dark:text-green-300">Override</span>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    value={current === null ? '' : current}
-                                    onChange={(e) => handleApprovalOverrideChange('allowance', item, e.target.value)}
-                                    className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100"
-                                  />
-                                </div>
+                    {componentDefaults.deductions.map((item) => {
+                      const key = getKey(item);
+                      const current = overrideDeductions[key] ?? item.amount ?? 0;
+                      const isFixed = item.type === 'fixed';
+                      const basedOnPresentDays = overrideDeductionsBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
+                      return (
+                        <div key={key} className="rounded-lg border border-red-100 bg-white/70 px-3 py-2 text-xs dark:border-red-900/50 dark:bg-red-950/40">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex-1">
+                              <div className="font-semibold text-red-900 dark:text-red-100">{item.name}</div>
+                              <div className="text-[11px] text-red-700 dark:text-red-300">
+                                {item.type === 'percentage'
+                                  ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
+                                  : 'Fixed'}
                               </div>
-                              {isFixed && (
-                                <div className="mt-2 pt-2 border-t border-green-100 dark:border-green-900/50">
-                                  <label className="flex items-start gap-1.5 cursor-pointer">
-                                    <input
-                                      type="checkbox"
-                                      checked={basedOnPresentDays}
-                                      onChange={(e) => {
-                                        setApprovalOverrideAllowancesBasedOnPresentDays({
-                                          ...approvalOverrideAllowancesBasedOnPresentDays,
-                                          [key]: e.target.checked
-                                        });
-                                      }}
-                                      className="mt-0.5 h-3 w-3 rounded border-green-300 text-green-600 focus:ring-green-500 dark:border-green-700"
-                                    />
-                                    <span className="text-[10px] leading-tight text-green-700 dark:text-green-300">
-                                      Prorate based on present days
-                                    </span>
-                                  </label>
-                                </div>
-                              )}
                             </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Deductions */}
-                    <div className="rounded-xl border border-red-100 bg-red-50/70 p-3 dark:border-red-900/40 dark:bg-red-900/20">
-                      <div className="mb-2 flex items-center justify-between">
-                        <h4 className="text-sm font-semibold text-red-800 dark:text-red-200">Deductions</h4>
-                        <span className="text-xs text-red-700 dark:text-red-300">
-                          {approvalComponentDefaults.deductions.length} items
-                        </span>
-                      </div>
-                      <div className="space-y-2">
-                        {approvalComponentDefaults.deductions.length === 0 && (
-                          <p className="text-xs text-red-700/70 dark:text-red-200/70">No deductions available.</p>
-                        )}
-                        {approvalComponentDefaults.deductions.map((item) => {
-                          const key = getKey(item);
-                          const current = approvalOverrideDeductions[key] ?? item.amount ?? 0;
-                          const isFixed = item.type === 'fixed';
-                          const basedOnPresentDays = approvalOverrideDeductionsBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
-                          return (
-                            <div key={key} className="rounded-lg border border-red-100 bg-white/70 px-3 py-2 text-xs dark:border-red-900/50 dark:bg-red-950/40">
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="flex-1">
-                                  <div className="font-semibold text-red-900 dark:text-red-100">{item.name}</div>
-                                  <div className="text-[11px] text-red-700 dark:text-red-300">
-                                    {item.type === 'percentage'
-                                      ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
-                                      : 'Fixed'}
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  <span className="text-[11px] text-red-700 dark:text-red-300">Override</span>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    value={current === null ? '' : current}
-                                    onChange={(e) => handleApprovalOverrideChange('deduction', item, e.target.value)}
-                                    className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-red-950 dark:text-red-100"
-                                  />
-                                </div>
-                              </div>
-                              {isFixed && (
-                                <div className="mt-2 pt-2 border-t border-red-100 dark:border-red-900/50">
-                                  <label className="flex items-start gap-1.5 cursor-pointer">
-                                    <input
-                                      type="checkbox"
-                                      checked={basedOnPresentDays}
-                                      onChange={(e) => {
-                                        setApprovalOverrideDeductionsBasedOnPresentDays({
-                                          ...approvalOverrideDeductionsBasedOnPresentDays,
-                                          [key]: e.target.checked
-                                        });
-                                      }}
-                                      className="mt-0.5 h-3 w-3 rounded border-red-300 text-red-600 focus:ring-red-500 dark:border-red-700"
-                                    />
-                                    <span className="text-[10px] leading-tight text-red-700 dark:text-red-300">
-                                      Prorate based on present days
-                                    </span>
-                                  </label>
-                                </div>
-                              )}
+                            <div className="flex items-center gap-1">
+                              <span className="text-[11px] text-red-700 dark:text-red-300">Override</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={current === null ? '' : current}
+                                onChange={(e) => handleOverrideChange('deduction', item, e.target.value)}
+                                className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-red-950 dark:text-red-100"
+                              />
                             </div>
-                          );
-                        })}
-                      </div>
-                    </div>
+                          </div>
+                          {isFixed && (
+                            <div className="mt-2 pt-2 border-t border-red-100 dark:border-red-900/50">
+                              <label className="flex items-start gap-1.5 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={basedOnPresentDays}
+                                  onChange={(e) => {
+                                    setOverrideDeductionsBasedOnPresentDays({
+                                      ...overrideDeductionsBasedOnPresentDays,
+                                      [key]: e.target.checked
+                                    });
+                                  }}
+                                  className="mt-0.5 h-3 w-3 rounded border-red-300 text-red-600 focus:ring-red-500 dark:border-red-700"
+                                />
+                                <span className="text-[10px] leading-tight text-red-700 dark:text-red-300">
+                                  Prorate based on present days
+                                </span>
+                              </label>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
-                </div>
-
-                {/* Comments */}
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                    Comments (Optional)
-                  </label>
-                  <textarea
-                    value={approvalData.comments}
-                    onChange={(e) => setApprovalData({ ...approvalData, comments: e.target.value })}
-                    rows={3}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 resize-none"
-                    placeholder="Add any comments for this approval..."
-                  />
-                </div>
-
-                {/* Actions */}
-                <div className="flex gap-3 pt-2">
-                  <button
-                    onClick={handleApproveApplication}
-                    className="flex-1 rounded-2xl bg-gradient-to-r from-green-500 to-green-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
-                  >
-                    Approve & Create Employee
-                  </button>
-                  <button
-                    onClick={handleRejectApplication}
-                    className="flex-1 rounded-2xl bg-gradient-to-r from-red-500 to-red-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-red-500/30 transition-all hover:from-red-600 hover:to-red-600"
-                  >
-                    Reject
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowApprovalDialog(false)}
-                    className="flex-1 rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                  >
-                    Cancel
-                  </button>
                 </div>
               </div>
             </div>
-          </div>
-        )
-      }
 
-      {/* Employee Dialog */}
-      {
-        showDialog && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowDialog(false)} />
-            <div className="relative z-50 max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950/95">
-              <div className="mb-6 flex items-center justify-between">
+            {/* Actions */}
+            <div className="flex gap-3 pt-2">
+              <button
+                type="submit"
+                className="flex-1 rounded-2xl bg-gradient-to-r from-green-500 to-green-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
+              >
+                Submit Application
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowApplicationDialog(false)}
+                className="flex-1 rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    )
+  }
+
+  {/* Approval Dialog with Salary Modification */ }
+  {
+    showApprovalDialog && selectedApplication && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowApprovalDialog(false)} />
+        <div className="relative z-50 max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950/95">
+          <div className="mb-6 flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
+                Review Employee Application
+              </h2>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                Review and approve or reject this employee application
+              </p>
+            </div>
+            <button
+              onClick={() => setShowApprovalDialog(false)}
+              className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900"
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          {error && (
+            <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+              {error}
+            </div>
+          )}
+
+          <div className="space-y-6">
+            {/* Application Details */}
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+              <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Application Details</h3>
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-                    {editingEmployee ? 'Edit Employee' : 'Add New Employee'}
-                  </h2>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    {editingEmployee ? 'Update employee information' : 'Enter employee details below'}
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Employee No</p>
+                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{selectedApplication.emp_no}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Employee Name</p>
+                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{selectedApplication.employee_name}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Division</p>
+                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                    {(selectedApplication.division_id as any)?.name || (selectedApplication as any).division?.name || '-'}
                   </p>
                 </div>
-                <button
-                  onClick={() => setShowDialog(false)}
-                  className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900"
-                >
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Department</p>
+                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                    {(selectedApplication.department_id as any)?.name || selectedApplication.department?.name || '-'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Designation</p>
+                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                    {(selectedApplication.designation_id as any)?.name || selectedApplication.designation?.name || '-'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Created By</p>
+                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{selectedApplication.createdBy?.name || '-'}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Qualifications - Key Feature */}
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+              <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Qualifications & Certificates</h3>
+              {(() => {
+                const quals = selectedApplication.qualifications;
+                if (!quals || (Array.isArray(quals) && quals.length === 0)) {
+                  return <p className="text-sm italic text-slate-500 dark:text-slate-400">No qualifications provided.</p>;
+                }
+
+                if (Array.isArray(quals)) {
+                  return (
+                    <div className="grid gap-6 sm:grid-cols-2">
+                      {quals.map((qual: any, idx: number) => {
+                        const certificateUrl = qual.certificateUrl;
+                        const isPDF = certificateUrl?.toLowerCase().endsWith('.pdf');
+                        const displayEntries = Object.entries(qual).filter(([k, v]) =>
+                          k !== 'certificateUrl' && v !== null && v !== undefined && v !== ''
+                        );
+
+                        return (
+                          <div key={idx} className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white transition-all hover:border-blue-300 hover:shadow-lg dark:border-slate-700 dark:bg-slate-900 dark:hover:border-blue-700 flex flex-col h-full">
+                            {/* Card Image Area */}
+                            <div className="aspect-[3/2] w-full overflow-hidden bg-slate-100 dark:bg-slate-800 relative group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80 transition-colors">
+                              {certificateUrl ? (
+                                isPDF ? (
+                                  <div className="absolute inset-0 flex items-center justify-center">
+                                    <svg className="h-20 w-20 text-red-500 opacity-80 group-hover:scale-110 transition-transform duration-300" fill="currentColor" viewBox="0 0 24 24">
+                                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9v-2h2v2zm0-4H9V7h2v5z" />
+                                    </svg>
+                                    <span className="absolute bottom-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">PDF Document</span>
+                                  </div>
+                                ) : (
+                                  <img
+                                    src={certificateUrl}
+                                    alt="Certificate Preview"
+                                    className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                                  />
+                                )
+                              ) : (
+                                <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 dark:text-slate-600">
+                                  <svg className="h-16 w-16 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                  </svg>
+                                  <span className="text-xs font-medium">No Certificate</span>
+                                </div>
+                              )}
+
+                              {/* Overlay Action */}
+                              {certificateUrl && (
+                                <a
+                                  href={certificateUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="absolute inset-0 z-10 flex items-center justify-center bg-black/0 opacity-0 transition-all duration-300 group-hover:bg-black/10 group-hover:opacity-100"
+                                >
+                                  <div className="rounded-full bg-white/90 px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm backdrop-blur-sm hover:bg-white hover:scale-105 transition-all">
+                                    View Full {isPDF ? 'Document' : 'Image'}
+                                  </div>
+                                </a>
+                              )}
+                            </div>
+
+                            {/* Card Content Area */}
+                            <div className="flex flex-1 flex-col p-5">
+                              <div className="space-y-3">
+                                {displayEntries.length > 0 ? displayEntries.map(([key, value]) => {
+                                  const fieldLabel = formSettings?.qualifications?.fields?.find((f: any) => f.id === key)?.label || key.replace(/_/g, ' ');
+                                  return (
+                                    <div key={key} className="flex flex-col border-b border-slate-100 pb-2 last:border-0 last:pb-0 dark:border-slate-800">
+                                      <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 dark:text-slate-500 mb-0.5">
+                                        {fieldLabel}
+                                      </span>
+                                      <span className="text-sm font-medium text-slate-900 dark:text-slate-100 line-clamp-1" title={String(value)}>
+                                        {String(value)}
+                                      </span>
+                                    </div>
+                                  );
+                                }) : <span className="text-sm italic text-slate-400">No Qualification Details</span>}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                }
+
+                return <p className="text-sm text-slate-900 dark:text-slate-100">{String(quals)}</p>;
+              })()}
+            </div>
+
+            {/* Salary Section - Key Feature */}
+            <div className="rounded-2xl border-2 border-green-200 bg-green-50/50 p-5 dark:border-green-800 dark:bg-green-900/20">
+              <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-green-700 dark:text-green-400">Salary Approval</h3>
+              <div className="space-y-4">
+                {/* Proposed Salary - Strikethrough if modified */}
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Proposed Salary (HR)</p>
+                  <p className={`text-lg font-semibold ${approvalData.approvedSalary !== selectedApplication.proposedSalary ? 'line-through text-slate-400' : 'text-slate-900 dark:text-slate-100'}`}>
+                    ₹{selectedApplication.proposedSalary.toLocaleString()}
+                  </p>
+                </div>
+
+                {/* Approved Salary Input */}
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Approved Salary *
+                  </label>
+                  <input
+                    type="number"
+                    value={approvalData.approvedSalary || ''}
+                    onChange={(e) => setApprovalData({ ...approvalData, approvedSalary: Number(e.target.value) })}
+                    required
+                    min="0"
+                    step="0.01"
+                    className="w-full rounded-xl border-2 border-green-400 bg-white px-4 py-2.5 text-lg font-semibold transition-all focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-500/20 dark:border-green-600 dark:bg-slate-900 dark:text-slate-100"
+                    placeholder="Enter approved salary"
+                  />
+                  {approvalData.approvedSalary !== selectedApplication.proposedSalary && (
+                    <p className="mt-2 text-xs text-green-600 dark:text-green-400">
+                      ✓ Salary modified from proposed amount
+                    </p>
+                  )}
+                </div>
+
+                {/* Date of Joining */}
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Date of Joining *
+                  </label>
+                  <input
+                    type="date"
+                    value={approvalData.doj || ''}
+                    onChange={(e) => setApprovalData({ ...approvalData, doj: e.target.value })}
+                    required
+                    className="w-full rounded-xl border-2 border-green-400 bg-white px-4 py-2.5 text-sm font-semibold transition-all focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-500/20 dark:border-green-600 dark:bg-slate-900 dark:text-slate-100"
+                  />
+                  <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                    Specify the employee&apos;s joining date
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Allowances & Deductions with summary in approval */}
+            <div className="space-y-4 rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Allowances &amp; Deductions</h3>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Based on department/global defaults. Adjust overrides as needed before approval.
+                  </p>
+                </div>
+                {approvalLoadingComponents && (
+                  <div className="text-xs text-slate-500 dark:text-slate-400">Loading components...</div>
+                )}
               </div>
 
-              {error && (
-                <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
-                  {error}
+              <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60 md:grid-cols-4">
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Approved / Gross Salary</p>
+                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                    ₹{Number(approvalData.approvedSalary || selectedApplication.proposedSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  </p>
                 </div>
-              )}
+                <div>
+                  <p className="text-xs text-green-700 dark:text-green-300">Total Allowances</p>
+                  <p className="text-sm font-semibold text-green-700 dark:text-green-300">
+                    ₹{approvalSalarySummary.totalAllowances.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-red-700 dark:text-red-300">Total Deductions</p>
+                  <p className="text-sm font-semibold text-red-700 dark:text-red-300">
+                    ₹{approvalSalarySummary.totalDeductions.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Calculated / CTC</p>
+                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                    ₹{approvalSalarySummary.netSalary.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+              </div>
 
-              <form onSubmit={handleSubmit} className="space-y-6">
-                <DynamicEmployeeForm
-                  formData={formData}
-                  onChange={setFormData}
-                  errors={{}}
-                  departments={departments}
-                  divisions={divisions}
-                  designations={filteredDesignations as any}
-                  onSettingsLoaded={setFormSettings}
-                />
-
-                {/* Leave Settings */}
-                <div className="rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
-                  <h3 className="mb-3 text-base font-semibold text-slate-900 dark:text-slate-100">Leave Settings</h3>
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div>
-                      <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                        Monthly Paid Leaves
-                      </label>
-                      <input
-                        type="number"
-                        name="paidLeaves"
-                        value={formData.paidLeaves ?? 0}
-                        onChange={handleInputChange}
-                        min="0"
-                        step="0.5"
-                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                        placeholder="0"
-                      />
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        Monthly recurring paid leaves
-                      </p>
-                    </div>
-                    <div>
-                      <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                        Yearly Allotted Leaves
-                      </label>
-                      <input
-                        type="number"
-                        name="allottedLeaves"
-                        value={formData.allottedLeaves ?? 0}
-                        onChange={handleInputChange}
-                        min="0"
-                        step="0.5"
-                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                        placeholder="0"
-                      />
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        Yearly total for without_pay/LOP leaves (for balance tracking)
-                      </p>
-                    </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                {/* Allowances */}
+                <div className="rounded-xl border border-green-100 bg-green-50/70 p-3 dark:border-green-900/40 dark:bg-green-900/20">
+                  <div className="mb-2 flex items-center justify-between">
+                    <h4 className="text-sm font-semibold text-green-800 dark:text-green-200">Allowances</h4>
+                    <span className="text-xs text-green-700 dark:text-green-300">
+                      {approvalComponentDefaults.allowances.length} items
+                    </span>
                   </div>
-                </div>
-
-                {/* Allowances & Deductions Overrides + Salary Summary */}
-                <div className="space-y-4 rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Allowances &amp; Deductions</h3>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">
-                        Defaults come from Department/Global. Enter an amount to override for this employee.
-                      </p>
-                    </div>
-                    {loadingComponents && (
-                      <div className="text-xs text-slate-500 dark:text-slate-400">Loading components...</div>
+                  <div className="space-y-2">
+                    {approvalComponentDefaults.allowances.length === 0 && (
+                      <p className="text-xs text-green-700/70 dark:text-green-200/70">No allowances available.</p>
                     )}
-                  </div>
-
-                  {/* Salary summary */}
-                  <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
-                    <div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">Gross Salary</p>
-                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                        ₹{Number(formData.gross_salary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-green-700 dark:text-green-300">Total Allowances</p>
-                      <p className="text-sm font-semibold text-green-700 dark:text-green-300">
-                        ₹{salarySummary.totalAllowances.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-red-700 dark:text-red-300">Total Deductions</p>
-                      <p className="text-sm font-semibold text-red-700 dark:text-red-300">
-                        ₹{salarySummary.totalDeductions.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">CTC Salary</p>
-                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                        ₹{salarySummary.ctcSalary.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">Calculated (Net)</p>
-                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                        ₹{salarySummary.netSalary.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-4 md:grid-cols-2">
-                    {/* Allowances */}
-                    <div className="rounded-xl border border-green-100 bg-green-50/70 p-3 dark:border-green-900/40 dark:bg-green-900/20">
-                      <div className="mb-2 flex items-center justify-between">
-                        <h4 className="text-sm font-semibold text-green-800 dark:text-green-200">Allowances</h4>
-                        <span className="text-xs text-green-700 dark:text-green-300">
-                          {componentDefaults.allowances.length} items
-                        </span>
-                      </div>
-                      <div className="space-y-2">
-                        {componentDefaults.allowances.length === 0 && (
-                          <p className="text-xs text-green-700/70 dark:text-green-200/70">No allowances available.</p>
-                        )}
-                        {componentDefaults.allowances.map((item) => {
-                          const key = getKey(item);
-                          const current = overrideAllowances[key] ?? item.amount ?? 0;
-                          const isFixed = item.type === 'fixed';
-                          const basedOnPresentDays = overrideAllowancesBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
-                          return (
-                            <div key={key} className="rounded-lg border border-green-100 bg-white/70 px-3 py-2 text-xs dark:border-green-900/50 dark:bg-green-950/40">
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="flex-1">
-                                  <div className="font-semibold text-green-900 dark:text-green-100">{item.name}</div>
-                                  <div className="text-[11px] text-green-700 dark:text-green-300">
-                                    {item.type === 'percentage'
-                                      ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
-                                      : 'Fixed'}
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  <span className="text-[11px] text-green-700 dark:text-green-300">Override</span>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    value={current === null ? '' : current}
-                                    onChange={(e) => handleOverrideChange('allowance', item, e.target.value)}
-                                    className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100"
-                                  />
-                                </div>
+                    {approvalComponentDefaults.allowances.map((item) => {
+                      const key = getKey(item);
+                      const current = approvalOverrideAllowances[key] ?? item.amount ?? 0;
+                      const isFixed = item.type === 'fixed';
+                      const basedOnPresentDays = approvalOverrideAllowancesBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
+                      return (
+                        <div key={key} className="rounded-lg border border-green-100 bg-white/70 px-3 py-2 text-xs dark:border-green-900/50 dark:bg-green-950/40">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex-1">
+                              <div className="font-semibold text-green-900 dark:text-green-100">{item.name}</div>
+                              <div className="text-[11px] text-green-700 dark:text-green-300">
+                                {item.type === 'percentage'
+                                  ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
+                                  : 'Fixed'}
                               </div>
-                              {isFixed && (
-                                <div className="mt-2 pt-2 border-t border-green-100 dark:border-green-900/50">
-                                  <label className="flex items-start gap-1.5 cursor-pointer">
-                                    <input
-                                      type="checkbox"
-                                      checked={basedOnPresentDays}
-                                      onChange={(e) => {
-                                        setOverrideAllowancesBasedOnPresentDays({
-                                          ...overrideAllowancesBasedOnPresentDays,
-                                          [key]: e.target.checked
-                                        });
-                                      }}
-                                      className="mt-0.5 h-3 w-3 rounded border-green-300 text-green-600 focus:ring-green-500 dark:border-green-700"
-                                    />
-                                    <span className="text-[10px] leading-tight text-green-700 dark:text-green-300">
-                                      Prorate based on present days
-                                    </span>
-                                  </label>
-                                </div>
-                              )}
                             </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Deductions */}
-                    <div className="rounded-xl border border-red-100 bg-red-50/70 p-3 dark:border-red-900/40 dark:bg-red-900/20">
-                      <div className="mb-2 flex items-center justify-between">
-                        <h4 className="text-sm font-semibold text-red-800 dark:text-red-200">Deductions</h4>
-                        <span className="text-xs text-red-700 dark:text-red-300">
-                          {componentDefaults.deductions.length} items
-                        </span>
-                      </div>
-                      <div className="space-y-2">
-                        {componentDefaults.deductions.length === 0 && (
-                          <p className="text-xs text-red-700/70 dark:text-red-200/70">No deductions available.</p>
-                        )}
-                        {componentDefaults.deductions.map((item) => {
-                          const key = getKey(item);
-                          const current = overrideDeductions[key] ?? item.amount ?? 0;
-                          const isFixed = item.type === 'fixed';
-                          const basedOnPresentDays = overrideDeductionsBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
-                          return (
-                            <div key={key} className="rounded-lg border border-red-100 bg-white/70 px-3 py-2 text-xs dark:border-red-900/50 dark:bg-red-950/40">
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="flex-1">
-                                  <div className="font-semibold text-red-900 dark:text-red-100">{item.name}</div>
-                                  <div className="text-[11px] text-red-700 dark:text-red-300">
-                                    {item.type === 'percentage'
-                                      ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
-                                      : 'Fixed'}
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  <span className="text-[11px] text-red-700 dark:text-red-300">Override</span>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    value={current === null ? '' : current}
-                                    onChange={(e) => handleOverrideChange('deduction', item, e.target.value)}
-                                    className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-red-950 dark:text-red-100"
-                                  />
-                                </div>
-                              </div>
-                              {isFixed && (
-                                <div className="mt-2 pt-2 border-t border-red-100 dark:border-red-900/50">
-                                  <label className="flex items-start gap-1.5 cursor-pointer">
-                                    <input
-                                      type="checkbox"
-                                      checked={basedOnPresentDays}
-                                      onChange={(e) => {
-                                        setOverrideDeductionsBasedOnPresentDays({
-                                          ...overrideDeductionsBasedOnPresentDays,
-                                          [key]: e.target.checked
-                                        });
-                                      }}
-                                      className="mt-0.5 h-3 w-3 rounded border-red-300 text-red-600 focus:ring-red-500 dark:border-red-700"
-                                    />
-                                    <span className="text-[10px] leading-tight text-red-700 dark:text-red-300">
-                                      Prorate based on present days
-                                    </span>
-                                  </label>
-                                </div>
-                              )}
+                            <div className="flex items-center gap-1">
+                              <span className="text-[11px] text-green-700 dark:text-green-300">Override</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={current === null ? '' : current}
+                                onChange={(e) => handleApprovalOverrideChange('allowance', item, e.target.value)}
+                                className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100"
+                              />
                             </div>
-                          );
-                        })}
-                      </div>
-                    </div>
+                          </div>
+                          {isFixed && (
+                            <div className="mt-2 pt-2 border-t border-green-100 dark:border-green-900/50">
+                              <label className="flex items-start gap-1.5 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={basedOnPresentDays}
+                                  onChange={(e) => {
+                                    setApprovalOverrideAllowancesBasedOnPresentDays({
+                                      ...approvalOverrideAllowancesBasedOnPresentDays,
+                                      [key]: e.target.checked
+                                    });
+                                  }}
+                                  className="mt-0.5 h-3 w-3 rounded border-green-300 text-green-600 focus:ring-green-500 dark:border-green-700"
+                                />
+                                <span className="text-[10px] leading-tight text-green-700 dark:text-green-300">
+                                  Prorate based on present days
+                                </span>
+                              </label>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 
-
-                {/* Actions */}
-                <div className="flex gap-3 pt-2">
-                  <button
-                    type="submit"
-                    className="flex-1 rounded-2xl bg-gradient-to-r from-green-500 to-green-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
-                  >
-                    {editingEmployee ? 'Update Employee' : 'Create Employee'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowDialog(false)}
-                    className="flex-1 rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                  >
-                    Cancel
-                  </button>
+                {/* Deductions */}
+                <div className="rounded-xl border border-red-100 bg-red-50/70 p-3 dark:border-red-900/40 dark:bg-red-900/20">
+                  <div className="mb-2 flex items-center justify-between">
+                    <h4 className="text-sm font-semibold text-red-800 dark:text-red-200">Deductions</h4>
+                    <span className="text-xs text-red-700 dark:text-red-300">
+                      {approvalComponentDefaults.deductions.length} items
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {approvalComponentDefaults.deductions.length === 0 && (
+                      <p className="text-xs text-red-700/70 dark:text-red-200/70">No deductions available.</p>
+                    )}
+                    {approvalComponentDefaults.deductions.map((item) => {
+                      const key = getKey(item);
+                      const current = approvalOverrideDeductions[key] ?? item.amount ?? 0;
+                      const isFixed = item.type === 'fixed';
+                      const basedOnPresentDays = approvalOverrideDeductionsBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
+                      return (
+                        <div key={key} className="rounded-lg border border-red-100 bg-white/70 px-3 py-2 text-xs dark:border-red-900/50 dark:bg-red-950/40">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex-1">
+                              <div className="font-semibold text-red-900 dark:text-red-100">{item.name}</div>
+                              <div className="text-[11px] text-red-700 dark:text-red-300">
+                                {item.type === 'percentage'
+                                  ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
+                                  : 'Fixed'}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="text-[11px] text-red-700 dark:text-red-300">Override</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={current === null ? '' : current}
+                                onChange={(e) => handleApprovalOverrideChange('deduction', item, e.target.value)}
+                                className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-red-950 dark:text-red-100"
+                              />
+                            </div>
+                          </div>
+                          {isFixed && (
+                            <div className="mt-2 pt-2 border-t border-red-100 dark:border-red-900/50">
+                              <label className="flex items-start gap-1.5 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={basedOnPresentDays}
+                                  onChange={(e) => {
+                                    setApprovalOverrideDeductionsBasedOnPresentDays({
+                                      ...approvalOverrideDeductionsBasedOnPresentDays,
+                                      [key]: e.target.checked
+                                    });
+                                  }}
+                                  className="mt-0.5 h-3 w-3 rounded border-red-300 text-red-600 focus:ring-red-500 dark:border-red-700"
+                                />
+                                <span className="text-[10px] leading-tight text-red-700 dark:text-red-300">
+                                  Prorate based on present days
+                                </span>
+                              </label>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              </form>
+              </div>
+            </div>
+
+            {/* Comments */}
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                Comments (Optional)
+              </label>
+              <textarea
+                value={approvalData.comments}
+                onChange={(e) => setApprovalData({ ...approvalData, comments: e.target.value })}
+                rows={3}
+                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 resize-none"
+                placeholder="Add any comments for this approval..."
+              />
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={handleApproveApplication}
+                className="flex-1 rounded-2xl bg-gradient-to-r from-green-500 to-green-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
+              >
+                Approve & Create Employee
+              </button>
+              <button
+                onClick={handleRejectApplication}
+                className="flex-1 rounded-2xl bg-gradient-to-r from-red-500 to-red-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-red-500/30 transition-all hover:from-red-600 hover:to-red-600"
+              >
+                Reject
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowApprovalDialog(false)}
+                className="flex-1 rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+              >
+                Cancel
+              </button>
             </div>
           </div>
-        )
-      }
+        </div>
+      </div>
+    )
+  }
 
-      {/* Bulk Upload Dialog */}
-      {
-        showBulkUpload && (
-          <BulkUpload
-            title="Bulk Upload Employees"
-            templateHeaders={dynamicTemplate.headers}
-            templateSample={dynamicTemplate.sample}
-            templateFilename="employee_template"
-            columns={dynamicTemplate.columns.map(col => {
-              if (col.key === 'division_name') {
-                return {
-                  ...col,
-                  type: 'select',
-                  options: divisions.map(d => ({ value: d.name, label: d.name }))
-                };
+  {/* Employee Dialog */ }
+  {
+    showDialog && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowDialog(false)} />
+        <div className="relative z-50 max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950/95">
+          <div className="mb-6 flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
+                {editingEmployee ? 'Edit Employee' : 'Add New Employee'}
+              </h2>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                {editingEmployee ? 'Update employee information' : 'Enter employee details below'}
+              </p>
+            </div>
+            <button
+              onClick={() => setShowDialog(false)}
+              className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900"
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          {error && (
+            <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <DynamicEmployeeForm
+              formData={formData}
+              onChange={setFormData}
+              errors={{}}
+              departments={departments}
+              divisions={divisions}
+              designations={filteredDesignations as any}
+              onSettingsLoaded={setFormSettings}
+            />
+
+            {/* Leave Settings */}
+            <div className="rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
+              <h3 className="mb-3 text-base font-semibold text-slate-900 dark:text-slate-100">Leave Settings</h3>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Monthly Paid Leaves
+                  </label>
+                  <input
+                    type="number"
+                    name="paidLeaves"
+                    value={formData.paidLeaves ?? 0}
+                    onChange={handleInputChange}
+                    min="0"
+                    step="0.5"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    placeholder="0"
+                  />
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Monthly recurring paid leaves
+                  </p>
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Yearly Allotted Leaves
+                  </label>
+                  <input
+                    type="number"
+                    name="allottedLeaves"
+                    value={formData.allottedLeaves ?? 0}
+                    onChange={handleInputChange}
+                    min="0"
+                    step="0.5"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    placeholder="0"
+                  />
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Yearly total for without_pay/LOP leaves (for balance tracking)
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Allowances & Deductions Overrides + Salary Summary */}
+            <div className="space-y-4 rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Allowances &amp; Deductions</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Defaults come from Department/Global. Enter an amount to override for this employee.
+                  </p>
+                </div>
+                {loadingComponents && (
+                  <div className="text-xs text-slate-500 dark:text-slate-400">Loading components...</div>
+                )}
+              </div>
+
+              {/* Salary summary */}
+              <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Gross Salary</p>
+                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                    ₹{Number(formData.gross_salary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-green-700 dark:text-green-300">Total Allowances</p>
+                  <p className="text-sm font-semibold text-green-700 dark:text-green-300">
+                    ₹{salarySummary.totalAllowances.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-red-700 dark:text-red-300">Total Deductions</p>
+                  <p className="text-sm font-semibold text-red-700 dark:text-red-300">
+                    ₹{salarySummary.totalDeductions.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">CTC Salary</p>
+                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                    ₹{salarySummary.ctcSalary.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Calculated (Net)</p>
+                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                    ₹{salarySummary.netSalary.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                {/* Allowances */}
+                <div className="rounded-xl border border-green-100 bg-green-50/70 p-3 dark:border-green-900/40 dark:bg-green-900/20">
+                  <div className="mb-2 flex items-center justify-between">
+                    <h4 className="text-sm font-semibold text-green-800 dark:text-green-200">Allowances</h4>
+                    <span className="text-xs text-green-700 dark:text-green-300">
+                      {componentDefaults.allowances.length} items
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {componentDefaults.allowances.length === 0 && (
+                      <p className="text-xs text-green-700/70 dark:text-green-200/70">No allowances available.</p>
+                    )}
+                    {componentDefaults.allowances.map((item) => {
+                      const key = getKey(item);
+                      const current = overrideAllowances[key] ?? item.amount ?? 0;
+                      const isFixed = item.type === 'fixed';
+                      const basedOnPresentDays = overrideAllowancesBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
+                      return (
+                        <div key={key} className="rounded-lg border border-green-100 bg-white/70 px-3 py-2 text-xs dark:border-green-900/50 dark:bg-green-950/40">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex-1">
+                              <div className="font-semibold text-green-900 dark:text-green-100">{item.name}</div>
+                              <div className="text-[11px] text-green-700 dark:text-green-300">
+                                {item.type === 'percentage'
+                                  ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
+                                  : 'Fixed'}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="text-[11px] text-green-700 dark:text-green-300">Override</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={current === null ? '' : current}
+                                onChange={(e) => handleOverrideChange('allowance', item, e.target.value)}
+                                className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100"
+                              />
+                            </div>
+                          </div>
+                          {isFixed && (
+                            <div className="mt-2 pt-2 border-t border-green-100 dark:border-green-900/50">
+                              <label className="flex items-start gap-1.5 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={basedOnPresentDays}
+                                  onChange={(e) => {
+                                    setOverrideAllowancesBasedOnPresentDays({
+                                      ...overrideAllowancesBasedOnPresentDays,
+                                      [key]: e.target.checked
+                                    });
+                                  }}
+                                  className="mt-0.5 h-3 w-3 rounded border-green-300 text-green-600 focus:ring-green-500 dark:border-green-700"
+                                />
+                                <span className="text-[10px] leading-tight text-green-700 dark:text-green-300">
+                                  Prorate based on present days
+                                </span>
+                              </label>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Deductions */}
+                <div className="rounded-xl border border-red-100 bg-red-50/70 p-3 dark:border-red-900/40 dark:bg-red-900/20">
+                  <div className="mb-2 flex items-center justify-between">
+                    <h4 className="text-sm font-semibold text-red-800 dark:text-red-200">Deductions</h4>
+                    <span className="text-xs text-red-700 dark:text-red-300">
+                      {componentDefaults.deductions.length} items
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {componentDefaults.deductions.length === 0 && (
+                      <p className="text-xs text-red-700/70 dark:text-red-200/70">No deductions available.</p>
+                    )}
+                    {componentDefaults.deductions.map((item) => {
+                      const key = getKey(item);
+                      const current = overrideDeductions[key] ?? item.amount ?? 0;
+                      const isFixed = item.type === 'fixed';
+                      const basedOnPresentDays = overrideDeductionsBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
+                      return (
+                        <div key={key} className="rounded-lg border border-red-100 bg-white/70 px-3 py-2 text-xs dark:border-red-900/50 dark:bg-red-950/40">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex-1">
+                              <div className="font-semibold text-red-900 dark:text-red-100">{item.name}</div>
+                              <div className="text-[11px] text-red-700 dark:text-red-300">
+                                {item.type === 'percentage'
+                                  ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
+                                  : 'Fixed'}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="text-[11px] text-red-700 dark:text-red-300">Override</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={current === null ? '' : current}
+                                onChange={(e) => handleOverrideChange('deduction', item, e.target.value)}
+                                className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-red-950 dark:text-red-100"
+                              />
+                            </div>
+                          </div>
+                          {isFixed && (
+                            <div className="mt-2 pt-2 border-t border-red-100 dark:border-red-900/50">
+                              <label className="flex items-start gap-1.5 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={basedOnPresentDays}
+                                  onChange={(e) => {
+                                    setOverrideDeductionsBasedOnPresentDays({
+                                      ...overrideDeductionsBasedOnPresentDays,
+                                      [key]: e.target.checked
+                                    });
+                                  }}
+                                  className="mt-0.5 h-3 w-3 rounded border-red-300 text-red-600 focus:ring-red-500 dark:border-red-700"
+                                />
+                                <span className="text-[10px] leading-tight text-red-700 dark:text-red-300">
+                                  Prorate based on present days
+                                </span>
+                              </label>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+
+            {/* Actions */}
+            <div className="flex gap-3 pt-2">
+              <button
+                type="submit"
+                className="flex-1 rounded-2xl bg-gradient-to-r from-green-500 to-green-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
+              >
+                {editingEmployee ? 'Update Employee' : 'Create Employee'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowDialog(false)}
+                className="flex-1 rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    )
+  }
+
+  {/* Bulk Upload Dialog */ }
+  {
+    showBulkUpload && (
+      <BulkUpload
+        title="Bulk Upload Employees"
+        templateHeaders={dynamicTemplate.headers}
+        templateSample={dynamicTemplate.sample}
+        templateFilename="employee_template"
+        columns={dynamicTemplate.columns.map(col => {
+          if (col.key === 'division_name') {
+            return {
+              ...col,
+              type: 'select',
+              options: divisions.map(d => ({ value: d.name, label: d.name }))
+            };
+          }
+          if (col.key === 'department_name') {
+            return {
+              ...col,
+              type: 'select',
+              options: (row: ParsedRow) => {
+                const rowDivName = row.division_name as string;
+                if (!rowDivName) return [];
+
+                const div = divisions.find(d => d.name.toLowerCase() === rowDivName.toLowerCase());
+                if (!div) return [];
+
+                // Filter departments that belong to this division
+                return departments
+                  .filter(dept => (dept as any).divisions?.includes(div._id))
+                  .map(d => ({ value: d.name, label: d.name }));
               }
-              if (col.key === 'department_name') {
-                return {
-                  ...col,
-                  type: 'select',
-                  options: (row: ParsedRow) => {
-                    const rowDivName = row.division_name as string;
-                    if (!rowDivName) return [];
+            };
+          }
+          if (col.key === 'designation_name') {
+            return {
+              ...col,
+              type: 'select',
+              options: designations.map(d => ({ value: d.name, label: d.name }))
+            };
+          }
+          if (col.key === 'gender') {
+            return { ...col, type: 'select', options: [{ value: 'Male', label: 'Male' }, { value: 'Female', label: 'Female' }, { value: 'Other', label: 'Other' }] };
+          }
+          if (col.key === 'marital_status') {
+            return { ...col, type: 'select', options: [{ value: 'Single', label: 'Single' }, { value: 'Married', label: 'Married' }, { value: 'Divorced', label: 'Divorced' }, { value: 'Widowed', label: 'Widowed' }] };
+          }
+          if (col.key === 'blood_group') {
+            return { ...col, type: 'select', options: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(bg => ({ value: bg, label: bg })) };
+          }
 
-                    const div = divisions.find(d => d.name.toLowerCase() === rowDivName.toLowerCase());
-                    if (!div) return [];
+          // Handle userselect fields (like reporting_to)
+          const field = formSettings?.groups?.flatMap((g: any) => g.fields).find((f: any) => f.id === col.key);
+          if (field?.type === 'userselect' || col.key === 'reporting_to') {
+            return {
+              ...col,
+              type: 'select',
+              options: employees.map(e => ({ value: e._id, label: e.employee_name }))
+            };
+          }
+          return col;
+        })}
+        validateRow={(row, index, allData) => {
+          const mappedUsers = employees.map(e => ({ _id: e._id, name: e.employee_name }));
+          const result = validateEmployeeRow(row, divisions, departments, designations as any, mappedUsers);
+          const errors = [...result.errors];
+          const fieldErrors = { ...result.fieldErrors };
 
-                    // Filter departments that belong to this division
-                    return departments
-                      .filter(dept => (dept as any).divisions?.includes(div._id))
-                      .map(d => ({ value: d.name, label: d.name }));
+          // Check for duplicates within the file
+          const empNo = String(row.emp_no || '').trim().toUpperCase();
+          if (empNo) {
+            const isDuplicateInFile = allData.some((r, i) =>
+              i !== index && String(r.emp_no || '').trim().toUpperCase() === empNo
+            );
+            if (isDuplicateInFile) {
+              errors.push('Duplicate Employee No within this file');
+              fieldErrors.emp_no = 'File Duplicate';
+            }
+          }
+
+          // Validate dynamic fields from formSettings
+          if (formSettings?.groups) {
+            formSettings.groups.forEach((group: any) => {
+              if (!group.isEnabled) return;
+              group.fields.forEach((field: any) => {
+                if (!field.isEnabled) return;
+
+                const value = row[field.id];
+                const handledFields = ['emp_no', 'employee_name', 'division_name', 'department_name', 'designation_name', 'gender', 'dob', 'doj', 'marital_status', 'blood_group'];
+
+                if (!handledFields.includes(field.id) && field.isRequired) {
+                  if (value === undefined || value === null || value === '') {
+                    errors.push(`${field.label} is required`);
+                    fieldErrors[field.id] = 'Required';
                   }
-                };
-              }
-              if (col.key === 'designation_name') {
-                return {
-                  ...col,
-                  type: 'select',
-                  options: designations.map(d => ({ value: d.name, label: d.name }))
-                };
-              }
-              if (col.key === 'gender') {
-                return { ...col, type: 'select', options: [{ value: 'Male', label: 'Male' }, { value: 'Female', label: 'Female' }, { value: 'Other', label: 'Other' }] };
-              }
-              if (col.key === 'marital_status') {
-                return { ...col, type: 'select', options: [{ value: 'Single', label: 'Single' }, { value: 'Married', label: 'Married' }, { value: 'Divorced', label: 'Divorced' }, { value: 'Widowed', label: 'Widowed' }] };
-              }
-              if (col.key === 'blood_group') {
-                return { ...col, type: 'select', options: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(bg => ({ value: bg, label: bg })) };
-              }
-
-              // Handle userselect fields (like reporting_to)
-              const field = formSettings?.groups?.flatMap((g: any) => g.fields).find((f: any) => f.id === col.key);
-              if (field?.type === 'userselect' || col.key === 'reporting_to') {
-                return {
-                  ...col,
-                  type: 'select',
-                  options: employees.map(e => ({ value: e._id, label: e.employee_name }))
-                };
-              }
-              return col;
-            })}
-            validateRow={(row, index, allData) => {
-              const mappedUsers = employees.map(e => ({ _id: e._id, name: e.employee_name }));
-              const result = validateEmployeeRow(row, divisions, departments, designations as any, mappedUsers);
-              const errors = [...result.errors];
-              const fieldErrors = { ...result.fieldErrors };
-
-              // Check for duplicates within the file
-              const empNo = String(row.emp_no || '').trim().toUpperCase();
-              if (empNo) {
-                const isDuplicateInFile = allData.some((r, i) =>
-                  i !== index && String(r.emp_no || '').trim().toUpperCase() === empNo
-                );
-                if (isDuplicateInFile) {
-                  errors.push('Duplicate Employee No within this file');
-                  fieldErrors.emp_no = 'File Duplicate';
                 }
-              }
+              });
+            });
+          }
 
-              // Validate dynamic fields from formSettings
+          return { isValid: errors.length === 0, errors, fieldErrors, mappedRow: result.mappedRow };
+        }}
+        onSubmit={async (data) => {
+          const batchData: any[] = [];
+          const processingErrors: string[] = [];
+
+          data.forEach((row) => {
+            try {
+              // Map division, department and designation names to IDs
+              const divId = divisions.find(d => d.name.toLowerCase().trim() === String(row.division_name || '').toLowerCase().trim())?._id;
+              const deptId = departments.find(d =>
+                d.name.toLowerCase().trim() === String(row.department_name || '').toLowerCase().trim()
+              )?._id;
+              const desigInput = String(row.designation_name || '').toLowerCase().trim();
+              const desigId = designations.find(d =>
+                d.name?.toLowerCase().trim() === desigInput ||
+                (d.code && String(d.code).toLowerCase().trim() === desigInput)
+              )?._id;
+
+              const employeeData: any = {
+                ...row,
+                division_id: divId || undefined,
+                department_id: deptId || undefined,
+                designation_id: desigId || undefined,
+                proposedSalary: row.proposedSalary || row.gross_salary || 0
+              };
+
+              // Handle dynamic fields based on form settings
+              const coreFields = ['emp_no', 'employee_name', 'proposedSalary', 'gross_salary', 'division_id', 'department_id', 'designation_id', 'division_name', 'department_name', 'designation_name', 'doj', 'dob', 'gender', 'marital_status', 'blood_group', 'qualifications', 'experience', 'address', 'location', 'aadhar_number', 'phone_number', 'alt_phone_number', 'email', 'pf_number', 'esi_number', 'bank_account_no', 'bank_name', 'bank_place', 'ifsc_code'];
+
               if (formSettings?.groups) {
+                const dynamicFields: any = {};
                 formSettings.groups.forEach((group: any) => {
-                  if (!group.isEnabled) return;
                   group.fields.forEach((field: any) => {
-                    if (!field.isEnabled) return;
-
-                    const value = row[field.id];
-                    const handledFields = ['emp_no', 'employee_name', 'division_name', 'department_name', 'designation_name', 'gender', 'dob', 'doj', 'marital_status', 'blood_group'];
-
-                    if (!handledFields.includes(field.id) && field.isRequired) {
-                      if (value === undefined || value === null || value === '') {
-                        errors.push(`${field.label} is required`);
-                        fieldErrors[field.id] = 'Required';
+                    if (row[field.id] !== undefined && row[field.id] !== null && row[field.id] !== '') {
+                      const val = parseDynamicField(row[field.id], field);
+                      if (!coreFields.includes(field.id)) {
+                        dynamicFields[field.id] = val;
+                        delete employeeData[field.id];
+                      } else {
+                        employeeData[field.id] = val;
                       }
                     }
                   });
                 });
-              }
-
-              return { isValid: errors.length === 0, errors, fieldErrors, mappedRow: result.mappedRow };
-            }}
-            onSubmit={async (data) => {
-              const batchData: any[] = [];
-              const processingErrors: string[] = [];
-
-              data.forEach((row) => {
-                try {
-                  // Map division, department and designation names to IDs
-                  const divId = divisions.find(d => d.name.toLowerCase().trim() === String(row.division_name || '').toLowerCase().trim())?._id;
-                  const deptId = departments.find(d =>
-                    d.name.toLowerCase().trim() === String(row.department_name || '').toLowerCase().trim()
-                  )?._id;
-                  const desigInput = String(row.designation_name || '').toLowerCase().trim();
-                  const desigId = designations.find(d =>
-                    d.name?.toLowerCase().trim() === desigInput ||
-                    (d.code && String(d.code).toLowerCase().trim() === desigInput)
-                  )?._id;
-
-                  const employeeData: any = {
-                    ...row,
-                    division_id: divId || undefined,
-                    department_id: deptId || undefined,
-                    designation_id: desigId || undefined,
-                    proposedSalary: row.proposedSalary || row.gross_salary || 0
-                  };
-
-                  // Handle dynamic fields based on form settings
-                  const coreFields = ['emp_no', 'employee_name', 'proposedSalary', 'gross_salary', 'division_id', 'department_id', 'designation_id', 'division_name', 'department_name', 'designation_name', 'doj', 'dob', 'gender', 'marital_status', 'blood_group', 'qualifications', 'experience', 'address', 'location', 'aadhar_number', 'phone_number', 'alt_phone_number', 'email', 'pf_number', 'esi_number', 'bank_account_no', 'bank_name', 'bank_place', 'ifsc_code'];
-
-                  if (formSettings?.groups) {
-                    const dynamicFields: any = {};
-                    formSettings.groups.forEach((group: any) => {
-                      group.fields.forEach((field: any) => {
-                        if (row[field.id] !== undefined && row[field.id] !== null && row[field.id] !== '') {
-                          const val = parseDynamicField(row[field.id], field);
-                          if (!coreFields.includes(field.id)) {
-                            dynamicFields[field.id] = val;
-                            delete employeeData[field.id];
-                          } else {
-                            employeeData[field.id] = val;
-                          }
-                        }
-                      });
-                    });
-                    if (Object.keys(dynamicFields).length > 0) {
-                      employeeData.dynamicFields = dynamicFields;
-                    }
-                  }
-
-                  // Handle special case for qualifications if enabled
-                  if (formSettings?.qualifications?.isEnabled && row.qualifications) {
-                    const qualDef = {
-                      type: 'array',
-                      itemType: 'object',
-                      fields: formSettings.qualifications.fields
-                    };
-                    employeeData.qualifications = parseDynamicField(row.qualifications, qualDef);
-                  }
-
-                  batchData.push(employeeData);
-                } catch (err: any) {
-                  processingErrors.push(`${row.emp_no || 'Row'}: Failed to process row data`);
+                if (Object.keys(dynamicFields).length > 0) {
+                  employeeData.dynamicFields = dynamicFields;
                 }
-              });
-
-              if (batchData.length === 0) {
-                return { success: false, message: 'No valid data to upload' };
               }
 
-              try {
-                const response = await api.bulkCreateEmployeeApplications(batchData);
-                loadApplications();
-                loadEmployees();
-
-                if (response.success) {
-                  return {
-                    success: true,
-                    message: `Successfully created ${response.data?.successCount || batchData.length} applications`
-                  };
-                } else {
-                  return {
-                    success: false,
-                    message: response.message || 'Partial upload failure',
-                    failedRows: response.data?.errors || []
-                  };
-                }
-              } catch (err: any) {
-                console.error('Bulk upload request error:', err);
-                return { success: false, message: 'Failed to send bulk upload request' };
+              // Handle special case for qualifications if enabled
+              if (formSettings?.qualifications?.isEnabled && row.qualifications) {
+                const qualDef = {
+                  type: 'array',
+                  itemType: 'object',
+                  fields: formSettings.qualifications.fields
+                };
+                employeeData.qualifications = parseDynamicField(row.qualifications, qualDef);
               }
-            }}
-            onClose={() => setShowBulkUpload(false)}
-          />
-        )
-      }
 
-      {/* Employee View Dialog */}
-      {
-        showViewDialog && viewingEmployee && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowViewDialog(false)} />
-            <div className="relative z-50 max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950/95">
-              <div className="mb-6 flex items-center justify-between">
+              batchData.push(employeeData);
+            } catch (err: any) {
+              processingErrors.push(`${row.emp_no || 'Row'}: Failed to process row data`);
+            }
+          });
+
+          if (batchData.length === 0) {
+            return { success: false, message: 'No valid data to upload' };
+          }
+
+          try {
+            const response = await api.bulkCreateEmployeeApplications(batchData);
+            loadApplications();
+            loadEmployees();
+
+            if (response.success) {
+              return {
+                success: true,
+                message: `Successfully created ${response.data?.successCount || batchData.length} applications`
+              };
+            } else {
+              return {
+                success: false,
+                message: response.message || 'Partial upload failure',
+                failedRows: response.data?.errors || []
+              };
+            }
+          } catch (err: any) {
+            console.error('Bulk upload request error:', err);
+            return { success: false, message: 'Failed to send bulk upload request' };
+          }
+        }}
+        onClose={() => setShowBulkUpload(false)}
+      />
+    )
+  }
+
+  {/* Employee View Dialog */ }
+  {
+    showViewDialog && viewingEmployee && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowViewDialog(false)} />
+        <div className="relative z-50 max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950/95">
+          <div className="mb-6 flex items-center justify-between">
+            <div>
+              <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+                {viewingEmployee.employee_name}
+              </h2>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                Employee No: {viewingEmployee.emp_no}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  setShowViewDialog(false);
+                  handleEdit(viewingEmployee);
+                }}
+                className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-400"
+              >
+                Edit
+              </button>
+              <button
+                onClick={() => setShowViewDialog(false)}
+                className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            {/* Status Badge */}
+            <div className="flex items-center gap-2">
+              <span className={viewingEmployee.is_active !== false
+                ? 'inline-flex rounded-full px-3 py-1 text-sm font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                : 'inline-flex rounded-full px-3 py-1 text-sm font-medium bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}>
+                {viewingEmployee.is_active !== false ? 'Active' : 'Inactive'}
+              </span>
+            </div>
+
+            {/* Basic Information */}
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+              <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Basic Information</h3>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <div>
-                  <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-                    {viewingEmployee.employee_name}
-                  </h2>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    Employee No: {viewingEmployee.emp_no}
+                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Employee Number</label>
+                  <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.emp_no || '-'}</p>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Name</label>
+                  <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.employee_name || '-'}</p>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Department</label>
+                  <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.department?.name || '-'}</p>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Designation</label>
+                  <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.designation?.name || '-'}</p>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Date of Joining</label>
+                  <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.doj ? new Date(viewingEmployee.doj).toLocaleDateString() : '-'}</p>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Date of Birth</label>
+                  <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.dob ? new Date(viewingEmployee.dob).toLocaleDateString() : '-'}</p>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Gross Salary</label>
+                  <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.gross_salary ? `₹${viewingEmployee.gross_salary.toLocaleString()}` : '-'}</p>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400">CTC Salary</label>
+                  <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{(viewingEmployee as any).ctcSalary ? `₹${(viewingEmployee as any).ctcSalary.toLocaleString()}` : '-'}</p>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Calculated Salary (Net)</label>
+                  <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{(viewingEmployee as any).calculatedSalary ? `₹${(viewingEmployee as any).calculatedSalary.toLocaleString()}` : '-'}</p>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Paid Leaves</label>
+                  <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.paidLeaves ?? '-'}</p>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Gender</label>
+                  <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.gender || '-'}</p>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Marital Status</label>
+                  <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.marital_status || '-'}</p>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Blood Group</label>
+                  <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.blood_group || '-'}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Contact Information */}
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+              <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Contact Information</h3>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <div>
+                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Phone Number</label>
+                  <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.phone_number || '-'}</p>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Alternate Phone</label>
+                  <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.alt_phone_number || '-'}</p>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Email</label>
+                  <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.email || '-'}</p>
+                </div>
+                <div className="sm:col-span-2 lg:col-span-3">
+                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Address</label>
+                  <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.address || '-'}</p>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Location</label>
+                  <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.location || '-'}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Professional Information */}
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+              <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Professional Information</h3>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="sm:col-span-2 lg:col-span-3">
+                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2 block">Qualifications</label>
+                  <div className="space-y-3">
+                    {(() => {
+                      const quals = viewingEmployee.qualifications;
+                      if (!quals || (Array.isArray(quals) && quals.length === 0)) {
+                        return <p className="text-sm font-medium text-slate-900 dark:text-slate-100">-</p>;
+                      }
+
+                      // Handle array of objects (new format)
+                      if (Array.isArray(quals)) {
+                        return (
+                          <div className="grid gap-6 sm:grid-cols-2">
+                            {quals.map((qual: any, idx: number) => {
+                              const certificateUrl = qual.certificateUrl;
+                              const isPDF = certificateUrl?.toLowerCase().endsWith('.pdf');
+                              // Filter out internal keys like certificateUrl for list display
+                              const displayEntries = Object.entries(qual).filter(([k, v]) =>
+                                k !== 'certificateUrl' && v !== null && v !== undefined && v !== ''
+                              );
+
+                              return (
+                                <div key={idx} className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white transition-all hover:border-blue-300 hover:shadow-lg dark:border-slate-700 dark:bg-slate-900 dark:hover:border-blue-700 flex flex-col h-full">
+                                  {/* Card Image Area */}
+                                  <div className="aspect-[3/2] w-full overflow-hidden bg-slate-100 dark:bg-slate-800 relative group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80 transition-colors">
+                                    {certificateUrl ? (
+                                      isPDF ? (
+                                        <div className="absolute inset-0 flex items-center justify-center">
+                                          <svg className="h-20 w-20 text-red-500 opacity-80 group-hover:scale-110 transition-transform duration-300" fill="currentColor" viewBox="0 0 24 24">
+                                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9v-2h2v2zm0-4H9V7h2v5z" />
+                                          </svg>
+                                          <span className="absolute bottom-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">PDF Document</span>
+                                        </div>
+                                      ) : (
+                                        <img
+                                          src={certificateUrl}
+                                          alt="Certificate Preview"
+                                          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                                        />
+                                      )
+                                    ) : (
+                                      <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 dark:text-slate-600">
+                                        <svg className="h-16 w-16 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                        </svg>
+                                        <span className="text-xs font-medium">No Certificate</span>
+                                      </div>
+                                    )}
+
+                                    {/* Overlay Action */}
+                                    {certificateUrl && (
+                                      <a
+                                        href={certificateUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="absolute inset-0 z-10 flex items-center justify-center bg-black/0 opacity-0 transition-all duration-300 group-hover:bg-black/10 group-hover:opacity-100"
+                                      >
+                                        <div className="rounded-full bg-white/90 px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm backdrop-blur-sm hover:bg-white hover:scale-105 transition-all">
+                                          View Full {isPDF ? 'Document' : 'Image'}
+                                        </div>
+                                      </a>
+                                    )}
+                                  </div>
+
+                                  {/* Card Content Area */}
+                                  <div className="flex flex-1 flex-col p-5">
+                                    <div className="space-y-3">
+                                      {displayEntries.length > 0 ? displayEntries.map(([key, value]) => {
+                                        const fieldLabel = formSettings?.qualifications?.fields?.find((f: any) => f.id === key)?.label || key.replace(/_/g, ' ');
+                                        return (
+                                          <div key={key} className="flex flex-col border-b border-slate-100 pb-2 last:border-0 last:pb-0 dark:border-slate-800">
+                                            <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 dark:text-slate-500 mb-0.5">
+                                              {fieldLabel}
+                                            </span>
+                                            <span className="text-sm font-medium text-slate-900 dark:text-slate-100 line-clamp-1" title={String(value)}>
+                                              {String(value)}
+                                            </span>
+                                          </div>
+                                        );
+                                      }) : <span className="text-sm italic text-slate-400">No Qualification Details</span>}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      }
+
+                      // Fallback for string
+                      return <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{String(quals)}</p>;
+                    })()}
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Experience (Years)</label>
+                  <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.experience ?? '-'}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Financial Information */}
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+              <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Financial Information</h3>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <div>
+                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400">PF Number</label>
+                  <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.pf_number || '-'}</p>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400">ESI Number</label>
+                  <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.esi_number || '-'}</p>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Aadhar Number</label>
+                  <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.aadhar_number || '-'}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Bank Details */}
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+              <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Bank Details</h3>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <div>
+                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Account Number</label>
+                  <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_account_no || '-'}</p>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Bank Name</label>
+                  <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_name || '-'}</p>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Bank Place</label>
+                  <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_place || '-'}</p>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400">IFSC Code</label>
+                  <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.ifsc_code || '-'}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Allowances & Deductions - Always show both sections */}
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+              <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Allowances & Deductions</h3>
+
+              {/* Allowances */}
+              {(Array.isArray(viewingEmployee.employeeAllowances) && viewingEmployee.employeeAllowances.length > 0) ? (
+                <div className="mb-6">
+                  <h4 className="mb-3 text-sm font-semibold text-green-700 dark:text-green-400">Allowances</h4>
+                  <div className="space-y-2">
+                    {viewingEmployee.employeeAllowances.map((allowance: any, idx: number) => (
+                      <div key={idx} className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50/50 p-3 dark:border-green-800 dark:bg-green-900/20">
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{allowance.name || '-'}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">
+                            {allowance.type === 'percentage'
+                              ? `${allowance.percentage}% of ${allowance.percentageBase || 'basic'}`
+                              : 'Fixed Amount'}
+                            {allowance.isOverride && (
+                              <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                Override
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                        <p className="text-sm font-semibold text-green-700 dark:text-green-400">
+                          {allowance.amount !== null && allowance.amount !== undefined
+                            ? `₹${Number(allowance.amount).toLocaleString()}`
+                            : '-'}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    No employee-level allowance overrides. Default allowances from Department/Global settings will be used during payroll calculation.
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
+              )}
+
+              {/* Deductions */}
+              {(Array.isArray(viewingEmployee.employeeDeductions) && viewingEmployee.employeeDeductions.length > 0) ? (
+                <div>
+                  <h4 className="mb-3 text-sm font-semibold text-red-700 dark:text-red-400">Deductions</h4>
+                  <div className="space-y-2">
+                    {viewingEmployee.employeeDeductions.map((deduction: any, idx: number) => (
+                      <div key={idx} className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50/50 p-3 dark:border-red-800 dark:bg-red-900/20">
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{deduction.name || '-'}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">
+                            {deduction.type === 'percentage'
+                              ? `${deduction.percentage}% of ${deduction.percentageBase || 'basic'}`
+                              : 'Fixed Amount'}
+                            {deduction.isOverride && (
+                              <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                Override
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                        <p className="text-sm font-semibold text-red-700 dark:text-red-400">
+                          {deduction.amount !== null && deduction.amount !== undefined
+                            ? `₹${Number(deduction.amount).toLocaleString()}`
+                            : '-'}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    No employee-level deduction overrides. Default deductions from Department/Global settings will be used during payroll calculation.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Left Date Information */}
+            {viewingEmployee.leftDate && (
+              <div className="rounded-2xl border border-orange-200 bg-orange-50/50 p-5 dark:border-orange-800 dark:bg-orange-900/20 mb-5">
+                <h3 className="mb-4 text-lg font-semibold text-orange-900 dark:text-orange-100">Left Date Information</h3>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Left Date</label>
+                    <p className="mt-1 text-sm font-medium text-orange-900 dark:text-orange-100">
+                      {new Date(viewingEmployee.leftDate).toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
+                      })}
+                    </p>
+                  </div>
+                  {viewingEmployee.leftReason && (
+                    <div>
+                      <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Reason</label>
+                      <p className="mt-1 text-sm font-medium text-orange-900 dark:text-orange-100">
+                        {viewingEmployee.leftReason}
+                      </p>
+                    </div>
+                  )}
+                </div>
+                <div className="mt-4">
                   <button
                     onClick={() => {
                       setShowViewDialog(false);
-                      handleEdit(viewingEmployee);
+                      handleRemoveLeftDate(viewingEmployee);
                     }}
-                    className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-400"
+                    className="rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
                   >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => setShowViewDialog(false)}
-                    className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900"
-                  >
-                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
+                    Reactivate Employee
                   </button>
                 </div>
               </div>
+            )}
 
-              <div className="space-y-6">
-                {/* Status Badge */}
-                <div className="flex items-center gap-2">
-                  <span className={viewingEmployee.is_active !== false
-                    ? 'inline-flex rounded-full px-3 py-1 text-sm font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                    : 'inline-flex rounded-full px-3 py-1 text-sm font-medium bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}>
-                    {viewingEmployee.is_active !== false ? 'Active' : 'Inactive'}
-                  </span>
+            {/* Leave Information */}
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+              <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Leave Information</h3>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <div>
+                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Monthly Paid Leaves</label>
+                  <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                    {viewingEmployee.paidLeaves !== undefined && viewingEmployee.paidLeaves !== null
+                      ? `${viewingEmployee.paidLeaves} days/month`
+                      : '0 days/month'}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Recurring monthly paid leaves
+                  </p>
                 </div>
-
-                {/* Basic Information */}
-                <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                  <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Basic Information</h3>
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Employee Number</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.emp_no || '-'}</p>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Name</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.employee_name || '-'}</p>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Department</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.department?.name || '-'}</p>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Designation</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.designation?.name || '-'}</p>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Date of Joining</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.doj ? new Date(viewingEmployee.doj).toLocaleDateString() : '-'}</p>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Date of Birth</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.dob ? new Date(viewingEmployee.dob).toLocaleDateString() : '-'}</p>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Gross Salary</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.gross_salary ? `₹${viewingEmployee.gross_salary.toLocaleString()}` : '-'}</p>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">CTC Salary</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{(viewingEmployee as any).ctcSalary ? `₹${(viewingEmployee as any).ctcSalary.toLocaleString()}` : '-'}</p>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Calculated Salary (Net)</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{(viewingEmployee as any).calculatedSalary ? `₹${(viewingEmployee as any).calculatedSalary.toLocaleString()}` : '-'}</p>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Paid Leaves</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.paidLeaves ?? '-'}</p>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Gender</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.gender || '-'}</p>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Marital Status</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.marital_status || '-'}</p>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Blood Group</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.blood_group || '-'}</p>
-                    </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Yearly Allotted Leaves</label>
+                  <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                    {viewingEmployee.allottedLeaves !== undefined && viewingEmployee.allottedLeaves !== null
+                      ? `${viewingEmployee.allottedLeaves} days/year`
+                      : '0 days/year'}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Total for without_pay/LOP leaves (for balance tracking)
+                  </p>
+                </div>
+                {((viewingEmployee as any).ctcSalary !== undefined && (viewingEmployee as any).ctcSalary !== null) && (
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">CTC Salary</label>
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                      ₹{Number((viewingEmployee as any).ctcSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </p>
                   </div>
-                </div>
-
-                {/* Contact Information */}
-                <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                  <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Contact Information</h3>
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Phone Number</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.phone_number || '-'}</p>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Alternate Phone</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.alt_phone_number || '-'}</p>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Email</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.email || '-'}</p>
-                    </div>
-                    <div className="sm:col-span-2 lg:col-span-3">
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Address</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.address || '-'}</p>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Location</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.location || '-'}</p>
-                    </div>
+                )}
+                {((viewingEmployee as any).calculatedSalary !== undefined && (viewingEmployee as any).calculatedSalary !== null) && (
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Calculated Salary (Net)</label>
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                      ₹{Number((viewingEmployee as any).calculatedSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </p>
                   </div>
-                </div>
+                )}
+              </div>
+            </div>
 
-                {/* Professional Information */}
-                <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                  <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Professional Information</h3>
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    <div className="sm:col-span-2 lg:col-span-3">
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2 block">Qualifications</label>
-                      <div className="space-y-3">
-                        {(() => {
-                          const quals = viewingEmployee.qualifications;
-                          if (!quals || (Array.isArray(quals) && quals.length === 0)) {
-                            return <p className="text-sm font-medium text-slate-900 dark:text-slate-100">-</p>;
-                          }
+            {/* Reporting Authority Section - Check both root and dynamicFields, handle both reporting_to and reporting_to_ */}
+            {((viewingEmployee as any).reporting_to || (viewingEmployee as any).reporting_to_ || viewingEmployee.dynamicFields?.reporting_to || viewingEmployee.dynamicFields?.reporting_to_) && (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Reporting Authority</h3>
+                {(() => {
+                  const reportingTo = (viewingEmployee as any).reporting_to || (viewingEmployee as any).reporting_to_ || viewingEmployee.dynamicFields?.reporting_to || viewingEmployee.dynamicFields?.reporting_to_;
+                  console.log('Displaying reporting_to:', reportingTo);
 
-                          // Handle array of objects (new format)
-                          if (Array.isArray(quals)) {
-                            return (
-                              <div className="grid gap-6 sm:grid-cols-2">
-                                {quals.map((qual: any, idx: number) => {
-                                  const certificateUrl = qual.certificateUrl;
-                                  const isPDF = certificateUrl?.toLowerCase().endsWith('.pdf');
-                                  // Filter out internal keys like certificateUrl for list display
-                                  const displayEntries = Object.entries(qual).filter(([k, v]) =>
-                                    k !== 'certificateUrl' && v !== null && v !== undefined && v !== ''
-                                  );
+                  if (!reportingTo || !Array.isArray(reportingTo) || reportingTo.length === 0) {
+                    return <p className="text-sm text-slate-500 dark:text-slate-400">No reporting managers assigned</p>;
+                  }
 
-                                  return (
-                                    <div key={idx} className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white transition-all hover:border-blue-300 hover:shadow-lg dark:border-slate-700 dark:bg-slate-900 dark:hover:border-blue-700 flex flex-col h-full">
-                                      {/* Card Image Area */}
-                                      <div className="aspect-[3/2] w-full overflow-hidden bg-slate-100 dark:bg-slate-800 relative group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80 transition-colors">
-                                        {certificateUrl ? (
-                                          isPDF ? (
-                                            <div className="absolute inset-0 flex items-center justify-center">
-                                              <svg className="h-20 w-20 text-red-500 opacity-80 group-hover:scale-110 transition-transform duration-300" fill="currentColor" viewBox="0 0 24 24">
-                                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9v-2h2v2zm0-4H9V7h2v5z" />
-                                              </svg>
-                                              <span className="absolute bottom-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">PDF Document</span>
-                                            </div>
-                                          ) : (
-                                            <img
-                                              src={certificateUrl}
-                                              alt="Certificate Preview"
-                                              className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                                            />
-                                          )
-                                        ) : (
-                                          <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 dark:text-slate-600">
-                                            <svg className="h-16 w-16 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                            </svg>
-                                            <span className="text-xs font-medium">No Certificate</span>
-                                          </div>
-                                        )}
+                  const isPopulated = reportingTo[0] && typeof reportingTo[0] === 'object' && reportingTo[0].name;
+                  console.log('Is populated:', isPopulated, 'First item:', reportingTo[0]);
 
-                                        {/* Overlay Action */}
-                                        {certificateUrl && (
-                                          <a
-                                            href={certificateUrl}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="absolute inset-0 z-10 flex items-center justify-center bg-black/0 opacity-0 transition-all duration-300 group-hover:bg-black/10 group-hover:opacity-100"
-                                          >
-                                            <div className="rounded-full bg-white/90 px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm backdrop-blur-sm hover:bg-white hover:scale-105 transition-all">
-                                              View Full {isPDF ? 'Document' : 'Image'}
-                                            </div>
-                                          </a>
-                                        )}
-                                      </div>
-
-                                      {/* Card Content Area */}
-                                      <div className="flex flex-1 flex-col p-5">
-                                        <div className="space-y-3">
-                                          {displayEntries.length > 0 ? displayEntries.map(([key, value]) => {
-                                            const fieldLabel = formSettings?.qualifications?.fields?.find((f: any) => f.id === key)?.label || key.replace(/_/g, ' ');
-                                            return (
-                                              <div key={key} className="flex flex-col border-b border-slate-100 pb-2 last:border-0 last:pb-0 dark:border-slate-800">
-                                                <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 dark:text-slate-500 mb-0.5">
-                                                  {fieldLabel}
-                                                </span>
-                                                <span className="text-sm font-medium text-slate-900 dark:text-slate-100 line-clamp-1" title={String(value)}>
-                                                  {String(value)}
-                                                </span>
-                                              </div>
-                                            );
-                                          }) : <span className="text-sm italic text-slate-400">No Qualification Details</span>}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            );
-                          }
-
-                          // Fallback for string
-                          return <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{String(quals)}</p>;
-                        })()}
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Experience (Years)</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.experience ?? '-'}</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Financial Information */}
-                <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                  <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Financial Information</h3>
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">PF Number</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.pf_number || '-'}</p>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">ESI Number</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.esi_number || '-'}</p>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Aadhar Number</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.aadhar_number || '-'}</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Bank Details */}
-                <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                  <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Bank Details</h3>
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Account Number</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_account_no || '-'}</p>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Bank Name</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_name || '-'}</p>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Bank Place</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_place || '-'}</p>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">IFSC Code</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.ifsc_code || '-'}</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Allowances & Deductions - Always show both sections */}
-                <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                  <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Allowances & Deductions</h3>
-
-                  {/* Allowances */}
-                  {(Array.isArray(viewingEmployee.employeeAllowances) && viewingEmployee.employeeAllowances.length > 0) ? (
-                    <div className="mb-6">
-                      <h4 className="mb-3 text-sm font-semibold text-green-700 dark:text-green-400">Allowances</h4>
-                      <div className="space-y-2">
-                        {viewingEmployee.employeeAllowances.map((allowance: any, idx: number) => (
-                          <div key={idx} className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50/50 p-3 dark:border-green-800 dark:bg-green-900/20">
-                            <div className="flex-1">
-                              <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{allowance.name || '-'}</p>
-                              <p className="text-xs text-slate-500 dark:text-slate-400">
-                                {allowance.type === 'percentage'
-                                  ? `${allowance.percentage}% of ${allowance.percentageBase || 'basic'}`
-                                  : 'Fixed Amount'}
-                                {allowance.isOverride && (
-                                  <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                                    Override
-                                  </span>
-                                )}
-                              </p>
+                  return (
+                    <div className="space-y-2">
+                      {isPopulated ? (
+                        reportingTo.map((user: any, idx: number) => (
+                          <div key={idx} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                              </svg>
                             </div>
-                            <p className="text-sm font-semibold text-green-700 dark:text-green-400">
-                              {allowance.amount !== null && allowance.amount !== undefined
-                                ? `₹${Number(allowance.amount).toLocaleString()}`
-                                : '-'}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-                      <p className="text-sm text-slate-500 dark:text-slate-400">
-                        No employee-level allowance overrides. Default allowances from Department/Global settings will be used during payroll calculation.
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Deductions */}
-                  {(Array.isArray(viewingEmployee.employeeDeductions) && viewingEmployee.employeeDeductions.length > 0) ? (
-                    <div>
-                      <h4 className="mb-3 text-sm font-semibold text-red-700 dark:text-red-400">Deductions</h4>
-                      <div className="space-y-2">
-                        {viewingEmployee.employeeDeductions.map((deduction: any, idx: number) => (
-                          <div key={idx} className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50/50 p-3 dark:border-red-800 dark:bg-red-900/20">
                             <div className="flex-1">
-                              <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{deduction.name || '-'}</p>
-                              <p className="text-xs text-slate-500 dark:text-slate-400">
-                                {deduction.type === 'percentage'
-                                  ? `${deduction.percentage}% of ${deduction.percentageBase || 'basic'}`
-                                  : 'Fixed Amount'}
-                                {deduction.isOverride && (
-                                  <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                                    Override
-                                  </span>
-                                )}
-                              </p>
+                              <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{user.name || 'Unknown'}</p>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">{user.email || ''}</p>
                             </div>
-                            <p className="text-sm font-semibold text-red-700 dark:text-red-400">
-                              {deduction.amount !== null && deduction.amount !== undefined
-                                ? `₹${Number(deduction.amount).toLocaleString()}`
-                                : '-'}
-                            </p>
+                            {user.role && (
+                              <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                                {user.role}
+                              </span>
+                            )}
                           </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-                      <p className="text-sm text-slate-500 dark:text-slate-400">
-                        No employee-level deduction overrides. Default deductions from Department/Global settings will be used during payroll calculation.
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Left Date Information */}
-                {viewingEmployee.leftDate && (
-                  <div className="rounded-2xl border border-orange-200 bg-orange-50/50 p-5 dark:border-orange-800 dark:bg-orange-900/20 mb-5">
-                    <h3 className="mb-4 text-lg font-semibold text-orange-900 dark:text-orange-100">Left Date Information</h3>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                      <div>
-                        <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Left Date</label>
-                        <p className="mt-1 text-sm font-medium text-orange-900 dark:text-orange-100">
-                          {new Date(viewingEmployee.leftDate).toLocaleDateString('en-US', {
-                            year: 'numeric',
-                            month: 'long',
-                            day: 'numeric'
-                          })}
-                        </p>
-                      </div>
-                      {viewingEmployee.leftReason && (
-                        <div>
-                          <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Reason</label>
-                          <p className="mt-1 text-sm font-medium text-orange-900 dark:text-orange-100">
-                            {viewingEmployee.leftReason}
-                          </p>
-                        </div>
+                        ))
+                      ) : (
+                        // Fallback if not populated (show IDs)
+                        reportingTo.map((id: any, idx: number) => (
+                          <div key={idx} className="text-sm text-slate-600 dark:text-slate-400">
+                            {typeof id === 'object' ? id._id || JSON.stringify(id) : id}
+                          </div>
+                        ))
                       )}
                     </div>
-                    <div className="mt-4">
-                      <button
-                        onClick={() => {
-                          setShowViewDialog(false);
-                          handleRemoveLeftDate(viewingEmployee);
-                        }}
-                        className="rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
-                      >
-                        Reactivate Employee
-                      </button>
-                    </div>
-                  </div>
-                )}
+                  );
+                })()}
+              </div>
+            )}
 
-                {/* Leave Information */}
-                <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                  <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Leave Information</h3>
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Monthly Paid Leaves</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                        {viewingEmployee.paidLeaves !== undefined && viewingEmployee.paidLeaves !== null
-                          ? `${viewingEmployee.paidLeaves} days/month`
-                          : '0 days/month'}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        Recurring monthly paid leaves
-                      </p>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Yearly Allotted Leaves</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                        {viewingEmployee.allottedLeaves !== undefined && viewingEmployee.allottedLeaves !== null
-                          ? `${viewingEmployee.allottedLeaves} days/year`
-                          : '0 days/year'}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        Total for without_pay/LOP leaves (for balance tracking)
-                      </p>
-                    </div>
-                    {((viewingEmployee as any).ctcSalary !== undefined && (viewingEmployee as any).ctcSalary !== null) && (
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">CTC Salary</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                          ₹{Number((viewingEmployee as any).ctcSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                        </p>
-                      </div>
-                    )}
-                    {((viewingEmployee as any).calculatedSalary !== undefined && (viewingEmployee as any).calculatedSalary !== null) && (
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Calculated Salary (Net)</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                          ₹{Number((viewingEmployee as any).calculatedSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
+            {/* Dynamic Fields */}
+            {viewingEmployee.dynamicFields && Object.keys(viewingEmployee.dynamicFields).length > 0 && (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Additional Information</h3>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {Object.entries(viewingEmployee.dynamicFields)
+                    .filter(([key]) => key !== 'reporting_to' && key !== 'reporting_to_' && key !== 'qualifications')
+                    .map(([key, value]) => {
+                      if (value === null || value === undefined || value === '') {
+                        return null;
+                      }
+                      const underscoreRegex = new RegExp('_', 'g');
+                      const wordBoundaryRegex = new RegExp('\\b\\w', 'g');
+                      const displayKey = key.replace(underscoreRegex, ' ').replace(wordBoundaryRegex, (l: string) => l.toUpperCase());
 
-                {/* Reporting Authority Section - Check both root and dynamicFields, handle both reporting_to and reporting_to_ */}
-                {((viewingEmployee as any).reporting_to || (viewingEmployee as any).reporting_to_ || viewingEmployee.dynamicFields?.reporting_to || viewingEmployee.dynamicFields?.reporting_to_) && (
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                    <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Reporting Authority</h3>
-                    {(() => {
-                      const reportingTo = (viewingEmployee as any).reporting_to || (viewingEmployee as any).reporting_to_ || viewingEmployee.dynamicFields?.reporting_to || viewingEmployee.dynamicFields?.reporting_to_;
-                      console.log('Displaying reporting_to:', reportingTo);
-
-                      if (!reportingTo || !Array.isArray(reportingTo) || reportingTo.length === 0) {
-                        return <p className="text-sm text-slate-500 dark:text-slate-400">No reporting managers assigned</p>;
+                      let displayValue: string = '';
+                      if (Array.isArray(value)) {
+                        displayValue = value.length > 0 ? JSON.stringify(value) : '-';
+                      } else if (typeof value === 'object') {
+                        displayValue = JSON.stringify(value, null, 2);
+                      } else {
+                        displayValue = String(value);
                       }
 
-                      const isPopulated = reportingTo[0] && typeof reportingTo[0] === 'object' && reportingTo[0].name;
-                      console.log('Is populated:', isPopulated, 'First item:', reportingTo[0]);
+                      const isComplexType = Array.isArray(value) || typeof value === 'object';
+                      const colSpanClass = isComplexType ? 'sm:col-span-2 lg:col-span-3' : '';
+                      const whitespaceClass = isComplexType ? 'whitespace-pre-wrap' : '';
+                      const paragraphClassName = 'mt-1 text-sm font-medium text-slate-900 dark:text-slate-100 ' + whitespaceClass;
 
                       return (
-                        <div className="space-y-2">
-                          {isPopulated ? (
-                            reportingTo.map((user: any, idx: number) => (
-                              <div key={idx} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
-                                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                  </svg>
-                                </div>
-                                <div className="flex-1">
-                                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{user.name || 'Unknown'}</p>
-                                  <p className="text-xs text-slate-500 dark:text-slate-400">{user.email || ''}</p>
-                                </div>
-                                {user.role && (
-                                  <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-400">
-                                    {user.role}
-                                  </span>
-                                )}
-                              </div>
-                            ))
-                          ) : (
-                            // Fallback if not populated (show IDs)
-                            reportingTo.map((id: any, idx: number) => (
-                              <div key={idx} className="text-sm text-slate-600 dark:text-slate-400">
-                                {typeof id === 'object' ? id._id || JSON.stringify(id) : id}
-                              </div>
-                            ))
-                          )}
+                        <div key={key} className={colSpanClass}>
+                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{displayKey}</label>
+                          <p className={paragraphClassName}>
+                            {displayValue}
+                          </p>
                         </div>
                       );
-                    })()}
-                  </div>
-                )}
-
-                {/* Dynamic Fields */}
-                {viewingEmployee.dynamicFields && Object.keys(viewingEmployee.dynamicFields).length > 0 && (
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                    <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Additional Information</h3>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                      {Object.entries(viewingEmployee.dynamicFields)
-                        .filter(([key]) => key !== 'reporting_to' && key !== 'reporting_to_' && key !== 'qualifications')
-                        .map(([key, value]) => {
-                          if (value === null || value === undefined || value === '') {
-                            return null;
-                          }
-                          const underscoreRegex = new RegExp('_', 'g');
-                          const wordBoundaryRegex = new RegExp('\\b\\w', 'g');
-                          const displayKey = key.replace(underscoreRegex, ' ').replace(wordBoundaryRegex, (l: string) => l.toUpperCase());
-
-                          let displayValue: string = '';
-                          if (Array.isArray(value)) {
-                            displayValue = value.length > 0 ? JSON.stringify(value) : '-';
-                          } else if (typeof value === 'object') {
-                            displayValue = JSON.stringify(value, null, 2);
-                          } else {
-                            displayValue = String(value);
-                          }
-
-                          const isComplexType = Array.isArray(value) || typeof value === 'object';
-                          const colSpanClass = isComplexType ? 'sm:col-span-2 lg:col-span-3' : '';
-                          const whitespaceClass = isComplexType ? 'whitespace-pre-wrap' : '';
-                          const paragraphClassName = 'mt-1 text-sm font-medium text-slate-900 dark:text-slate-100 ' + whitespaceClass;
-
-                          return (
-                            <div key={key} className={colSpanClass}>
-                              <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{displayKey}</label>
-                              <p className={paragraphClassName}>
-                                {displayValue}
-                              </p>
-                            </div>
-                          );
-                        })}
-                    </div>
-                  </div>
-                )}
+                    })}
+                </div>
               </div>
-            </div>
+            )}
           </div>
-        )
-      }
+        </div>
+      </div>
+    )
+  }
 
-      {/* Left Date Modal */}
-      {
-        showLeftDateModal && selectedEmployeeForLeftDate && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowLeftDateModal(false)} />
-            <div className="relative z-50 w-full max-w-md rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950/95">
-              <div className="mb-6 flex items-center justify-between">
-                <div>
-                  <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-                    Set Employee Left Date
-                  </h2>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    {selectedEmployeeForLeftDate.employee_name} ({selectedEmployeeForLeftDate.emp_no})
-                  </p>
-                </div>
-                <button
-                  onClick={() => {
-                    setShowLeftDateModal(false);
-                    setSelectedEmployeeForLeftDate(null);
-                    setLeftDateForm({ leftDate: '', leftReason: '' });
-                  }}
-                  className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900"
-                >
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              {error && (
-                <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
-                  {error}
-                </div>
-              )}
-
-              {success && (
-                <div className="mb-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400">
-                  {success}
-                </div>
-              )}
-
-              <form onSubmit={handleSubmitLeftDate} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Left Date <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    value={leftDateForm.leftDate}
-                    onChange={(e) => setLeftDateForm({ ...leftDateForm, leftDate: e.target.value })}
-                    max={new Date().toISOString().split('T')[0]}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                  />
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    The employee will be included in pay register for this month, but excluded from future months.
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Reason for Leaving (Optional)
-                  </label>
-                  <textarea
-                    value={leftDateForm.leftReason}
-                    onChange={(e) => setLeftDateForm({ ...leftDateForm, leftReason: e.target.value })}
-                    rows={3}
-                    placeholder="Enter reason for leaving..."
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                  />
-                </div>
-
-                <div className="flex justify-end gap-3 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowLeftDateModal(false);
-                      setSelectedEmployeeForLeftDate(null);
-                      setLeftDateForm({ leftDate: '', leftReason: '' });
-                    }}
-                    className="rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="rounded-xl bg-gradient-to-r from-red-500 to-orange-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-red-500/30 transition-all hover:from-red-600 hover:to-orange-600"
-                  >
-                    Set Left Date
-                  </button>
-                </div>
-              </form>
+  {/* Left Date Modal */ }
+  {
+    showLeftDateModal && selectedEmployeeForLeftDate && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowLeftDateModal(false)} />
+        <div className="relative z-50 w-full max-w-md rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950/95">
+          <div className="mb-6 flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
+                Set Employee Left Date
+              </h2>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                {selectedEmployeeForLeftDate.employee_name} ({selectedEmployeeForLeftDate.emp_no})
+              </p>
             </div>
+            <button
+              onClick={() => {
+                setShowLeftDateModal(false);
+                setSelectedEmployeeForLeftDate(null);
+                setLeftDateForm({ leftDate: '', leftReason: '' });
+              }}
+              className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900"
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
-        )
-      }
+
+          {error && (
+            <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+              {error}
+            </div>
+          )}
+
+          {success && (
+            <div className="mb-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400">
+              {success}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmitLeftDate} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                Left Date <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="date"
+                required
+                value={leftDateForm.leftDate}
+                onChange={(e) => setLeftDateForm({ ...leftDateForm, leftDate: e.target.value })}
+                max={new Date().toISOString().split('T')[0]}
+                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+              />
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                The employee will be included in pay register for this month, but excluded from future months.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                Reason for Leaving (Optional)
+              </label>
+              <textarea
+                value={leftDateForm.leftReason}
+                onChange={(e) => setLeftDateForm({ ...leftDateForm, leftReason: e.target.value })}
+                rows={3}
+                placeholder="Enter reason for leaving..."
+                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+              />
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowLeftDateModal(false);
+                  setSelectedEmployeeForLeftDate(null);
+                  setLeftDateForm({ leftDate: '', leftReason: '' });
+                }}
+                className="rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="rounded-xl bg-gradient-to-r from-red-500 to-orange-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-red-500/30 transition-all hover:from-red-600 hover:to-orange-600"
+              >
+                Set Left Date
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    )
+  }
     </div >
   );
 }

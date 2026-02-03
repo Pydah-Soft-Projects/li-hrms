@@ -2,6 +2,13 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { api, Department, Division } from '@/lib/api';
+import { auth } from '@/lib/auth';
+import {
+  canCreateUser,
+  canEditUser,
+  canDeleteUser,
+  canResetPassword
+} from '@/lib/permissions';
 import { MODULE_CATEGORIES } from '@/config/moduleCategories';
 import Spinner from '@/components/Spinner';
 
@@ -519,6 +526,13 @@ export default function UsersPage() {
     }
   };
 
+  // Permission checks
+  const user = auth.getUser();
+  const hasCreatePermission = user ? canCreateUser(user as any) : false;
+  const hasEditPermission = user ? canEditUser(user as any) : false;
+  const hasDeletePermission = user ? canDeleteUser(user as any) : false;
+  const hasResetPasswordPermission = user ? canResetPassword(user as any) : false;
+
   if (loading && users.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -546,20 +560,24 @@ export default function UsersPage() {
               <RefreshIcon />
               Refresh
             </button>
-            <button
-              onClick={openFromEmployeeDialog}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-green-200 bg-green-50 text-green-700 hover:bg-green-100 dark:border-green-800 dark:bg-green-900/30 dark:text-green-400"
-            >
-              <UserIcon />
-              Update User
-            </button>
-            <button
-              onClick={() => setShowCreateDialog(true)}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-semibold shadow-lg shadow-blue-500/30 hover:shadow-xl"
-            >
-              <PlusIcon />
-              Create User
-            </button>
+            {hasCreatePermission && (
+              <button
+                onClick={openFromEmployeeDialog}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl border border-green-200 bg-green-50 text-green-700 hover:bg-green-100 dark:border-green-800 dark:bg-green-900/30 dark:text-green-400"
+              >
+                <UserIcon />
+                Update User
+              </button>
+            )}
+            {hasCreatePermission && (
+              <button
+                onClick={() => setShowCreateDialog(true)}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-semibold shadow-lg shadow-blue-500/30 hover:shadow-xl"
+              >
+                <PlusIcon />
+                Create User
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -766,37 +784,50 @@ export default function UsersPage() {
                     </span>
                   </td>
                   <td className="px-6 py-4">
-                    <button
-                      onClick={() => handleToggleStatus(user)}
-                      disabled={user.role === 'super_admin'}
-                      className={`inline-flex px-2.5 py-1 text-xs font-medium rounded-lg ${user.isActive
-                        ? 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
-                        : 'bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400'
-                        } ${user.role === 'super_admin' ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-                    >
-                      {user.isActive ? 'Active' : 'Inactive'}
-                    </button>
+                    {hasEditPermission ? (
+                      <button
+                        onClick={() => handleToggleStatus(user)}
+                        disabled={user.role === 'super_admin'}
+                        className={`inline-flex px-2.5 py-1 text-xs font-medium rounded-lg ${user.isActive
+                          ? 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
+                          : 'bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400'
+                          } ${user.role === 'super_admin' ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                      >
+                        {user.isActive ? 'Active' : 'Inactive'}
+                      </button>
+                    ) : (
+                      <span className={`inline-flex px-2.5 py-1 text-xs font-medium rounded-lg ${user.isActive
+                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                        : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                        }`}>
+                        {user.isActive ? 'Active' : 'Inactive'}
+                      </span>
+                    )}
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center justify-end gap-2">
-                      <button
-                        onClick={() => openEditDialog(user)}
-                        className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg dark:text-slate-400 dark:hover:bg-slate-700"
-                        title="Edit"
-                      >
-                        <EditIcon />
-                      </button>
-                      <button
-                        onClick={() => {
-                          setSelectedUser(user);
-                          setShowPasswordDialog(true);
-                        }}
-                        className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg dark:text-amber-400 dark:hover:bg-amber-900/30"
-                        title="Reset Password"
-                      >
-                        <KeyIcon />
-                      </button>
-                      {user.role !== 'super_admin' && (
+                      {hasEditPermission && (
+                        <button
+                          onClick={() => openEditDialog(user)}
+                          className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg dark:text-slate-400 dark:hover:bg-slate-700"
+                          title="Edit"
+                        >
+                          <EditIcon />
+                        </button>
+                      )}
+                      {hasResetPasswordPermission && (
+                        <button
+                          onClick={() => {
+                            setSelectedUser(user);
+                            setShowPasswordDialog(true);
+                          }}
+                          className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg dark:text-amber-400 dark:hover:bg-amber-900/30"
+                          title="Reset Password"
+                        >
+                          <KeyIcon />
+                        </button>
+                      )}
+                      {hasDeletePermission && user.role !== 'super_admin' && (
                         <button
                           onClick={() => handleDelete(user)}
                           className="p-2 text-red-600 hover:bg-red-50 rounded-lg dark:text-red-400 dark:hover:bg-red-900/30"
