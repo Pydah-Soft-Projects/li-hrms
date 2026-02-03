@@ -103,17 +103,7 @@ const userSchema = new mongoose.Schema(
         ] // If empty, means 'All Departments' in this division
       }
     ],
-    activeWorkspaceId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Workspace',
-      default: null,
-    }, // Current active workspace
     preferences: {
-      defaultWorkspace: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Workspace',
-        default: null,
-      },
       language: {
         type: String,
         default: 'en',

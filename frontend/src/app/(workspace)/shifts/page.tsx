@@ -3,6 +3,13 @@
 import { useState, useEffect } from 'react';
 import { api, Shift, Division, Department, Designation } from '@/lib/api';
 import Spinner from '@/components/Spinner';
+import {
+  canViewShifts,
+  canCreateShift,
+  canEditShift,
+  canDeleteShift
+} from '@/lib/permissions';
+import { auth } from '@/lib/auth';
 
 export default function ShiftsPage() {
   // User Scope & RBAC
@@ -48,11 +55,12 @@ export default function ShiftsPage() {
   // Permissions
   const [resolvedEmployeeShifts, setResolvedEmployeeShifts] = useState<Shift[]>([]);
 
-  // Roles that can VIEW the comprehensive structured list (Division/Department buckets)
-  const canViewStructuredShifts = ['super_admin', 'sub_admin', 'hr', 'hod', 'manager'].includes(currentUser?.role);
-
-  // Roles that can MANAGE (Create/Edit/Delete) shifts
-  const canManageShifts = ['super_admin', 'sub_admin', 'hr'].includes(currentUser?.role);
+  // Permission checks
+  const user = auth.getUser();
+  const canViewStructuredShifts = user ? canViewShifts(user as any) : false;
+  const canManageShifts = user ? canEditShift(user as any) : false; // Using Edit for general manage
+  const hasCreatePermission = user ? canCreateShift(user as any) : false;
+  const hasDeletePermission = user ? canDeleteShift(user as any) : false;
 
   // Skeleton Component
   const ShiftCardSkeleton = () => (
@@ -212,7 +220,7 @@ export default function ShiftsPage() {
         const user = userRes.data.user;
         setCurrentUser(user);
 
-        const isStructuredViewRole = ['super_admin', 'sub_admin', 'hr', 'hod', 'manager'].includes(user.role);
+        const isStructuredViewRole = canViewShifts(user);
 
         if (isStructuredViewRole) {
           await Promise.all([

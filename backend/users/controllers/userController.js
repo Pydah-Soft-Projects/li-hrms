@@ -1,7 +1,5 @@
 const User = require('../model/User');
 const Employee = require('../../employees/model/Employee');
-const Workspace = require('../../workspaces/model/Workspace');
-const RoleAssignment = require('../../workspaces/model/RoleAssignment');
 const Department = require('../../departments/model/Department');
 const Division = require('../../departments/model/Division');
 const jwt = require('jsonwebtoken');
@@ -17,17 +15,6 @@ const generateToken = (userId) => {
 };
 
 
-// Get workspace code by role type
-const getWorkspaceCodeByRole = (role) => {
-  const roleToWorkspace = {
-    super_admin: null, // Super admin doesn't need workspace assignment typically
-    sub_admin: 'SUBADMIN',
-    hr: 'HR',
-    hod: 'HOD',
-    employee: 'EMP',
-  };
-  return roleToWorkspace[role] || 'EMP';
-};
 
 // @desc    Register a new user
 // @route   POST /api/users/register
@@ -162,52 +149,6 @@ exports.registerUser = async (req, res) => {
       await Division.findByIdAndUpdate(divisionId, { manager: user._id });
     }
 
-    // Auto-assign to workspace if requested
-    let workspaceAssignment = null;
-    if (assignWorkspace !== false) {
-      const workspaceCode = getWorkspaceCodeByRole(role);
-      if (workspaceCode) {
-        const workspace = await Workspace.findOne({ code: workspaceCode, isActive: true });
-        if (workspace) {
-          // Build scope config for HR (multiple departments) or HOD (single department)
-          const scopeConfig = {};
-          if (role === 'hr' && departments && departments.length > 0) {
-            scopeConfig.departments = departments;
-            scopeConfig.allDepartments = false;
-          } else if (role === 'hod' && department) {
-            scopeConfig.departments = [department];
-            scopeConfig.allDepartments = false;
-          } else if (role === 'sub_admin' || role === 'super_admin') {
-            scopeConfig.allDepartments = true;
-          }
-
-          workspaceAssignment = await RoleAssignment.create({
-            userId: user._id,
-            workspaceId: workspace._id,
-            role: 'member',
-            isPrimary: true,
-            scopeConfig,
-            assignedBy: req.user?._id,
-          });
-
-          // Also assign to Employee Portal for HOD/HR so they can apply leaves
-          if (role === 'hod' || role === 'hr') {
-            const empWorkspace = await Workspace.findOne({ code: 'EMP', isActive: true });
-            if (empWorkspace) {
-              await RoleAssignment.create({
-                userId: user._id,
-                workspaceId: empWorkspace._id,
-                role: 'member',
-                isPrimary: false,
-                scopeConfig: { departments: [], allDepartments: false },
-                assignedBy: req.user?._id,
-              });
-            }
-          }
-        }
-      }
-    }
-
     // Return user without password, but include generated password if auto-generated
     const responseData = {
       user: {
@@ -228,7 +169,6 @@ exports.registerUser = async (req, res) => {
         isActive: user.isActive,
         createdAt: user.createdAt,
       },
-      workspaceAssigned: !!workspaceAssignment,
     };
 
     // Include generated password in response (only shown once)
@@ -383,47 +323,6 @@ exports.createUserFromEmployee = async (req, res) => {
       );
     }
 
-    // Auto-assign to workspace
-    const workspaceCode = getWorkspaceCodeByRole(role || 'employee');
-    let workspaceAssignment = null;
-
-    if (workspaceCode) {
-      const workspace = await Workspace.findOne({ code: workspaceCode, isActive: true });
-      if (workspace) {
-        const scopeConfig = {};
-        if (role === 'hr') {
-          scopeConfig.departments = userDepartments;
-          scopeConfig.allDepartments = false;
-        } else if (role === 'hod') {
-          scopeConfig.departments = department ? [department] : [];
-          scopeConfig.allDepartments = false;
-        }
-
-        workspaceAssignment = await RoleAssignment.create({
-          userId: user._id,
-          workspaceId: workspace._id,
-          role: 'member',
-          isPrimary: true,
-          scopeConfig,
-          assignedBy: req.user?._id,
-        });
-
-        // Also assign to Employee Portal for HOD/HR
-        if (role === 'hod' || role === 'hr') {
-          const empWorkspace = await Workspace.findOne({ code: 'EMP', isActive: true });
-          if (empWorkspace) {
-            await RoleAssignment.create({
-              userId: user._id,
-              workspaceId: empWorkspace._id,
-              role: 'member',
-              isPrimary: false,
-              assignedBy: req.user?._id,
-            });
-          }
-        }
-      }
-    }
-
     // Response
     const responseData = {
       user: {
@@ -450,7 +349,6 @@ exports.createUserFromEmployee = async (req, res) => {
         department: employee.department_id,
         designation: employee.designation_id,
       },
-      workspaceAssigned: !!workspaceAssignment,
     };
 
     if (autoGeneratePassword) {
@@ -547,28 +445,9 @@ exports.getUser = async (req, res) => {
       });
     }
 
-    // Get user's workspace assignments
-    const workspaces = await RoleAssignment.find({
-      userId: user._id,
-      isActive: true,
-    })
-      .populate('workspaceId', 'name code type')
-      .select('workspaceId role isPrimary scopeConfig');
-
     res.status(200).json({
       success: true,
-      data: {
-        user,
-        workspaces: workspaces.map((w) => ({
-          _id: w.workspaceId?._id,
-          name: w.workspaceId?.name,
-          code: w.workspaceId?.code,
-          type: w.workspaceId?.type,
-          role: w.role,
-          isPrimary: w.isPrimary,
-          scopeConfig: w.scopeConfig,
-        })),
-      },
+      data: user,
     });
   } catch (error) {
     console.error('Error fetching user:', error);
@@ -735,53 +614,6 @@ exports.updateUser = async (req, res) => {
         { _id: { $in: user.departments } },
         { hr: user._id }
       );
-    }
-
-    // If role changed, update workspace assignment
-    if (roleChanged) {
-      // Deactivate old workspace assignments
-      await RoleAssignment.updateMany({ userId: user._id }, { isActive: false });
-
-      // Create new workspace assignment
-      const workspaceCode = getWorkspaceCodeByRole(role);
-      if (workspaceCode) {
-        const workspace = await Workspace.findOne({ code: workspaceCode, isActive: true });
-        if (workspace) {
-          const scopeConfig = {};
-          if (role === 'hr') {
-            scopeConfig.departments = departments || user.departments;
-            scopeConfig.allDepartments = false;
-          } else if (role === 'hod') {
-            scopeConfig.departments = department ? [department] : user.department ? [user.department] : [];
-            scopeConfig.allDepartments = false;
-          } else if (role === 'sub_admin') {
-            scopeConfig.allDepartments = true;
-          }
-
-          await RoleAssignment.create({
-            userId: user._id,
-            workspaceId: workspace._id,
-            role: 'member',
-            isPrimary: true,
-            scopeConfig,
-            assignedBy: req.user?._id,
-          });
-
-          // Also assign Employee Portal for HOD/HR
-          if (role === 'hod' || role === 'hr') {
-            const empWorkspace = await Workspace.findOne({ code: 'EMP', isActive: true });
-            if (empWorkspace) {
-              await RoleAssignment.create({
-                userId: user._id,
-                workspaceId: empWorkspace._id,
-                role: 'member',
-                isPrimary: false,
-                assignedBy: req.user?._id,
-              });
-            }
-          }
-        }
-      }
     }
 
     // Fetch updated user with populated fields

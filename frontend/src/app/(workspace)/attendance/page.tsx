@@ -4,6 +4,12 @@ import { useState, useEffect, useRef } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
 import { useAuth } from '@/contexts/AuthContext';
+import {
+  canEditAttendance,
+  canExportAttendance,
+  canAssignShifts,
+  canProcessPayroll
+} from '@/lib/permissions';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 
 interface AttendanceRecord {
@@ -349,6 +355,13 @@ export default function AttendancePage() {
 
     setFilteredMonthlyData(filtered);
   }, [monthlyData, selectedDivision, selectedDepartment, selectedDesignation, searchQuery]);
+
+  // Permissions
+  const user = auth.getUser();
+  const hasEditPermission = user ? canEditAttendance(user as any) : false;
+  const hasExportPermission = user ? canExportAttendance(user as any) : false;
+  const hasAssignShiftPermission = user ? canAssignShifts(user as any) : false;
+  const hasPayrollPermission = user ? canProcessPayroll(user as any) : false;
 
   const loadDivisions = async () => {
     try {
@@ -1240,7 +1253,7 @@ export default function AttendancePage() {
                       />
                     </div>
                     {/* Administrative Buttons - Hide for Employee */}
-                    {!isEmployee && (
+                    {!isEmployee && hasEditPermission && (
                       <>
                         <button
                           onClick={() => setShowUploadDialog(true)}
@@ -1464,32 +1477,36 @@ export default function AttendancePage() {
             </div>
 
             <div className="flex items-center gap-2">
-              <button
-                onClick={handleSyncShifts}
-                disabled={syncingShifts}
-                title="Sync Shifts"
-                className="h-9 w-9 flex items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-green-600 hover:border-green-200 transition-all shadow-sm active:scale-95 disabled:opacity-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 md:w-auto md:px-3"
-              >
-                {syncingShifts ? (
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" />
-                ) : (
-                  <svg className="h-4 w-4 md:mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                )}
-                <span className="hidden md:inline text-xs font-semibold">Sync</span>
-              </button>
+              {hasEditPermission && (
+                <button
+                  onClick={handleSyncShifts}
+                  disabled={syncingShifts}
+                  title="Sync Shifts"
+                  className="h-9 w-9 flex items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-green-600 hover:border-green-200 transition-all shadow-sm active:scale-95 disabled:opacity-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 md:w-auto md:px-3"
+                >
+                  {syncingShifts ? (
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" />
+                  ) : (
+                    <svg className="h-4 w-4 md:mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                  )}
+                  <span className="hidden md:inline text-xs font-semibold">Sync</span>
+                </button>
+              )}
 
-              <button
-                onClick={() => setShowUploadDialog(true)}
-                title="Upload Excel"
-                className="h-9 flex items-center px-4 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 text-xs font-bold text-white shadow-lg shadow-green-500/25 hover:shadow-green-500/40 hover:-translate-y-0.5 transition-all active:scale-95"
-              >
-                <svg className="mr-2 h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                </svg>
-                Upload
-              </button>
+              {hasEditPermission && (
+                <button
+                  onClick={() => setShowUploadDialog(true)}
+                  title="Upload Excel"
+                  className="h-9 flex items-center px-4 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 text-xs font-bold text-white shadow-lg shadow-green-500/25 hover:shadow-green-500/40 hover:-translate-y-0.5 transition-all active:scale-95"
+                >
+                  <svg className="mr-2 h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                  </svg>
+                  Upload
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -2102,7 +2119,7 @@ export default function AttendancePage() {
                           <button
                             onClick={handleAssignShift}
                             disabled={savingShift || !selectedShiftId}
-                            className="rounded-lg bg-green-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
+                            className={`rounded-lg bg-green-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50 ${!hasAssignShiftPermission ? 'hidden' : ''}`}
                           >
                             {savingShift ? 'Saving...' : 'Save'}
                           </button>
@@ -2704,12 +2721,14 @@ export default function AttendancePage() {
 
                   {/* Action Buttons */}
                   <div className="flex justify-end gap-3 print:hidden">
-                    <button
-                      onClick={handleExportPDF}
-                      className="rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600"
-                    >
-                      Export as PDF
-                    </button>
+                    {hasExportPermission && (
+                      <button
+                        onClick={handleExportPDF}
+                        className="rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600"
+                      >
+                        Export as PDF
+                      </button>
+                    )}
                     <button
                       onClick={() => {
                         setShowSummaryModal(false);
@@ -2879,7 +2898,7 @@ export default function AttendancePage() {
               <div className="mb-4 flex items-center justify-between print:hidden">
                 <h3 className="text-lg font-bold text-slate-900 dark:text-white">Payslip</h3>
                 <div className="flex items-center gap-2">
-                  {error && error.includes('not found') && (
+                  {error && error.includes('not found') && hasPayrollPermission && (
                     <button
                       onClick={handleCalculatePayroll}
                       disabled={calculatingPayroll}

@@ -7,6 +7,12 @@ import { api, apiRequest, Employee, Division } from '@/lib/api';
 import { toast } from 'react-toastify';
 import ArrearsPayrollSection from '@/components/Arrears/ArrearsPayrollSection';
 import Spinner from '@/components/Spinner';
+import {
+  canViewPayroll,
+  canProcessPayroll,
+  canGeneratePayslips
+} from '@/lib/permissions';
+import { auth } from '@/lib/auth';
 
 
 
@@ -120,7 +126,14 @@ export default function PayRegisterPage() {
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [selectedArrears, setSelectedArrears] = useState<Array<{ id: string, amount: number, employeeId?: string }>>([]);
+
+  // Permission Checks
+  const user = auth.getUser();
+  const hasProcessPermission = user ? canProcessPayroll(user) : false;
+  const hasGeneratePermission = user ? canGeneratePayslips(user) : false;
+  const hasViewPermission = user ? canViewPayroll(user) : false;
 
   const normalizeHalfDay = (
     half?: Partial<DailyRecord['firstHalf']>,
@@ -866,13 +879,15 @@ export default function PayRegisterPage() {
                 <option value="legacy">All related data (legacy)</option>
               </select>
             </div>
-            <button
-              onClick={handleSyncAll}
-              disabled={syncing}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {syncing ? 'Syncing All...' : 'Sync All'}
-            </button>
+            {hasProcessPermission && (
+              <button
+                onClick={handleSyncAll}
+                disabled={syncing}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {syncing ? 'Syncing All...' : 'Sync All'}
+              </button>
+            )}
             {(() => {
               // Strict restriction for Past Months:
               // If ANY payroll record exists for the listed employees, HIDE the Calculate button.
@@ -906,6 +921,7 @@ export default function PayRegisterPage() {
                         }
                       }}
                       className="px-4 py-2 bg-amber-500 text-white rounded-md hover:bg-amber-600 shadow-sm"
+                      disabled={!hasProcessPermission}
                     >
                       Request Recalculation Permission
                     </button>
@@ -916,7 +932,7 @@ export default function PayRegisterPage() {
                 return (
                   <button
                     onClick={handleCalculatePayrollForAll}
-                    disabled={bulkCalculating || exportingExcel}
+                    disabled={bulkCalculating || exportingExcel || !hasProcessPermission}
                     className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
                   >
                     {bulkCalculating ? 'Calculating...' : exportingExcel ? 'Preparing Excel...' : 'Recalculate Payroll'}
@@ -929,29 +945,31 @@ export default function PayRegisterPage() {
                 <>
                   <button
                     onClick={handleCalculatePayrollForAll}
-                    disabled={bulkCalculating || exportingExcel}
+                    disabled={bulkCalculating || exportingExcel || !hasProcessPermission}
                     className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
                   >
                     {bulkCalculating ? 'Calculating...' : exportingExcel ? 'Preparing Excel...' : 'Calculate Payroll (Listed)'}
                   </button>
 
                   {/* Export Excel Button */}
-                  <button
-                    onClick={async () => {
-                      const listedEmployeeIds = payRegisters.map((pr) =>
-                        typeof pr.employeeId === 'object' ? pr.employeeId._id : pr.employeeId
-                      );
-                      await downloadPayrollExcel(listedEmployeeIds);
-                    }}
-                    disabled={exportingExcel || payRegisters.length === 0}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm flex items-center gap-2"
-                    title="Export payroll to Excel for listed employees"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    {exportingExcel ? 'Exporting...' : 'Export Excel'}
-                  </button>
+                  {hasGeneratePermission && (
+                    <button
+                      onClick={async () => {
+                        const listedEmployeeIds = payRegisters.map((pr) =>
+                          typeof pr.employeeId === 'object' ? pr.employeeId._id : pr.employeeId
+                        );
+                        await downloadPayrollExcel(listedEmployeeIds);
+                      }}
+                      disabled={exportingExcel || payRegisters.length === 0}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm flex items-center gap-2"
+                      title="Export payroll to Excel for listed employees"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      {exportingExcel ? 'Exporting...' : 'Export Excel'}
+                    </button>
+                  )}
                 </>
               );
             })()}
@@ -1268,20 +1286,23 @@ export default function PayRegisterPage() {
                                         e.stopPropagation();
                                         if (employee) handleCalculatePayroll(employee);
                                       }}
-                                      className="rounded-md px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:shadow-md bg-amber-500 hover:bg-amber-600"
+                                      className={`rounded-md px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:shadow-md bg-amber-500 hover:bg-amber-600 ${!hasProcessPermission ? 'opacity-50 cursor-not-allowed' : ''}`}
                                       title="Calculate Payroll"
+                                      disabled={!hasProcessPermission}
                                     >
                                       Calculate
                                     </button>
                                   ) : (
-                                    <Link
-                                      href={`/payroll-transactions?search=${employee?.emp_no || employeeId}&month=${monthStr}`}
-                                      onClick={(e) => e.stopPropagation()}
-                                      className="rounded-md px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:shadow-md bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 inline-block"
-                                      title="View Payslip"
-                                    >
-                                      Payslip
-                                    </Link>
+                                    { hasViewPermission && (
+                                      <Link
+                                        href={`/payroll-transactions?search=${employee?.emp_no || employeeId}&month=${monthStr}`}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="rounded-md px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:shadow-md bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 inline-block"
+                                        title="View Payslip"
+                                      >
+                                        Payslip
+                                      </Link>
+                                    )}
                                   )}
 
                                   {!isFrozenOrComplete && (
@@ -1306,7 +1327,7 @@ export default function PayRegisterPage() {
                               <td
                                 key={day}
                                 onClick={() => {
-                                  if (employee && !isLocked) {
+                                  if (employee && !isLocked && hasProcessPermission) {
                                     if (record) {
                                       handleDateClick(employee, dateStr, record);
                                     } else {
@@ -1346,7 +1367,7 @@ export default function PayRegisterPage() {
                                   }
                                 }}
                                 className={`border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700
-                                ${employee && !isLocked ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : 'cursor-not-allowed opacity-75 bg-slate-50 dark:bg-slate-800/50'} 
+                                ${employee && !isLocked && hasProcessPermission ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : 'cursor-not-allowed opacity-75 bg-slate-50 dark:bg-slate-800/50'} 
                                 ${bgColor}`}
                               >
                                 {shouldShow && record ? (
