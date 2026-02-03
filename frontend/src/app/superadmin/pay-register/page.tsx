@@ -941,7 +941,7 @@ export default function PayRegisterPage() {
 
       if (response.success) {
         if (response.status === 'queued' || response.jobId) {
-          setCalculatingJobId(response.jobId);
+          setCalculatingJobId(response.jobId || null);
           Swal.fire({
             icon: 'info',
             title: 'Calculation Queued',
