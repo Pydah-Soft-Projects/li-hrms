@@ -20,7 +20,6 @@ import {
 import Link from 'next/link';
 import Swal from 'sweetalert2';
 import { format } from 'date-fns';
-import * as XLSX from 'xlsx';
 
 export default function SecondSalaryPaymentsPage() {
     const [batches, setBatches] = useState<any[]>([]);
@@ -230,7 +229,7 @@ export default function SecondSalaryPaymentsPage() {
         }
     };
 
-    const handleExportComparisonExcel = () => {
+    const handleExportComparisonExcel = async () => {
         if (comparisonData.length === 0) {
             Swal.fire({
                 icon: 'warning',
@@ -244,21 +243,44 @@ export default function SecondSalaryPaymentsPage() {
             return;
         }
 
-        const exportData = comparisonData.map(item => ({
-            'Employee ID': item.employee.emp_no,
-            'Name': item.employee.name,
-            'Department': item.employee.department,
-            'Designation': item.employee.designation,
-            'Regular Net Salary': item.regularNetSalary,
-            '2nd Salary Net': item.secondSalaryNet,
-            'Difference': item.difference,
-            'Month': month
-        }));
+        setExportingExcel(true);
+        try {
+            const blob = await (api as any).exportSalaryComparisonExcel({
+                month,
+                divisionId: selectedDivision,
+                departmentId: selectedDepartment,
+                designationId: selectedDesignation,
+                search: searchTerm
+            });
 
-        const ws = XLSX.utils.json_to_sheet(exportData);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Salary Comparison");
-        XLSX.writeFile(wb, `Salary_Comparison_${month}.xlsx`);
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Salary_Comparison_${month}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+
+            Swal.fire({
+                icon: 'success',
+                title: 'Export Complete',
+                text: 'Comparison Excel file has been downloaded successfully.',
+                timer: 2000,
+                showConfirmButton: false,
+                toast: true,
+                position: 'top-end'
+            });
+        } catch (error: any) {
+            console.error('Export error:', error);
+            Swal.fire({
+                icon: 'error',
+                title: 'Export Failed',
+                text: error.message || 'Failed to export comparison to Excel',
+            });
+        } finally {
+            setExportingExcel(false);
+        }
     };
 
     const formatCurrency = (amount: number) => {

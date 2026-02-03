@@ -3077,4 +3077,38 @@ export const api = {
     const blob = await response.blob();
     return blob;
   },
+
+  exportSalaryComparisonExcel: async (params: {
+    month: string;
+    departmentId?: string;
+    divisionId?: string;
+    designationId?: string;
+    search?: string;
+  }) => {
+    const query = new URLSearchParams();
+    query.append('month', params.month);
+    if (params.departmentId) query.append('departmentId', params.departmentId);
+    if (params.divisionId) query.append('divisionId', params.divisionId);
+    if (params.designationId) query.append('designationId', params.designationId);
+    if (params.search) query.append('search', params.search);
+
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/second-salary/comparison/export?${query.toString()}`, {
+      method: 'GET',
+      credentials: 'include',
+      headers,
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || 'Failed to export salary comparison');
+    }
+
+    const blob = await response.blob();
+    return blob;
+  },
 };
