@@ -11,6 +11,12 @@ import Spinner from '@/components/Spinner';
 import { useAuth } from '@/contexts/AuthContext';
 import { CheckIcon, XIcon, CalendarIcon, BriefcaseIcon, ClockIcon, PlusIcon } from 'lucide-react';
 import { getEmployeeInitials } from '@/lib/utils';
+import {
+  canApproveOT,
+  canRejectOT,
+  canApprovePermission,
+  canRejectPermission
+} from '@/lib/permissions';
 
 const Portal = ({ children }: { children: React.ReactNode }) => {
   const [mounted, setMounted] = useState(false);
@@ -303,12 +309,17 @@ export default function OTAndPermissionsPage() {
       }
     }
 
-    // Fallback for legacy records (if any)
-    if (item.status === 'pending') {
-      return currentUser.role === 'hod';
+    // Use Centralized Permissions for legacy/fallback logic
+    // We determine the type of item by checking for specific fields
+    const isOT = 'otHours' in item || 'otInTime' in item;
+    const isPermission = 'permissionHours' in item || 'permissionStartTime' in item;
+
+    if (isOT) {
+      return canApproveOT(currentUser);
     }
-    if (item.status === 'manager_approved') {
-      return currentUser.role === 'hr' || currentUser.role === 'admin';
+
+    if (isPermission) {
+      return canApprovePermission(currentUser);
     }
 
     return false;

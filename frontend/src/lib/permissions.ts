@@ -280,10 +280,48 @@ export function canEditSettings(user: User): boolean {
 export function hasFeatureAccess(user: User, featureCode: string): boolean {
     // If user has featureControl array, check if feature is included
     if (user.featureControl && Array.isArray(user.featureControl)) {
-        return user.featureControl.includes(featureCode);
+        // Backward compatibility: Exact match checks for full access or legacy format
+        if (user.featureControl.includes(featureCode)) return true;
+
+        // Granular check: Check for specific read/write permissions
+        // If simply checking for "access" (read), we accept read or write
+        return user.featureControl.includes(`${featureCode}:read`) ||
+            user.featureControl.includes(`${featureCode}:write`);
     }
     // Default: allow access (will be controlled by role-based permissions)
     return true;
+}
+
+/**
+ * Check if user has explicit READ permission for a feature
+ * Accepts 'feature', 'feature:read', or 'feature:write'
+ */
+export function canViewFeature(user: User, featureCode: string): boolean {
+    if (!user.featureControl || user.featureControl.length === 0) return true; // Default allow if empty (legacy/role-based)
+
+    return user.featureControl.includes(featureCode) ||
+        user.featureControl.includes(`${featureCode}:read`) ||
+        user.featureControl.includes(`${featureCode}:write`);
+}
+
+/**
+ * Check if user has explicit WRITE permission for a feature
+ * Accepts 'feature' or 'feature:write'
+ */
+export function canManageFeature(user: User, featureCode: string): boolean {
+    if (!user.featureControl || user.featureControl.length === 0) return true; // Default allow if empty (legacy/role-based)
+
+    return user.featureControl.includes(featureCode) ||
+        user.featureControl.includes(`${featureCode}:write`);
+}
+
+/**
+ * Generic granular permission check
+ */
+export function hasGranularPermission(user: User, featureCode: string, type: 'read' | 'write'): boolean {
+    if (type === 'read') return canViewFeature(user, featureCode);
+    if (type === 'write') return canManageFeature(user, featureCode);
+    return false;
 }
 
 // ==========================================
@@ -304,4 +342,40 @@ export function canViewDivisionData(user: User): boolean {
 
 export function canViewOwnDataOnly(user: User): boolean {
     return user.dataScope === 'own' || user.role === 'employee';
+}
+
+// ==========================================
+// OT & PERMISSIONS
+// ==========================================
+
+export function canViewOT(user: User): boolean {
+    return true; // All roles can view (scoped by backend)
+}
+
+export function canApplyOT(user: User): boolean {
+    return true; // All roles can apply
+}
+
+export function canApproveOT(user: User): boolean {
+    return hasAnyRole(user, ['sub_admin', 'hr', 'hod']);
+}
+
+export function canRejectOT(user: User): boolean {
+    return hasAnyRole(user, ['sub_admin', 'hr', 'hod']);
+}
+
+export function canViewPermissions(user: User): boolean {
+    return true; // All roles can view (scoped by backend)
+}
+
+export function canApplyPermission(user: User): boolean {
+    return true; // All roles can apply
+}
+
+export function canApprovePermission(user: User): boolean {
+    return hasAnyRole(user, ['sub_admin', 'hr', 'hod']);
+}
+
+export function canRejectPermission(user: User): boolean {
+    return hasAnyRole(user, ['sub_admin', 'hr', 'hod']);
 }
