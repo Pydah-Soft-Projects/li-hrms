@@ -117,6 +117,9 @@ export default function PayRegisterPage() {
   const [bulkCalculating, setBulkCalculating] = useState(false);
   const [downloadingTemplate, setDownloadingTemplate] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
+  const [calculatingJobId, setCalculatingJobId] = useState<string | null>(null);
+  const [calculationProgress, setCalculationProgress] = useState<any>(null);
+  const [payrollStrategy, setPayrollStrategy] = useState<'new' | 'legacy'>('new');
 
 
 
@@ -138,6 +141,58 @@ export default function PayRegisterPage() {
   const [selectedArrears, setSelectedArrears] = useState<Array<{ id: string, amount: number, employeeId?: string }>>([]);
   const [payrollStartDate, setPayrollStartDate] = useState<string | null>(null);
   const [payrollEndDate, setPayrollEndDate] = useState<string | null>(null);
+
+  useEffect(() => {
+    let pollInterval: any;
+
+    if (calculatingJobId) {
+      pollInterval = setInterval(async () => {
+        try {
+          const status = await api.getJobStatus(calculatingJobId);
+          if (status.success) {
+            // Correctly map the progress object
+            if (status.data.progress) {
+              setCalculationProgress(status.data.progress);
+            }
+
+            // BullMQ state is returned as 'state', not 'status'
+            if (status.data.state === 'completed') {
+              clearInterval(pollInterval);
+              setCalculatingJobId(null);
+              setBulkCalculating(false);
+              setCalculationProgress(null);
+              Swal.fire({
+                icon: 'success',
+                title: 'Calculation Complete',
+                text: 'Payroll calculation finished successfully.',
+                timer: 3000,
+                showConfirmButton: false,
+                toast: true,
+                position: 'top-end'
+              });
+              loadPayRegisters();
+            } else if (status.data.state === 'failed') {
+              clearInterval(pollInterval);
+              setCalculatingJobId(null);
+              setBulkCalculating(false);
+              setCalculationProgress(null);
+              Swal.fire({
+                icon: 'error',
+                title: 'Calculation Failed',
+                text: status.data.failedReason || 'The background job failed.',
+              });
+            }
+          }
+        } catch (err) {
+          console.error('Error polling job status:', err);
+        }
+      }, 1500);
+    }
+
+    return () => {
+      if (pollInterval) clearInterval(pollInterval);
+    };
+  }, [calculatingJobId]);
 
   const normalizeHalfDay = (
     half?: Partial<DailyRecord['firstHalf']>,
@@ -174,7 +229,6 @@ export default function PayRegisterPage() {
   const [editingRecord, setEditingRecord] = useState<{ employeeId: string; month: string; date: string; record: DailyRecord; employee: Employee } | null>(null);
   const [editData, setEditData] = useState<Partial<DailyRecord>>({});
   const [isHalfDayMode, setIsHalfDayMode] = useState(false);
-  const [payrollStrategy, setPayrollStrategy] = useState<'legacy' | 'new'>('new');
 
   // Pagination State
   const [page, setPage] = useState(1);
@@ -886,6 +940,20 @@ export default function PayRegisterPage() {
       console.log('[Bulk Calculate] Response:', response);
 
       if (response.success) {
+        if (response.status === 'queued' || response.jobId) {
+          setCalculatingJobId(response.jobId || null);
+          Swal.fire({
+            icon: 'info',
+            title: 'Calculation Queued',
+            text: 'Bulk payroll calculation has been queued. You can track progress below.',
+            timer: 2000,
+            showConfirmButton: false,
+            toast: true,
+            position: 'top-end'
+          });
+          return;
+        }
+
         successCount = response.data.successCount;
         failCount = response.data.failCount;
         if (response.data.batchIds) {
@@ -1267,6 +1335,33 @@ export default function PayRegisterPage() {
             })()}
           </div>
         </div>
+
+        {/* Progress Bar for Bulk Calculation */}
+        {calculationProgress && (
+          <div className="mb-6 animate-fade-in relative z-20">
+            <div className="mt-6 space-y-3 p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl border border-indigo-100 dark:border-indigo-900/30 shadow-sm backdrop-blur-sm">
+              <div className="flex justify-between items-center text-sm font-medium">
+                <span className="text-indigo-700 dark:text-indigo-300 flex items-center gap-2">
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  {calculationProgress.currentEmployee ? `Calculating for: ${calculationProgress.currentEmployee}` : 'Processing bulk payroll...'}
+                </span>
+                <span className="text-indigo-600 dark:text-indigo-400 font-bold">
+                  {calculatingJobId && <span className="mr-3 opacity-50 font-mono text-[10px] font-normal">ID: {calculatingJobId}</span>}
+                  {calculationProgress.processed} / {calculationProgress.total} ({calculationProgress.percentage}%)
+                </span>
+              </div>
+              <div className="w-full bg-indigo-200/50 dark:bg-indigo-900/50 rounded-full h-2.5 overflow-hidden">
+                <div
+                  className="bg-indigo-600 h-2.5 rounded-full transition-all duration-500 ease-out shadow-sm"
+                  style={{ width: `${calculationProgress.percentage}%` }}
+                ></div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Bulk Summary Upload Modal */}
         {showUploadModal && (

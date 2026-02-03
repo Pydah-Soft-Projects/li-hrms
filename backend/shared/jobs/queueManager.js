@@ -10,7 +10,14 @@ const payrollQueue = new Queue('payrollQueue', {
             type: 'exponential',
             delay: 5000,
         },
-        removeOnComplete: true,
+        removeOnComplete: {
+            count: 100, // Keep last 100 completed jobs
+            age: 3600,  // Keep completed jobs for 1 hour
+        },
+        removeOnFail: {
+            count: 500, // Keep last 500 failed jobs
+            age: 86400, // Keep failed jobs for 24 hours
+        }
     }
 });
 
@@ -22,7 +29,14 @@ const attendanceSyncQueue = new Queue('attendanceSyncQueue', {
             type: 'fixed',
             delay: 10000,
         },
-        removeOnComplete: true,
+        removeOnComplete: {
+            count: 50,
+            age: 3600,
+        },
+        removeOnFail: {
+            count: 200,
+            age: 86400,
+        }
     }
 });
 
@@ -34,7 +48,14 @@ const applicationQueue = new Queue('applicationQueue', {
             type: 'exponential',
             delay: 5000,
         },
-        removeOnComplete: true,
+        removeOnComplete: {
+            count: 50,
+            age: 3600,
+        },
+        removeOnFail: {
+            count: 200,
+            age: 86400,
+        }
     }
 });
 
@@ -42,7 +63,14 @@ const attendanceUploadQueue = new Queue('attendanceUploadQueue', {
     connection: redisConfig,
     defaultJobOptions: {
         attempts: 1, // Don't retry parsing potentially corrupt files
-        removeOnComplete: true,
+        removeOnComplete: {
+            count: 50,
+            age: 3600,
+        },
+        removeOnFail: {
+            count: 200,
+            age: 86400,
+        }
     }
 });
 

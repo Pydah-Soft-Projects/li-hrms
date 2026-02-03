@@ -264,6 +264,7 @@ export interface ApiResponse<T> {
   error?: string;
   dataSource?: string;
   jobId?: string;
+  status?: string;
   pagination?: {
     total: number;
     totalPages: number;
@@ -3110,5 +3111,9 @@ export const api = {
 
     const blob = await response.blob();
     return blob;
+  },
+
+  getJobStatus: async (jobId: string, queue: string = 'payroll') => {
+    return apiRequest<any>(`/jobs/status/${jobId}?queue=${queue}`, { method: 'GET' });
   },
 };
