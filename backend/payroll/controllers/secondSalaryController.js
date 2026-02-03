@@ -104,6 +104,65 @@ function buildSecondSalaryExcelRowsNormalized(record, allAllowanceNames, allDedu
 }
 
 /**
+ * Build Excel row for Comparison (Regular vs Second Salary)
+ */
+function buildComparisonExcelRow(item, serialNo) {
+    const { employee, attendance, regularRecord, secondSalaryRecord, difference } = item;
+
+    const row = {
+        'S.No': serialNo,
+        'Employee Code': employee.emp_no || '',
+        'Name': employee.name || '',
+        'Designation': employee.designation || '',
+        'Department': employee.department || '',
+        'Division': employee.division || '',
+        'Gender': employee.gender || '',
+        'Date of Joining': employee.date_of_joining ? new Date(employee.date_of_joining).toLocaleDateString() : '',
+        'Bank Name': employee.bank_name || '',
+        'Bank Account No': employee.bank_account_no || '',
+
+        // Attendance Summary
+        '[ATTENDANCE] Month Days': attendance?.totalDaysInMonth || 0,
+        '[ATTENDANCE] Present Days': attendance?.presentDays || 0,
+        '[ATTENDANCE] Week Offs': attendance?.weeklyOffs || 0,
+        '[ATTENDANCE] Holidays': attendance?.holidays || 0,
+        '[ATTENDANCE] Paid Leaves': attendance?.paidLeaveDays || 0,
+        '[ATTENDANCE] OD Days': attendance?.odDays || 0,
+        '[ATTENDANCE] Absents': attendance?.absentDays || 0,
+        '[ATTENDANCE] Payable Shifts': attendance?.payableShifts || 0,
+        '[ATTENDANCE] Extra Days': attendance?.extraDays || 0,
+        '[ATTENDANCE] Total Paid Days': attendance?.totalPaidDays || 0,
+
+        // Regular Salary
+        '[REGULAR] Basic': regularRecord?.earnings?.basicPay || 0,
+        '[REGULAR] Earned Basic': regularRecord?.earnings?.payableAmount || 0,
+        '[REGULAR] Allowances': regularRecord?.earnings?.totalAllowances || 0,
+        '[REGULAR] OT Pay': regularRecord?.earnings?.otPay || 0,
+        '[REGULAR] Incentive': regularRecord?.earnings?.incentive || 0,
+        '[REGULAR] GROSS': regularRecord?.earnings?.grossSalary || 0,
+        '[REGULAR] Deductions': regularRecord?.deductions?.totalDeductions || 0,
+        '[REGULAR] EMI/Advance': (regularRecord?.loanAdvance?.totalEMI || 0) + (regularRecord?.loanAdvance?.advanceDeduction || 0),
+        '[REGULAR] NET SALARY': regularRecord?.netSalary || 0,
+
+        // Second Salary
+        '[SECOND] Basic': secondSalaryRecord?.earnings?.basicPay || 0,
+        '[SECOND] Earned Basic': secondSalaryRecord?.earnings?.payableAmount || 0,
+        '[SECOND] Allowances': secondSalaryRecord?.earnings?.totalAllowances || 0,
+        '[SECOND] OT Pay': secondSalaryRecord?.earnings?.otPay || 0,
+        '[SECOND] Incentive': secondSalaryRecord?.earnings?.incentive || 0,
+        '[SECOND] GROSS': secondSalaryRecord?.earnings?.grossSalary || 0,
+        '[SECOND] Deductions': secondSalaryRecord?.deductions?.totalDeductions || 0,
+        '[SECOND] EMI/Advance': (secondSalaryRecord?.loanAdvance?.totalEMI || 0) + (secondSalaryRecord?.loanAdvance?.advanceDeduction || 0),
+        '[SECOND] NET SALARY': secondSalaryRecord?.netSalary || 0,
+
+        // Comparison
+        'RETURN AMOUNT': difference || 0
+    };
+
+    return row;
+}
+
+/**
  * @desc    Run 2nd salary payroll for a department
  * @route   POST /api/second-salary/calculate
  */
@@ -432,6 +491,62 @@ exports.exportSecondSalaryExcel = async (req, res) => {
         res.status(500).json({
             success: false,
             message: error.message || 'Error exporting second salary'
+        });
+    }
+};
+/**
+ * @desc    Export salary comparison (Regular vs 2nd Salary) to Excel
+ * @route   GET /api/second-salary/comparison/export
+ */
+exports.exportSalaryComparisonExcel = async (req, res) => {
+    try {
+        const { month, departmentId, divisionId, designationId, search } = req.query;
+        const secondSalaryComparisonService = require('../services/secondSalaryComparisonService');
+
+        if (!month) {
+            return res.status(400).json({
+                success: false,
+                message: 'Month is required'
+            });
+        }
+
+        const comparisonData = await secondSalaryComparisonService.getComparison(month, {
+            departmentId,
+            divisionId,
+            designationId,
+            search
+        });
+
+        if (!comparisonData || comparisonData.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'No comparison data found for export.'
+            });
+        }
+
+        // Build rows
+        const rows = comparisonData.map((item, index) => buildComparisonExcelRow(item, index + 1));
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.json_to_sheet(rows);
+
+        // Styling is limited with vanilla xlsx, so we use clear headers
+        XLSX.utils.book_append_sheet(wb, ws, 'Salary Comparison');
+
+        const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+        const filename = `salary_comparison_${month}.xlsx`;
+        res.setHeader(
+            'Content-Type',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        );
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        return res.send(buf);
+    } catch (error) {
+        console.error('Error exporting salary comparison:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Error exporting comparison data'
         });
     }
 };

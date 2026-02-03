@@ -17,6 +17,7 @@ router.get('/records/:id', protect, secondSalaryController.getSecondSalaryRecord
 
 // Comparison
 router.get('/comparison', protect, secondSalaryController.getSalaryComparison);
+router.get('/comparison/export', protect, secondSalaryController.exportSalaryComparisonExcel);
 
 // Export
 router.get('/export', protect, secondSalaryController.exportSecondSalaryExcel);
