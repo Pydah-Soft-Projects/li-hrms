@@ -75,11 +75,11 @@ export default function LiveAttendancePage() {
     return () => clearInterval(interval);
   }, [fetchReportData]);
 
-  // Format time
+  // Format time in IST
   const formatTime = (dateTimeString: string | null) => {
     if (!dateTimeString) return '-';
     const date = new Date(dateTimeString);
-    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' });
   };
 
   // Format hours worked
