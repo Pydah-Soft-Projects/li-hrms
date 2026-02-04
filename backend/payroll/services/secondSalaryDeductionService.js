@@ -115,11 +115,47 @@ async function calculateAttendanceDeduction(employeeId, month, departmentId, per
         let payRegister = await PayRegisterSummary.findOne({ employeeId, month }).lean();
         let lateInsCount = 0;
         let earlyOutsCount = 0;
+        let source = 'attendance_logs';
 
+        // Priority 1: Check Pay Register Summary
         if (payRegister && payRegister.totals) {
-            lateInsCount = payRegister.totals.lateCount || 0;
-            earlyOutsCount = payRegister.totals.earlyOutCount || 0;
+            const prLates = payRegister.totals.lateCount || 0;
+            const prEarly = payRegister.totals.earlyOutCount || 0;
+
+            if (prLates > 0 || prEarly > 0) {
+                lateInsCount = prLates;
+                earlyOutsCount = prEarly;
+                source = 'pay_register_summary';
+            }
         }
+
+        // Priority 2: Fallback to Raw Attendance Logs (Matching regular payroll)
+        if (lateInsCount === 0 && earlyOutsCount === 0) {
+            const rulesTemp = await getResolvedAttendanceDeductionRules(departmentId, divisionId);
+            const minimumDuration = rulesTemp.minimumDuration || 0;
+            const [year, monthNum] = month.split('-').map(Number);
+            const startDate = new Date(year, monthNum - 1, 1);
+            const endDate = new Date(year, monthNum, 0, 23, 59, 59, 999);
+
+            const attendanceRecords = await AttendanceDaily.find({
+                employeeId,
+                date: {
+                    $gte: startDate,
+                    $lte: endDate,
+                },
+            }).select('lateInMinutes earlyOutMinutes');
+
+            for (const record of attendanceRecords) {
+                if (record.lateInMinutes !== null && record.lateInMinutes !== undefined && record.lateInMinutes >= minimumDuration) {
+                    lateInsCount++;
+                }
+                if (record.earlyOutMinutes !== null && record.earlyOutMinutes !== undefined && record.earlyOutMinutes >= minimumDuration) {
+                    earlyOutsCount++;
+                }
+            }
+        }
+
+        console.log(`[SecondSalaryDeduction] Employee ${employeeId} - Lates: ${lateInsCount}, Early: ${earlyOutsCount} (Source: ${source})`);
 
         const rules = await getResolvedAttendanceDeductionRules(departmentId, divisionId);
 
@@ -404,32 +440,84 @@ async function calculateOtherDeductions(departmentId, basicPay, grossSalary = nu
             await cacheService.set(cacheKey, deductionMasters, 600);
         }
 
-        const results = [];
+        // Separate deductions by type (Matching regular payroll logic)
+        const fixedDeductions = [];
+        const percentageBasicDeductions = [];
+        const percentageGrossDeductions = [];
 
         for (const master of deductionMasters) {
             const rule = getResolvedDeductionRule(master, departmentId, divisionId);
-
             if (!rule) continue;
 
-            const amount = calculateDeductionAmount(rule, basicPay, grossSalary, attendanceData);
+            if (rule.type === 'fixed') {
+                const amount = calculateDeductionAmount(rule, basicPay, grossSalary, attendanceData);
+                if (amount >= 0) {
+                    fixedDeductions.push({
+                        masterId: master._id,
+                        name: master.name,
+                        amount,
+                        type: 'fixed',
+                        base: null,
+                        percentage: rule.percentage,
+                        percentageBase: rule.percentageBase,
+                        minAmount: rule.minAmount,
+                        maxAmount: rule.maxAmount,
+                        basedOnPresentDays: rule.basedOnPresentDays || false,
+                    });
+                }
+            } else if (rule.type === 'percentage') {
+                if (rule.percentageBase === 'basic') {
+                    percentageBasicDeductions.push({ master, rule });
+                } else if (rule.percentageBase === 'gross') {
+                    percentageGrossDeductions.push({ master, rule });
+                }
+            }
+        }
 
-            if (amount > 0) {
-                results.push({
-                    masterId: master._id,
-                    name: master.name,
+        // Calculate percentage deductions based on 'basic'
+        const percentageBasicResults = [];
+        for (const item of percentageBasicDeductions) {
+            const amount = calculateDeductionAmount(item.rule, basicPay, null, attendanceData);
+            if (amount >= 0) {
+                percentageBasicResults.push({
+                    masterId: item.master._id,
+                    name: item.master.name,
                     amount,
-                    type: rule.type,
-                    base: rule.percentageBase || null,
-                    percentage: rule.percentage,
-                    percentageBase: rule.percentageBase,
-                    minAmount: rule.minAmount,
-                    maxAmount: rule.maxAmount,
-                    basedOnPresentDays: rule.basedOnPresentDays || false,
+                    type: 'percentage',
+                    base: 'basic',
+                    percentage: item.rule.percentage,
+                    percentageBase: item.rule.percentageBase,
+                    minAmount: item.rule.minAmount,
+                    maxAmount: item.rule.maxAmount,
+                    basedOnPresentDays: item.rule.basedOnPresentDays || false,
                 });
             }
         }
 
-        return results;
+        // Calculate percentage deductions based on 'gross'
+        const percentageGrossResults = [];
+        if (grossSalary !== null && grossSalary !== undefined) {
+            for (const item of percentageGrossDeductions) {
+                const amount = calculateDeductionAmount(item.rule, basicPay, grossSalary, attendanceData);
+                if (amount >= 0) {
+                    percentageGrossResults.push({
+                        masterId: item.master._id,
+                        name: item.master.name,
+                        amount,
+                        type: 'percentage',
+                        base: 'gross',
+                        percentage: item.rule.percentage,
+                        percentageBase: item.rule.percentageBase,
+                        minAmount: item.rule.minAmount,
+                        maxAmount: item.rule.maxAmount,
+                        basedOnPresentDays: item.rule.basedOnPresentDays || false,
+                    });
+                }
+            }
+        }
+
+        // Combine all results
+        return [...fixedDeductions, ...percentageBasicResults, ...percentageGrossResults];
     } catch (error) {
         console.error('Error calculating second salary other deductions:', error);
         return [];

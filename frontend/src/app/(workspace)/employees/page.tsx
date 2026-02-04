@@ -53,6 +53,7 @@ interface Employee {
   bank_place?: string;
   ifsc_code?: string;
   salary_mode?: string;
+  second_salary?: number;
   is_active?: boolean;
   leftDate?: string | null;
   leftReason?: string | null;
@@ -1331,6 +1332,7 @@ export default function EmployeesPage() {
       // Merge dynamicFields at root level for form
       ...dynamicFieldsData,
       // Override with processed values (after dynamicFields so they take precedence)
+      second_salary: employee.second_salary, // Ensure root value takes precedence over dynamicFields
       reporting_to: reportingToValue,
       reporting_to_: reportingToValue,
       // Salary mode dropdown defaults to Cash when editing if not set

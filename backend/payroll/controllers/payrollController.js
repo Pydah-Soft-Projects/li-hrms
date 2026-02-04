@@ -7,7 +7,7 @@ const Loan = require('../../loans/model/Loan');
 const payrollCalculationService = require('../services/payrollCalculationService');
 const XLSX = require('xlsx');
 const PayRegisterSummary = require('../../pay-register/model/PayRegisterSummary');
-const MonthlyAttendanceSummary = require('../../attendance/model/MonthlyAttendanceSummary');  
+const MonthlyAttendanceSummary = require('../../attendance/model/MonthlyAttendanceSummary');
 /**
  * Payroll Controller
  * Handles payroll calculation, retrieval, and processing
@@ -225,9 +225,11 @@ function buildPayslipExcelRowsNormalized(payslip, allAllowanceNames, allDeductio
 
   // Create a map of employee's allowances for quick lookup
   const employeeAllowances = {};
-  if (Array.isArray(payslip.earnings.allowances)) {
+  if (payslip.earnings && Array.isArray(payslip.earnings.allowances)) {
     payslip.earnings.allowances.forEach(allowance => {
-      employeeAllowances[allowance.name] = allowance.amount || 0;
+      if (allowance && allowance.name) {
+        employeeAllowances[allowance.name] = allowance.amount || 0;
+      }
     });
   }
 
@@ -250,7 +252,7 @@ function buildPayslipExcelRowsNormalized(payslip, allAllowanceNames, allDeductio
   row['Extra Days'] = payslip.attendance?.extraDays || 0;
   row['Total Paid Days'] = payslip.paidDays || 0;
   row['Attendance Deduction Days'] = payslip.attendanceDeductionDays ?? payslip.attendance?.attendanceDeductionDays ?? 0;
-  row['Final Paid Days'] = payslip.finalPaidDays ?? payslip.attendance?.finalPaidDays ?? (row['Total Paid Days'] - (row['Attendance Deduction Days'] || 0));
+  row['Final Paid Days'] = Math.max((row['Total Paid Days'] - (row['Attendance Deduction Days'] || 0)), 0);
 
   // Net earnings
   row['Net Basic'] = payslip.attendance?.earnedSalary || payslip.earnings.earnedSalary || 0;
@@ -264,9 +266,11 @@ function buildPayslipExcelRowsNormalized(payslip, allAllowanceNames, allDeductio
 
   // Create a map of employee's deductions for quick lookup
   const employeeDeductions = {};
-  if (Array.isArray(payslip.deductions?.otherDeductions)) {
+  if (payslip.deductions && Array.isArray(payslip.deductions.otherDeductions)) {
     payslip.deductions.otherDeductions.forEach(deduction => {
-      employeeDeductions[deduction.name] = deduction.amount || 0;
+      if (deduction && deduction.name) {
+        employeeDeductions[deduction.name] = deduction.amount || 0;
+      }
     });
   }
 
@@ -485,7 +489,7 @@ exports.calculatePayroll = async (req, res) => {
  */
 exports.exportPayrollExcel = async (req, res) => {
   try {
-    const { month, departmentId, employeeIds } = req.query;
+    const { month, departmentId, divisionId, status, search, employeeIds } = req.query;
 
     if (!month || !/^\d{4}-\d{2}$/.test(month)) {
       return res.status(400).json({
@@ -500,11 +504,26 @@ exports.exportPayrollExcel = async (req, res) => {
         .split(',')
         .map((id) => id.trim())
         .filter(Boolean);
-    } else if (departmentId) {
-      const emps = await Employee.find({ ...req.scopeFilter, department_id: departmentId }).select('_id');
-      targetEmployeeIds = emps.map((e) => e._id.toString());
-    } else if (req.scopeFilter && Object.keys(req.scopeFilter).length > 0) {
-      const emps = await Employee.find(req.scopeFilter).select('_id');
+    } else {
+      // Build Employee Query based on filters
+      const employeeQuery = { ...req.scopeFilter };
+      if (departmentId) employeeQuery.department_id = departmentId;
+      if (divisionId) employeeQuery.division_id = divisionId;
+
+      if (status === 'active') {
+        employeeQuery.is_active = true;
+      } else if (status === 'inactive') {
+        employeeQuery.is_active = false;
+      }
+
+      if (search) {
+        employeeQuery.$or = [
+          { employee_name: { $regex: search, $options: 'i' } },
+          { emp_no: { $regex: search, $options: 'i' } }
+        ];
+      }
+
+      const emps = await Employee.find(employeeQuery).select('_id');
       targetEmployeeIds = emps.map((e) => e._id.toString());
     }
 
@@ -513,7 +532,19 @@ exports.exportPayrollExcel = async (req, res) => {
       query.employeeId = { $in: targetEmployeeIds };
     }
 
-    const payrollRecords = await PayrollRecord.find(query).select('employeeId month');
+    const payrollRecords = await PayrollRecord.find(query)
+      .populate({
+        path: 'employeeId',
+        select:
+          'employee_name emp_no department_id division_id designation_id gross_salary location bank_account_no bank_name salary_mode doj pf_number esi_number',
+        populate: [
+          { path: 'department_id', select: 'name' },
+          { path: 'division_id', select: 'name' },
+          { path: 'designation_id', select: 'name' },
+        ],
+      })
+      .lean();
+
     if (!payrollRecords || payrollRecords.length === 0) {
       return res.status(404).json({
         success: false,
@@ -521,19 +552,140 @@ exports.exportPayrollExcel = async (req, res) => {
       });
     }
 
-    // Step 1: Build all payslips
-    const payslips = [];
-    for (const pr of payrollRecords) {
+    // Bulk fetch summaries for performance
+    const employeeIdList = payrollRecords.map(pr => pr.employeeId?._id || pr.employeeId);
+    const [summaries, attendanceSummaries] = await Promise.all([
+      PayRegisterSummary.find({ month, employeeId: { $in: employeeIdList } }).lean(),
+      MonthlyAttendanceSummary.find({ month, employeeId: { $in: employeeIdList } }).lean()
+    ]);
+
+    // Create maps for quick lookup
+    const summaryMap = new Map(summaries.map(s => [s.employeeId.toString(), s]));
+    const attMap = new Map(attendanceSummaries.map(a => [a.employeeId.toString(), a]));
+
+    // Step 1: Build all payslip data objects in-memory (no DB calls here)
+    const payslips = payrollRecords.map((payrollRecord) => {
       try {
-        const { payslip } = await buildPayslipData(pr.employeeId, pr.month);
-        payslips.push(payslip);
+        const employee = payrollRecord.employeeId;
+        const employeeIdStr = (employee?._id || employee)?.toString();
+        if (!employeeIdStr) return null;
+
+        const payRegisterSummary = summaryMap.get(employeeIdStr);
+        const attendanceSummary = attMap.get(employeeIdStr);
+
+        // Department/Division/Designation names
+        const departmentName = employee?.department_id?.name || 'N/A';
+        const divisionName = employee?.division_id?.name || 'N/A';
+        const designationName = employee?.designation_id?.name || 'N/A';
+
+        const perDay = payrollRecord.earnings?.perDayBasicPay || 0;
+        const payableShifts = payrollRecord.totalPayableShifts || 0;
+        const presentDays =
+          payRegisterSummary?.totals?.totalPresentDays ?? attendanceSummary?.totalPresentDays ?? null;
+        const paidLeaveDays =
+          payRegisterSummary?.totals?.totalPaidLeaveDays ??
+          attendanceSummary?.paidLeaves ??
+          attendanceSummary?.totalPaidLeaveDays ??
+          null;
+        const odDays =
+          payRegisterSummary?.totals?.totalODDays ?? attendanceSummary?.totalODs ?? null;
+        const otHours =
+          payRegisterSummary?.totals?.totalOTHours ??
+          attendanceSummary?.totalOTHours ??
+          payrollRecord.earnings?.otHours ??
+          0;
+        const monthDays = payrollRecord.totalDaysInMonth;
+
+        const incentiveDays =
+          presentDays !== null && paidLeaveDays !== null
+            ? Math.max(0, payableShifts - presentDays - (paidLeaveDays || 0))
+            : (payrollRecord.attendance?.extraDays || 0);
+
+        const earnedSalary =
+          presentDays !== null ? perDay * presentDays : (payrollRecord.earnings?.payableAmount || 0);
+        const paidLeaveSalary = paidLeaveDays !== null ? perDay * paidLeaveDays : 0;
+        const odSalary = odDays !== null ? perDay * odDays : 0;
+        const incentive = incentiveDays !== null ? perDay * incentiveDays : (payrollRecord.earnings?.incentive || 0);
+
+        const totalAllowances = payrollRecord.earnings?.totalAllowances || 0;
+        const otPay = payrollRecord.earnings?.otPay || 0;
+
+        const paidDays = payrollRecord.attendance?.paidDays || (
+          (presentDays || 0) +
+          (payRegisterSummary?.totals?.totalWeeklyOffs || 0) +
+          (payRegisterSummary?.totals?.totalHolidays || 0) +
+          (odDays || 0) +
+          (paidLeaveDays || 0)
+        );
+        const attendanceDeductionDays = (payrollRecord.deductions?.attendanceDeductionBreakdown?.daysDeducted ?? 0);
+        const finalPaidDays = Math.max(0, paidDays - attendanceDeductionDays);
+
+        return {
+          month: payrollRecord.monthName,
+          monthNumber: payrollRecord.monthNumber,
+          year: payrollRecord.year,
+          employee: {
+            emp_no: payrollRecord.emp_no,
+            name: employee?.employee_name || 'N/A',
+            department: departmentName,
+            division: divisionName,
+            designation: designationName,
+            location: employee?.location || '',
+            bank_account_no: employee?.bank_account_no || '',
+            bank_name: employee?.bank_name || '',
+            payment_mode: employee?.salary_mode || '',
+            date_of_joining: employee?.doj || '',
+            pf_number: employee?.pf_number || '',
+            esi_number: employee?.esi_number || '',
+          },
+          attendance: {
+            totalDaysInMonth: payrollRecord.attendance?.totalDaysInMonth || monthDays,
+            presentDays: payrollRecord.attendance?.presentDays || presentDays,
+            paidLeaveDays: payrollRecord.attendance?.paidLeaveDays || paidLeaveDays,
+            odDays: payrollRecord.attendance?.odDays || odDays,
+            weeklyOffs: payrollRecord.attendance?.weeklyOffs || 0,
+            holidays: payrollRecord.attendance?.holidays || 0,
+            absentDays: payrollRecord.attendance?.absentDays || 0,
+            payableShifts: payrollRecord.attendance?.payableShifts || payableShifts,
+            extraDays: payrollRecord.attendance?.extraDays || 0,
+            totalPaidDays: payrollRecord.attendance?.totalPaidDays || 0,
+            attendanceDeductionDays: attendanceDeductionDays,
+            finalPaidDays: finalPaidDays,
+            otHours: payrollRecord.attendance?.otHours || otHours,
+            otDays: payrollRecord.attendance?.otDays || 0,
+            earnedSalary: payrollRecord.attendance?.earnedSalary || earnedSalary,
+            lopDays: payRegisterSummary?.totals?.totalLopDays || 0,
+          },
+          earnings: {
+            ...payrollRecord.earnings,
+            earnedSalary,
+            paidLeaveSalary,
+            odSalary,
+            incentive,
+            otPay,
+            totalAllowances,
+            grossSalary: (earnedSalary + paidLeaveSalary + odSalary + incentive + otPay + totalAllowances)
+          },
+          deductions: payrollRecord.deductions || {},
+          loanAdvance: payrollRecord.loanAdvance || {},
+          arrears: {
+            arrearsAmount: payrollRecord.arrearsAmount || 0,
+            arrearsSettlements: payrollRecord.arrearsSettlements || [],
+          },
+          netSalary: payrollRecord.netSalary,
+          roundOff: payrollRecord.roundOff || 0,
+          paidDays: paidDays,
+          attendanceDeductionDays: attendanceDeductionDays,
+          finalPaidDays: finalPaidDays,
+          status: payrollRecord.status,
+        };
       } catch (err) {
-        console.error(`Error building payslip for export (Emp: ${pr.employeeId}, Month: ${pr.month}):`, err);
+        console.error(`Error processing payslip for export (Emp: ${payrollRecord.emp_no}):`, err);
+        return null;
       }
-    }
+    }).filter(Boolean);
 
     if (payslips.length === 0) {
-      console.warn(`[Export Excel] Valid PayrollRecords found (${payrollRecords.length}) but ZERO payslips built. Check 'Error building payslip' logs above.`);
       return res.status(404).json({
         success: false,
         message: 'No payslip data available to export. (Internal generation failure)',
@@ -557,7 +709,7 @@ exports.exportPayrollExcel = async (req, res) => {
       }
     });
 
-    console.log(`\n📊 Excel Export: Found ${allAllowanceNames.size} unique allowances and ${allDeductionNames.size} unique deductions`);
+    console.log(`\n📊 Excel Export: Found ${allAllowanceNames.size} unique allowances and ${allDeductionNames.size} unique deductions for ${payslips.length} employees`);
     console.log(`Allowances: ${Array.from(allAllowanceNames).join(', ')}`);
     console.log(`Deductions: ${Array.from(allDeductionNames).join(', ')}\n`);
 
@@ -1342,45 +1494,26 @@ exports.calculatePayrollBulk = async (req, res) => {
       });
     }
 
-    const useLegacy = strategy === 'legacy';
-    const payrollCalculationService = require('../services/payrollCalculationService');
-    const calcFn = payrollCalculationService.calculatePayrollNew;
-
-    let successCount = 0;
-    let failCount = 0;
-    const batchIds = new Set();
-    const errors = [];
-
-    // Sequential processing to avoid overwhelming the database/S3/BullMQ
-    // and to safely handle batch locks individually
-    for (const emp of employees) {
-      try {
-        const result = await calcFn(emp._id.toString(), month, req.user._id, {
-          source: useLegacy ? 'all' : 'payregister',
-        });
-
-        if (result.batchId) {
-          batchIds.add(result.batchId.toString());
-        }
-        successCount++;
-      } catch (err) {
-        failCount++;
-        errors.push({ employeeId: emp._id, message: err.message });
-        console.error(`[Bulk Calc] Failed for ${emp._id}:`, err.message);
-      }
-    }
-
-    res.status(200).json({
-      success: true,
-      message: `Bulk calculation complete: ${successCount} success, ${failCount} failed`,
-      data: {
-        totalProcessed: employees.length,
-        successCount,
-        failCount,
-        batchIds: Array.from(batchIds),
-        errors: errors.slice(0, 10), // Return only first 10 errors for brevity
-      },
+    const { payrollQueue } = require('../../shared/jobs/queueManager');
+    const job = await payrollQueue.add('payroll_bulk_calculate', {
+      action: 'payroll_bulk_calculate',
+      month,
+      divisionId: divisionId === 'all' ? undefined : divisionId,
+      departmentId: departmentId === 'all' ? undefined : departmentId,
+      strategy,
+      userId: req.user._id
     });
+
+    res.status(202).json({
+      success: true,
+      status: 'queued',
+      message: 'Bulk payroll calculation queued',
+      jobId: job.id,
+      data: {
+        totalEmployees: employees.length
+      }
+    });
+
   } catch (error) {
     console.error('Error in bulk payroll calculation:', error);
     res.status(500).json({
