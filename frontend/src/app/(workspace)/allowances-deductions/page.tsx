@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import Swal from 'sweetalert2';
 import Spinner from '@/components/Spinner';
-import { useAuth } from '@/contexts/AuthContext';  // NEW: Import useAuth for role checking
+import { useAuth } from '@/contexts/AuthContext';
+import { canManagePayRegister } from '@/lib/permissions'; // Reuse Pay Register permission for this payroll setting
 
 interface Department {
   _id: string;
@@ -29,7 +30,7 @@ interface GlobalRule {
 }
 
 interface DepartmentRule {
-  divisionId?: string | { _id: string; name: string; code?: string } | null;  // NEW: Optional division ID
+  divisionId?: string | { _id: string; name: string; code?: string } | null;
   departmentId: string | { _id: string; name: string; code?: string };
   type: 'fixed' | 'percentage';
   amount?: number | null;
@@ -53,7 +54,8 @@ interface AllowanceDeduction {
 }
 
 export default function AllowancesDeductionsPage() {
-  const { user } = useAuth();  // NEW: Get current user for role checking
+  const { user } = useAuth();
+  const hasManagePermission = user ? canManagePayRegister(user as any) : false; // Check write access
   const [activeTab, setActiveTab] = useState<'all' | 'allowances' | 'deductions'>('all');
   const [items, setItems] = useState<AllowanceDeduction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -613,16 +615,18 @@ export default function AllowancesDeductionsPage() {
               ))}
             </div>
 
-            <button
-              onClick={handleCreate}
-              className="group relative inline-flex items-center gap-2 overflow-hidden rounded-2xl bg-emerald-600 px-6 py-3 text-sm font-bold text-white shadow-xl shadow-emerald-500/30 transition-all hover:bg-emerald-700 hover:shadow-emerald-500/40 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2 active:scale-95"
-            >
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-700" />
-              <svg className="h-5 w-5 transition-transform group-hover:rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
-              <span>Create Component</span>
-            </button>
+            {hasManagePermission && (
+              <button
+                onClick={handleCreate}
+                className="group relative inline-flex items-center gap-2 overflow-hidden rounded-2xl bg-emerald-600 px-6 py-3 text-sm font-bold text-white shadow-xl shadow-emerald-500/30 transition-all hover:bg-emerald-700 hover:shadow-emerald-500/40 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2 active:scale-95"
+              >
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-700" />
+                <svg className="h-5 w-5 transition-transform group-hover:rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                <span>Create Component</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -649,8 +653,9 @@ export default function AllowancesDeductionsPage() {
             {filteredItems.map((item) => (
               <div
                 key={item._id}
-                onClick={() => handleEdit(item)}
-                className="group relative cursor-pointer overflow-hidden rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-lg shadow-slate-200/40 transition-all hover:-translate-y-1 hover:border-blue-400 hover:shadow-xl hover:shadow-blue-200/50 dark:border-slate-800 dark:bg-slate-950/95 dark:shadow-none dark:hover:border-blue-500/50"
+                onClick={() => hasManagePermission && handleEdit(item)}
+                className={`group relative overflow-hidden rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-lg shadow-slate-200/40 transition-all dark:border-slate-800 dark:bg-slate-950/95 dark:shadow-none 
+                  ${hasManagePermission ? 'cursor-pointer hover:-translate-y-1 hover:border-blue-400 hover:shadow-xl hover:shadow-blue-200/50 dark:hover:border-blue-500/50' : 'cursor-default'}`}
               >
                 {/* Gradient accent */}
                 <div className={`absolute top-0 left-0 h-1 w-full ${item.category === 'allowance'
@@ -746,8 +751,8 @@ export default function AllowancesDeductionsPage() {
                         const deptId = typeof rule.departmentId === 'string' ? rule.departmentId : rule.departmentId._id;
                         const divId = rule.divisionId ? (typeof rule.divisionId === 'string' ? rule.divisionId : rule.divisionId._id) : null;
                         const divName = rule.divisionId && typeof rule.divisionId === 'object' ? rule.divisionId.name : null;
-                        // Check if user has permission to edit/delete (SuperAdmin, SubAdmin, HR)
-                        const canManageOverrides = user && ['super_admin', 'sub_admin', 'hr'].includes(user.role);
+                        // Check if user has permission to edit/delete
+                        const canManageOverrides = hasManagePermission;
 
                         return (
                           <div
@@ -1330,4 +1335,5 @@ export default function AllowancesDeductionsPage() {
     </div>
   );
 }
+
 
