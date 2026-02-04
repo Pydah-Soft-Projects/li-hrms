@@ -781,6 +781,39 @@ export default function EmployeesPage() {
     }
   };
 
+  const handleBulkReject = async () => {
+    if (selectedApplicationIds.length === 0) return;
+
+    if (!confirm(`Are you sure you want to REJECT ${selectedApplicationIds.length} selected applications? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      setLoadingApplications(true);
+      setError('');
+      setSuccess('');
+
+      const response = await api.bulkRejectEmployeeApplications(selectedApplicationIds, 'Bulk rejected via dashboard');
+
+      if (response.success) {
+        setSuccess(`Bulk rejection completed! Succeeded: ${response.data.successCount}, Failed: ${response.data.failCount}`);
+      } else {
+        setError(response.message || 'Bulk rejection failed or partially failed');
+        if (response.data?.successCount > 0) {
+          setSuccess(`Partially completed. Succeeded: ${response.data.successCount}`);
+        }
+      }
+
+      setSelectedApplicationIds([]);
+      loadApplications();
+    } catch (err: any) {
+      setError(err.message || 'An error occurred during bulk rejection');
+      console.error(err);
+    } finally {
+      setLoadingApplications(false);
+    }
+  };
+
   const parseDynamicField = (value: any, fieldDef: any) => {
     if (value === undefined || value === null || value === '') return undefined;
 
@@ -2468,161 +2501,228 @@ export default function EmployeesPage() {
           )
         ) : (
           /* Applications Tab */
-          filteredApplications.length === 0 ? (
-            <div className="rounded-3xl border border-border-base bg-bg-surface/50 p-12 text-center backdrop-blur-md shadow-sm">
-              <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-2xl bg-indigo-500/10 text-indigo-500">
-                < LucideClock className="h-10 w-10" />
+          <>
+            {/* Applications Bulk Actions */}
+            {selectedApplicationIds.length > 0 && hasManagePermission && (
+              <div className="mb-6 flex items-center gap-3">
+                <button
+                  onClick={handleBulkReject}
+                  className="px-6 py-2.5 rounded-xl bg-status-negative text-white text-xs font-black uppercase tracking-widest hover:bg-red-600 shadow-lg shadow-status-negative/20 transition-all flex items-center gap-2"
+                >
+                  <UserX className="w-4 h-4" />
+                  <span>Reject Selected ({selectedApplicationIds.length})</span>
+                </button>
+                <button
+                  onClick={handleBulkApprove}
+                  className="px-6 py-2.5 rounded-xl bg-indigo-500 text-white text-xs font-black uppercase tracking-widest hover:bg-indigo-600 shadow-lg shadow-indigo-500/20 transition-all flex items-center gap-2"
+                >
+                  <UserCheck className="w-4 h-4" />
+                  <span>Approve Selected ({selectedApplicationIds.length})</span>
+                </button>
               </div>
-              <h3 className="text-xl font-black text-text-primary tracking-tight">No applications found</h3>
-              <p className="mt-2 text-sm text-text-secondary font-medium max-w-xs mx-auto">There are no employee applications to display at this time.</p>
-              <button
-                onClick={() => {
-                  setApplicationSearchTerm('');
-                  setApplicationFilters({});
-                  loadApplications();
-                }}
-                className="mt-6 px-6 py-2.5 rounded-xl bg-bg-base border border-border-base text-xs font-black uppercase tracking-widest text-text-primary hover:bg-bg-surface transition-colors"
-              >
-                Refresh Applications
-              </button>
-            </div>
-          ) : (
-            <div className="overflow-hidden rounded-3xl border border-border-base bg-bg-surface/50 backdrop-blur-md shadow-sm">
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-border-base bg-bg-base/50">
-                      <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">App No</th>
-                      <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Name</th>
+            )}
 
-                      <RenderFilterHeader
-                        label="Division"
-                        filterKey="division.name"
-                        options={Array.from(new Set(applications.map(a => (a as any).division?.name || (a.division_id as any)?.name).filter((x) => !!x))) as string[]}
-                        currentFilters={applicationFilters}
-                        setFilters={setApplicationFilters}
-                      />
-                      <RenderFilterHeader
-                        label="Department"
-                        filterKey="department.name"
-                        options={Array.from(new Set(applications.map(a => a.department?.name || (a.department_id as any)?.name).filter((x) => !!x))) as string[]}
-                        currentFilters={applicationFilters}
-                        setFilters={setApplicationFilters}
-                      />
-                      <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Proposed Salary</th>
-                      <RenderFilterHeader
-                        label="Status"
-                        filterKey="status"
-                        options={['pending', 'approved', 'rejected']}
-                        currentFilters={applicationFilters}
-                        setFilters={setApplicationFilters}
-                      />
-                      <th className="px-6 py-4 text-right text-[10px] font-black uppercase tracking-widest text-text-secondary">Actions</th>
-                    </tr>
-                  </thead>
+            {filteredApplications.length === 0 ? (
+              <div className="rounded-3xl border border-border-base bg-bg-surface/50 p-12 text-center backdrop-blur-md shadow-sm">
+                <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-2xl bg-indigo-500/10 text-indigo-500">
+                  <LucideClock className="h-10 w-10" />
+                </div>
+                <h3 className="text-xl font-black text-text-primary tracking-tight">No applications found</h3>
+                <p className="mt-2 text-sm text-text-secondary font-medium max-w-xs mx-auto">There are no employee applications to display at this time.</p>
+                <button
+                  onClick={() => {
+                    setApplicationSearchTerm('');
+                    setApplicationFilters({});
+                    loadApplications();
+                  }}
+                  className="mt-6 px-6 py-2.5 rounded-xl bg-bg-base border border-border-base text-xs font-black uppercase tracking-widest text-text-primary hover:bg-bg-surface transition-colors"
+                >
+                  Refresh Applications
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-8">
+                {/* Pending Approvals Table */}
+                <div className="overflow-hidden rounded-3xl border border-border-base bg-bg-surface/50 backdrop-blur-md shadow-sm">
+                  <div className="border-b border-border-base bg-bg-base/30 px-6 py-4 flex items-center justify-between">
+                    <h3 className="text-[10px] font-black text-text-secondary uppercase tracking-widest flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-status-warning animate-pulse" />
+                      Pending Approvals ({pendingApplications.length})
+                    </h3>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-border-base bg-bg-base/50">
+                          <th className="px-6 py-4 text-left">
+                            <input
+                              type="checkbox"
+                              checked={selectedApplicationIds.length === pendingApplications.length && pendingApplications.length > 0}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedApplicationIds(pendingApplications.map(app => app._id));
+                                } else {
+                                  setSelectedApplicationIds([]);
+                                }
+                              }}
+                              className="h-4 w-4 rounded border-border-base text-indigo-600 focus:ring-indigo-500 focus:ring-offset-0 bg-bg-base"
+                            />
+                          </th>
+                          <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Emp No</th>
+                          <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Name</th>
+                          <RenderFilterHeader
+                            label="Division"
+                            filterKey="division.name"
+                            options={Array.from(new Set(pendingApplications.map(a => (a as any).division?.name || (a.division_id as any)?.name).filter((x) => !!x))) as string[]}
+                            currentFilters={applicationFilters}
+                            setFilters={setApplicationFilters}
+                          />
+                          <RenderFilterHeader
+                            label="Department"
+                            filterKey="department.name"
+                            options={Array.from(new Set(pendingApplications.map(a => a.department?.name || (a.department_id as any)?.name).filter((x) => !!x))) as string[]}
+                            currentFilters={applicationFilters}
+                            setFilters={setApplicationFilters}
+                          />
+                          <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Proposed Salary</th>
+                          <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Created By</th>
+                          <th className="px-6 py-4 text-right text-[10px] font-black uppercase tracking-widest text-text-secondary">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border-base">
+                        {pendingApplications.length === 0 ? (
+                          <tr>
+                            <td colSpan={8} className="px-6 py-12 text-center text-xs font-bold text-text-secondary uppercase">No pending approvals</td>
+                          </tr>
+                        ) : (
+                          pendingApplications.map((app) => (
+                            <tr
+                              key={app._id}
+                              className="transition-all hover:bg-bg-base/80 group cursor-pointer"
+                              onClick={() => openApprovalDialog(app)}
+                            >
+                              <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
+                                <input
+                                  type="checkbox"
+                                  checked={selectedApplicationIds.includes(app._id)}
+                                  onChange={() => toggleSelectApplication(app._id)}
+                                  className="h-4 w-4 rounded border-border-base text-indigo-600 focus:ring-indigo-500 focus:ring-offset-0 bg-bg-base"
+                                />
+                              </td>
+                              <td className="whitespace-nowrap px-6 py-4 text-sm font-black text-indigo-500">
+                                {app.emp_no}
+                              </td>
+                              <td className="whitespace-nowrap px-6 py-4">
+                                <div className="text-sm font-black text-text-primary uppercase tracking-tight">{app.employee_name}</div>
+                                {app.email && <div className="text-[10px] font-bold text-text-secondary uppercase tracking-widest">{app.email}</div>}
+                              </td>
+                              <td className="whitespace-nowrap px-6 py-4 text-xs font-bold text-text-secondary">
+                                {(app as any).division?.name || (app.division_id as { name?: string })?.name || '-'}
+                              </td>
+                              <td className="whitespace-nowrap px-6 py-4 text-xs font-bold text-text-secondary">
+                                {app.department?.name || (app.department_id as { name?: string })?.name || '-'}
+                              </td>
+                              <td className="whitespace-nowrap px-6 py-4 text-sm font-black text-text-primary">
+                                ₹{app.proposedSalary.toLocaleString()}
+                              </td>
+                              <td className="whitespace-nowrap px-6 py-4 text-[10px] font-black text-text-secondary uppercase tracking-widest">
+                                {app.createdBy?.name || 'Unknown'}
+                              </td>
+                              <td className="whitespace-nowrap px-6 py-4 text-right">
+                                {hasManagePermission && (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); openApprovalDialog(app); }}
+                                    className="px-4 py-1.5 rounded-lg bg-indigo-500 text-white text-[10px] font-black uppercase tracking-widest hover:bg-indigo-600 transition-colors shadow-sm shadow-indigo-500/10"
+                                  >
+                                    Review
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
 
-                  <tbody className="divide-y divide-border-base">
-                    {filteredApplications.map((app) => (
-                      <tr
-                        key={app._id}
-                        className="transition-all hover:bg-bg-base/80 group cursor-pointer"
-                        onClick={() => openApprovalDialog(app)}
-                      >
-                        <td className="whitespace-nowrap px-6 py-4 text-sm font-black text-indigo-500">
-                          {app.emp_no}
-                        </td>
-                        <td className="whitespace-nowrap px-6 py-4">
-                          <div className="text-sm font-black text-text-primary uppercase tracking-tight">{app.employee_name}</div>
-                          <div className="text-[10px] font-bold text-text-secondary uppercase tracking-widest">
-                            Created by: {app.createdBy?.name || 'Unknown'}
-                          </div>
-                        </td>
-                        <td className="whitespace-nowrap px-6 py-4 text-xs font-bold text-text-secondary">
-                          {(app as any).division?.name || (app.division_id as { name?: string })?.name || '-'}
-                        </td>
-                        <td className="whitespace-nowrap px-6 py-4 text-xs font-bold text-text-secondary">
-                          {app.department?.name || (app.department_id as { name?: string })?.name || '-'}
-                        </td>
-                        <td className="whitespace-nowrap px-6 py-4 text-sm font-black text-text-primary">
-                          ₹{app.proposedSalary.toLocaleString()}
-                        </td>
-                        <td className="whitespace-nowrap px-6 py-4">
-                          <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest ${app.status === 'pending'
-                            ? 'bg-status-warning/10 text-status-warning'
-                            : app.status === 'approved'
-                              ? 'bg-status-positive/10 text-status-positive'
-                              : 'bg-status-negative/10 text-status-negative'
-                            }`}>
-                            {app.status === 'pending' && <LucideClock className="w-3 h-3" />}
-                            {app.status === 'approved' && <UserCheck className="w-3 h-3" />}
-                            {app.status === 'rejected' && <UserX className="w-3 h-3" />}
-                            {app.status}
-                          </span>
-                        </td>
-                        <td className="whitespace-nowrap px-6 py-4 text-right">
-                          <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            {/* View button - requires manage permission */}
-                            {hasManagePermission && (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); openApprovalDialog(app); }}
-                                className="w-8 h-8 flex items-center justify-center rounded-lg text-text-secondary hover:bg-indigo-500/10 hover:text-indigo-500 transition-all font-bold"
-                                title="Review Application"
-                              >
-                                <Eye className="h-3.5 w-3.5" />
-                              </button>
-                            )}
-                            {/* Approve/Reject buttons - requires manage permission and pending status */}
-                            {app.status === 'pending' && hasManagePermission && (
-                              <>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedApplication(app);
-                                    setApprovalData({
-                                      approvedSalary: app.proposedSalary,
-                                      doj: new Date().toISOString().split('T')[0],
-                                      comments: ''
-                                    });
-                                    setShowApprovalDialog(true);
-                                  }}
-                                  className="w-8 h-8 flex items-center justify-center rounded-lg text-text-secondary hover:bg-status-positive/10 hover:text-status-positive transition-all font-bold"
-                                  title="Approve"
-                                >
-                                  <UserCheck className="h-3.5 w-3.5" />
-                                </button>
-                                <button
-                                  onClick={async (e) => {
-                                    e.stopPropagation();
-                                    if (!confirm('Are you sure you want to reject this application?')) return;
-                                    try {
-                                      await api.rejectEmployeeApplication(app._id, { comments: 'Rejected by manager' });
-                                      setSuccess('Application rejected');
-                                      loadApplications();
-                                    } catch (err) {
-                                      setError('Failed to reject');
-                                    }
-                                  }}
-                                  className="w-8 h-8 flex items-center justify-center rounded-lg text-text-secondary hover:bg-status-negative/10 hover:text-status-negative transition-all font-bold"
-                                  title="Reject"
-                                >
-                                  <UserX className="h-3.5 w-3.5" />
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                {/* Processed Applications Table */}
+                <div className="overflow-hidden rounded-3xl border border-border-base bg-bg-surface/50 backdrop-blur-md shadow-sm">
+                  <div className="border-b border-border-base bg-bg-base/30 px-6 py-4">
+                    <h3 className="text-[10px] font-black text-text-secondary uppercase tracking-widest">Processed Applications ({approvedApplications.length + rejectedApplications.length})</h3>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-border-base bg-bg-base/50">
+                          <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Emp No</th>
+                          <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Name</th>
+                          <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Division</th>
+                          <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Department</th>
+                          <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Proposed</th>
+                          <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Approved</th>
+                          <RenderFilterHeader
+                            label="Status"
+                            filterKey="status"
+                            options={['approved', 'rejected']}
+                            currentFilters={applicationFilters}
+                            setFilters={setApplicationFilters}
+                          />
+                          <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Processed By</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border-base">
+                        {[...approvedApplications, ...rejectedApplications].length === 0 ? (
+                          <tr>
+                            <td colSpan={8} className="px-6 py-12 text-center text-xs font-bold text-text-secondary uppercase">No processed applications</td>
+                          </tr>
+                        ) : (
+                          [...approvedApplications, ...rejectedApplications].map((app) => (
+                            <tr
+                              key={app._id}
+                              className="bg-bg-base/20 transition-all group"
+                            >
+                              <td className="whitespace-nowrap px-6 py-4 text-sm font-black text-indigo-500">
+                                {app.emp_no}
+                              </td>
+                              <td className="whitespace-nowrap px-6 py-4">
+                                <div className="text-sm font-black text-text-primary uppercase tracking-tight">{app.employee_name}</div>
+                              </td>
+                              <td className="whitespace-nowrap px-6 py-4 text-xs font-bold text-text-secondary">
+                                {(app as any).division?.name || (app.division_id as { name?: string })?.name || '-'}
+                              </td>
+                              <td className="whitespace-nowrap px-6 py-4 text-xs font-bold text-text-secondary">
+                                {app.department?.name || (app.department_id as { name?: string })?.name || '-'}
+                              </td>
+                              <td className="whitespace-nowrap px-6 py-4 text-xs font-bold text-text-secondary">
+                                ₹{app.proposedSalary.toLocaleString()}
+                              </td>
+                              <td className="whitespace-nowrap px-6 py-4 text-sm font-black text-text-primary">
+                                {app.approvedSalary ? `₹${app.approvedSalary.toLocaleString()}` : '-'}
+                              </td>
+                              <td className="whitespace-nowrap px-6 py-4">
+                                <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest ${app.status === 'approved'
+                                  ? 'bg-status-positive/10 text-status-positive'
+                                  : 'bg-status-negative/10 text-status-negative'
+                                  }`}>
+                                  {app.status === 'approved' && <UserCheck className="w-3 h-3" />}
+                                  {app.status === 'rejected' && <UserX className="w-3 h-3" />}
+                                  {app.status}
+                                </span>
+                              </td>
+                              <td className="whitespace-nowrap px-6 py-4 text-[10px] font-black text-text-secondary uppercase tracking-widest">
+                                {app.approvedBy?.name || app.rejectedBy?.name || '-'}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
-              <div className="border-t border-border-base bg-bg-base/30 px-6 py-4 flex items-center justify-between">
-                <p className="text-xs font-bold text-text-secondary uppercase tracking-widest">
-                  Showing <span className="text-indigo-500">{filteredApplications.length}</span> of <span className="text-indigo-500">{applications.length}</span> Applications
-                </p>
-              </div>
-            </div>
-          )
+            )}
+          </>
         )}
 
       </div>
@@ -3802,15 +3902,17 @@ export default function EmployeesPage() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => {
-                      setShowViewDialog(false);
-                      handleEdit(viewingEmployee);
-                    }}
-                    className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-400"
-                  >
-                    Edit
-                  </button>
+                  {hasManagePermission && (
+                    <button
+                      onClick={() => {
+                        setShowViewDialog(false);
+                        handleEdit(viewingEmployee);
+                      }}
+                      className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-400"
+                    >
+                      Edit
+                    </button>
+                  )}
                   <button
                     onClick={() => setShowViewDialog(false)}
                     className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900"
@@ -4169,15 +4271,17 @@ export default function EmployeesPage() {
                       )}
                     </div>
                     <div className="mt-4">
-                      <button
-                        onClick={() => {
-                          setShowViewDialog(false);
-                          handleRemoveLeftDate(viewingEmployee);
-                        }}
-                        className="rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
-                      >
-                        Reactivate Employee
-                      </button>
+                      {hasManagePermission && (
+                        <button
+                          onClick={() => {
+                            setShowViewDialog(false);
+                            handleRemoveLeftDate(viewingEmployee);
+                          }}
+                          className="rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
+                        >
+                          Reactivate Employee
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}
@@ -4277,47 +4381,6 @@ export default function EmployeesPage() {
                   </div>
                 )}
 
-                {/* Dynamic Fields */}
-                {viewingEmployee.dynamicFields && Object.keys(viewingEmployee.dynamicFields).length > 0 && (
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                    <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Additional Information</h3>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                      {Object.entries(viewingEmployee.dynamicFields)
-                        .filter(([key]) => key !== 'reporting_to' && key !== 'reporting_to_' && key !== 'qualifications')
-                        .map(([key, value]) => {
-                          if (value === null || value === undefined || value === '') {
-                            return null;
-                          }
-                          const underscoreRegex = new RegExp('_', 'g');
-                          const wordBoundaryRegex = new RegExp('\\b\\w', 'g');
-                          const displayKey = key.replace(underscoreRegex, ' ').replace(wordBoundaryRegex, (l: string) => l.toUpperCase());
-
-                          let displayValue: string = '';
-                          if (Array.isArray(value)) {
-                            displayValue = value.length > 0 ? JSON.stringify(value) : '-';
-                          } else if (typeof value === 'object') {
-                            displayValue = JSON.stringify(value, null, 2);
-                          } else {
-                            displayValue = String(value);
-                          }
-
-                          const isComplexType = Array.isArray(value) || typeof value === 'object';
-                          const colSpanClass = isComplexType ? 'sm:col-span-2 lg:col-span-3' : '';
-                          const whitespaceClass = isComplexType ? 'whitespace-pre-wrap' : '';
-                          const paragraphClassName = 'mt-1 text-sm font-medium text-slate-900 dark:text-slate-100 ' + whitespaceClass;
-
-                          return (
-                            <div key={key} className={colSpanClass}>
-                              <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{displayKey}</label>
-                              <p className={paragraphClassName}>
-                                {displayValue}
-                              </p>
-                            </div>
-                          );
-                        })}
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
           </div>
