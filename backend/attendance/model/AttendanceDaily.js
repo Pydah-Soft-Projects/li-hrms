@@ -19,6 +19,108 @@ const attendanceDailySchema = new mongoose.Schema(
       required: [true, 'Date is required'],
       index: true,
     },
+    // ========== MULTI-SHIFT SUPPORT ==========
+    // Array to store multiple shifts per day (up to 3)
+    shifts: [{
+      shiftNumber: {
+        type: Number,
+        required: true,
+        min: 1,
+        max: 3,
+      },
+      inTime: {
+        type: Date,
+        required: true,
+      },
+      outTime: {
+        type: Date,
+        default: null,
+      },
+      duration: {
+        type: Number, // in minutes
+        default: null,
+      },
+      workingHours: {
+        type: Number, // actual working hours for this shift (punch + od)
+        default: null,
+      },
+      punchHours: {
+        type: Number, // working hours from actual punches
+        default: 0,
+      },
+      odHours: {
+        type: Number, // working hours added from OD gap filling
+        default: 0,
+      },
+      otHours: {
+        type: Number, // OT hours for this shift
+        default: 0,
+      },
+      shiftId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Shift',
+        default: null,
+      },
+      shiftName: {
+        type: String,
+        default: null,
+      },
+      shiftStartTime: {
+        type: String, // HH:MM
+        default: null,
+      },
+      shiftEndTime: {
+        type: String, // HH:MM
+        default: null,
+      },
+      lateInMinutes: {
+        type: Number,
+        default: null,
+      },
+      earlyOutMinutes: {
+        type: Number,
+        default: null,
+      },
+      isLateIn: {
+        type: Boolean,
+        default: false,
+      },
+      isEarlyOut: {
+        type: Boolean,
+        default: false,
+      },
+      status: {
+        type: String,
+        enum: ['complete', 'incomplete', 'PRESENT', 'ABSENT', 'PARTIAL', 'HALF_DAY'],
+        default: 'incomplete',
+      },
+      payableShift: {
+        type: Number,
+        default: 0, // 0, 0.5, 1
+      },
+    }],
+    // Aggregate fields for multi-shift
+    totalShifts: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 3,
+    },
+    totalWorkingHours: {
+      type: Number, // Sum of all shift working hours
+      default: 0,
+    },
+    totalOTHours: {
+      type: Number, // Sum of all shift OT hours
+      default: 0,
+    },
+    payableShifts: {
+      type: Number, // Sum of payable shifts (e.g. 1.5)
+      default: 0,
+    },
+    // ========== BACKWARD COMPATIBILITY FIELDS ==========
+    // Keep existing fields for backward compatibility
+    // These will represent first shift IN and last shift OUT
     inTime: {
       type: Date,
       default: null,
@@ -36,9 +138,29 @@ const attendanceDailySchema = new mongoose.Schema(
       enum: ['PRESENT', 'ABSENT', 'PARTIAL', 'HALF_DAY', 'HOLIDAY', 'WEEK_OFF'],
       default: 'ABSENT',
     },
+    isEdited: {
+      type: Boolean,
+      default: false,
+    },
+    editHistory: [{
+      action: {
+        type: String,
+        enum: ['OUT_TIME_UPDATE', 'SHIFT_CHANGE', 'OT_CONVERSION'],
+        required: true,
+      },
+      modifiedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+      modifiedAt: {
+        type: Date,
+        default: Date.now,
+      },
+      details: String,
+    }],
     source: {
       type: [String],
-      enum: ['mssql', 'excel', 'manual'],
+      enum: ['mssql', 'excel', 'manual', 'biometric-realtime'],
       default: [],
     },
     lastSyncedAt: {
@@ -54,7 +176,7 @@ const attendanceDailySchema = new mongoose.Schema(
       trim: true,
       default: null,
     },
-    // Shift-related fields
+    // Shift-related fields (for primary/first shift)
     shiftId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Shift',
@@ -88,7 +210,7 @@ const attendanceDailySchema = new mongoose.Schema(
     },
     extraHours: {
       type: Number,
-      default: 0, // Extra hours worked without OT request (auto-detected)
+      default: 0, // Sum of extra hours from all shifts
     },
     // Permission fields
     permissionHours: {
@@ -207,9 +329,9 @@ attendanceDailySchema.methods.calculateTotalHours = function () {
   return null;
 };
 
-// Pre-save hook to calculate total hours, status, and early-out deduction
+// Pre-save hook to calculate aggregates from shifts array
 attendanceDailySchema.pre('save', async function () {
-  // Fetch roster status if not already known
+  // Fetch roster status once for both shifts-based and legacy logic (HOL/WO, remarks)
   let rosterStatus = null;
   try {
     const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
@@ -222,29 +344,113 @@ attendanceDailySchema.pre('save', async function () {
     console.error('[AttendanceDaily Model] Error fetching roster status:', err);
   }
 
+  if (this.shifts && this.shifts.length > 0) {
+    // 1. Calculate Aggregate Totals
+    let totalWorking = 0;
+    let totalOT = 0;
+    let totalExtra = 0;
+    let firstIn = null;
+    let lastOut = null;
+
   if (this.inTime && this.outTime) {
     this.calculateTotalHours();
 
-    // Determine status based on total hours + OD hours vs shift duration
-    // Threshold: 70% of expected hours (Working + OD)
-    if (this.expectedHours) {
-      const effectiveHours = (this.totalHours || 0) + (this.odHours || 0);
-      const threshold = this.expectedHours * 0.7;
+    this.shifts.forEach((shift, index) => {
+      totalWorking += shift.workingHours || 0;
+      totalOT += shift.otHours || 0;
+      totalExtra += shift.extraHours || 0;
 
-      if (effectiveHours < threshold) {
-        this.status = 'HALF_DAY';
-      } else {
-        this.status = 'PRESENT';
+      if (!firstIn || (shift.inTime && shift.inTime < firstIn)) {
+        firstIn = shift.inTime;
       }
+
+      if (shift.outTime) {
+        if (!lastOut || shift.outTime > lastOut) {
+          lastOut = shift.outTime;
+        }
+      }
+    });
+
+    this.totalWorkingHours = Math.round(totalWorking * 100) / 100;
+    this.totalOTHours = Math.round(totalOT * 100) / 100;
+    this.extraHours = Math.round(totalExtra * 100) / 100;
+
+    // 2. Metrics (Backward Compatibility)
+    this.inTime = firstIn;
+    this.outTime = lastOut;
+    this.totalHours = this.totalWorkingHours;
+
+    // 3. Status Determination
+    // Logic:
+    // - PRESENT: If any shift is PRESENT (or payable >= 1)
+    // - HALF_DAY: Only if exactly ONE shift and it is HALF_DAY
+    // - ABSENT: Otherwise (or handled by fallback)
+    const hasPresentShift = this.shifts.some(s => s.status === 'complete' || s.status === 'PRESENT' || (s.payableShift && s.payableShift >= 1));
+
+    if (hasPresentShift) {
+      this.status = 'PRESENT';
+    } else if (this.shifts.length === 1 && (this.shifts[0].status === 'HALF_DAY' || this.shifts[0].payableShift === 0.5)) {
+      this.status = 'HALF_DAY';
     } else {
-      // Default to PRESENT if we have both punches but no expectedHours
-      if (this.status !== 'HALF_DAY') {
+      // If multi-shift but none present, checking aggregated payable might handle edge cases like 0.5 + 0.5
+      if (this.payableShifts >= 1) {
         this.status = 'PRESENT';
+      } else {
+        // Fallback to whatever the individual outcomes were, but usually absent/partial
+        this.status = this.shifts.length > 0 ? 'PARTIAL' : 'ABSENT';
       }
     }
 
-    // Special Requirement: If worked on Holiday/Week-Off, add remark
-    if (rosterStatus === 'HOL' || rosterStatus === 'WO') {
+    // Set primary lookup fields from first shift
+    if (this.shifts.length > 0 && this.shifts[0].shiftId) {
+      this.shiftId = this.shifts[0].shiftId;
+      this.isLateIn = this.shifts[0].isLateIn;
+      this.lateInMinutes = this.shifts[0].lateInMinutes;
+    }
+  }
+
+  } else {
+    // Legacy mapping for direct updates without shifts array
+    if (this.inTime && this.outTime) {
+      this.calculateTotalHours();
+      if (this.expectedHours) {
+        const effectiveHours = (this.totalHours || 0) + (this.odHours || 0);
+        // Normalize duration to hours if it looks like minutes (e.g. > 20)
+        // expectedHours is usually in hours for legacy, but shift duration is often in hours too. 
+        // Let's assume expectedHours is in HOURS.
+        const durationHours = this.expectedHours;
+
+        if (effectiveHours >= (durationHours * 0.9)) {
+          this.status = 'PRESENT';
+          this.payableShifts = 1;
+        } else if (effectiveHours >= (durationHours * 0.45)) {
+          this.status = 'HALF_DAY';
+          this.payableShifts = 0.5;
+        } else {
+          this.status = 'ABSENT';
+          this.payableShifts = 0;
+        }
+      } else if (this.status !== 'HALF_DAY' && this.status !== 'ABSENT') {
+        // Fallback if expectedHours is missing but we have in/out
+        this.status = 'PRESENT';
+        this.payableShifts = 1;
+      }
+    } else if (this.inTime || this.outTime) {
+      this.status = 'PARTIAL';
+      this.payableShifts = 0;
+    } else {
+      // No punches - use roster status if available, else default to ABSENT
+      this.payableShifts = 0;
+      if (rosterStatus === 'HOL') {
+        this.status = 'HOLIDAY';
+      } else if (rosterStatus === 'WO') {
+        this.status = 'WEEK_OFF';
+      } else {
+        this.status = 'ABSENT';
+      }
+    }
+    // Special Requirement: If worked on Holiday/Week-Off (have punches on HOL/WO day), add remark
+    if ((rosterStatus === 'HOL' || rosterStatus === 'WO') && (this.inTime || this.outTime)) {
       const dayLabel = rosterStatus === 'HOL' ? 'Holiday' : 'Week Off';
       const remark = `Worked on ${dayLabel}`;
       if (!this.notes) {
@@ -252,17 +458,6 @@ attendanceDailySchema.pre('save', async function () {
       } else if (!this.notes.includes(remark)) {
         this.notes = `${this.notes} | ${remark}`;
       }
-    }
-  } else if (this.inTime || this.outTime) {
-    this.status = 'PARTIAL';
-  } else {
-    // No punches - use roster status if available, else default to ABSENT
-    if (rosterStatus === 'HOL') {
-      this.status = 'HOLIDAY';
-    } else if (rosterStatus === 'WO') {
-      this.status = 'WEEK_OFF';
-    } else {
-      this.status = 'ABSENT';
     }
   }
 
