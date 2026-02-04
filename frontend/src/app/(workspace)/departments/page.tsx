@@ -2,6 +2,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { api, Department, Shift, Designation } from '@/lib/api';
+import { auth } from '@/lib/auth';
+import {
+  canViewDepartments,
+  canEditDepartment  // Used as canManageDepartments
+} from '@/lib/permissions';
 import BulkUpload from '@/components/BulkUpload';
 import {
   DEPARTMENT_TEMPLATE_HEADERS,
@@ -491,6 +496,14 @@ export default function DepartmentsPage() {
 
   const hodUsers = users.filter((u) => u.role === 'hod' || u.roles?.includes('hod'));
 
+  // Permission checks using read/write pattern
+  // Write permission enables ALL actions (create, edit, delete, assign shifts, manage designations)
+  // Read permission blocks all actions (view only)
+  // Future: When implementing granular permissions, only permissions.ts needs updating
+  const user = auth.getUser();
+  const hasViewPermission = user ? canViewDepartments(user as any) : false;
+  const hasManagePermission = user ? canEditDepartment(user as any) : false; // Write permission for ALL actions
+
   return (
     <div className="relative min-h-screen">
       {/* Background Pattern */}
@@ -530,44 +543,52 @@ export default function DepartmentsPage() {
                 <p className="text-blue-100 text-sm md:text-base opacity-90">Organize your employees into functional departments and assign roles.</p>
               </div>
               <div className="flex flex-wrap gap-2 justify-end">
-                <button
-                  onClick={() => setShowBulkUploadDept(true)}
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white/10 px-4 py-2 text-xs md:text-sm font-bold text-white backdrop-blur-sm transition-all hover:bg-white/20 whitespace-nowrap"
-                >
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                  </svg>
-                  <span>Bulk Depts</span>
-                </button>
-                <button
-                  onClick={() => setShowBulkUploadDesig(true)}
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white/10 px-4 py-2 text-xs md:text-sm font-bold text-white backdrop-blur-sm transition-all hover:bg-white/20 whitespace-nowrap"
-                >
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                  </svg>
-                  <span>Bulk Rol</span>
-                </button>
-                <button
-                  onClick={() => {
-                    resetDesignationForm();
-                    setShowDesignationDialog('global');
-                    loadDesignations('global');
-                  }}
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white/10 px-4 py-2 text-xs md:text-sm font-bold text-white backdrop-blur-sm transition-all hover:bg-white/20 whitespace-nowrap"
-                >
-                  <span>+ Role</span>
-                </button>
-                <button
-                  onClick={() => {
-                    resetDepartmentForm();
-                    setShowCreateDialog(true);
-                  }}
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-4 py-2 text-xs md:text-sm font-bold text-blue-600 shadow-xl transition-all hover:scale-105 active:scale-95 whitespace-nowrap"
-                >
-                  <span className="text-xl">+</span>
-                  <span>Create Dept</span>
-                </button>
+                {hasManagePermission && (
+                  <button
+                    onClick={() => setShowBulkUploadDept(true)}
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white/10 px-4 py-2 text-xs md:text-sm font-bold text-white backdrop-blur-sm transition-all hover:bg-white/20 whitespace-nowrap"
+                  >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                    </svg>
+                    <span>Bulk Depts</span>
+                  </button>
+                )}
+                {hasManagePermission && (
+                  <button
+                    onClick={() => setShowBulkUploadDesig(true)}
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white/10 px-4 py-2 text-xs md:text-sm font-bold text-white backdrop-blur-sm transition-all hover:bg-white/20 whitespace-nowrap"
+                  >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                    </svg>
+                    <span>Bulk Rol</span>
+                  </button>
+                )}
+                {hasManagePermission && (
+                  <button
+                    onClick={() => {
+                      resetDesignationForm();
+                      setShowDesignationDialog('global');
+                      loadDesignations('global');
+                    }}
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white/10 px-4 py-2 text-xs md:text-sm font-bold text-white backdrop-blur-sm transition-all hover:bg-white/20 whitespace-nowrap"
+                  >
+                    <span>+ Role</span>
+                  </button>
+                )}
+                {hasManagePermission && (
+                  <button
+                    onClick={() => {
+                      resetDepartmentForm();
+                      setShowCreateDialog(true);
+                    }}
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-4 py-2 text-xs md:text-sm font-bold text-blue-600 shadow-xl transition-all hover:scale-105 active:scale-95 whitespace-nowrap"
+                  >
+                    <span className="text-xl">+</span>
+                    <span>Create Dept</span>
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -1627,30 +1648,38 @@ export default function DepartmentsPage() {
                   )}
 
                   <div className="flex flex-wrap gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">
-                    <button
-                      onClick={() => handleOpenEditDialog(dept)}
-                      className="group flex-1 rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 px-4 py-2.5 text-sm font-semibold text-blue-700 transition-all hover:from-blue-100 hover:to-indigo-100 hover:shadow-md dark:border-blue-800 dark:from-blue-900/20 dark:to-indigo-900/20 dark:text-blue-300 dark:hover:from-blue-900/30 dark:hover:to-indigo-900/30"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleOpenShiftDialog(dept)}
-                      className="group flex-1 rounded-2xl border border-purple-200 bg-gradient-to-r from-purple-50 to-red-50 px-4 py-2.5 text-sm font-semibold text-purple-700 transition-all hover:from-purple-100 hover:to-red-100 hover:shadow-md dark:border-purple-800 dark:from-purple-900/20 dark:to-red-900/20 dark:text-purple-300 dark:hover:from-purple-900/30 dark:hover:to-red-900/30"
-                    >
-                      Shifts
-                    </button>
-                    <button
-                      onClick={() => handleOpenDesignationDialog(dept._id)}
-                      className="group flex-1 rounded-2xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-blue-50 px-4 py-2.5 text-sm font-semibold text-indigo-700 transition-all hover:from-indigo-100 hover:to-blue-100 hover:shadow-md dark:border-indigo-800 dark:from-indigo-900/20 dark:to-blue-900/20 dark:text-indigo-300 dark:hover:from-indigo-900/30 dark:hover:to-blue-900/30"
-                    >
-                      Designations
-                    </button>
-                    <button
-                      onClick={() => handleDeleteDepartment(dept._id)}
-                      className="rounded-2xl border border-red-200 bg-gradient-to-r from-red-50 to-red-50 px-4 py-2.5 text-sm font-semibold text-red-700 transition-all hover:from-red-100 hover:to-red-100 hover:shadow-md dark:border-red-800 dark:from-red-900/20 dark:to-red-900/20 dark:text-red-300 dark:hover:from-red-900/30 dark:hover:to-red-900/30"
-                    >
-                      Delete
-                    </button>
+                    {hasManagePermission && (
+                      <button
+                        onClick={() => handleOpenEditDialog(dept)}
+                        className="group flex-1 rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 px-4 py-2.5 text-sm font-semibold text-blue-700 transition-all hover:from-blue-100 hover:to-indigo-100 hover:shadow-md dark:border-blue-800 dark:from-blue-900/20 dark:to-indigo-900/20 dark:text-blue-300 dark:hover:from-blue-900/30 dark:hover:to-indigo-900/30"
+                      >
+                        Edit
+                      </button>
+                    )}
+                    {hasManagePermission && (
+                      <button
+                        onClick={() => handleOpenShiftDialog(dept)}
+                        className="group flex-1 rounded-2xl border border-purple-200 bg-gradient-to-r from-purple-50 to-red-50 px-4 py-2.5 text-sm font-semibold text-purple-700 transition-all hover:from-purple-100 hover:to-red-100 hover:shadow-md dark:border-purple-800 dark:from-purple-900/20 dark:to-red-900/20 dark:text-purple-300 dark:hover:from-purple-900/30 dark:hover:to-red-900/30"
+                      >
+                        Shifts
+                      </button>
+                    )}
+                    {hasManagePermission && (
+                      <button
+                        onClick={() => handleOpenDesignationDialog(dept._id)}
+                        className="group flex-1 rounded-2xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-blue-50 px-4 py-2.5 text-sm font-semibold text-indigo-700 transition-all hover:from-indigo-100 hover:to-blue-100 hover:shadow-md dark:border-indigo-800 dark:from-indigo-900/20 dark:to-blue-900/20 dark:text-indigo-300 dark:hover:from-indigo-900/30 dark:hover:to-blue-900/30"
+                      >
+                        Designations
+                      </button>
+                    )}
+                    {hasManagePermission && (
+                      <button
+                        onClick={() => handleDeleteDepartment(dept._id)}
+                        className="rounded-2xl border border-red-200 bg-gradient-to-r from-red-50 to-red-50 px-4 py-2.5 text-sm font-semibold text-red-700 transition-all hover:from-red-100 hover:to-red-100 hover:shadow-md dark:border-red-800 dark:from-red-900/20 dark:to-red-900/20 dark:text-red-300 dark:hover:from-red-900/30 dark:hover:to-red-900/30"
+                      >
+                        Delete
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -1773,3 +1802,4 @@ export default function DepartmentsPage() {
     </div >
   );
 }
+

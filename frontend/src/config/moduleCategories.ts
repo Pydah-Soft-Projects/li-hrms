@@ -48,7 +48,7 @@ export const MODULE_CATEGORIES = [
             { code: 'PAY_REGISTER', label: 'Pay Register', href: '/pay-register' },
             { code: 'PAYSLIPS', label: 'Payslips', href: '/payslips' },
             { code: 'ALLOWANCES_DEDUCTIONS', label: 'Allowances & Deductions', href: '/allowances-deductions' },
-            { code: 'LOANS_SALARY_ADVANCE', label: 'Loans & Salary Advance', href: '/loans-salary-advance' }
+            { code: 'LOANS', label: 'Loans & Salary Advance', href: '/loans' }
         ]
     },
     {
@@ -57,16 +57,6 @@ export const MODULE_CATEGORIES = [
         icon: '📈',
         modules: [
             { code: 'ARREARS', label: 'Arrears', href: '/arrears' }
-        ]
-    },
-    {
-        code: 'BONUS_MANAGEMENT',
-        name: 'Bonus Management',
-        icon: '🎁',
-        modules: [
-            { code: 'BONUS_POLICIES', label: 'Bonus Policies', href: '/superadmin/bonus/policies' },
-            { code: 'BONUS_CALCULATOR', label: 'Bonus Calculator', href: '/superadmin/bonus/calculator' },
-            { code: 'BONUS_BATCHES', label: 'Bonus Batches', href: '/superadmin/bonus/batches' }
         ]
     },
     {
@@ -88,7 +78,11 @@ export function getModulesForCategory(categoryCode: string) {
 // Helper to check if a module is enabled based on feature control
 export function isModuleEnabled(moduleCode: string, featureControl: string[] | null): boolean {
     if (!featureControl || featureControl.length === 0) return true; // If no feature control or empty, allow all
-    return featureControl.includes(moduleCode);
+
+    // Check for exact match OR :read OR :write permissions
+    return featureControl.includes(moduleCode) ||
+        featureControl.includes(`${moduleCode}:read`) ||
+        featureControl.includes(`${moduleCode}:write`);
 }
 
 // Helper to check if a category has any enabled modules

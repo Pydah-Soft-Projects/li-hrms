@@ -2,6 +2,12 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { api, Department, Division } from '@/lib/api';
+import { auth } from '@/lib/auth';
+import {
+  canViewUsers,
+  canEditUser,  // Used as canManageUsers
+  canResetPassword
+} from '@/lib/permissions';
 import { MODULE_CATEGORIES } from '@/config/moduleCategories';
 import Spinner from '@/components/Spinner';
 
@@ -519,6 +525,15 @@ export default function UsersPage() {
     }
   };
 
+  // Permission checks using read/write pattern
+  // Write permission enables ALL actions (create, edit, delete users)
+  // Read permission blocks all actions (view only)
+  // Future: When implementing granular permissions, only permissions.ts needs updating
+  const user = auth.getUser();
+  const hasViewPermission = user ? canViewUsers(user as any) : false;
+  const hasManagePermission = user ? canEditUser(user as any) : false; // Write permission for ALL actions
+  const hasResetPasswordPermission = user ? canResetPassword(user as any) : false;
+
   if (loading && users.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -546,20 +561,24 @@ export default function UsersPage() {
               <RefreshIcon />
               Refresh
             </button>
-            <button
-              onClick={openFromEmployeeDialog}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-green-200 bg-green-50 text-green-700 hover:bg-green-100 dark:border-green-800 dark:bg-green-900/30 dark:text-green-400"
-            >
-              <UserIcon />
-              Update User
-            </button>
-            <button
-              onClick={() => setShowCreateDialog(true)}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-semibold shadow-lg shadow-blue-500/30 hover:shadow-xl"
-            >
-              <PlusIcon />
-              Create User
-            </button>
+            {hasManagePermission && (
+              <button
+                onClick={openFromEmployeeDialog}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl border border-green-200 bg-green-50 text-green-700 hover:bg-green-100 dark:border-green-800 dark:bg-green-900/30 dark:text-green-400"
+              >
+                <UserIcon />
+                Update User
+              </button>
+            )}
+            {hasManagePermission && (
+              <button
+                onClick={() => setShowCreateDialog(true)}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-semibold shadow-lg shadow-blue-500/30 hover:shadow-xl"
+              >
+                <PlusIcon />
+                Create User
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -766,37 +785,50 @@ export default function UsersPage() {
                     </span>
                   </td>
                   <td className="px-6 py-4">
-                    <button
-                      onClick={() => handleToggleStatus(user)}
-                      disabled={user.role === 'super_admin'}
-                      className={`inline-flex px-2.5 py-1 text-xs font-medium rounded-lg ${user.isActive
-                        ? 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
-                        : 'bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400'
-                        } ${user.role === 'super_admin' ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-                    >
-                      {user.isActive ? 'Active' : 'Inactive'}
-                    </button>
+                    {hasManagePermission ? (
+                      <button
+                        onClick={() => handleToggleStatus(user)}
+                        disabled={user.role === 'super_admin'}
+                        className={`inline-flex px-2.5 py-1 text-xs font-medium rounded-lg ${user.isActive
+                          ? 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
+                          : 'bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400'
+                          } ${user.role === 'super_admin' ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                      >
+                        {user.isActive ? 'Active' : 'Inactive'}
+                      </button>
+                    ) : (
+                      <span className={`inline-flex px-2.5 py-1 text-xs font-medium rounded-lg ${user.isActive
+                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                        : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                        }`}>
+                        {user.isActive ? 'Active' : 'Inactive'}
+                      </span>
+                    )}
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center justify-end gap-2">
-                      <button
-                        onClick={() => openEditDialog(user)}
-                        className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg dark:text-slate-400 dark:hover:bg-slate-700"
-                        title="Edit"
-                      >
-                        <EditIcon />
-                      </button>
-                      <button
-                        onClick={() => {
-                          setSelectedUser(user);
-                          setShowPasswordDialog(true);
-                        }}
-                        className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg dark:text-amber-400 dark:hover:bg-amber-900/30"
-                        title="Reset Password"
-                      >
-                        <KeyIcon />
-                      </button>
-                      {user.role !== 'super_admin' && (
+                      {hasManagePermission && (
+                        <button
+                          onClick={() => openEditDialog(user)}
+                          className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg dark:text-slate-400 dark:hover:bg-slate-700"
+                          title="Edit"
+                        >
+                          <EditIcon />
+                        </button>
+                      )}
+                      {hasResetPasswordPermission && (
+                        <button
+                          onClick={() => {
+                            setSelectedUser(user);
+                            setShowPasswordDialog(true);
+                          }}
+                          className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg dark:text-amber-400 dark:hover:bg-amber-900/30"
+                          title="Reset Password"
+                        >
+                          <KeyIcon />
+                        </button>
+                      )}
+                      {hasManagePermission && user.role !== 'super_admin' && (
                         <button
                           onClick={() => handleDelete(user)}
                           className="p-2 text-red-600 hover:bg-red-50 rounded-lg dark:text-red-400 dark:hover:bg-red-900/30"
@@ -1014,25 +1046,70 @@ export default function UsersPage() {
                           {category.icon} {category.name}
                         </h4>
                         <div className="space-y-1">
-                          {category.modules.map((module) => (
-                            <label key={module.code} className="flex items-center gap-2 p-2 rounded-lg hover:bg-white dark:hover:bg-slate-700 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={formData.featureControl.includes(module.code)}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setFormData({ ...formData, featureControl: [...formData.featureControl, module.code] });
-                                  } else {
-                                    setFormData({ ...formData, featureControl: formData.featureControl.filter(m => m !== module.code) });
-                                  }
-                                }}
-                                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                              />
-                              <span className="text-xs text-slate-700 dark:text-slate-300">
-                                {module.label}
-                              </span>
-                            </label>
-                          ))}
+                          {category.modules.map((module) => {
+                            const hasLegacy = (formData.featureControl || []).includes(module.code);
+                            const hasRead = hasLegacy || (formData.featureControl || []).includes(`${module.code}:read`) || (formData.featureControl || []).includes(`${module.code}:write`);
+                            const hasWrite = hasLegacy || (formData.featureControl || []).includes(`${module.code}:write`);
+
+                            return (
+                              <div key={module.code} className="flex flex-col gap-1.5 rounded-xl border border-slate-100 bg-slate-50 p-2.5 transition-all hover:border-blue-100 hover:bg-white dark:border-slate-800 dark:bg-slate-900">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">{module.label}</span>
+                                </div>
+                                <div className="flex items-center gap-3 px-1">
+                                  <label className="flex items-center gap-1.5 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={hasRead}
+                                      onChange={(e) => {
+                                        const isChecked = e.target.checked;
+                                        let current = [...(formData.featureControl || [])];
+
+                                        // Remove legacy and this specific permission
+                                        current = current.filter(c => c !== module.code && c !== `${module.code}:read`);
+
+                                        // If legacy or write exists, we need to explicitly keep write
+                                        if (hasLegacy || hasWrite) {
+                                          if (!current.includes(`${module.code}:write`)) current.push(`${module.code}:write`);
+                                        }
+
+                                        if (isChecked) current.push(`${module.code}:read`);
+
+                                        setFormData({ ...formData, featureControl: current });
+                                      }}
+                                      className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                    />
+                                    <span className="text-[10px] font-medium text-slate-600 dark:text-slate-400">View</span>
+                                  </label>
+
+                                  <label className="flex items-center gap-1.5 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={hasWrite}
+                                      onChange={(e) => {
+                                        const isChecked = e.target.checked;
+                                        let current = [...(formData.featureControl || [])];
+
+                                        // Remove legacy and this specific permission
+                                        current = current.filter(c => c !== module.code && c !== `${module.code}:write`);
+
+                                        // If legacy or read exists, explicitly keep read
+                                        if (hasLegacy || hasRead) {
+                                          if (!current.includes(`${module.code}:read`)) current.push(`${module.code}:read`);
+                                        }
+
+                                        if (isChecked) current.push(`${module.code}:write`);
+
+                                        setFormData({ ...formData, featureControl: current });
+                                      }}
+                                      className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                    />
+                                    <span className="text-[10px] font-medium text-slate-600 dark:text-slate-400">Manage</span>
+                                  </label>
+                                </div>
+                              </div>
+                            )
+                          })}
                         </div>
                       </div>
                     ))}
@@ -1221,25 +1298,70 @@ export default function UsersPage() {
                           {category.icon} {category.name}
                         </h4>
                         <div className="space-y-1">
-                          {category.modules.map((module) => (
-                            <label key={module.code} className="flex items-center gap-2 p-2 rounded-lg hover:bg-white dark:hover:bg-slate-700 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={employeeFormData.featureControl.includes(module.code)}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setEmployeeFormData({ ...employeeFormData, featureControl: [...employeeFormData.featureControl, module.code] });
-                                  } else {
-                                    setEmployeeFormData({ ...employeeFormData, featureControl: employeeFormData.featureControl.filter(m => m !== module.code) });
-                                  }
-                                }}
-                                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                              />
-                              <span className="text-xs text-slate-700 dark:text-slate-300">
-                                {module.label}
-                              </span>
-                            </label>
-                          ))}
+                          {category.modules.map((module) => {
+                            const hasLegacy = (employeeFormData.featureControl || []).includes(module.code);
+                            const hasRead = hasLegacy || (employeeFormData.featureControl || []).includes(`${module.code}:read`) || (employeeFormData.featureControl || []).includes(`${module.code}:write`);
+                            const hasWrite = hasLegacy || (employeeFormData.featureControl || []).includes(`${module.code}:write`);
+
+                            return (
+                              <div key={module.code} className="flex flex-col gap-1.5 rounded-xl border border-slate-100 bg-slate-50 p-2.5 transition-all hover:border-blue-100 hover:bg-white dark:border-slate-800 dark:bg-slate-900">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">{module.label}</span>
+                                </div>
+                                <div className="flex items-center gap-3 px-1">
+                                  <label className="flex items-center gap-1.5 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={hasRead}
+                                      onChange={(e) => {
+                                        const isChecked = e.target.checked;
+                                        let current = [...(employeeFormData.featureControl || [])];
+
+                                        // Remove legacy and this specific permission
+                                        current = current.filter(c => c !== module.code && c !== `${module.code}:read`);
+
+                                        // If legacy or write exists, we need to explicitly keep write
+                                        if (hasLegacy || hasWrite) {
+                                          if (!current.includes(`${module.code}:write`)) current.push(`${module.code}:write`);
+                                        }
+
+                                        if (isChecked) current.push(`${module.code}:read`);
+
+                                        setEmployeeFormData({ ...employeeFormData, featureControl: current });
+                                      }}
+                                      className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                    />
+                                    <span className="text-[10px] font-medium text-slate-600 dark:text-slate-400">View</span>
+                                  </label>
+
+                                  <label className="flex items-center gap-1.5 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={hasWrite}
+                                      onChange={(e) => {
+                                        const isChecked = e.target.checked;
+                                        let current = [...(employeeFormData.featureControl || [])];
+
+                                        // Remove legacy and this specific permission
+                                        current = current.filter(c => c !== module.code && c !== `${module.code}:write`);
+
+                                        // If legacy or read exists, explicitly keep read
+                                        if (hasLegacy || hasRead) {
+                                          if (!current.includes(`${module.code}:read`)) current.push(`${module.code}:read`);
+                                        }
+
+                                        if (isChecked) current.push(`${module.code}:write`);
+
+                                        setEmployeeFormData({ ...employeeFormData, featureControl: current });
+                                      }}
+                                      className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                    />
+                                    <span className="text-[10px] font-medium text-slate-600 dark:text-slate-400">Manage</span>
+                                  </label>
+                                </div>
+                              </div>
+                            )
+                          })}
                         </div>
                       </div>
                     ))}
@@ -1468,25 +1590,70 @@ export default function UsersPage() {
                           {category.icon} {category.name}
                         </h4>
                         <div className="space-y-1">
-                          {category.modules.map((module) => (
-                            <label key={module.code} className="flex items-center gap-2 p-2 rounded-lg hover:bg-white dark:hover:bg-slate-700 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={formData.featureControl.includes(module.code)}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setFormData({ ...formData, featureControl: [...formData.featureControl, module.code] });
-                                  } else {
-                                    setFormData({ ...formData, featureControl: formData.featureControl.filter(m => m !== module.code) });
-                                  }
-                                }}
-                                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                              />
-                              <span className="text-xs text-slate-700 dark:text-slate-300">
-                                {module.label}
-                              </span>
-                            </label>
-                          ))}
+                          {category.modules.map((module) => {
+                            const hasLegacy = (formData.featureControl || []).includes(module.code);
+                            const hasRead = hasLegacy || (formData.featureControl || []).includes(`${module.code}:read`) || (formData.featureControl || []).includes(`${module.code}:write`);
+                            const hasWrite = hasLegacy || (formData.featureControl || []).includes(`${module.code}:write`);
+
+                            return (
+                              <div key={module.code} className="flex flex-col gap-1.5 rounded-xl border border-slate-100 bg-slate-50 p-2.5 transition-all hover:border-blue-100 hover:bg-white dark:border-slate-800 dark:bg-slate-900">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">{module.label}</span>
+                                </div>
+                                <div className="flex items-center gap-3 px-1">
+                                  <label className="flex items-center gap-1.5 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={hasRead}
+                                      onChange={(e) => {
+                                        const isChecked = e.target.checked;
+                                        let current = [...(formData.featureControl || [])];
+
+                                        // Remove legacy and this specific permission
+                                        current = current.filter(c => c !== module.code && c !== `${module.code}:read`);
+
+                                        // If legacy or write exists, we need to explicitly keep write
+                                        if (hasLegacy || hasWrite) {
+                                          if (!current.includes(`${module.code}:write`)) current.push(`${module.code}:write`);
+                                        }
+
+                                        if (isChecked) current.push(`${module.code}:read`);
+
+                                        setFormData({ ...formData, featureControl: current });
+                                      }}
+                                      className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                    />
+                                    <span className="text-[10px] font-medium text-slate-600 dark:text-slate-400">View</span>
+                                  </label>
+
+                                  <label className="flex items-center gap-1.5 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={hasWrite}
+                                      onChange={(e) => {
+                                        const isChecked = e.target.checked;
+                                        let current = [...(formData.featureControl || [])];
+
+                                        // Remove legacy and this specific permission
+                                        current = current.filter(c => c !== module.code && c !== `${module.code}:write`);
+
+                                        // If legacy or read exists, explicitly keep read
+                                        if (hasLegacy || hasRead) {
+                                          if (!current.includes(`${module.code}:read`)) current.push(`${module.code}:read`);
+                                        }
+
+                                        if (isChecked) current.push(`${module.code}:write`);
+
+                                        setFormData({ ...formData, featureControl: current });
+                                      }}
+                                      className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                    />
+                                    <span className="text-[10px] font-medium text-slate-600 dark:text-slate-400">Manage</span>
+                                  </label>
+                                </div>
+                              </div>
+                            )
+                          })}
                         </div>
                       </div>
                     ))}
@@ -1555,3 +1722,4 @@ export default function UsersPage() {
     </div >
   );
 }
+

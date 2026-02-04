@@ -9,7 +9,10 @@ import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
 
 import { useAuth } from '@/contexts/AuthContext';
-
+import {
+  canViewAttendance,
+  canEditAttendance  // Used as canManageAttendance
+} from '@/lib/permissions';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 
 
@@ -263,12 +266,12 @@ export default function AttendancePage() {
 
 
   // Helper to format time in IST
-
-  const formatTimeIST = (timeStr: string | null) => {
-
+  const formatTimeIST = (timeStr: string | null, showDateIfDifferent?: boolean, recordDate?: string) => {
     if (!timeStr) return '-';
 
     try {
+      const date = new Date(timeStr);
+      let formattedTime = date.toLocaleTimeString('en-US', {
 
       return new Date(timeStr).toLocaleTimeString('en-US', {
 
@@ -282,6 +285,20 @@ export default function AttendancePage() {
 
       });
 
+      if (showDateIfDifferent && recordDate) {
+        const istDate = new Date(date.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+        const istDateStr = istDate.toISOString().split('T')[0];
+        if (istDateStr !== recordDate) {
+          const datePart = istDate.toLocaleDateString('en-US', {
+            timeZone: 'Asia/Kolkata',
+            month: 'short',
+            day: 'numeric'
+          });
+          formattedTime = `${formattedTime} (${datePart})`;
+        }
+      }
+
+      return formattedTime;
     } catch {
 
       return '-';
@@ -736,6 +753,12 @@ export default function AttendancePage() {
 
   }, [monthlyData, selectedDivision, selectedDepartment, selectedDesignation, searchQuery]);
 
+  // Permission checks using read/write pattern
+  // Write permission enables ALL actions (mark attendance, edit, export, assign shifts, process payroll)
+  // Read permission blocks all actions (view only)
+  // Future: When implementing granular permissions, only permissions.ts needs updating
+  const hasViewPermission = user ? canViewAttendance(user as any) : false;
+  const hasManagePermission = user ? canEditAttendance(user as any) : false; // Write permission for ALL actions
 
 
   const loadDivisions = async () => {
@@ -2635,6 +2658,43 @@ export default function AttendancePage() {
                     {!isEmployee && (
 
                       <>
+                        {hasManagePermission && hasManagePermission && (
+                          <button
+                            onClick={() => setShowUploadDialog(true)}
+                            disabled={uploading}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-lg shadow-sm shadow-indigo-500/20 transition-all duration-200"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                            </svg>
+                            Upload Excel
+                          </button>
+                        )}
+
+                        {hasManagePermission && (
+                          <button
+                            onClick={handleDownloadTemplate}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 active:bg-slate-100 rounded-lg shadow-sm transition-all duration-200 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-700"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            Template
+                          </button>
+                        )}
+
+                        {hasManagePermission && (
+                          <button
+                            onClick={() => setSyncingShifts(true)}
+                            disabled={syncingShifts}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 active:bg-slate-100 rounded-lg shadow-sm transition-all duration-200 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-700 disabled:opacity-50"
+                          >
+                            <svg className={`w-3.5 h-3.5 ${syncingShifts ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                            {syncingShifts ? 'Syncing...' : 'Sync Shifts'}
+                          </button>
+                        )}
 
                         <button
 
@@ -3079,59 +3139,36 @@ export default function AttendancePage() {
 
 
             <div className="flex items-center gap-2">
+              {hasManagePermission && (
+                <button
+                  onClick={handleSyncShifts}
+                  disabled={syncingShifts}
+                  title="Sync Shifts"
+                  className="h-9 w-9 flex items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-green-600 hover:border-green-200 transition-all shadow-sm active:scale-95 disabled:opacity-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 md:w-auto md:px-3"
+                >
+                  {syncingShifts ? (
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" />
+                  ) : (
+                    <svg className="h-4 w-4 md:mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                  )}
+                  <span className="hidden md:inline text-xs font-semibold">Sync</span>
+                </button>
+              )}
 
-              <button
-
-                onClick={handleSyncShifts}
-
-                disabled={syncingShifts}
-
-                title="Sync Shifts"
-
-                className="h-9 w-9 flex items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-green-600 hover:border-green-200 transition-all shadow-sm active:scale-95 disabled:opacity-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 md:w-auto md:px-3"
-
-              >
-
-                {syncingShifts ? (
-
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" />
-
-                ) : (
-
-                  <svg className="h-4 w-4 md:mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-
+              {hasManagePermission && (
+                <button
+                  onClick={() => setShowUploadDialog(true)}
+                  title="Upload Excel"
+                  className="h-9 flex items-center px-4 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 text-xs font-bold text-white shadow-lg shadow-green-500/25 hover:shadow-green-500/40 hover:-translate-y-0.5 transition-all active:scale-95"
+                >
+                  <svg className="mr-2 h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                   </svg>
-
-                )}
-
-                <span className="hidden md:inline text-xs font-semibold">Sync</span>
-
-              </button>
-
-
-
-              <button
-
-                onClick={() => setShowUploadDialog(true)}
-
-                title="Upload Excel"
-
-                className="h-9 flex items-center px-4 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 text-xs font-bold text-white shadow-lg shadow-green-500/25 hover:shadow-green-500/40 hover:-translate-y-0.5 transition-all active:scale-95"
-
-              >
-
-                <svg className="mr-2 h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-
-                </svg>
-
-                Upload
-
-              </button>
-
+                  Upload
+                </button>
+              )}
             </div>
 
           </div>
@@ -3229,9 +3266,7 @@ export default function AttendancePage() {
           <table className="w-full border-collapse text-xs">
 
             <thead>
-
-              <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
-
+              <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-800">
                 <th className="sticky left-0 z-10 w-[180px] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
 
                   Employee
@@ -3639,9 +3674,7 @@ export default function AttendancePage() {
                                         <div className="font-semibold text-[9px]">{displayStatus}</div>
 
                                         {/* Shift Assignment - Only for HR */}
-
-                                        {isHR ? (
-
+                                        {hasManagePermission ? (
                                           <div
 
                                             className="text-[8px] opacity-75 truncate cursor-pointer hover:text-blue-600 hover:underline"
@@ -3653,9 +3686,7 @@ export default function AttendancePage() {
                                               e.stopPropagation();
 
                                               // Only open shift dialog if authorized
-
-                                              if (isHR) {
-
+                                              if (hasManagePermission) {
                                                 // Logic to open shift dialog would go here if not handled by row click
 
                                                 // For now, let row click handle it but visual cue is restricted
@@ -3741,9 +3772,12 @@ export default function AttendancePage() {
                                   </div>
 
                                 ) : (
-
-                                  <span className="text-slate-400 text-[9px]">-</span>
-
+                                  <>
+                                    {record?.source?.includes('manual') && (
+                                      <div className="text-[7px] text-indigo-600 dark:text-indigo-400 absolute top-0.5 right-0.5" title="Manually Edited">✎</div>
+                                    )}
+                                    <span className="text-slate-400 text-[9px]">-</span>
+                                  </>
                                 )}
 
                               </td>
@@ -4315,117 +4349,50 @@ export default function AttendancePage() {
                             </div>
 
                           </div>
-
-                          <div className="grid grid-cols-2 gap-2 text-xs">
-
-                            <div>
-
-                              <div className="text-slate-500 mb-0.5">In Time</div>
-
-                              <div className="font-semibold text-green-700 dark:text-green-400">
-
-                                {formatTime(shift.inTime)}
-
-                              </div>
-
-                            </div>
-
-                            <div>
-
-                              <div className="text-slate-500 mb-0.5">Out Time</div>
-
-                              {editingOutTime && selectedShiftRecordId === shift._id ? (
-
-                                <div className="flex items-center gap-2">
-
-                                  <input
-
-                                    type="time"
-
-                                    value={outTimeInput}
-
-                                    onChange={(e) => setOutTimeInput(e.target.value)}
-
-                                    className="w-24 rounded border border-slate-300 px-1 py-0.5 text-xs"
-
-                                  />
-
-                                  <button
-
-                                    onClick={handleShiftOutTimeUpdate}
-
-                                    disabled={savingOutTime}
-
-                                    className="text-green-600 hover:text-green-700"
-
-                                  >
-
-                                    Save
-
-                                  </button>
-
-                                  <button
-
-                                    onClick={() => { setEditingOutTime(false); setSelectedShiftRecordId(null); }}
-
-                                    className="text-red-500 hover:text-red-700"
-
-                                  >
-
-                                    Cancel
-
-                                  </button>
-
-                                </div>
-
-                              ) : (
-
-                                <div className="flex items-center gap-2">
-
-                                  <span className={shift.outTime ? "font-semibold text-red-700 dark:text-red-400" : "text-slate-400"}>
-
-                                    {shift.outTime ? formatTime(shift.outTime, true, attendanceDetail.date) : '-'}
-
-                                  </span>
-
-                                  <button
-
-                                    onClick={() => {
-
-                                      setEditingOutTime(true);
-
-                                      setSelectedShiftRecordId(shift._id);
-
-                                      if (shift.outTime) {
-
-                                        const d = new Date(shift.outTime);
-
-                                        setOutTimeInput(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
-
-                                      } else {
-
-                                        setOutTimeInput('');
-
-                                      }
-
-                                    }}
-
-                                    className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-100 hover:bg-blue-100"
-
-                                  >
-
-                                    Edit
-
-                                  </button>
-
-                                </div>
-
-                              )}
-
-                            </div>
-
-                          </div>
-
+                          {hasManagePermission && (
+                            <button
+                              onClick={() => {
+                                setEditingShift(true);
+                                if (attendanceDetail.shiftId && typeof attendanceDetail.shiftId === 'object') {
+                                  setSelectedShiftId(attendanceDetail.shiftId._id);
+                                }
+                              }}
+                              className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"
+                            >
+                              {attendanceDetail.shiftId ? 'Change' : 'Assign'}
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <div className="flex-1 flex items-center gap-2">
+                          <select
+                            value={selectedShiftId}
+                            onChange={(e) => setSelectedShiftId(e.target.value)}
+                            className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                          >
+                            <option value="">Select Shift</option>
+                            {availableShifts.map((shift) => (
+                              <option key={shift._id} value={shift._id}>
+                                {shift.name} ({shift.startTime} - {shift.endTime})
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            onClick={handleAssignShift}
+                            disabled={savingShift || !selectedShiftId}
+                            className={`rounded-lg bg-green-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50 ${!hasManagePermission ? 'hidden' : ''}`}
+                          >
+                            {savingShift ? 'Saving...' : 'Save'}
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEditingShift(false);
+                              setSelectedShiftId('');
+                            }}
+                            className="rounded-lg bg-slate-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-slate-600"
+                          >
+                            Cancel
+                          </button>
                         </div>
 
                       ))}
@@ -5777,19 +5744,14 @@ export default function AttendancePage() {
                   {/* Action Buttons */}
 
                   <div className="flex justify-end gap-3 print:hidden">
-
-                    <button
-
-                      onClick={handleExportPDF}
-
-                      className="rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600"
-
-                    >
-
-                      Export as PDF
-
-                    </button>
-
+                    {hasManagePermission && (
+                      <button
+                        onClick={handleExportPDF}
+                        className="rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600"
+                      >
+                        Export as PDF
+                      </button>
+                    )}
                     <button
 
                       onClick={() => {
@@ -6119,9 +6081,7 @@ export default function AttendancePage() {
                 <h3 className="text-lg font-bold text-slate-900 dark:text-white">Payslip</h3>
 
                 <div className="flex items-center gap-2">
-
-                  {error && error.includes('not found') && (
-
+                  {error && error.includes('not found') && hasManagePermission && (
                     <button
 
                       onClick={handleCalculatePayroll}
@@ -6583,3 +6543,4 @@ export default function AttendancePage() {
   );
 
 }
+
