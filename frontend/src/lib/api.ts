@@ -614,6 +614,14 @@ export const api = {
       body: JSON.stringify({ identifier, email: identifier, password }),
     });
   },
+
+  /** SSO login: exchange external token for HRMS session (same response shape as login). */
+  ssoLogin: async (encryptedToken: string) => {
+    return apiRequest<LoginResponse>('/auth/sso-login', {
+      method: 'POST',
+      body: JSON.stringify({ encryptedToken }),
+    });
+  },
   // Payroll include-missing setting (global)
   getIncludeMissingSetting: async () => {
     return apiRequest<Setting>('/settings/include_missing_employee_components', { method: 'GET' });

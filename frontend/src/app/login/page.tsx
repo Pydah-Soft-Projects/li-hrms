@@ -1,20 +1,24 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState, useEffect, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { auth } from "@/lib/auth";
+import { setWorkspaceDataFromLogin } from "@/contexts/WorkspaceContext";
 import LiquidEther from "@/components/LiquidEther";
 import "@/components/LiquidEther.css";
 
-export default function LoginPage() {
+function LoginContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
+  const [ssoVerifying, setSsoVerifying] = useState(false);
+  const ssoAttempted = useRef(false);
 
   // Check if already authenticated
   useEffect(() => {
@@ -29,6 +33,44 @@ export default function LoginPage() {
       setChecking(false);
     }
   }, [router]);
+
+  // SSO: when URL has ?token=..., verify with backend and log in
+  useEffect(() => {
+    if (checking || ssoAttempted.current) return;
+    const ssoToken = searchParams.get("token");
+    if (!ssoToken) return;
+
+    ssoAttempted.current = true;
+    setSsoVerifying(true);
+    setError("");
+
+    api
+      .ssoLogin(ssoToken)
+      .then((response) => {
+        if (response.success && response.data) {
+          auth.setToken(response.data.token);
+          auth.setUser(response.data.user);
+          if (response.data.user.role !== "super_admin") {
+            setWorkspaceDataFromLogin({
+              workspaces: response.data.workspaces || [],
+              activeWorkspace: response.data.activeWorkspace || response.data.workspaces?.[0],
+            });
+          }
+          const dashboardPath = auth.getRoleBasedPath(response.data.user.role);
+          // Remove token from URL before redirect
+          router.replace(dashboardPath);
+        } else {
+          setError(response.message || "SSO login failed.");
+          setSsoVerifying(false);
+          router.replace("/login", { scroll: false });
+        }
+      })
+      .catch((err) => {
+        setError("SSO verification failed. Please sign in with your credentials.");
+        setSsoVerifying(false);
+        router.replace("/login", { scroll: false });
+      });
+  }, [checking, searchParams, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,6 +106,18 @@ export default function LoginPage() {
         <div className="flex flex-col items-center gap-4">
           <div className="h-10 w-10 animate-spin rounded-full border-2 border-green-600 border-t-transparent"></div>
           <p className="text-gray-600 font-light">Checking authentication...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show verifying state when logging in via SSO token
+  if (ssoVerifying) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-white">
+        <div className="flex flex-col items-center gap-4">
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-green-600 border-t-transparent"></div>
+          <p className="text-gray-600 font-light">Verifying SSO token...</p>
         </div>
       </div>
     );
@@ -194,5 +248,19 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex min-h-screen items-center justify-center bg-white">
+        <div className="flex flex-col items-center gap-4">
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-green-600 border-t-transparent"></div>
+          <p className="text-gray-600 font-light">Loading...</p>
+        </div>
+      </div>
+    }>
+      <LoginContent />
+    </Suspense>
   );
 }

@@ -5,6 +5,7 @@ const { protect } = require('./middleware/authMiddleware');
 
 // Public routes
 router.post('/login', authController.login);
+router.post('/sso-login', authController.ssoLogin);
 
 // Protected routes
 router.get('/me', protect, authController.getMe);
