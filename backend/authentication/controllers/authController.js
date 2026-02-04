@@ -1,7 +1,6 @@
 const User = require('../../users/model/User');
 const Employee = require('../../employees/model/Employee');
 const { generateToken } = require('../../users/controllers/userController');
-const RoleAssignment = require('../../workspaces/model/RoleAssignment');
 
 // @desc    Login user
 // @route   POST /api/auth/login
@@ -98,53 +97,6 @@ exports.login = async (req, res) => {
     // Generate token
     const token = generateToken(user._id);
 
-    // Get user's workspaces
-    let workspaces = [];
-    let activeWorkspace = null;
-
-    if (userType === 'user') {
-      try {
-        const assignments = await RoleAssignment.getUserWorkspaces(user._id);
-        workspaces = assignments.map((assignment) => ({
-          _id: assignment.workspaceId._id,
-          name: assignment.workspaceId.name,
-          code: assignment.workspaceId.code,
-          type: assignment.workspaceId.type,
-          description: assignment.workspaceId.description,
-          theme: assignment.workspaceId.theme,
-          modules: assignment.workspaceId.modules?.filter((m) => m.isEnabled) || [],
-          defaultModuleCode: assignment.workspaceId.defaultModuleCode,
-          role: assignment.role,
-          isPrimary: assignment.isPrimary,
-        }));
-
-        // Determine active workspace
-        activeWorkspace = user.activeWorkspaceId
-          ? workspaces.find((w) => w._id.toString() === user.activeWorkspaceId.toString())
-          : workspaces.find((w) => w.isPrimary) || workspaces[0];
-      } catch (wsError) {
-        console.log('Workspaces not configured yet:', wsError.message);
-      }
-    } else {
-      // For employees, we can assign a default "Employee Portal" workspace if it exists
-      try {
-        const Workspace = require('../../workspaces/model/Workspace');
-        const empWorkspace = await Workspace.findOne({ code: 'EMP' });
-        if (empWorkspace) {
-          activeWorkspace = {
-            _id: empWorkspace._id,
-            name: empWorkspace.name,
-            code: empWorkspace.code,
-            type: empWorkspace.type,
-            role: 'employee',
-          };
-          workspaces = [activeWorkspace];
-        }
-      } catch (wsError) {
-        console.log('Error fetching employee workspace:', wsError.message);
-      }
-    }
-
     res.status(200).json({
       success: true,
       message: 'Login successful',
@@ -165,8 +117,6 @@ exports.login = async (req, res) => {
           divisionMapping: userType === 'user' ? user.divisionMapping : undefined,
           departments: userType === 'user' ? user.departments : undefined,
         },
-        workspaces,
-        activeWorkspace,
       },
     });
   } catch (error) {
@@ -185,7 +135,6 @@ exports.getMe = async (req, res) => {
   try {
     let user = await User.findById(req.user.userId)
       .populate('department', 'name')
-      .populate('activeWorkspaceId', 'name code type')
       .select('-password');
 
     let userType = 'user';
@@ -202,54 +151,6 @@ exports.getMe = async (req, res) => {
         success: false,
         message: 'Account not found',
       });
-    }
-
-    // Get user's workspaces
-    let workspaces = [];
-    let activeWorkspace = null;
-
-    if (userType === 'user') {
-      try {
-        const RoleAssignment = require('../../workspaces/model/RoleAssignment');
-        const assignments = await RoleAssignment.getUserWorkspaces(user._id);
-        workspaces = assignments.map((assignment) => ({
-          _id: assignment.workspaceId._id,
-          name: assignment.workspaceId.name,
-          code: assignment.workspaceId.code,
-          type: assignment.workspaceId.type,
-          description: assignment.workspaceId.description,
-          theme: assignment.workspaceId.theme,
-          modules: assignment.workspaceId.modules?.filter((m) => m.isEnabled) || [],
-          defaultModuleCode: assignment.workspaceId.defaultModuleCode,
-          role: assignment.role,
-          isPrimary: assignment.isPrimary,
-        }));
-
-        // Determine active workspace
-        activeWorkspace = user.activeWorkspaceId
-          ? workspaces.find((w) => w._id.toString() === user.activeWorkspaceId.toString())
-          : workspaces.find((w) => w.isPrimary) || workspaces[0];
-      } catch (wsError) {
-        console.log('Workspaces not configured yet:', wsError.message);
-      }
-    } else {
-      // For employees, assign default "Employee Portal" workspace
-      try {
-        const Workspace = require('../../workspaces/model/Workspace');
-        const empWorkspace = await Workspace.findOne({ code: 'EMP' });
-        if (empWorkspace) {
-          activeWorkspace = {
-            _id: empWorkspace._id,
-            name: empWorkspace.name,
-            code: empWorkspace.code,
-            type: empWorkspace.type,
-            role: 'employee',
-          };
-          workspaces = [activeWorkspace];
-        }
-      } catch (wsError) {
-        console.log('Error fetching employee workspace:', wsError.message);
-      }
     }
 
     res.status(200).json({
@@ -271,8 +172,6 @@ exports.getMe = async (req, res) => {
           divisionMapping: userType === 'user' ? user.divisionMapping : undefined,
           departments: userType === 'user' ? user.departments : undefined,
         },
-        workspaces,
-        activeWorkspace,
       },
     });
   } catch (error) {

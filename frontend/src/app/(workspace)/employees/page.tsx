@@ -9,6 +9,27 @@ import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { api, Department, Division, Designation } from '@/lib/api';
 import { auth } from '@/lib/auth';
+import {
+  canViewEmployees,
+  canEditEmployee
+} from '@/lib/permissions';
+import {
+  Users,
+  Settings,
+  Upload,
+  Plus,
+  Search,
+  Filter,
+  MoreVertical,
+  Eye,
+  Edit2,
+  Trash2,
+  Mail,
+  ChevronRight,
+  UserCheck,
+  UserX,
+  Clock as LucideClock
+} from 'lucide-react';
 import BulkUpload from '@/components/BulkUpload';
 import DynamicEmployeeForm from '@/components/DynamicEmployeeForm';
 import Spinner from '@/components/Spinner';
@@ -37,7 +58,6 @@ interface Employee {
   gender?: string;
   marital_status?: string;
   blood_group?: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   qualifications?: any[] | string;
   experience?: number;
   address?: string;
@@ -57,11 +77,8 @@ interface Employee {
   is_active?: boolean;
   leftDate?: string | null;
   leftReason?: string | null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   dynamicFields?: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   employeeAllowances?: any[];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   employeeDeductions?: any[];
 }
 
@@ -1812,7 +1829,6 @@ export default function EmployeesPage() {
     setError('');
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const getEntityId = (entity: any) => {
     if (!entity) return null;
     if (typeof entity === 'string') return entity;
@@ -1945,7 +1961,7 @@ export default function EmployeesPage() {
 
   const getScopedDepartments = (selectedDivisionId: string) => {
     // Start with departments belonging to the selected division
-    let eligibleDepts = departments.filter(d => {
+    const eligibleDepts = departments.filter(d => {
       if (!selectedDivisionId) return true; // Should ideally wait for division selection
       // Check if department belongs to division (assuming backend provides this link, 
       // but typically we filter by checking if the dept has the division in its 'divisions' array
@@ -1993,13 +2009,17 @@ export default function EmployeesPage() {
     return eligibleDepts;
   }
 
-  // Helper for UI buttons
-  const showManagementButtons = !['employee', 'hod'].includes(userRole);
+  // Permission checks using read/write pattern
+  // Write permission enables ALL actions (create, edit, delete, approve, reject)
+  // Read permission blocks all actions (view only)
+  // Future: When implementing granular create/edit/delete, only permissions.ts needs updating
+  const user = auth.getUser();
+  const hasViewPermission = user ? canViewEmployees(user as any) : false;
+  const hasManagePermission = user ? canEditEmployee(user as any) : false; // Write permission for ALL actions
 
   const RenderFilterHeader = ({
     label,
     filterKey,
-    nestedKey,
     options,
     currentFilters,
     setFilters
@@ -2015,7 +2035,7 @@ export default function EmployeesPage() {
     const currentFilterValue = currentFilters[filterKey] || '';
 
     return (
-      <th className="relative px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+      <th className="relative px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">
         <div className="flex items-center gap-2">
           <span>{label}</span>
           <button
@@ -2025,31 +2045,29 @@ export default function EmployeesPage() {
               setFilterPos({ top: rect.bottom, left: rect.left });
               setActiveFilterColumn(isActive ? null : filterKey);
             }}
-            className={`rounded p-1 hover:bg-slate-200 dark:hover:bg-slate-700 ${currentFilterValue ? 'text-green-600 bg-green-50 dark:bg-green-900/30' : 'text-slate-400'}`}
+            className={`rounded-lg p-1.5 transition-all ${currentFilterValue ? 'text-indigo-600 bg-indigo-500/10' : 'text-text-secondary hover:bg-bg-base/80'}`}
           >
-            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 6.707A1 1 0 013 6.586V4z" />
-            </svg>
+            <Filter className="h-3 w-3" />
           </button>
         </div>
 
         {isActive && typeof document !== 'undefined' && createPortal(
           <div className="fixed inset-0 z-[100] flex items-start justify-start">
             <div
-              className="fixed inset-0"
+              className="fixed inset-0 bg-transparent"
               onClick={() => setActiveFilterColumn(null)}
             />
             <div
-              className="z-[101] mt-1 min-w-[200px] rounded-xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-800 fixed"
+              className="z-[101] mt-2 min-w-[220px] rounded-2xl border border-border-base bg-bg-surface/95 p-2 shadow-2xl backdrop-blur-xl fixed animate-in fade-in zoom-in-95 duration-200"
               style={{
                 top: filterPos.top,
                 left: filterPos.left,
               }}
             >
-              <div className="mb-2 px-2 py-1">
-                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Filter by {label}</span>
+              <div className="mb-2 px-3 py-2 border-b border-border-base/50">
+                <span className="text-[10px] font-black uppercase tracking-widest text-text-secondary">Filter by {label}</span>
               </div>
-              <div className="max-h-48 overflow-y-auto">
+              <div className="max-h-60 overflow-y-auto custom-scrollbar p-1 space-y-1">
                 <button
                   onClick={() => {
                     const newFilters = { ...currentFilters };
@@ -2057,9 +2075,9 @@ export default function EmployeesPage() {
                     setFilters(newFilters);
                     setActiveFilterColumn(null);
                   }}
-                  className={`flex w-full items-center rounded-lg px-3 py-2 text-xs hover:bg-slate-50 dark:hover:bg-slate-700 ${!currentFilterValue ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400' : 'text-slate-700 dark:text-slate-300'}`}
+                  className={`flex w-full items-center rounded-xl px-3 py-2 text-xs font-bold transition-all ${!currentFilterValue ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/20' : 'text-text-secondary hover:bg-bg-base hover:text-text-primary'}`}
                 >
-                  All
+                  All {label}s
                 </button>
                 {options.map(opt => (
                   <button
@@ -2068,7 +2086,7 @@ export default function EmployeesPage() {
                       setFilters({ ...currentFilters, [filterKey]: opt });
                       setActiveFilterColumn(null);
                     }}
-                    className={`flex w-full items-center rounded-lg px-3 py-2 text-xs hover:bg-slate-50 dark:hover:bg-slate-700 ${currentFilterValue === opt ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400' : 'text-slate-700 dark:text-slate-300'}`}
+                    className={`flex w-full items-center rounded-xl px-3 py-2 text-xs font-bold transition-all ${currentFilterValue === opt ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/20' : 'text-text-secondary hover:bg-bg-base hover:text-text-primary'}`}
                   >
                     {opt}
                   </button>
@@ -2087,391 +2105,526 @@ export default function EmployeesPage() {
 
 
   return (
-    <div className="relative min-h-screen">
-      {/* Background */}
-      <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(to_right,#e2e8f01f_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f01f_1px,transparent_1px)] bg-[size:28px_28px] dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.12)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.12)_1px,transparent_1px)]" />
-      <div className="pointer-events-none fixed inset-0 bg-gradient-to-br from-green-50/40 via-green-50/35 to-transparent dark:from-slate-900/60 dark:via-slate-900/65 dark:to-slate-900/80" />
+    <div className="relative min-h-screen -m-4 sm:-m-5 lg:-m-6">
+      {/* Background Grid Pattern */}
+      <div className="pointer-events-none fixed inset-0 z-0 bg-bg-base/50 bg-[linear-gradient(to_right,rgba(0,0,0,0.02)_1px,transparent_1px),linear-gradient(to_bottom,rgba(0,0,0,0.02)_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:42px_42px]"></div>
 
-      <div className="relative z-10 mx-auto max-w-[1920px]">
+      <div className="relative z-10 p-4 sm:p-5 lg:p-6 space-y-6">
         {/* Header - Unified Layout */}
-        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            {(commonDepartment || commonDesignation) ? (
-              <div className="flex flex-wrap items-center gap-2 mb-1 animate-in fade-in slide-in-from-top-2 duration-500">
-                {commonDepartment && (
-                  <h2 className="text-lg font-semibold text-green-600 dark:text-green-400">
-                    {commonDepartment.name}
-                  </h2>
-                )}
-                {commonDepartment && commonDesignation && (
-                  <span className="text-slate-300 dark:text-slate-600 font-light">/</span>
-                )}
-                {commonDesignation && (
-                  <h2 className="text-lg font-semibold text-blue-600 dark:text-blue-400">
-                    {commonDesignation.name}
-                  </h2>
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
+              <Users className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                {(commonDepartment || commonDesignation) ? (
+                  <>
+                    {commonDepartment && (
+                      <span className="text-xs font-bold text-indigo-500 uppercase tracking-wider">{commonDepartment.name}</span>
+                    )}
+                    {commonDepartment && commonDesignation && (
+                      <span className="text-text-secondary/30">/</span>
+                    )}
+                    {commonDesignation && (
+                      <span className="text-xs font-bold text-blue-500 uppercase tracking-wider">{commonDesignation.name}</span>
+                    )}
+                  </>
+                ) : commonDivision && (
+                  <span className="text-xs font-bold text-indigo-500 uppercase tracking-wider">{commonDivision.name}</span>
                 )}
               </div>
-            ) : commonDivision && (
-              <h2 className="text-lg font-semibold text-green-600 dark:text-green-400 mb-1 animate-in fade-in slide-in-from-top-2 duration-500">
-                {commonDivision.name}
-              </h2>
-            )}
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Employee Management</h1>
-            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-              Manage employee records • Data source: <span className="font-medium text-green-600 dark:text-green-400">{dataSource.toUpperCase()}</span>
-            </p>
+              <h1 className="text-2xl font-black tracking-tight text-text-primary">Employee Management</h1>
+              <p className="text-sm text-text-secondary font-medium">Manage workforce records • <span className="text-indigo-500">Source: {dataSource.toUpperCase()}</span></p>
+            </div>
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Context Badges */}
             {(commonDivision || commonDepartment) && (
-              <div className="hidden items-center gap-2 sm:flex animate-in fade-in slide-in-from-right-4 duration-500">
+              <div className="hidden items-center gap-2 sm:flex">
                 {commonDivision && (
-                  <span className="inline-flex items-center rounded-lg bg-orange-100 px-2.5 py-1 text-xs font-semibold text-orange-800 dark:bg-orange-900/30 dark:text-orange-300 border border-orange-200 dark:border-orange-800">
+                  <span className="inline-flex items-center rounded-lg bg-bg-surface px-2.5 py-1 text-xs font-bold text-text-secondary border border-border-base">
                     {commonDivision.name}
                   </span>
                 )}
-                {commonDepartment && (
-                  <span className="inline-flex items-center rounded-lg bg-purple-100 px-2.5 py-1 text-xs font-semibold text-purple-800 dark:bg-purple-900/30 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                    {commonDepartment.name}
-                  </span>
-                )}
-                <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
+                <div className="h-4 w-px bg-border-base mx-1"></div>
               </div>
             )}
 
             {/* Tab Slider */}
-            <div className="relative flex h-10 items-center rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+            <div className="relative flex items-center rounded-2xl bg-bg-surface/50 border border-border-base p-1 backdrop-blur-md shadow-sm">
               <div
-                className={`absolute h-8 rounded-lg bg-white shadow-sm transition-all duration-300 ease-in-out dark:bg-slate-700 ${activeTab === 'employees' ? 'left-1 w-[calc(50%-4px)]' : 'left-[calc(50%)] w-[calc(50%-4px)]'
+                className={`absolute h-8 rounded-xl bg-bg-base border border-border-base shadow-sm transition-all duration-300 ease-in-out ${activeTab === 'employees' ? 'left-1 w-[calc(50%-4px)]' : 'left-[calc(50%)] w-[calc(50%-4px)]'
                   }`}
               />
               <button
                 onClick={() => setActiveTab('employees')}
-                className={`relative z-10 w-32 px-4 py-1.5 text-sm font-semibold transition-colors ${activeTab === 'employees'
-                  ? 'text-slate-900 dark:text-slate-100'
-                  : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                className={`relative z-10 px-4 py-1.5 text-xs font-black uppercase tracking-widest transition-colors ${activeTab === 'employees'
+                  ? 'text-text-primary'
+                  : 'text-text-secondary hover:text-text-primary'
                   }`}
               >
                 Employees
               </button>
               <button
                 onClick={() => setActiveTab('applications')}
-                className={`relative z-10 w-32 px-4 py-1.5 text-sm font-semibold transition-colors flex items-center justify-center gap-2 ${activeTab === 'applications'
-                  ? 'text-slate-900 dark:text-slate-100'
-                  : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                className={`relative z-10 px-4 py-1.5 text-xs font-black uppercase tracking-widest transition-colors flex items-center justify-center gap-2 ${activeTab === 'applications'
+                  ? 'text-text-primary'
+                  : 'text-text-secondary hover:text-text-primary'
                   }`}
               >
                 Applications
                 {pendingApplications.length > 0 && (
-                  <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] text-white">
+                  <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-status-negative px-1.5 text-[10px] text-white font-bold">
                     {pendingApplications.length}
                   </span>
                 )}
               </button>
             </div>
 
-            {/* Settings Button - RBAC Protected */}
-            {showManagementButtons && (
+            {/* Settings Button */}
+            {hasManagePermission && (
               <Link
                 href="/employees/form-settings"
-                className="flex items-center justify-center rounded-xl border border-slate-200 bg-white p-2.5 text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                className="flex items-center justify-center rounded-2xl border border-border-base bg-bg-surface/50 p-2.5 text-text-secondary transition-all hover:bg-bg-surface hover:text-indigo-500 backdrop-blur-md shadow-sm"
                 title="Form Settings"
               >
-                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
+                <Settings className="h-5 w-5" />
               </Link>
             )}
 
-            {/* Import and New Application Buttons - RBAC Protected */}
-            {showManagementButtons && (
-              <>
-                <button
-                  onClick={() => setShowBulkUpload(true)}
-                  className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-2.5 text-sm font-medium text-green-700 transition-all hover:bg-green-100 dark:border-green-800 dark:bg-green-900/30 dark:text-green-400"
-                >
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                  </svg>
-                  <span className="hidden sm:inline">Import</span>
-                </button>
+            {/* Import Button */}
+            {hasManagePermission && (
+              <button
+                onClick={() => setShowBulkUpload(true)}
+                className="flex items-center gap-2 rounded-2xl border border-border-base bg-bg-surface/50 px-4 py-2.5 text-sm font-bold text-text-secondary transition-all hover:bg-bg-surface hover:text-indigo-500 backdrop-blur-md shadow-sm"
+              >
+                <div className="w-5 h-5 flex items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-500">
+                  <Upload className="h-3.5 w-3.5" />
+                </div>
+                <span className="hidden sm:inline uppercase tracking-widest text-[10px]">Import</span>
+              </button>
+            )}
 
-                <button
-                  onClick={() => setShowApplicationDialog(true)}
-                  className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-500/20 transition-all hover:shadow-green-500/40 hover:scale-[1.02]"
-                >
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                  New Application
-                </button>
-              </>
+            {/* New Application Button */}
+            {hasManagePermission && (
+              <button
+                onClick={() => setShowApplicationDialog(true)}
+                className="flex items-center gap-2 rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-600 px-5 py-2.5 text-xs font-black uppercase tracking-widest text-white shadow-xl shadow-indigo-500/20 transition-all hover:scale-[1.02] active:scale-95"
+              >
+                <Plus className="h-4 w-4" />
+                New Application
+              </button>
             )}
 
           </div>
         </div>
 
         {/* Employee List with Skeleton Loading */}
-        {loading ? (
-          <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white/95 shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
+        {loading || (activeTab === 'applications' && loadingApplications) ? (
+          <div className="overflow-hidden rounded-3xl border border-border-base bg-bg-surface/50 backdrop-blur-md shadow-sm">
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-green-50/30 dark:border-slate-700 dark:from-slate-900 dark:to-green-900/10">
-                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Emp No</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Name</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Division</th>
-                    {!hideDepartmentColumn && <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Department</th>}
-
-                    {!hideDesignationColumn && <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Designation</th>}
-                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Phone</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Status</th>
-                    <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Actions</th>
+                  <tr className="border-b border-border-base bg-bg-base/50">
+                    <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">
+                      {activeTab === 'employees' ? 'Emp No' : 'App No'}
+                    </th>
+                    <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Name</th>
+                    <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Division</th>
+                    {!hideDepartmentColumn && <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Department</th>}
+                    {activeTab === 'employees' && !hideDesignationColumn && <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Designation</th>}
+                    {activeTab === 'applications' && <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Proposed Salary</th>}
+                    <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Status</th>
+                    <th className="px-6 py-4 text-right text-[10px] font-black uppercase tracking-widest text-text-secondary">Actions</th>
                   </tr>
                 </thead>
-
-                <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                <tbody className="divide-y divide-border-base">
                   {[...Array(5)].map((_, i) => (
                     <tr key={i} className="animate-pulse">
-                      <td className="px-6 py-4"><div className="h-4 w-12 rounded bg-slate-200 dark:bg-slate-700" /></td>
+                      <td className="px-6 py-4"><div className="h-4 w-12 rounded bg-bg-base" /></td>
                       <td className="px-6 py-4">
-                        <div className="h-4 w-32 rounded bg-slate-200 dark:bg-slate-700 mb-2" />
-                        <div className="h-3 w-24 rounded bg-slate-100 dark:bg-slate-800" />
+                        <div className="h-4 w-32 rounded bg-bg-base mb-2" />
+                        <div className="h-3 w-24 rounded bg-bg-base/50" />
                       </td>
-                      <td className="px-6 py-4"><div className="h-4 w-24 rounded bg-slate-200 dark:bg-slate-700" /></td>
-                      {!hideDepartmentColumn && <td className="px-6 py-4"><div className="h-4 w-24 rounded bg-slate-200 dark:bg-slate-700" /></td>}
-                      {!hideDesignationColumn && <td className="px-6 py-4"><div className="h-4 w-24 rounded bg-slate-200 dark:bg-slate-700" /></td>}
-                      <td className="px-6 py-4"><div className="h-4 w-24 rounded bg-slate-200 dark:bg-slate-700" /></td>
-                      <td className="px-6 py-4"><div className="h-6 w-16 rounded-full bg-slate-200 dark:bg-slate-700" /></td>
-                      <td className="px-6 py-4 text-right"><div className="ml-auto h-8 w-24 rounded bg-slate-200 dark:bg-slate-700" /></td>
-
-
+                      <td className="px-6 py-4"><div className="h-4 w-24 rounded bg-bg-base" /></td>
+                      {!hideDepartmentColumn && <td className="px-6 py-4"><div className="h-4 w-24 rounded bg-bg-base" /></td>}
+                      <td className="px-6 py-4"><div className="h-4 w-24 rounded bg-bg-base" /></td>
+                      <td className="px-6 py-4"><div className="h-6 w-16 rounded-full bg-bg-base" /></td>
+                      <td className="px-6 py-4 text-right"><div className="ml-auto h-8 w-24 rounded bg-bg-base" /></td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           </div>
-        ) : filteredEmployees.length === 0 ? (
-          <div className="rounded-3xl border border-slate-200 bg-white/95 p-12 text-center shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-green-100 to-green-100 dark:from-green-900/30 dark:to-green-900/30">
-              <svg className="h-8 w-8 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-              </svg>
+        ) : activeTab === 'employees' ? (
+          filteredEmployees.length === 0 ? (
+            <div className="rounded-3xl border border-border-base bg-bg-surface/50 p-12 text-center backdrop-blur-md shadow-sm">
+              <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-2xl bg-indigo-500/10 text-indigo-500">
+                <Users className="h-10 w-10" />
+              </div>
+              <h3 className="text-xl font-black text-text-primary tracking-tight">No employees found</h3>
+              <p className="mt-2 text-sm text-text-secondary font-medium max-w-xs mx-auto">We couldn&apos;t find any employee records matching your criteria. Try adjusting your filters or search term.</p>
+              <button
+                onClick={() => {
+                  setSearchTerm('');
+                  setEmployeeFilters({});
+                  setSelectedDivision('');
+                }}
+                className="mt-6 px-6 py-2.5 rounded-xl bg-bg-base border border-border-base text-xs font-black uppercase tracking-widest text-text-primary hover:bg-bg-surface transition-colors"
+              >
+                Reset All Filters
+              </button>
             </div>
-            <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">No employees found</p>
-            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Add your first employee to get started</p>
-          </div>
-        ) : (
-          <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white/95 shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-green-50/30 dark:border-slate-700 dark:from-slate-900 dark:to-green-900/10">
-                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Emp No</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Name</th>
+          ) : (
+            <div className="overflow-hidden rounded-3xl border border-border-base bg-bg-surface/50 backdrop-blur-md shadow-sm">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-border-base bg-bg-base/50">
+                      <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Emp No</th>
+                      <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Name</th>
 
-                    <RenderFilterHeader
-                      label="Division"
-                      filterKey="division.name"
-                      options={Array.from(new Set(employees.map(e => e.division?.name || (e.division_id as any)?.name).filter((x) => !!x))) as string[]}
-                      currentFilters={employeeFilters}
-                      setFilters={setEmployeeFilters}
-                    />
-                    {!hideDepartmentColumn && (
+                      <RenderFilterHeader
+                        label="Division"
+                        filterKey="division.name"
+                        options={Array.from(new Set(employees.map(e => e.division?.name || (e.division_id as any)?.name).filter((x) => !!x))) as string[]}
+                        currentFilters={employeeFilters}
+                        setFilters={setEmployeeFilters}
+                      />
+                      {!hideDepartmentColumn && (
+                        <RenderFilterHeader
+                          label="Department"
+                          filterKey="department.name"
+                          options={Array.from(new Set(employees.map(e => e.department?.name || (e.department_id as any)?.name).filter((x) => !!x))) as string[]}
+                          currentFilters={employeeFilters}
+                          setFilters={setEmployeeFilters}
+                        />
+                      )}
+                      {!hideDesignationColumn && (
+                        <RenderFilterHeader
+                          label="Designation"
+                          filterKey="designation.name"
+                          options={Array.from(new Set(employees.map(e => e.designation?.name || (e.designation_id as any)?.name).filter((x) => !!x))) as string[]}
+                          currentFilters={employeeFilters}
+                          setFilters={setEmployeeFilters}
+                        />
+                      )}
+                      <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Phone</th>
+                      <RenderFilterHeader
+                        label="Status"
+                        filterKey="status"
+                        options={['Active', 'Inactive', 'Left']}
+                        currentFilters={employeeFilters}
+                        setFilters={setEmployeeFilters}
+                      />
+                      <th className="px-6 py-4 text-right text-[10px] font-black uppercase tracking-widest text-text-secondary">Actions</th>
+                    </tr>
+                  </thead>
+
+                  <tbody className="divide-y divide-border-base">
+                    {filteredEmployees.map((employee) => (
+                      <tr
+                        key={employee.emp_no}
+                        className="transition-all hover:bg-bg-base/80 group cursor-pointer"
+                        onClick={() => handleViewEmployee(employee)}
+                      >
+                        <td className="whitespace-nowrap px-6 py-4 text-sm font-black text-indigo-500">
+                          {employee.emp_no}
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4">
+                          <div className="text-sm font-black text-text-primary uppercase tracking-tight">{employee.employee_name}</div>
+                          {employee.email && (
+                            <div className="text-[10px] font-bold text-text-secondary uppercase tracking-widest">{employee.email}</div>
+                          )}
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4 text-xs font-bold text-text-secondary">
+                          {employee.division?.name || (employee.division_id as { name?: string })?.name || '-'}
+                        </td>
+
+                        {!hideDepartmentColumn && (
+                          <td className="whitespace-nowrap px-6 py-4 text-xs font-bold text-text-secondary">
+                            {employee.department?.name || '-'}
+                          </td>
+                        )}
+                        {!hideDesignationColumn && (
+                          <td className="whitespace-nowrap px-6 py-4 text-xs font-bold text-text-secondary">
+                            {employee.designation?.name || '-'}
+                          </td>
+                        )}
+                        <td className="whitespace-nowrap px-6 py-4 text-xs font-bold text-text-secondary">
+                          {employee.phone_number || '-'}
+                        </td>
+
+                        <td className="whitespace-nowrap px-6 py-4">
+                          <div className="flex flex-wrap gap-2">
+                            <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest ${employee.is_active !== false
+                              ? 'bg-status-positive/10 text-status-positive'
+                              : 'bg-text-secondary/10 text-text-secondary'
+                              }`}>
+                              {employee.is_active !== false ? <UserCheck className="w-3 h-3" /> : <UserX className="w-3 h-3" />}
+                              {employee.is_active !== false ? 'Active' : 'Inactive'}
+                            </span>
+                            {employee.leftDate && (
+                              <span className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest bg-status-warning/10 text-status-warning">
+                                <LucideClock className="w-3 h-3" />
+                                Left: {new Date(employee.leftDate).toLocaleDateString()}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4 text-right">
+                          <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {hasManagePermission && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleEdit(employee); }}
+                                className="w-8 h-8 flex items-center justify-center rounded-lg text-text-secondary hover:bg-indigo-500/10 hover:text-indigo-500 transition-all font-bold"
+                                title="Edit"
+                              >
+                                <Edit2 className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleViewEmployee(employee); }}
+                              className="w-8 h-8 flex items-center justify-center rounded-lg text-text-secondary hover:bg-indigo-500/10 hover:text-indigo-500 transition-all font-bold"
+                              title="View"
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                            </button>
+                            {hasManagePermission && (
+                              <>
+                                {employee.leftDate ? (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); handleRemoveLeftDate(employee); }}
+                                    className="w-8 h-8 flex items-center justify-center rounded-lg text-text-secondary hover:bg-status-positive/10 hover:text-status-positive transition-all font-bold"
+                                    title="Reactivate Employee"
+                                  >
+                                    <UserCheck className="h-3.5 w-3.5" />
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); handleSetLeftDate(employee); }}
+                                    className="w-8 h-8 flex items-center justify-center rounded-lg text-text-secondary hover:bg-status-negative/10 hover:text-status-negative transition-all font-bold"
+                                    title="Set Left Date"
+                                  >
+                                    <UserX className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (employee.is_active !== false) handleDeactivate(employee.emp_no, true);
+                                    else handleActivate(employee.emp_no);
+                                  }}
+                                  className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all font-bold ${employee.is_active !== false
+                                    ? 'text-text-secondary hover:bg-status-negative/10 hover:text-status-negative'
+                                    : 'text-text-secondary hover:bg-status-positive/10 hover:text-status-positive'
+                                    }`}
+                                  title={employee.is_active !== false ? 'Deactivate' : 'Activate'}
+                                >
+                                  {employee.is_active !== false ? <Settings className="h-3.5 w-3.5" /> : <UserCheck className="h-3.5 w-3.5" />}
+                                </button>
+                              </>
+                            )}
+                            {hasManagePermission && !employee.leftDate && (
+                              <button
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  if (!confirm(`Resend credentials to ${employee.employee_name}?`)) return;
+                                  setIsResending(employee.emp_no);
+                                  try {
+                                    await api.resendEmployeeCredentials(employee.emp_no, { passwordMode, notificationChannels });
+                                    setSuccess('Credentials sent!');
+                                  } catch (err) {
+                                    setError('Failed to resend');
+                                  } finally {
+                                    setIsResending(null);
+                                  }
+                                }}
+                                disabled={isResending === employee.emp_no}
+                                className="w-8 h-8 flex items-center justify-center rounded-lg text-text-secondary hover:bg-indigo-500/10 hover:text-indigo-500 transition-all font-bold disabled:opacity-50"
+                                title="Resend Credentials"
+                              >
+                                {isResending === employee.emp_no ? (
+                                  <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+                                ) : (
+                                  <Mail className="h-3.5 w-3.5" />
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="border-t border-border-base bg-bg-base/30 px-6 py-4 flex items-center justify-between">
+                <p className="text-xs font-bold text-text-secondary uppercase tracking-widest">
+                  Showing <span className="text-indigo-500">{filteredEmployees.length}</span> of <span className="text-indigo-500">{employees.length}</span> Employees
+                </p>
+                {/* Add pagination controls here if needed */}
+              </div>
+            </div>
+          )
+        ) : (
+          /* Applications Tab */
+          filteredApplications.length === 0 ? (
+            <div className="rounded-3xl border border-border-base bg-bg-surface/50 p-12 text-center backdrop-blur-md shadow-sm">
+              <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-2xl bg-indigo-500/10 text-indigo-500">
+                < LucideClock className="h-10 w-10" />
+              </div>
+              <h3 className="text-xl font-black text-text-primary tracking-tight">No applications found</h3>
+              <p className="mt-2 text-sm text-text-secondary font-medium max-w-xs mx-auto">There are no employee applications to display at this time.</p>
+              <button
+                onClick={() => {
+                  setApplicationSearchTerm('');
+                  setApplicationFilters({});
+                  loadApplications();
+                }}
+                className="mt-6 px-6 py-2.5 rounded-xl bg-bg-base border border-border-base text-xs font-black uppercase tracking-widest text-text-primary hover:bg-bg-surface transition-colors"
+              >
+                Refresh Applications
+              </button>
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-3xl border border-border-base bg-bg-surface/50 backdrop-blur-md shadow-sm">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-border-base bg-bg-base/50">
+                      <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">App No</th>
+                      <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Name</th>
+
+                      <RenderFilterHeader
+                        label="Division"
+                        filterKey="division.name"
+                        options={Array.from(new Set(applications.map(a => (a as any).division?.name || (a.division_id as any)?.name).filter((x) => !!x))) as string[]}
+                        currentFilters={applicationFilters}
+                        setFilters={setApplicationFilters}
+                      />
                       <RenderFilterHeader
                         label="Department"
                         filterKey="department.name"
-                        options={Array.from(new Set(employees.map(e => e.department?.name || (e.department_id as any)?.name).filter((x) => !!x))) as string[]}
-                        currentFilters={employeeFilters}
-                        setFilters={setEmployeeFilters}
+                        options={Array.from(new Set(applications.map(a => a.department?.name || (a.department_id as any)?.name).filter((x) => !!x))) as string[]}
+                        currentFilters={applicationFilters}
+                        setFilters={setApplicationFilters}
                       />
-                    )}
-                    {!hideDesignationColumn && (
+                      <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Proposed Salary</th>
                       <RenderFilterHeader
-                        label="Designation"
-                        filterKey="designation.name"
-                        options={Array.from(new Set(employees.map(e => e.designation?.name || (e.designation_id as any)?.name).filter((x) => !!x))) as string[]}
-                        currentFilters={employeeFilters}
-                        setFilters={setEmployeeFilters}
+                        label="Status"
+                        filterKey="status"
+                        options={['pending', 'approved', 'rejected']}
+                        currentFilters={applicationFilters}
+                        setFilters={setApplicationFilters}
                       />
-                    )}
-                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Phone</th>
-                    <RenderFilterHeader
-                      label="Status"
-                      filterKey="status"
-                      options={['Active', 'Inactive', 'Left']}
-                      currentFilters={employeeFilters}
-                      setFilters={setEmployeeFilters}
-                    />
-                    <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Actions</th>
-
-                  </tr>
-
-                </thead>
-
-                <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                  {filteredEmployees.map((employee) => (
-                    <tr
-                      key={employee.emp_no}
-                      className="transition-colors hover:bg-green-50/30 dark:hover:bg-green-900/10 cursor-pointer"
-                      onClick={() => handleViewEmployee(employee)}
-                    >
-                      <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-green-600 dark:text-green-400">
-                        {employee.emp_no}
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-4">
-                        <div className="text-sm font-medium text-slate-900 dark:text-slate-100">{employee.employee_name}</div>
-                        {employee.email && (
-                          <div className="text-xs text-slate-500 dark:text-slate-400">{employee.email}</div>
-                        )}
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
-                        {employee.division?.name || (employee.division_id as { name?: string })?.name || '-'}
-                      </td>
-
-
-                      {!hideDepartmentColumn && (
-                        <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
-                          {employee.department?.name || '-'}
-                        </td>
-                      )}
-                      {!hideDesignationColumn && (
-                        <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
-                          {employee.designation?.name || '-'}
-                        </td>
-                      )}
-                      <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
-                        {employee.phone_number || '-'}
-                      </td>
-
-                      <td className="whitespace-nowrap px-6 py-4">
-                        <div className="flex flex-col gap-1">
-                          <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${employee.is_active !== false
-                            ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                            : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                            }`}>
-                            {employee.is_active !== false ? 'Active' : 'Inactive'}
-                          </span>
-                          {employee.leftDate && (
-                            <span className="inline-flex rounded-full px-2.5 py-1 text-xs font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
-                              Left: {new Date(employee.leftDate).toLocaleDateString()}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-4 text-right">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleEdit(employee);
-                          }}
-                          className="mr-2 rounded-lg p-2 text-slate-400 transition-all hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/30 dark:hover:text-blue-400"
-                          title="Edit"
-                        >
-                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                          </svg>
-                        </button>
-                        {employee.leftDate ? (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleRemoveLeftDate(employee);
-                            }}
-                            className="rounded-lg p-2 text-slate-400 transition-all hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/30 dark:hover:text-green-400"
-                            title="Reactivate Employee"
-                          >
-                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                          </button>
-                        ) : (
-                          <>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleSetLeftDate(employee);
-                              }}
-                              className="mr-2 rounded-lg p-2 text-slate-400 transition-all hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
-                              title="Set Left Date"
-                            >
-                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                              </svg>
-                            </button>
-                            <button
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                if (!confirm(`Resend credentials to ${employee.employee_name}? This will reset their password.`)) return;
-                                setIsResending(employee.emp_no);
-                                try {
-                                  const res = await api.resendEmployeeCredentials(employee.emp_no, {
-                                    passwordMode,
-                                    notificationChannels
-                                  });
-                                  if (res.success) setSuccess('Credentials sent successfully!');
-                                  else setError(res.message || 'Failed to send');
-                                } catch (err) {
-                                  setError('Failed to resend');
-                                } finally {
-                                  setIsResending(null);
-                                }
-                              }}
-                              disabled={isResending === employee.emp_no}
-                              className="ml-2 rounded-lg p-2 text-slate-400 transition-all hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/30 dark:hover:text-green-400 disabled:opacity-50"
-                              title="Resend Credentials"
-                            >
-                              {isResending === employee.emp_no ? (
-                                <div className="h-4 w-4 animate-spin rounded-full border-2 border-green-500 border-t-transparent" />
-                              ) : (
-                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                                </svg>
-                              )}
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (employee.is_active !== false) {
-                                  handleDeactivate(employee.emp_no, true);
-                                } else {
-                                  handleActivate(employee.emp_no);
-                                }
-                              }}
-                              className={`rounded-lg p-2 transition-all ${employee.is_active !== false
-                                ? 'text-slate-400 hover:bg-orange-50 hover:text-orange-600 dark:hover:bg-orange-900/30 dark:hover:text-orange-400'
-                                : 'text-slate-400 hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/30 dark:hover:text-green-400'
-                                }`}
-                              title={employee.is_active !== false ? 'Deactivate' : 'Activate'}
-                            >
-                              {employee.is_active !== false ? (
-                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                                </svg>
-                              ) : (
-                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                              )}
-                            </button>
-                          </>
-                        )}
-                      </td>
+                      <th className="px-6 py-4 text-right text-[10px] font-black uppercase tracking-widest text-text-secondary">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+
+                  <tbody className="divide-y divide-border-base">
+                    {filteredApplications.map((app) => (
+                      <tr
+                        key={app._id}
+                        className="transition-all hover:bg-bg-base/80 group cursor-pointer"
+                        onClick={() => openApprovalDialog(app)}
+                      >
+                        <td className="whitespace-nowrap px-6 py-4 text-sm font-black text-indigo-500">
+                          {app.emp_no}
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4">
+                          <div className="text-sm font-black text-text-primary uppercase tracking-tight">{app.employee_name}</div>
+                          <div className="text-[10px] font-bold text-text-secondary uppercase tracking-widest">
+                            Created by: {app.createdBy?.name || 'Unknown'}
+                          </div>
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4 text-xs font-bold text-text-secondary">
+                          {(app as any).division?.name || (app.division_id as { name?: string })?.name || '-'}
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4 text-xs font-bold text-text-secondary">
+                          {app.department?.name || (app.department_id as { name?: string })?.name || '-'}
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4 text-sm font-black text-text-primary">
+                          ₹{app.proposedSalary.toLocaleString()}
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4">
+                          <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest ${app.status === 'pending'
+                            ? 'bg-status-warning/10 text-status-warning'
+                            : app.status === 'approved'
+                              ? 'bg-status-positive/10 text-status-positive'
+                              : 'bg-status-negative/10 text-status-negative'
+                            }`}>
+                            {app.status === 'pending' && <LucideClock className="w-3 h-3" />}
+                            {app.status === 'approved' && <UserCheck className="w-3 h-3" />}
+                            {app.status === 'rejected' && <UserX className="w-3 h-3" />}
+                            {app.status}
+                          </span>
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4 text-right">
+                          <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {/* View button - requires manage permission */}
+                            {hasManagePermission && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); openApprovalDialog(app); }}
+                                className="w-8 h-8 flex items-center justify-center rounded-lg text-text-secondary hover:bg-indigo-500/10 hover:text-indigo-500 transition-all font-bold"
+                                title="Review Application"
+                              >
+                                <Eye className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                            {/* Approve/Reject buttons - requires manage permission and pending status */}
+                            {app.status === 'pending' && hasManagePermission && (
+                              <>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedApplication(app);
+                                    setApprovalData({
+                                      approvedSalary: app.proposedSalary,
+                                      doj: new Date().toISOString().split('T')[0],
+                                      comments: ''
+                                    });
+                                    setShowApprovalDialog(true);
+                                  }}
+                                  className="w-8 h-8 flex items-center justify-center rounded-lg text-text-secondary hover:bg-status-positive/10 hover:text-status-positive transition-all font-bold"
+                                  title="Approve"
+                                >
+                                  <UserCheck className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    if (!confirm('Are you sure you want to reject this application?')) return;
+                                    try {
+                                      await api.rejectEmployeeApplication(app._id, { comments: 'Rejected by manager' });
+                                      setSuccess('Application rejected');
+                                      loadApplications();
+                                    } catch (err) {
+                                      setError('Failed to reject');
+                                    }
+                                  }}
+                                  className="w-8 h-8 flex items-center justify-center rounded-lg text-text-secondary hover:bg-status-negative/10 hover:text-status-negative transition-all font-bold"
+                                  title="Reject"
+                                >
+                                  <UserX className="h-3.5 w-3.5" />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="border-t border-border-base bg-bg-base/30 px-6 py-4 flex items-center justify-between">
+                <p className="text-xs font-bold text-text-secondary uppercase tracking-widest">
+                  Showing <span className="text-indigo-500">{filteredApplications.length}</span> of <span className="text-indigo-500">{applications.length}</span> Applications
+                </p>
+              </div>
             </div>
-            <div className="border-t border-slate-200 bg-slate-50/50 px-6 py-3 dark:border-slate-700 dark:bg-slate-900/50">
-              <p className="text-sm text-slate-600 dark:text-slate-400">
-                Showing <span className="font-medium">{filteredEmployees.length}</span> of <span className="font-medium">{employees.length}</span> employees
-              </p>
-            </div>
-          </div>
+          )
         )}
 
       </div>
