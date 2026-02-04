@@ -5,9 +5,7 @@ import { api, Shift, Division, Department, Designation } from '@/lib/api';
 import Spinner from '@/components/Spinner';
 import {
   canViewShifts,
-  canCreateShift,
-  canEditShift,
-  canDeleteShift
+  canEditShift  // Used as canManageShifts
 } from '@/lib/permissions';
 import { auth } from '@/lib/auth';
 
@@ -55,12 +53,15 @@ export default function ShiftsPage() {
   // Permissions
   const [resolvedEmployeeShifts, setResolvedEmployeeShifts] = useState<Shift[]>([]);
 
-  // Permission checks
+  // Permission checks using read/write pattern
+  // Write permission enables ALL actions (create, edit, delete shifts)
+  // Read permission blocks all actions (view only)
+  // Future: When implementing granular permissions, only permissions.ts needs updating
   const user = auth.getUser();
-  const canViewStructuredShifts = user ? canViewShifts(user as any) : false;
-  const canManageShifts = user ? canEditShift(user as any) : false; // Using Edit for general manage
-  const hasCreatePermission = user ? canCreateShift(user as any) : false;
-  const hasDeletePermission = user ? canDeleteShift(user as any) : false;
+  const hasViewPermission = user ? canViewShifts(user as any) : false;
+  const hasManagePermission = user ? canEditShift(user as any) : false; // Write permission for ALL actions
+  const canViewStructuredShifts = hasViewPermission;
+  const canManageShifts = hasManagePermission;
 
   // Skeleton Component
   const ShiftCardSkeleton = () => (
@@ -220,7 +221,7 @@ export default function ShiftsPage() {
         const user = userRes.data.user;
         setCurrentUser(user);
 
-        const isStructuredViewRole = canViewShifts(user);
+        const isStructuredViewRole = canViewShifts(user as any);
 
         if (isStructuredViewRole) {
           await Promise.all([
@@ -911,3 +912,4 @@ export default function ShiftsPage() {
     </div>
   );
 }
+
