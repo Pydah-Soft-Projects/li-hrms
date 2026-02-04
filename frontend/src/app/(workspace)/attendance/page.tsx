@@ -272,17 +272,10 @@ export default function AttendancePage() {
     try {
       const date = new Date(timeStr);
       let formattedTime = date.toLocaleTimeString('en-US', {
-
-      return new Date(timeStr).toLocaleTimeString('en-US', {
-
         timeZone: 'Asia/Kolkata',
-
         hour: '2-digit',
-
         minute: '2-digit',
-
         hour12: true
-
       });
 
       if (showDateIfDifferent && recordDate) {
@@ -4362,39 +4355,7 @@ export default function AttendancePage() {
                               {attendanceDetail.shiftId ? 'Change' : 'Assign'}
                             </button>
                           )}
-                        </>
-                      ) : (
-                        <div className="flex-1 flex items-center gap-2">
-                          <select
-                            value={selectedShiftId}
-                            onChange={(e) => setSelectedShiftId(e.target.value)}
-                            className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                          >
-                            <option value="">Select Shift</option>
-                            {availableShifts.map((shift) => (
-                              <option key={shift._id} value={shift._id}>
-                                {shift.name} ({shift.startTime} - {shift.endTime})
-                              </option>
-                            ))}
-                          </select>
-                          <button
-                            onClick={handleAssignShift}
-                            disabled={savingShift || !selectedShiftId}
-                            className={`rounded-lg bg-green-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50 ${!hasManagePermission ? 'hidden' : ''}`}
-                          >
-                            {savingShift ? 'Saving...' : 'Save'}
-                          </button>
-                          <button
-                            onClick={() => {
-                              setEditingShift(false);
-                              setSelectedShiftId('');
-                            }}
-                            className="rounded-lg bg-slate-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-slate-600"
-                          >
-                            Cancel
-                          </button>
                         </div>
-
                       ))}
 
                     </div>
@@ -4510,32 +4471,6 @@ export default function AttendancePage() {
                                 </button>
 
                               </div>
-
-                              {isHR && (
-
-                            <button
-
-                              onClick={() => {
-
-                                setEditingShift(true);
-
-                                if (attendanceDetail.shiftId && typeof attendanceDetail.shiftId === 'object') {
-
-                                  setSelectedShiftId(attendanceDetail.shiftId._id);
-
-                                }
-
-                              }}
-
-                              className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"
-
-                            >
-
-                              {attendanceDetail.shiftId ? 'Change' : 'Assign'}
-
-                            </button>
-
-                              )}
 
                             </>
 
@@ -5495,7 +5430,7 @@ export default function AttendancePage() {
 
                   )}
 
-
+                </div>
 
               {/* Edit History */}
 
@@ -6060,6 +5995,8 @@ export default function AttendancePage() {
 
               </div>
 
+              </div>
+
             </div>
 
           </div>
@@ -6536,11 +6473,95 @@ export default function AttendancePage() {
 
         )}
 
-      </div>
-
     </div>
 
   );
 
+}
+
+// Helper function to convert number to words for payslip
+function numberToWords(num: number): string {
+  const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+  if (num === 0) return 'Zero Rupees Only';
+
+  const integerPart = Math.floor(num);
+  const decimalPart = Math.round((num - integerPart) * 100);
+
+  const convertHundreds = (n: number): string => {
+    if (n === 0) return '';
+    let result = '';
+    if (n >= 100) {
+      const hundreds = Math.floor(n / 100);
+      if (hundreds > 0 && ones[hundreds]) {
+        result += ones[hundreds] + ' Hundred ';
+      }
+      n %= 100;
+    }
+    if (n >= 20) {
+      const tensPlace = Math.floor(n / 10);
+      if (tensPlace > 0 && tens[tensPlace]) {
+        result += tens[tensPlace] + ' ';
+      }
+      n %= 10;
+    }
+    if (n > 0 && ones[n]) {
+      result += ones[n] + ' ';
+    }
+    return result.trim();
+  };
+
+  let words = '';
+  let remaining = integerPart;
+
+  const crores = Math.floor(remaining / 10000000);
+  if (crores > 0) {
+    const croreWords = convertHundreds(crores);
+    if (croreWords) {
+      words += croreWords + ' Crore ';
+    }
+    remaining %= 10000000;
+  }
+
+  const lakhs = Math.floor(remaining / 100000);
+  if (lakhs > 0) {
+    const lakhWords = convertHundreds(lakhs);
+    if (lakhWords) {
+      words += lakhWords + ' Lakh ';
+    }
+    remaining %= 100000;
+  }
+
+  const thousands = Math.floor(remaining / 1000);
+  if (thousands > 0) {
+    const thousandWords = convertHundreds(thousands);
+    if (thousandWords) {
+      words += thousandWords + ' Thousand ';
+    }
+    remaining %= 1000;
+  }
+
+  if (remaining > 0) {
+    const remainingWords = convertHundreds(remaining);
+    if (remainingWords) {
+      words += remainingWords;
+    }
+  }
+
+  if (decimalPart > 0) {
+    if (words.trim()) {
+      words += ` and ${decimalPart}/100`;
+    } else {
+      words += `${decimalPart}/100`;
+    }
+  }
+
+  words = words.trim();
+  if (!words) {
+    return 'Zero Rupees Only';
+  }
+
+  return words + ' Rupees Only';
 }
 
