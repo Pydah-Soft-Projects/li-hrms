@@ -4,62 +4,14 @@ import { useState, useEffect, useCallback } from 'react';
 import { FiGrid } from 'react-icons/fi';
 import { LuUsers, LuClock, LuCircleCheck, LuActivity, LuCalendar, LuFilter, LuRefreshCw, LuSearch, LuDownload } from 'react-icons/lu';
 import { auth } from '@/lib/auth';
+import { api, LiveAttendanceReportData, LiveAttendanceFilterOption, LiveAttendanceEmployee } from '@/lib/api';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { toast } from 'react-hot-toast';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
-
-interface Employee {
-  id: string;
-  empNo: string;
-  name: string;
-  department: string;
-  designation: string;
-  division: string;
-  shift: string;
-  shiftStartTime: string | null;
-  shiftEndTime: string | null;
-  inTime: string;
-  outTime: string | null;
-  status: string;
-  date: string;
-  hoursWorked: number;
-  isLate: boolean;
-  lateMinutes: number;
-  isEarlyOut: boolean;
-  earlyOutMinutes: number;
-  otHours: number;
-  extraHours: number;
-}
-
-interface ShiftStat {
-  name: string;
-  working: number;
-  completed: number;
-}
-
-interface ReportData {
-  date: string;
-  summary: {
-    currentlyWorking: number;
-    completedShift: number;
-    totalPresent: number;
-    totalActiveEmployees: number;
-    absentEmployees: number;
-    shiftBreakdown: ShiftStat[];
-  };
-  currentlyWorking: Employee[];
-  completedShift: Employee[];
-}
-
-interface FilterOption {
-  id: string;
-  name: string;
-}
 
 export default function LiveAttendancePage() {
-  const [reportData, setReportData] = useState<ReportData | null>(null);
+  const [reportData, setReportData] = useState<LiveAttendanceReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [sortBy, setSortBy] = useState<'latest' | 'oldest'>('latest');
@@ -67,9 +19,9 @@ export default function LiveAttendancePage() {
   const [exportingPdf, setExportingPdf] = useState(false);
 
   // Filter states
-  const [divisions, setDivisions] = useState<FilterOption[]>([]);
-  const [departments, setDepartments] = useState<FilterOption[]>([]);
-  const [shifts, setShifts] = useState<FilterOption[]>([]);
+  const [divisions, setDivisions] = useState<LiveAttendanceFilterOption[]>([]);
+  const [departments, setDepartments] = useState<LiveAttendanceFilterOption[]>([]);
+  const [shifts, setShifts] = useState<LiveAttendanceFilterOption[]>([]);
   const [selectedDiv, setSelectedDiv] = useState('');
   const [selectedDept, setSelectedDept] = useState('');
   const [selectedShift, setSelectedShift] = useState('');
@@ -77,18 +29,11 @@ export default function LiveAttendancePage() {
   // Fetch filter options
   const fetchFilterOptions = async () => {
     try {
-      const token = auth.getToken();
-      const response = await fetch(`${API_URL}/attendance/reports/live/filters`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      if (response.ok) {
-        const result = await response.json();
-        setDivisions(result.data.divisions);
-        setDepartments(result.data.departments);
-        setShifts(result.data.shifts);
+      const response = await api.getLiveAttendanceFilterOptions();
+      if (response.success && response.data) {
+        setDivisions(response.data.divisions);
+        setDepartments(response.data.departments);
+        setShifts(response.data.shifts);
       }
     } catch (error) {
       console.error('Error fetching filter options:', error);
@@ -98,21 +43,15 @@ export default function LiveAttendancePage() {
   // Fetch report data
   const fetchReportData = useCallback(async () => {
     try {
-      const params = new URLSearchParams({ date: selectedDate });
-      if (selectedDiv) params.append('division', selectedDiv);
-      if (selectedDept) params.append('department', selectedDept);
-      if (selectedShift) params.append('shift', selectedShift);
-
-      const token = auth.getToken();
-      const response = await fetch(`${API_URL}/attendance/reports/live?${params.toString()}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
+      const response = await api.getLiveAttendanceReport({
+        date: selectedDate,
+        division: selectedDiv,
+        department: selectedDept,
+        shift: selectedShift
       });
-      if (response.ok) {
-        const result = await response.json();
-        setReportData(result.data);
+
+      if (response.success) {
+        setReportData(response.data as LiveAttendanceReportData);
       }
     } catch (error) {
       console.error('Error fetching report data:', error);
@@ -151,7 +90,7 @@ export default function LiveAttendancePage() {
   };
 
   // Sort employees
-  const sortEmployees = (employees: Employee[]) => {
+  const sortEmployees = (employees: LiveAttendanceEmployee[]) => {
     return [...employees].sort((a, b) => {
       const timeA = new Date(a.inTime).getTime();
       const timeB = new Date(b.inTime).getTime();
@@ -247,6 +186,38 @@ export default function LiveAttendancePage() {
           theme: 'grid',
           headStyles: { fillColor: [79, 70, 229] },
           styles: { fontSize: 9 },
+          margin: { left: 15, right: 15 }
+        });
+
+        currentY = (doc as any).lastAutoTable.finalY + 15;
+      }
+
+      // Department Breakdown
+      if (reportData.summary.departmentBreakdown && reportData.summary.departmentBreakdown.length > 0) {
+        if (currentY > 240) { doc.addPage(); currentY = 20; }
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Department Analytics', 15, currentY);
+        currentY += 8;
+
+        const deptBody = reportData.summary.departmentBreakdown.map(d => [
+          d.divisionName,
+          d.name,
+          d.totalEmployees.toString(),
+          d.present.toString(),
+          d.working.toString(),
+          d.completed.toString(),
+          d.absent.toString(),
+          `${Math.round((d.present / (d.totalEmployees || 1)) * 100)}%`
+        ]);
+
+        autoTable(doc, {
+          startY: currentY,
+          head: [['Division', 'Department', 'Total Emp', 'Present', 'Working', 'Completed', 'Absent', 'Att. %']],
+          body: deptBody,
+          theme: 'grid',
+          headStyles: { fillColor: [234, 88, 12] }, // orange-600
+          styles: { fontSize: 8 },
           margin: { left: 15, right: 15 }
         });
 
@@ -645,6 +616,97 @@ export default function LiveAttendancePage() {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* Department Analytics Table */}
+        {reportData && reportData.summary.departmentBreakdown && (
+          <div className="rounded-3xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <div className="flex items-center justify-between border-b border-slate-100 p-6 bg-slate-50/50">
+              <div className="flex items-center gap-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-orange-100 text-orange-600 border border-orange-200 shadow-sm">
+                  <LuUsers className="h-5 w-5" />
+                </div>
+                <h2 className="text-xl font-black text-slate-900 italic tracking-tight uppercase">
+                  Department <span className="text-orange-600">Analytics</span>
+                </h2>
+              </div>
+            </div>
+            <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent">
+              <table className="w-full text-left border-collapse min-w-[800px]">
+                <thead>
+                  <tr className="bg-slate-50/80">
+                    {['Division', 'Department', 'Total Emp', 'Present', 'Working', 'Completed', 'Absent', 'Attendance %'].map((header) => (
+                      <th key={header} className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400 border-b border-slate-100">
+                        {header}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {reportData.summary.departmentBreakdown.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="px-6 py-12 text-center">
+                        <div className="flex flex-col items-center gap-3">
+                          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-100">
+                            <LuUsers className="h-8 w-8 text-slate-400" />
+                          </div>
+                          <div className="text-sm font-semibold text-slate-500">
+                            No department data available
+                          </div>
+                          <div className="text-xs text-slate-400">
+                            Department analytics will appear here once employees are assigned to divisions and departments
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    reportData.summary.departmentBreakdown.map((dept) => (
+                      <tr key={`${dept.divisionId}_${dept.id}`} className="group/row transition-all hover:bg-orange-50/30">
+                        <td className="px-6 py-4 text-sm font-bold text-indigo-600">
+                          {dept.divisionName}
+                        </td>
+                        <td className="px-6 py-4 text-sm font-black text-slate-900 group-hover/row:text-orange-600 transition-colors">
+                          {dept.name}
+                        </td>
+                        <td className="px-6 py-4 text-sm font-bold text-slate-600">
+                          {dept.totalEmployees}
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-50 px-2.5 py-1 text-xs font-black text-indigo-600 border border-indigo-100">
+                            {dept.present}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-sm font-bold text-green-600">
+                          {dept.working}
+                        </td>
+                        <td className="px-6 py-4 text-sm font-bold text-purple-600">
+                          {dept.completed}
+                        </td>
+                        <td className="px-6 py-4 text-sm font-bold text-red-500">
+                          {dept.absent}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 h-1.5 w-16 rounded-full bg-slate-100 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${(dept.present / (dept.totalEmployees || 1)) * 100 >= 90 ? 'bg-green-500' :
+                                  (dept.present / (dept.totalEmployees || 1)) * 100 >= 75 ? 'bg-indigo-500' : 'bg-orange-500'
+                                  }`}
+                                style={{ width: `${Math.min(100, (dept.present / (dept.totalEmployees || 1)) * 100)}%` }}
+                              />
+                            </div>
+                            <span className="text-xs font-black text-slate-500">
+                              {Math.round((dept.present / (dept.totalEmployees || 1)) * 100)}%
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
