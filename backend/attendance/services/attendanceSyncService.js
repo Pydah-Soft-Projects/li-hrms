@@ -115,285 +115,48 @@ const processAndAggregateLogs = async (rawLogs, previousDayLinking = false, skip
       }));
     }
 
-    // NEW APPROACH: Process logs chronologically to pair IN/OUT correctly
+    // NEW APPROACH: Process logs using Multi-Shift Engine
+    const { processMultiShiftAttendance } = require('./multiShiftProcessingService');
+
     for (const [employeeNumber, logs] of Object.entries(logsByEmployee)) {
       try {
-        // Fetch employee to get ID for OD and settings lookup
-        const employee = await Employee.findOne({ emp_no: employeeNumber.toUpperCase() }).select('_id');
-        const employeeId = employee ? employee._id : null;
-
-        // Logs are already sorted chronologically
-        const pairedRecords = [];
-        const usedOutLogs = new Set(); // Track which OUT logs have been used
-
-        // Process each log chronologically
-        for (let i = 0; i < logs.length; i++) {
-          const currentLog = logs[i];
-          console.log(`[SyncDebug] Processing log ${i}: Time=${currentLog.timestamp}, Type=${currentLog.type}`);
-
-          // Skip if this is an OUT log that's already been paired
-          if (usedOutLogs.has(i)) {
-            continue;
-          }
-
-          // If this is an IN log, find its matching OUT
-          if (currentLog.type === 'IN') {
-            const inTime = currentLog.timestamp;
-            const inDate = formatDate(inTime);
-            const inTimeOnly = inTime.getHours() * 60 + inTime.getMinutes();
-
-            let outTime = null;
-            let outIndex = -1;
-
-            // Look for OUT log starting from next log
-            for (let j = i + 1; j < logs.length; j++) {
-              if (usedOutLogs.has(j)) {
-                continue; // Skip already used OUT logs
-              }
-
-              const candidateLog = logs[j];
-
-              // CRITICAL: Duplicate Pulse Detection
-              // If timestamps are identical, treat as the same pulse (ignore)
-              if (candidateLog.timestamp.getTime() === inTime.getTime()) {
-                continue;
-              }
-
-              // CRITICAL: Stop-at-next-IN (Strict Serial Pairing)
-              // If we encounter another IN log before finding an OUT, this means the previous IN was a partial punch (forgot to punch out)
-              // We stop searching immediately to prevent "jumping" over days
-              if (candidateLog.type === 'IN') {
-                console.log(`[SyncDebug] Found new IN at ${candidateLog.timestamp} before OUT. Closing search for ${inTime}.`);
-                break;
-              }
-
-              // CRITICAL: Max Duration Safeguard
-              // If the candidate log is beyond the max window, it's too far away to be a valid pair
-              const diffHours = (candidateLog.timestamp - inTime) / (1000 * 60 * 60);
-              if (diffHours > MAX_PAIRING_WINDOW_HOURS) {
-                console.log(`[SyncDebug] Candidate log at ${candidateLog.timestamp} is ${diffHours.toFixed(1)}h away (Max ${MAX_PAIRING_WINDOW_HOURS}h). Stopping search.`);
-                break;
-              }
-
-              if (candidateLog.type === 'OUT') {
-                const candidateOutTime = candidateLog.timestamp;
-                const candidateOutDate = formatDate(candidateOutTime);
-                const candidateOutTimeOnly = candidateOutTime.getHours() * 60 + candidateOutTime.getMinutes();
-
-                // Check if this OUT is on same day
-                if (candidateOutDate === inDate) {
-                  // Same day OUT
-                  if (candidateOutTimeOnly > inTimeOnly) {
-                    // Valid same-day pair: OUT time > IN time
-                    outTime = candidateOutTime;
-                    outIndex = j;
-                    console.log(`[SyncDebug] Found Same-Day Pair: IN=${inTime}, OUT=${outTime}`);
-                    break;
-                  } else {
-                    // OUT time < IN time on same day - this is overnight, check next day
-                    // Continue to next day check
-                  }
-                } else {
-                  // OUT is on different day (next day)
-                  // Check if next day has IN log
-                  let nextDayHasIN = false;
-                  let nextDayINTime = null;
-
-                  for (let k = j; k < logs.length; k++) {
-                    const nextLog = logs[k];
-                    const nextLogDate = formatDate(nextLog.timestamp);
-                    if (nextLogDate === candidateOutDate) {
-                      if (nextLog.type === 'IN') {
-                        nextDayHasIN = true;
-                        nextDayINTime = nextLog.timestamp;
-                        break;
-                      }
-                    } else if (nextLogDate > candidateOutDate) {
-                      break; // Past the candidate date
-                    }
-                  }
-
-                  // If next day has IN, check if OUT < IN
-                  if (nextDayHasIN && nextDayINTime) {
-                    const nextDayINTimeOnly = nextDayINTime.getHours() * 60 + nextDayINTime.getMinutes();
-                    if (candidateOutTimeOnly < nextDayINTimeOnly) {
-                      // OUT is before IN on next day - this OUT belongs to previous day's shift
-                      outTime = candidateOutTime;
-                      outIndex = j;
-                      break;
-                    }
-                    // If OUT >= IN on next day, this OUT belongs to next day, not current IN
-                    // Continue searching
-                  } else {
-                    // Next day has no IN - this OUT likely belongs to current IN (overnight shift)
-                    outTime = candidateOutTime;
-                    outIndex = j;
-                    break;
-                  }
-                }
-              }
-            }
-
-            // Create attendance record
-            const shiftDate = inDate; // Shift date is always IN date
-
-            // Calculate total hours worked
-            let totalHours = null;
-            if (inTime && outTime) {
-              const diffMs = outTime.getTime() - inTime.getTime();
-              totalHours = Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100;
-            }
-
-            // Get approved OD hours for this day to count towards total work
-            let odHours = 0;
-            if (employeeId) {
-              const dayStart = new Date(shiftDate);
-              dayStart.setHours(0, 0, 0, 0);
-              const dayEnd = new Date(shiftDate);
-              dayEnd.setHours(23, 59, 59, 999);
-
-              const approvedODs = await OD.find({
-                employeeId,
-                status: 'approved',
-                $or: [
-                  { fromDate: { $lte: dayEnd }, toDate: { $gte: dayStart } }
-                ],
-                isActive: true
-              });
-
-              for (const od of approvedODs) {
-                if (od.odType_extended === 'hours') {
-                  odHours += od.durationHours || 0;
-                } else if (od.odType_extended === 'half_day' || od.isHalfDay) {
-                  // If it's a half-day OD, we assume it covers 50% of a standard day (e.g. 4.5h)
-                  odHours += 4.5;
-                } else {
-                  // Full day OD covers full shift (e.g. 9h)
-                  odHours += 9;
-                }
-              }
-            }
-
-            // Detect and assign shift
-            let shiftAssignment = null;
-            if (inTime) {
-              try {
-                shiftAssignment = await detectAndAssignShift(employeeNumber, shiftDate, inTime, outTime, generalConfig);
-              } catch (shiftError) {
-                console.error(`Error detecting shift for ${employeeNumber} on ${shiftDate}:`, shiftError);
-              }
-            }
-
-            // Determine status based on total hours + OD hours vs shift duration
-            // Threshold: 70% of expected hours (Working + OD)
-            let status = outTime ? 'PRESENT' : 'PARTIAL';
-            if (outTime && shiftAssignment && shiftAssignment.success && shiftAssignment.expectedHours) {
-              const effectiveHours = (totalHours || 0) + odHours;
-              const threshold = shiftAssignment.expectedHours * 0.7;
-
-              if (effectiveHours < threshold) {
-                status = 'HALF_DAY';
-                console.log(`[HalfDayDetection] Marked ${employeeNumber} as HALF_DAY on ${shiftDate}. Effective: ${effectiveHours}h, Threshold: ${threshold}h (70% of ${shiftAssignment.expectedHours}h)`);
-              } else {
-                status = 'PRESENT';
-              }
-            }
-
-            // Prepare update data
-            const updateData = {
-              inTime,
-              outTime,
-              totalHours,
-              odHours, // Include OD hours for status calculation in pre-save hook
-              status,
-              lastSyncedAt: new Date(),
-            };
-
-            // Add shift-related fields if shift was assigned
-            if (shiftAssignment && shiftAssignment.success && shiftAssignment.assignedShift) {
-              updateData.shiftId = shiftAssignment.assignedShift;
-              updateData.lateInMinutes = shiftAssignment.lateInMinutes;
-              updateData.earlyOutMinutes = shiftAssignment.earlyOutMinutes;
-              updateData.isLateIn = shiftAssignment.isLateIn || false;
-              updateData.isEarlyOut = shiftAssignment.isEarlyOut || false;
-              updateData.expectedHours = shiftAssignment.expectedHours;
-            }
-
-            // Create or update daily record
-            console.log(`[SyncDebug] Updating Daily Record: Emp=${employeeNumber}, Date=${shiftDate}, IN=${inTime}, OUT=${outTime}, Shift=${updateData.shiftId}`);
-            const dailyRecord = await AttendanceDaily.findOneAndUpdate(
-              { employeeNumber, date: shiftDate },
-              {
-                $set: updateData,
-                $addToSet: { source: 'mssql' },
-              },
-              { upsert: true, new: true }
-            );
-
-            // Update roster tracking with attendance record link
-            if (dailyRecord && shiftAssignment && shiftAssignment.rosterRecordId) {
-              await PreScheduledShift.findByIdAndUpdate(shiftAssignment.rosterRecordId, {
-                attendanceDailyId: dailyRecord._id
-              });
-            }
-
-            // Mark OUT log as used
-            if (outIndex >= 0) {
-              usedOutLogs.add(outIndex);
-            }
-
-            // Clean up: If out-time is on next day, ensure next day doesn't have duplicate record
-            if (outTime) {
-              const outDateStr = formatDate(outTime);
-              if (outDateStr !== shiftDate) {
-                const nextDayRecord = await AttendanceDaily.findOne({
-                  employeeNumber,
-                  date: outDateStr,
-                });
-
-                // If next day has only OUT (no IN), it's a duplicate - remove it
-                if (nextDayRecord && !nextDayRecord.inTime && nextDayRecord.outTime) {
-                  const nextDayOutTimeStr = formatDate(nextDayRecord.outTime);
-                  const currentOutTimeStr = formatDate(outTime);
-                  if (nextDayOutTimeStr === currentOutTimeStr) {
-                    await AttendanceDaily.deleteOne({ _id: nextDayRecord._id });
-                  }
-                }
-              }
-            }
-
-            // IMPORTANT: Detect extra hours after creating/updating the record
-            // This ensures extra hours are calculated when attendance is uploaded via Excel
-            if (dailyRecord && dailyRecord.outTime && dailyRecord.shiftId) {
-              try {
-                console.log(`[AttendanceSync] Detecting extra hours for ${employeeNumber} on ${shiftDate}`);
-                await detectExtraHours(employeeNumber, shiftDate);
-              } catch (extraHoursError) {
-                console.error(`[AttendanceSync] Error detecting extra hours for ${employeeNumber} on ${shiftDate}:`, extraHoursError);
-                // Don't fail the entire process if extra hours detection fails
-              }
-            }
-
-            if (dailyRecord.isNew) {
-              stats.dailyRecordsCreated++;
-            } else {
-              stats.dailyRecordsUpdated++;
-            }
-          }
-          // If this is an OUT log without preceding IN, it might belong to previous day
-          // This will be handled when we process the previous day's IN
+        // Group logs by date for this employee
+        const logsByDate = {};
+        for (const log of logs) {
+          const date = formatDate(log.timestamp);
+          if (!logsByDate[date]) logsByDate[date] = [];
+          logsByDate[date].push(log);
         }
 
+        // Process each date that has regular logs
+        for (const date of Object.keys(logsByDate)) {
+          console.log(`[SyncService] Processing Multi-Shift: Emp=${employeeNumber}, Date=${date}`);
+
+          const result = await processMultiShiftAttendance(
+            employeeNumber,
+            date,
+            logs, // Pass ALL logs for cross-day context
+            generalConfig
+          );
+
+          if (result.success) {
+            // Stats tracking
+            if (result.isNew) stats.dailyRecordsCreated++;
+            else stats.dailyRecordsUpdated++;
+          } else {
+            stats.errors.push(`${employeeNumber} on ${date}: ${result.reason || result.error || 'Failed'}`);
+          }
+        }
       } catch (error) {
-        stats.errors.push(`Error processing logs for ${employeeNumber}: ${error.message}`);
+        stats.errors.push(`Error processing employee ${employeeNumber}: ${error.message}`);
       }
     }
 
+    return stats;
   } catch (error) {
     stats.errors.push(`Error in processAndAggregateLogs: ${error.message}`);
+    return stats;
   }
-
-  return stats;
 };
 
 /**

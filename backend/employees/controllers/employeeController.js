@@ -302,11 +302,11 @@ const transformEmployeeForResponse = async (employee, populateUsers = true) => {
     populatedDynamicFields = await populateUsersInDynamicFields(dynamicFields);
   }
 
-  // Merge dynamicFields into root level for easy access
-  // Also keep dynamicFields separate for reference
+  // Merge dynamicFields into root level (dynamicFields act as fallback)
+  // Permanent fields (Source of Truth) must overwrite dynamicFields
   const merged = {
-    ...permanentFields,
     ...populatedDynamicFields,
+    ...permanentFields,
     dynamicFields: populatedDynamicFields,
   };
 
@@ -862,8 +862,9 @@ exports.updateEmployee = async (req, res) => {
     const { empNo } = req.params;
     const employeeData = req.body;
 
-    console.log(`[updateEmployee] Updating ${empNo}. Allowances:`, JSON.stringify(employeeData.employeeAllowances));
-    console.log(`[updateEmployee] Updating ${empNo}. Deductions:`, JSON.stringify(employeeData.employeeDeductions));
+    // Check if employee exists
+
+
 
     // Check if employee exists
     const existingEmployee = await Employee.findOne({ emp_no: empNo });
@@ -923,7 +924,7 @@ exports.updateEmployee = async (req, res) => {
       employeeData.ctcSalary !== undefined ||
       employeeData.calculatedSalary !== undefined ||
       employeeData.paidLeaves !== undefined ||
-      employeeData.allottedLeaves !== undefined
+      employeeData.second_salary !== undefined
     );
 
     // Only validate if dynamicFields are being updated (not for simple permanent field updates)
@@ -934,6 +935,8 @@ exports.updateEmployee = async (req, res) => {
         const mergedData = {
           ...existingEmployee.toObject(),
           ...employeeData,
+          // Ensure proposedSalary satisfies validation if required by settings (since it's a UI field)
+          proposedSalary: employeeData.proposedSalary || employeeData.gross_salary || existingEmployee.gross_salary
         };
 
         const validation = await validateFormData(mergedData, settings);
@@ -946,6 +949,12 @@ exports.updateEmployee = async (req, res) => {
           });
         }
       }
+    }
+
+    // CRITICAL: Exclude proposedSalary from updates AFTER validation to prevent it from being saved 
+    // as a dynamic field or overwriting salary data unintentionally.
+    if (employeeData.proposedSalary) {
+      delete employeeData.proposedSalary;
     }
 
     // Separate permanent fields and dynamicFields
@@ -1101,9 +1110,23 @@ exports.updateEmployee = async (req, res) => {
       }
 
       // Handle dynamicFields carefully to prevent wiping
-      if (Object.keys(dynamicFields).length > 0) {
+      if (Object.keys(dynamicFields).length > 0 || (existingEmployee.dynamicFields && Object.keys(existingEmployee.dynamicFields).length > 0)) {
+        const cleanedExistingDynamic = { ...(existingEmployee.dynamicFields || {}) };
+
+        // Explicitly remove bank fields from existing dynamic fields to fix stale data
+        const bankFieldsToCleanup = [
+          'bank_account_no', 'bankAccountNo',
+          'bank_name', 'bankName',
+          'bank_place', 'bankPlace',
+          'ifsc_code', 'ifscCode',
+          'salary_mode', 'salaryMode',
+          'second_salary', 'secondSalary',
+          'proposedSalary' // Also cleanup proposedSalary if it was accidentally saved
+        ];
+        bankFieldsToCleanup.forEach(f => delete cleanedExistingDynamic[f]);
+
         updateData.dynamicFields = {
-          ...(existingEmployee.dynamicFields || {}),
+          ...cleanedExistingDynamic,
           ...dynamicFields
         };
       }
@@ -1115,6 +1138,14 @@ exports.updateEmployee = async (req, res) => {
       // Explicitly handle allottedLeaves to ensure it's saved even if 0
       if (employeeData.allottedLeaves !== undefined && employeeData.allottedLeaves !== null) {
         updateData.allottedLeaves = Number(employeeData.allottedLeaves);
+      }
+
+      // Explicitly handle second_salary to ensure it's saved correctly as Number
+      // Check for both snake_case (standard) and camelCase (frontend payload)
+      if (employeeData.second_salary !== undefined && employeeData.second_salary !== null && employeeData.second_salary !== '') {
+        updateData.second_salary = Number(employeeData.second_salary);
+      } else if (employeeData.secondSalary !== undefined && employeeData.secondSalary !== null && employeeData.secondSalary !== '') {
+        updateData.second_salary = Number(employeeData.secondSalary);
       }
 
       await Employee.findOneAndUpdate(
