@@ -449,3 +449,4 @@ function AcUnitIcon(props: any) {
 function DoneAllIcon(props: any) {
     return <svg {...props} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" strokeOpacity="0.5" transform="translate(-3, 3)" /></svg>
 }
+

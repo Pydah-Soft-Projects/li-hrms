@@ -14,8 +14,10 @@ import { getEmployeeInitials } from '@/lib/utils';
 import {
   canApproveOT,
   canRejectOT,
+  canApplyOT,
   canApprovePermission,
-  canRejectPermission
+  canRejectPermission,
+  canApplyPermission
 } from '@/lib/permissions';
 
 const Portal = ({ children }: { children: React.ReactNode }) => {
@@ -315,11 +317,11 @@ export default function OTAndPermissionsPage() {
     const isPermission = 'permissionHours' in item || 'permissionStartTime' in item;
 
     if (isOT) {
-      return canApproveOT(currentUser);
+      return canApproveOT(currentUser as any);
     }
 
     if (isPermission) {
-      return canApprovePermission(currentUser);
+      return canApprovePermission(currentUser as any);
     }
 
     return false;
@@ -906,26 +908,30 @@ export default function OTAndPermissionsPage() {
 
             <div className="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-1" />
 
-            <button
-              onClick={() => {
-                setActiveTab('ot');
-                setShowOTDialog(true);
-              }}
-              className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-blue-700 transition-colors flex items-center gap-1.5"
-            >
-              <PlusIcon className="w-3.5 h-3.5" />
-              Create OT
-            </button>
-            <button
-              onClick={() => {
-                setActiveTab('permissions');
-                setShowPermissionDialog(true);
-              }}
-              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 transition-colors flex items-center gap-1.5"
-            >
-              <PlusIcon className="w-3.5 h-3.5" />
-              Create Permission
-            </button>
+            {currentUser && canApplyOT(currentUser as any) && (
+              <button
+                onClick={() => {
+                  setActiveTab('ot');
+                  setShowOTDialog(true);
+                }}
+                className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-blue-700 transition-colors flex items-center gap-1.5"
+              >
+                <PlusIcon className="w-3.5 h-3.5" />
+                Create OT
+              </button>
+            )}
+            {currentUser && canApplyPermission(currentUser as any) && (
+              <button
+                onClick={() => {
+                  setActiveTab('permissions');
+                  setShowPermissionDialog(true);
+                }}
+                className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 transition-colors flex items-center gap-1.5"
+              >
+                <PlusIcon className="w-3.5 h-3.5" />
+                Create Permission
+              </button>
+            )}
           </div>
         </div>
 
@@ -2148,4 +2154,5 @@ export default function OTAndPermissionsPage() {
     </div>
   );
 }
+
 

@@ -4,9 +4,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { api } from '@/lib/api';
 import { auth } from '@/lib/auth';
 import {
-  canApplyLeave,
-  canApproveLeaves,
-  canRejectLeaves
+  canViewLeaves,
+  canApproveLeaves  // Used as canManageLeaves
 } from '@/lib/permissions';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { toast, ToastContainer } from 'react-toastify';
@@ -347,11 +346,13 @@ export default function LeavesPage() {
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
 
-  // Permission checks (Role based)
+  // Permission checks using read/write pattern
+  // Write permission enables ALL actions (apply, approve, reject, cancel)
+  // Read permission blocks all actions (view only)
+  // Future: When implementing granular permissions, only permissions.ts needs updating
   const user = auth.getUser();
-  const hasApplyPermission = user ? canApplyLeave(user as any) : false;
-  const hasApprovePermission = user ? canApproveLeaves(user as any) : false;
-  const hasRejectPermission = user ? canRejectLeaves(user as any) : false;
+  const hasViewPermission = user ? canViewLeaves(user as any) : false;
+  const hasManagePermission = user ? canApproveLeaves(user as any) : false; // Write permission for ALL actions
 
   // Permission states (Workspace based)
   const [canApplyLeaveForSelf, setCanApplyLeaveForSelf] = useState(false);
@@ -1508,7 +1509,7 @@ export default function LeavesPage() {
                 Manage leave applications and on-duty requests
               </p>
             </div>
-            {hasApplyPermission && (canApplyForSelf || canApplyForOthers || currentUser?.role === 'employee' || ['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser?.role)) && (
+            {hasManagePermission && (canApplyForSelf || canApplyForOthers || currentUser?.role === 'employee' || ['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser?.role)) && (
               <button
                 onClick={() => openApplyDialog('leave')}
                 className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-green-500 to-green-600 text-white text-xs font-semibold shadow-sm hover:shadow-md transition-all"
@@ -1920,9 +1921,9 @@ export default function LeavesPage() {
 
                           {/* Actions */}
 
-                          {canPerformAction(leave) && (hasApprovePermission || hasRejectPermission) && (
+                          {canPerformAction(leave) && (hasManagePermission || hasManagePermission) && (
                             <div className="flex items-center gap-2 mt-auto">
-                              {hasApprovePermission && (
+                              {hasManagePermission && (
                                 <button
                                   onClick={() => handleAction(leave._id, 'leave', 'approve')}
                                   className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-green-500/10 py-2 text-sm font-semibold text-green-600 transition-colors hover:bg-green-500 hover:text-white dark:bg-green-500/20 dark:text-green-400 dark:hover:bg-green-500 dark:hover:text-white"
@@ -1931,7 +1932,7 @@ export default function LeavesPage() {
                                   <CheckIcon /> Approve
                                 </button>
                               )}
-                              {hasRejectPermission && (
+                              {hasManagePermission && (
                                 <button
                                   onClick={() => handleAction(leave._id, 'leave', 'reject')}
                                   className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-500/10 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500 hover:text-white dark:bg-red-500/20 dark:text-red-400 dark:hover:bg-red-500 dark:hover:text-white"
@@ -2014,9 +2015,9 @@ export default function LeavesPage() {
                           </div>
 
                           {/* Actions */}
-                          {canPerformAction(od) && (hasApprovePermission || hasRejectPermission) && (
+                          {canPerformAction(od) && (hasManagePermission || hasManagePermission) && (
                             <div className="flex items-center gap-2 mt-auto">
-                              {hasApprovePermission && (
+                              {hasManagePermission && (
                                 <button
                                   onClick={() => handleAction(od._id, 'od', 'approve')}
                                   className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-green-500/10 py-2 text-sm font-semibold text-green-600 transition-colors hover:bg-green-500 hover:text-white dark:bg-green-500/20 dark:text-green-400 dark:hover:bg-green-500 dark:hover:text-white"
@@ -2025,7 +2026,7 @@ export default function LeavesPage() {
                                   <CheckIcon /> Approve
                                 </button>
                               )}
-                              {hasRejectPermission && (
+                              {hasManagePermission && (
                                 <button
                                   onClick={() => handleAction(od._id, 'od', 'reject')}
                                   className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-500/10 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500 hover:text-white dark:bg-red-500/20 dark:text-red-400 dark:hover:bg-red-500 dark:hover:text-white"
@@ -3073,4 +3074,5 @@ export default function LeavesPage() {
     </div>
   );
 }
+
 

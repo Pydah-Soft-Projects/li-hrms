@@ -4,9 +4,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { api, Department, Division } from '@/lib/api';
 import { auth } from '@/lib/auth';
 import {
-  canCreateUser,
-  canEditUser,
-  canDeleteUser,
+  canViewUsers,
+  canEditUser,  // Used as canManageUsers
   canResetPassword
 } from '@/lib/permissions';
 import { MODULE_CATEGORIES } from '@/config/moduleCategories';
@@ -526,11 +525,13 @@ export default function UsersPage() {
     }
   };
 
-  // Permission checks
+  // Permission checks using read/write pattern
+  // Write permission enables ALL actions (create, edit, delete users)
+  // Read permission blocks all actions (view only)
+  // Future: When implementing granular permissions, only permissions.ts needs updating
   const user = auth.getUser();
-  const hasCreatePermission = user ? canCreateUser(user as any) : false;
-  const hasEditPermission = user ? canEditUser(user as any) : false;
-  const hasDeletePermission = user ? canDeleteUser(user as any) : false;
+  const hasViewPermission = user ? canViewUsers(user as any) : false;
+  const hasManagePermission = user ? canEditUser(user as any) : false; // Write permission for ALL actions
   const hasResetPasswordPermission = user ? canResetPassword(user as any) : false;
 
   if (loading && users.length === 0) {
@@ -560,7 +561,7 @@ export default function UsersPage() {
               <RefreshIcon />
               Refresh
             </button>
-            {hasCreatePermission && (
+            {hasManagePermission && (
               <button
                 onClick={openFromEmployeeDialog}
                 className="flex items-center gap-2 px-4 py-2 rounded-xl border border-green-200 bg-green-50 text-green-700 hover:bg-green-100 dark:border-green-800 dark:bg-green-900/30 dark:text-green-400"
@@ -569,7 +570,7 @@ export default function UsersPage() {
                 Update User
               </button>
             )}
-            {hasCreatePermission && (
+            {hasManagePermission && (
               <button
                 onClick={() => setShowCreateDialog(true)}
                 className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-semibold shadow-lg shadow-blue-500/30 hover:shadow-xl"
@@ -784,7 +785,7 @@ export default function UsersPage() {
                     </span>
                   </td>
                   <td className="px-6 py-4">
-                    {hasEditPermission ? (
+                    {hasManagePermission ? (
                       <button
                         onClick={() => handleToggleStatus(user)}
                         disabled={user.role === 'super_admin'}
@@ -806,7 +807,7 @@ export default function UsersPage() {
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center justify-end gap-2">
-                      {hasEditPermission && (
+                      {hasManagePermission && (
                         <button
                           onClick={() => openEditDialog(user)}
                           className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg dark:text-slate-400 dark:hover:bg-slate-700"
@@ -827,7 +828,7 @@ export default function UsersPage() {
                           <KeyIcon />
                         </button>
                       )}
-                      {hasDeletePermission && user.role !== 'super_admin' && (
+                      {hasManagePermission && user.role !== 'super_admin' && (
                         <button
                           onClick={() => handleDelete(user)}
                           className="p-2 text-red-600 hover:bg-red-50 rounded-lg dark:text-red-400 dark:hover:bg-red-900/30"
@@ -1721,3 +1722,4 @@ export default function UsersPage() {
     </div >
   );
 }
+
