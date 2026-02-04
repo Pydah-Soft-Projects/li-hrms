@@ -2400,7 +2400,7 @@ export const api = {
     }
   },
 
-  // Update outTime for attendance
+  // Update inTime for attendance
   updateAttendanceInTime: async (empNo: string, date: string, inTime: string) => {
     return apiRequest<any>('/attendance/in-time', {
       method: 'PUT',
@@ -2408,10 +2408,11 @@ export const api = {
     });
   },
 
-  updateAttendanceOutTime: async (empNo: string, date: string, outTime: string) => {
-    return apiRequest<any>(`/attendance/${empNo}/${date}/outtime`, {
+  // Update outTime for attendance
+  updateAttendanceOutTime: async (employeeNumber: string, date: string, outTime: string, shiftRecordId?: string) => {
+    return apiRequest<any>(`/attendance/${employeeNumber}/${date}/outtime`, {
       method: 'PUT',
-      body: JSON.stringify({ outTime }),
+      body: JSON.stringify({ outTime, shiftRecordId }),
     });
   },
 
@@ -2423,10 +2424,10 @@ export const api = {
   },
 
   // Assign shift to attendance record
-  assignShiftToAttendance: async (employeeNumber: string, date: string, shiftId: string) => {
+  assignShiftToAttendance: async (employeeNumber: string, date: string, shiftId: string, shiftRecordId?: string) => {
     return apiRequest<any>(`/attendance/${employeeNumber}/${date}/shift`, {
       method: 'PUT',
-      body: JSON.stringify({ shiftId }),
+      body: JSON.stringify({ shiftId, shiftRecordId }),
     });
   },
 
@@ -3116,4 +3117,3 @@ export const api = {
     return apiRequest<any>(`/jobs/status/${jobId}?queue=${queue}`, { method: 'GET' });
   },
 };
-
