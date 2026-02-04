@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { auth } from '@/lib/auth';
+import { useAuth } from '@/contexts/AuthContext';
+import { canManageLoans } from '@/lib/permissions';
 import { toast, ToastContainer } from 'react-toastify';
 import Swal from 'sweetalert2';
 import 'react-toastify/dist/ReactToastify.css';
@@ -180,6 +182,9 @@ export default function LoansPage() {
   // User detection and role-based UI
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [isEmployee, setIsEmployee] = useState(false);
+
+  // Permission Check
+  const hasManagePermission = currentUser ? canManageLoans(currentUser) : false;
 
   // Eligibility calculator state (from backend)
   const [eligibilityData, setEligibilityData] = useState<any>(null);
@@ -1297,24 +1302,28 @@ export default function LoansPage() {
                           </div>
                         </div>
                         <div className="flex gap-3">
-                          <button
-                            onClick={() => {
-                              setSelectedLoan(loan);
-                              setShowDetailDialog(true);
-                            }}
-                            className="px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-green-500 to-green-600 rounded-xl hover:from-green-600 hover:to-green-700 flex items-center gap-2 transition-all duration-300 shadow-md shadow-green-500/30 hover:shadow-lg"
-                          >
-                            <CheckIcon /> Approve
-                          </button>
-                          <button
-                            onClick={() => {
-                              setSelectedLoan(loan);
-                              setShowDetailDialog(true);
-                            }}
-                            className="px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-red-500 to-red-600 rounded-xl hover:from-red-600 hover:to-red-700 flex items-center gap-2 transition-all duration-300 shadow-md shadow-red-500/30 hover:shadow-lg"
-                          >
-                            <XIcon /> Reject
-                          </button>
+                          {hasManagePermission && (
+                            <button
+                              onClick={() => {
+                                setSelectedLoan(loan);
+                                setShowDetailDialog(true);
+                              }}
+                              className="px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-green-500 to-green-600 rounded-xl hover:from-green-600 hover:to-green-700 flex items-center gap-2 transition-all duration-300 shadow-md shadow-green-500/30 hover:shadow-lg"
+                            >
+                              <CheckIcon /> Approve
+                            </button>
+                          )}
+                          {hasManagePermission && (
+                            <button
+                              onClick={() => {
+                                setSelectedLoan(loan);
+                                setShowDetailDialog(true);
+                              }}
+                              className="px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-red-500 to-red-600 rounded-xl hover:from-red-600 hover:to-red-700 flex items-center gap-2 transition-all duration-300 shadow-md shadow-red-500/30 hover:shadow-lg"
+                            >
+                              <XIcon /> Reject
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1352,24 +1361,28 @@ export default function LoansPage() {
                           </div>
                         </div>
                         <div className="flex gap-3">
-                          <button
-                            onClick={() => {
-                              setSelectedLoan(advance);
-                              setShowDetailDialog(true);
-                            }}
-                            className="px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-green-500 to-green-600 rounded-xl hover:from-green-600 hover:to-green-700 flex items-center gap-2 transition-all duration-300 shadow-md shadow-green-500/30 hover:shadow-lg"
-                          >
-                            <CheckIcon /> Approve
-                          </button>
-                          <button
-                            onClick={() => {
-                              setSelectedLoan(advance);
-                              setShowDetailDialog(true);
-                            }}
-                            className="px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-red-500 to-red-600 rounded-xl hover:from-red-600 hover:to-red-700 flex items-center gap-2 transition-all duration-300 shadow-md shadow-red-500/30 hover:shadow-lg"
-                          >
-                            <XIcon /> Reject
-                          </button>
+                          {hasManagePermission && (
+                            <button
+                              onClick={() => {
+                                setSelectedLoan(advance);
+                                setShowDetailDialog(true);
+                              }}
+                              className="px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-green-500 to-green-600 rounded-xl hover:from-green-600 hover:to-green-700 flex items-center gap-2 transition-all duration-300 shadow-md shadow-green-500/30 hover:shadow-lg"
+                            >
+                              <CheckIcon /> Approve
+                            </button>
+                          )}
+                          {hasManagePermission && (
+                            <button
+                              onClick={() => {
+                                setSelectedLoan(advance);
+                                setShowDetailDialog(true);
+                              }}
+                              className="px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-red-500 to-red-600 rounded-xl hover:from-red-600 hover:to-red-700 flex items-center gap-2 transition-all duration-300 shadow-md shadow-red-500/30 hover:shadow-lg"
+                            >
+                              <XIcon /> Reject
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1970,25 +1983,24 @@ export default function LoansPage() {
                         Disburse ₹{selectedLoan.requestType === 'loan' ? (selectedLoan.loanConfig?.totalAmount || selectedLoan.amount) : selectedLoan.amount} to {selectedLoan.employeeId?.employee_name || selectedLoan.emp_no}
                       </p>
                     </div>
-                    <button
-                      onClick={() => setShowDisbursementDialog(true)}
-                      className="px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-green-500 to-green-600 rounded-lg hover:from-green-600 hover:to-green-700 transition-all shadow-md hover:shadow-lg flex items-center gap-2"
-                    >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      Release Funds
-                    </button>
+                    {hasManagePermission && (
+                      <button
+                        onClick={() => setShowDisbursementDialog(true)}
+                        className="px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-green-500 to-green-600 rounded-lg hover:from-green-600 hover:to-green-700 transition-all shadow-md hover:shadow-lg flex items-center gap-2"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        Release Funds
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
 
               {/* Edit Button (for Super Admin/HR - not final approved/disbursed) */}
               {(() => {
-                const user = auth.getUser();
-                const isSuperAdmin = user?.role === 'super_admin';
-                const isHR = user?.role === 'hr';
-                const canEdit = isSuperAdmin || (isHR && !['approved', 'disbursed', 'active', 'completed'].includes(selectedLoan.status));
+                const canEdit = hasManagePermission && !['approved', 'disbursed', 'active', 'completed'].includes(selectedLoan.status);
 
                 return canEdit && (
                   <button
@@ -2001,7 +2013,7 @@ export default function LoansPage() {
               })()}
 
               {/* Action Section */}
-              {!['approved', 'rejected', 'cancelled', 'disbursed', 'active', 'completed'].includes(selectedLoan.status) && (
+              {hasManagePermission && !['approved', 'rejected', 'cancelled', 'disbursed', 'active', 'completed'].includes(selectedLoan.status) && (
                 <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-4">
                   {/* Approval Amount Modification */}
                   {(selectedLoan.requestType === 'salary_advance' || (selectedLoan.requestType === 'loan' && ['super_admin', 'hr', 'sub_admin'].includes(currentUser?.role))) && (

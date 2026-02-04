@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from "next/navigation";
 import Link from 'next/link';
 import { api, apiRequest, Employee, Division } from '@/lib/api';
@@ -98,6 +98,18 @@ interface Shift {
 
 type TableType = 'present' | 'absent' | 'leaves' | 'od' | 'ot' | 'extraHours' | 'shifts';
 
+interface Department {
+  _id: string;
+  name: string;
+  division_id?: string | { _id: string; name: string };
+  // Add other fields as necessary based on API response
+}
+
+interface LeaveType {
+  code: string;
+  name: string;
+}
+
 export default function PayRegisterPage() {
   const router = useRouter();
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -107,15 +119,15 @@ export default function PayRegisterPage() {
   const [syncing, setSyncing] = useState(false);
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [activeTable, setActiveTable] = useState<TableType>('present');
-  const [departments, setDepartments] = useState<any[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [selectedDivision, setSelectedDivision] = useState<string>('');
   const [selectedDepartment, setSelectedDepartment] = useState<string>('');
-  const [leaveTypes, setLeaveTypes] = useState<any[]>([]);
+  const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
   const [calculatingId, setCalculatingId] = useState<string | null>(null);
   const [selectedArrears, setSelectedArrears] = useState<Array<{ id: string, amount: number, employeeId?: string }>>([]);
   const [calculatingJobId, setCalculatingJobId] = useState<string | null>(null);
-  const [calculationProgress, setCalculationProgress] = useState<any>(null);
+  // Removed unused calculationProgress state
   const [bulkCalculating, setBulkCalculating] = useState(false);
   const [payrollStrategy, setPayrollStrategy] = useState<'new' | 'legacy'>('new');
   const [payrollStartDate, setPayrollStartDate] = useState<string | null>(null);
@@ -138,29 +150,25 @@ export default function PayRegisterPage() {
 
   // Polling for calculation progress
   useEffect(() => {
-    let pollInterval: any;
+    let pollInterval: NodeJS.Timeout;
 
     if (calculatingJobId) {
       pollInterval = setInterval(async () => {
         try {
           const status = await api.getJobStatus(calculatingJobId);
           if (status.success) {
-            if (status.data.progress) {
-              setCalculationProgress(status.data.progress);
-            }
+            // calculationProgress removed as it was unused in render
 
             if (status.data.state === 'completed') {
               clearInterval(pollInterval);
               setCalculatingJobId(null);
               setBulkCalculating(false);
-              setCalculationProgress(null);
               toast.success('Payroll calculation finished successfully.');
               loadPayRegisters();
             } else if (status.data.state === 'failed') {
               clearInterval(pollInterval);
               setCalculatingJobId(null);
               setBulkCalculating(false);
-              setCalculationProgress(null);
               toast.error(status.data.failedReason || 'The background job failed.');
             }
           }
@@ -176,6 +184,7 @@ export default function PayRegisterPage() {
   }, [calculatingJobId]);
 
   // Permission Checks
+  // Casting to any to avoid strict type mismatch between AuthContext User and Permissions User
   const user = auth.getUser() as any;
   const hasManagePermission = user ? canManagePayRegister(user) : false;
   const hasGeneratePermission = user ? canGeneratePayslips(user) : false;
@@ -193,15 +202,18 @@ export default function PayRegisterPage() {
       'holiday',
       'week_off',
     ];
-    const fallbackStatus = allowedStatuses.includes(statusFallback as any)
+
+    // Validate statusFallback
+    const validFallback = allowedStatuses.includes(statusFallback as any)
       ? (statusFallback as DailyRecord['firstHalf']['status'])
       : 'absent';
-    const resolvedStatus = allowedStatuses.includes(half?.status as any)
-      ? (half?.status as DailyRecord['firstHalf']['status'])
-      : fallbackStatus;
+
+    const resolvedStatus = half?.status && allowedStatuses.includes(half.status)
+      ? half.status
+      : validFallback;
 
     return {
-      status: resolvedStatus || fallbackStatus,
+      status: resolvedStatus,
       leaveType: half?.leaveType ?? null,
       leaveNature: half?.leaveNature ?? null,
       isOD: half?.isOD ?? false,
@@ -251,15 +263,8 @@ export default function PayRegisterPage() {
 
   const isPastMonth = new Date(year, month - 1, 1).getTime() < new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
 
-  useEffect(() => {
-    loadShifts();
-    loadDivisions();  // NEW: Load divisions
-    loadDepartments();
-    loadLeaveTypes();
-  }, []);
-
   // NEW: Load divisions function
-  const loadDivisions = async () => {
+  const loadDivisions = useCallback(async () => {
     try {
       const response = await api.getDivisions();
       if (response.success) {
@@ -268,9 +273,9 @@ export default function PayRegisterPage() {
     } catch (err) {
       console.error('Error loading divisions:', err);
     }
-  };
+  }, []);
 
-  const loadLeaveTypes = async () => {
+  const loadLeaveTypes = useCallback(async () => {
     try {
       const response = await api.getLeaveSettings('leave');
       if (response.success && response.data && response.data.types) {
@@ -279,22 +284,43 @@ export default function PayRegisterPage() {
     } catch (err) {
       console.error('Error loading leave types:', err);
     }
-  };
+  }, []);
+
+  const loadDepartments = useCallback(async () => {
+    try {
+      const response = await api.getDepartments(true);
+      if (response.success && response.data) {
+        setDepartments(response.data);
+      }
+    } catch (err) {
+      console.error('Error loading departments:', err);
+    }
+  }, []);
+
+  const loadShifts = useCallback(async () => {
+    try {
+      const response = await api.getShifts();
+      if (response.success && response.data) {
+        setShifts(response.data.map((s: any) => ({ ...s, payableShifts: s.payableShifts || 0 })));
+      }
+    } catch (err) {
+      console.error('Error loading shifts:', err);
+    }
+  }, []);
 
   useEffect(() => {
-    setPage(1);  // NEW: Reset page when filters change
-    setHasMore(true);  // NEW: Reset hasMore
-    loadPayRegisters(1, false);  // NEW: Load first page
-    checkBatchLocks();
-  }, [year, month, selectedDepartment, selectedDivision]);  // NEW: Added selectedDivision dependency
+    loadShifts();
+    loadDivisions();
+    loadDepartments();
+    loadLeaveTypes();
+  }, [loadShifts, loadDivisions, loadDepartments, loadLeaveTypes]);
 
-  const checkBatchLocks = async () => {
+  const checkBatchLocks = useCallback(async () => {
     try {
-      const divId = selectedDivision && selectedDivision.trim() !== '' ? selectedDivision : undefined;  // NEW: Include divisionId
-      const response = await api.getPayrollBatches({ month: monthStr, divisionId: divId });  // NEW: Pass divisionId
+      const divId = selectedDivision && selectedDivision.trim() !== '' ? selectedDivision : undefined;
+      const response = await api.getPayrollBatches({ month: monthStr, divisionId: divId });
       if (response && response.data) {
         const statusMap = new Map<string, { status: string, permissionGranted: boolean, batchId: string }>();
-        // response.data is array of batches
         const batches = Array.isArray(response.data) ? response.data : [];
         batches.forEach((batch: any) => {
           const deptId = typeof batch.department === 'object' ? batch.department._id : batch.department;
@@ -309,29 +335,7 @@ export default function PayRegisterPage() {
     } catch (err) {
       console.error('Error checking batch locks:', err);
     }
-  };
-
-  const loadDepartments = async () => {
-    try {
-      const response = await api.getDepartments(true);
-      if (response.success && response.data) {
-        setDepartments(response.data);
-      }
-    } catch (err) {
-      console.error('Error loading departments:', err);
-    }
-  };
-
-  const loadShifts = async () => {
-    try {
-      const response = await api.getShifts();
-      if (response.success && response.data) {
-        setShifts(response.data.map((s: any) => ({ ...s, payableShifts: s.payableShifts || 0 })));
-      }
-    } catch (err) {
-      console.error('Error loading shifts:', err);
-    }
-  };
+  }, [selectedDivision, monthStr]);
 
   // NEW: Updated to support pagination
   const loadPayRegisters = async (pageToLoad = 1, append = false) => {
@@ -352,8 +356,10 @@ export default function PayRegisterPage() {
       if (response.success) {
         const payRegisterList = response.data || [];
 
-        if ((response as any).startDate) setPayrollStartDate((response as any).startDate);
-        if ((response as any).endDate) setPayrollEndDate((response as any).endDate);
+        // Type guard or explicit cast if we know the structure has these fields
+        const respAny = response as any;
+        if (respAny.startDate) setPayrollStartDate(respAny.startDate);
+        if (respAny.endDate) setPayrollEndDate(respAny.endDate);
 
         if (append) {
           setPayRegisters(prev => [...prev, ...payRegisterList]);
@@ -377,7 +383,8 @@ export default function PayRegisterPage() {
           toast.error(response.message);
         }
       }
-    } catch (err: any) {
+    } catch (error: unknown) {
+      const err = error as Error;
       console.error('[Pay Register] Error loading pay registers:', err);
       if (!append) setPayRegisters([]);
       toast.error(err.message || 'Failed to load pay registers');
@@ -591,24 +598,7 @@ export default function PayRegisterPage() {
       };
     });
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'present':
-        return 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800';
-      case 'absent':
-        return 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800';
-      case 'leave':
-        return 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800';
-      case 'od':
-        return 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800';
-      case 'holiday':
-        return 'bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800';
-      case 'week_off':
-        return 'bg-gray-50 dark:bg-gray-900/20 border-gray-200 dark:border-gray-800';
-      default:
-        return 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700';
-    }
-  };
+
 
   const getStatusDisplay = (record: DailyRecord | null): string => {
     if (!record) return '-';
@@ -695,12 +685,7 @@ export default function PayRegisterPage() {
     return payRegisters;
   };
 
-  const handleViewPayslip = (employee: Employee) => {
-    // Navigate to payslip or open payslip modal
-    // Use emp_no for search as per PayrollTransactionsPage filter logic
-    const searchParam = employee.emp_no || employee._id;
-    router.push(`/payroll-transactions?search=${searchParam}&month=${monthStr}`);
-  };
+
 
 
   const handleRequestRecalculation = async () => {
@@ -867,11 +852,10 @@ export default function PayRegisterPage() {
                 {departments
                   .filter(dept => {
                     if (!selectedDivision) return true;
-                    // Note: In workspace, dept usually has div_id or similar, checking compatibility
-                    // Assuming standard filter logic already present in component is robust enough, 
-                    // but standard filtering is:
+                    // Standardize access to division_id
                     if (typeof dept === 'object' && 'division_id' in dept) {
-                      return (dept as any).division_id === selectedDivision || (dept as any).division_id?._id === selectedDivision;
+                      const divId = (dept.division_id as any)?._id || dept.division_id;
+                      return divId === selectedDivision;
                     }
                     return true;
                   })
