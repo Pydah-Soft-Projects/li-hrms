@@ -10,9 +10,9 @@ import Spinner from '@/components/Spinner';
 import * as XLSX from 'xlsx';
 import Swal from 'sweetalert2';
 import {
-  canViewPayroll,
-  canProcessPayroll,
-  canGeneratePayslips
+  canGeneratePayslips,
+  canViewPayRegister,
+  canManagePayRegister
 } from '@/lib/permissions';
 import { auth } from '@/lib/auth';
 
@@ -177,9 +177,9 @@ export default function PayRegisterPage() {
 
   // Permission Checks
   const user = auth.getUser() as any;
-  const hasManagePermission = user ? canProcessPayroll(user) : false;
+  const hasManagePermission = user ? canManagePayRegister(user) : false;
   const hasGeneratePermission = user ? canGeneratePayslips(user) : false;
-  const hasViewPermission = user ? canViewPayroll(user) : false;
+  const hasViewPermission = user ? canViewPayRegister(user) : false;
 
   const normalizeHalfDay = (
     half?: Partial<DailyRecord['firstHalf']>,
@@ -546,15 +546,29 @@ export default function PayRegisterPage() {
 
   const getSummaryRows = () =>
     payRegisters.map((pr) => {
-      const totals = pr.totals || {};
+      const totals: any = pr.totals || {};
       const present = totals.totalPresentDays || 0;
       const absent = totals.totalAbsentDays || 0;
       const leave = getLeaveTotal(totals);
       const od = totals.totalODDays || 0;
       const ot = totals.totalOTHours || 0;
-      const extra = totals.totalOTHours || 0; // No separate extra hours field in totals
+      const extra = (totals.totalPayableShifts || 0) - (totals.totalPresentDays || 0);
+      const weeklyOffs = totals.totalWeeklyOffs || 0;
+      const holidays = totals.totalHolidays || 0;
+      const lop = totals.totalLopDays || 0;
+      const paidLeave = totals.totalPaidLeaveDays || 0;
+      const lateCount = totals.lateCount || 0;
+      const holidayAndWeekoffs = (totals.totalWeeklyOffs || 0) + (totals.totalHolidays || 0);
+
+      // User Definition:
+      // Paid Days = Present + Paid Leaves + Holidays + Weekoffs
+      const totalPaidDays = present + paidLeave + holidays + weeklyOffs;
+
       const monthDays = pr.totalDaysInMonth || daysInMonth;
-      const countedDays = present + absent + leave + od;
+
+      // User Definition:
+      // Counted Days = Present + Absent + Holidays + Weekoffs + Total Leaves
+      const countedDays = present + absent + holidays + weeklyOffs + leave;
       const matchesMonth = Math.abs(countedDays - monthDays) < 0.001;
       return {
         pr,
@@ -564,6 +578,13 @@ export default function PayRegisterPage() {
         od,
         ot,
         extra,
+        weeklyOffs,
+        holidays,
+        totalPaidDays,
+        lop,
+        paidLeave,
+        lateCount,
+        holidayAndWeekoffs,
         monthDays,
         countedDays,
         matchesMonth,
@@ -802,94 +823,130 @@ export default function PayRegisterPage() {
   };
 
   return (
-    <div className="space-y-6 p-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Pay Register</h1>
-        <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-          Manage monthly pay register for all employees
-        </p>
-      </div>
+    <div className="relative min-h-screen">
+      {/* Background */}
+      <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(to_right,#e2e8f01f_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f01f_1px,transparent_1px)] bg-[size:28px_28px] dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.12)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.12)_1px,transparent_1px)]" />
+      <div className="pointer-events-none fixed inset-0 bg-gradient-to-br from-blue-50/40 via-blue-50/35 to-transparent dark:from-slate-900/60 dark:via-slate-900/65 dark:to-slate-900/80" />
 
-      {/* Filters */}
-      <div className="bg-white dark:bg-slate-800 rounded-lg shadow p-4">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {/* Month Selector */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-              Month
-            </label>
-            <input
-              type="month"
-              value={monthStr}
-              onChange={(e) => {
-                const [y, m] = e.target.value.split('-');
-                setCurrentDate(new Date(parseInt(y), parseInt(m) - 1));
-              }}
-              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-white"
-            />
-          </div>
+      <div className="relative z-10 mx-auto max-w-[1920px] p-6">
+        {/* Header */}
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-4 pb-2">
+          <div className="flex flex-wrap items-center gap-4">
+            {/* Title Section */}
+            <div className="flex items-center gap-3 shrink-0">
+              <div className="flex flex-col">
+                <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white whitespace-nowrap">Pay Register</h1>
+                <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                  Period: {new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} - {new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </p>
+              </div>
+              <div className="h-6 w-px bg-slate-200 dark:bg-slate-800 hidden md:block" />
+            </div>
 
-          {/* Division Filter (NEW) */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-              Division
-            </label>
-            <select
-              value={selectedDivision}
-              onChange={(e) => setSelectedDivision(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-white"
-            >
-              <option value="">All Divisions</option>
-              {divisions.map((div) => (
-                <option key={div._id} value={div._id}>
-                  {div.name}
-                </option>
-              ))}
-            </select>
-          </div>
+            {/* Filters Group */}
+            <div className="flex flex-nowrap items-center gap-1.5 p-1 bg-slate-100/50 dark:bg-slate-800/40 rounded-xl border border-slate-200/60 dark:border-slate-700/60 backdrop-blur-sm">
+              {/* Division Filter */}
+              <select
+                value={selectedDivision}
+                onChange={(e) => setSelectedDivision(e.target.value)}
+                className="h-8 pl-2 pr-6 text-[11px] font-semibold bg-white dark:bg-slate-800 border-0 rounded-lg focus:ring-2 focus:ring-blue-500/20 text-slate-700 dark:text-slate-300 shadow-sm min-w-[100px] max-w-[140px]"
+              >
+                <option value="">All Divisions</option>
+                {divisions.map((div) => (
+                  <option key={div._id} value={div._id}>{div.name}</option>
+                ))}
+              </select>
 
-          {/* Department Filter */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-              Department
-            </label>
-            <select
-              value={selectedDepartment}
-              onChange={(e) => setSelectedDepartment(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-white"
-            >
-              <option value="">All Departments</option>
-              {departments.map((dept) => (
-                <option key={dept._id} value={dept._id}>
-                  {dept.name}
-                </option>
-              ))}
-            </select>
-          </div>
+              {/* Department Filter */}
+              <select
+                value={selectedDepartment}
+                onChange={(e) => setSelectedDepartment(e.target.value)}
+                className="h-8 pl-2 pr-6 text-[11px] font-semibold bg-white dark:bg-slate-800 border-0 rounded-lg focus:ring-2 focus:ring-blue-500/20 text-slate-700 dark:text-slate-300 shadow-sm min-w-[100px] max-w-[140px]"
+              >
+                <option value="">All Departments</option>
+                {departments
+                  .filter(dept => {
+                    if (!selectedDivision) return true;
+                    // Note: In workspace, dept usually has div_id or similar, checking compatibility
+                    // Assuming standard filter logic already present in component is robust enough, 
+                    // but standard filtering is:
+                    if (typeof dept === 'object' && 'division_id' in dept) {
+                      return (dept as any).division_id === selectedDivision || (dept as any).division_id?._id === selectedDivision;
+                    }
+                    return true;
+                  })
+                  .map((dept) => (
+                    <option key={dept._id} value={dept._id}>
+                      {dept.name}
+                    </option>
+                  ))}
+              </select>
 
-          {/* Actions + Payroll Strategy */}
-          <div className="flex items-end gap-3 flex-wrap">
-            <div className="flex items-center gap-2">
-              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">Payroll Engine</label>
+              {/* Payroll Engine selector */}
               <select
                 value={payrollStrategy}
                 onChange={(e) => setPayrollStrategy(e.target.value as any)}
-                className="px-2 py-1 text-xs border border-slate-300 dark:border-slate-700 rounded-md dark:bg-slate-800 dark:text-white"
+                className="h-8 pl-2 pr-6 text-[11px] font-semibold bg-blue-50 dark:bg-blue-900/20 border-0 rounded-lg focus:ring-2 focus:ring-blue-500/20 text-blue-700 dark:text-blue-400 shadow-sm"
               >
-                <option value="new">Use Payroll Records Only (new)</option>
-                <option value="legacy">All related data (legacy)</option>
+                <option value="new">Engine: New</option>
+                <option value="legacy">Engine: Legacy</option>
               </select>
             </div>
+
+            {/* Month/Year Navigation */}
+            <div className="flex items-center gap-0.5 p-0.5 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+              <button
+                onClick={() => {
+                  const newDate = new Date(currentDate);
+                  newDate.setMonth(currentDate.getMonth() - 1);
+                  setCurrentDate(newDate);
+                }}
+                className="h-8 w-8 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+              >
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+
+              <input
+                type="month"
+                value={monthStr}
+                onChange={(e) => {
+                  const [y, m] = e.target.value.split('-');
+                  setCurrentDate(new Date(parseInt(y), parseInt(m) - 1));
+                }}
+                className="h-8 bg-transparent border-0 text-[11px] font-bold text-slate-900 dark:text-white focus:ring-0 p-0 cursor-pointer w-[100px] text-center"
+              />
+
+              <button
+                onClick={() => {
+                  const newDate = new Date(currentDate);
+                  newDate.setMonth(currentDate.getMonth() + 1);
+                  setCurrentDate(newDate);
+                }}
+                className="h-8 w-8 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+              >
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-nowrap items-center gap-3 shrink-0">
             {hasManagePermission && (
               <button
                 onClick={handleSyncAll}
                 disabled={syncing}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="h-9 px-4 flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-sm disabled:opacity-50 transition-all"
               >
-                {syncing ? 'Syncing All...' : 'Sync All'}
+                <svg className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                {syncing ? 'Syncing...' : 'Sync All'}
               </button>
             )}
+
             {hasManagePermission && (
               <button
                 onClick={() => setShowUploadModal(true)}
@@ -901,70 +958,66 @@ export default function PayRegisterPage() {
                 Upload Summary
               </button>
             )}
+
             {(() => {
-              // Strict restriction for Past Months:
-              // If ANY payroll record exists for the listed employees, HIDE the Calculate button.
-              // This forces users to view the existing batch/payslips instead of recalculating.
+              // Strict restriction for Past Months
               if (isPastMonth) {
                 const hasPayrollRecords = payRegisters.some(pr => !!pr.payrollId);
-                if (hasPayrollRecords) {
-                  return null; // Hide button completely
-                }
+                if (hasPayrollRecords) return null;
               }
 
-              // Determine button state based on Selected Department
               if (selectedDepartment) {
                 const batchInfo = departmentBatchStatus.get(selectedDepartment);
                 const status = batchInfo?.status || 'pending';
                 const permissionGranted = batchInfo?.permissionGranted || false;
 
-                if (status === 'freeze' || status === 'complete') {
-                  return null; // Do not display for Frozen/Complete
-                }
+                if (status === 'freeze' || status === 'complete') return null;
 
                 if (status === 'approved' && !permissionGranted) {
                   return (
-                    <button
-                      onClick={() => {
-                        if (batchInfo?.batchId) {
-                          setPendingBatchId(batchInfo.batchId);
-                          setShowPermissionModal(true);
-                        } else {
-                          toast.error("Batch ID not found");
-                        }
-                      }}
-                      className="px-4 py-2 bg-amber-500 text-white rounded-md hover:bg-amber-600 shadow-sm"
-                      disabled={!hasManagePermission}
-                    >
-                      Request Recalculation Permission
-                    </button>
+                    hasManagePermission && (
+                      <button
+                        onClick={() => {
+                          if (batchInfo?.batchId) {
+                            setPendingBatchId(batchInfo.batchId);
+                            setShowPermissionModal(true);
+                          } else {
+                            toast.error("Batch ID not found");
+                          }
+                        }}
+                        className="h-9 px-4 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-xl shadow-sm transition-all"
+                      >
+                        Permission Required
+                      </button>
+                    )
                   );
                 }
 
-                // Pending or Approved+Permission -> Show Recalculate
                 return (
-                  <button
-                    onClick={handleCalculatePayrollForAll}
-                    disabled={bulkCalculating || exportingExcel || !hasManagePermission}
-                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-                  >
-                    {bulkCalculating ? 'Calculating...' : exportingExcel ? 'Preparing Excel...' : 'Recalculate Payroll'}
-                  </button>
+                  hasManagePermission && (
+                    <button
+                      onClick={handleCalculatePayrollForAll}
+                      disabled={bulkCalculating || exportingExcel}
+                      className="h-9 px-4 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-xl shadow-sm disabled:opacity-50 transition-all"
+                    >
+                      {bulkCalculating ? 'Calculating...' : 'Recalculate Payroll'}
+                    </button>
+                  )
                 );
               }
 
-              // Default (All Departments)
               return (
                 <>
-                  <button
-                    onClick={handleCalculatePayrollForAll}
-                    disabled={bulkCalculating || exportingExcel || !hasManagePermission}
-                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-                  >
-                    {bulkCalculating ? 'Calculating...' : exportingExcel ? 'Preparing Excel...' : 'Calculate Payroll (Listed)'}
-                  </button>
+                  {hasManagePermission && (
+                    <button
+                      onClick={handleCalculatePayrollForAll}
+                      disabled={bulkCalculating || exportingExcel}
+                      className="h-9 px-4 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-xl shadow-sm disabled:opacity-50 transition-all"
+                    >
+                      {bulkCalculating ? 'Calculating...' : 'Calculate Payroll'}
+                    </button>
+                  )}
 
-                  {/* Export Excel Button */}
                   {hasGeneratePermission && (
                     <button
                       onClick={async () => {
@@ -974,10 +1027,9 @@ export default function PayRegisterPage() {
                         await downloadPayrollExcel(listedEmployeeIds);
                       }}
                       disabled={exportingExcel || payRegisters.length === 0}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm flex items-center gap-2"
-                      title="Export payroll to Excel for listed employees"
+                      className="h-9 px-4 flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold rounded-xl shadow-sm disabled:opacity-50 transition-all"
                     >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                       </svg>
                       {exportingExcel ? 'Exporting...' : 'Export Excel'}
@@ -1293,9 +1345,14 @@ export default function PayRegisterPage() {
                     'Total Present',
                     'Total Absent',
                     'Total Leaves',
+                    'Paid Leaves',
+                    'LOP Count',
                     'Total OD',
                     'Total OT Hours',
-                    'Total Extra Hours',
+                    'Total Extra Days',
+                    'Lates',
+                    'Holidays & Weekoffs',
+                    'Paid Days',
                     'Month Days',
                     'Counted Days',
                   ].map((label) => (
@@ -1311,12 +1368,15 @@ export default function PayRegisterPage() {
               <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                 {getSummaryRows().map((row) => {
                   const employee = typeof row.pr.employeeId === 'object' ? row.pr.employeeId : null;
-                  const empNo = typeof row.pr.employeeId === 'object' ? row.pr.employeeId.emp_no : row.pr.emp_no;
+                  const empNo =
+                    typeof row.pr.employeeId === 'object' ? row.pr.employeeId.emp_no : row.pr.emp_no;
                   const empName = typeof row.pr.employeeId === 'object' ? row.pr.employeeId.employee_name : '';
-                  const department = typeof row.pr.employeeId === 'object' && row.pr.employeeId.department_id
-                    ? (typeof row.pr.employeeId.department_id === 'object' ? row.pr.employeeId.department_id.name : '')
-                    : '';
-
+                  const department =
+                    typeof row.pr.employeeId === 'object' && row.pr.employeeId.department_id
+                      ? typeof row.pr.employeeId.department_id === 'object'
+                        ? row.pr.employeeId.department_id.name
+                        : ''
+                      : '';
                   return (
                     <tr key={row.pr._id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                       <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 text-[11px] font-medium text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white">
@@ -1331,9 +1391,14 @@ export default function PayRegisterPage() {
                       <td className="text-center px-2 py-2">{row.present.toFixed(1)}</td>
                       <td className="text-center px-2 py-2">{row.absent.toFixed(1)}</td>
                       <td className="text-center px-2 py-2">{row.leave.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2 font-medium text-green-600 dark:text-green-400">{row.paidLeave.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2 font-medium text-red-600 dark:text-red-400">{row.lop.toFixed(1)}</td>
                       <td className="text-center px-2 py-2">{row.od.toFixed(1)}</td>
                       <td className="text-center px-2 py-2">{row.ot.toFixed(1)}</td>
                       <td className="text-center px-2 py-2">{row.extra.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2 font-bold text-amber-600 dark:text-amber-400">{row.lateCount}</td>
+                      <td className="text-center px-2 py-2">{row.holidayAndWeekoffs.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2 font-bold text-blue-600 dark:text-blue-400">{row.totalPaidDays.toFixed(1)}</td>
                       <td className="text-center px-2 py-2">{row.monthDays}</td>
                       <td
                         className={`text-center px-2 py-2 font-semibold ${row.matchesMonth
