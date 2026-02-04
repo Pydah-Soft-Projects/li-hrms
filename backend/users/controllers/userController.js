@@ -105,7 +105,9 @@ exports.registerUser = async (req, res) => {
       departments: departments || (department ? [department] : []),
       scope: scope || 'global',
       departmentType: departmentType || 'single',
-      featureControl: featureControl || [],
+      featureControl: featureControl ? featureControl.flatMap(fc =>
+        fc.includes(':') ? [fc] : [`${fc}:read`, `${fc}:write`]
+      ) : [],
       createdBy: req.user?._id,
       dataScope: dataScope || undefined, // Use model default if not provided
       allowedDivisions: finalAllowedDivisions,
@@ -303,7 +305,9 @@ exports.createUserFromEmployee = async (req, res) => {
       employeeRef: employee._id,
       scope: scope || 'global',
       departmentType: departmentType || (role === 'hr' ? 'multiple' : 'single'),
-      featureControl: featureControl || [],
+      featureControl: featureControl ? featureControl.flatMap(fc =>
+        fc.includes(':') ? [fc] : [`${fc}:read`, `${fc}:write`]
+      ) : [],
       dataScope: dataScope || undefined,
       allowedDivisions: allowedDivisions || (divisionMapping ? divisionMapping.map(m => m.division) : []),
       divisionMapping: divisionMapping || [],

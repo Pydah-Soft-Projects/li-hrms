@@ -1293,16 +1293,18 @@ export default function PayRegisterPage() {
                                       Calculate
                                     </button>
                                   ) : (
-                                    { hasViewPermission && (
-                                      <Link
-                                        href={`/payroll-transactions?search=${employee?.emp_no || employeeId}&month=${monthStr}`}
-                                        onClick={(e) => e.stopPropagation()}
-                                        className="rounded-md px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:shadow-md bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 inline-block"
-                                        title="View Payslip"
-                                      >
-                                        Payslip
-                                      </Link>
-                                    )}
+                                    <>
+                                      {hasViewPermission && (
+                                        <Link
+                                          href={`/payroll-transactions?search=${employee?.emp_no || employeeId}&month=${monthStr}`}
+                                          onClick={(e) => e.stopPropagation()}
+                                          className="rounded-md px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:shadow-md bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 inline-block"
+                                          title="View Payslip"
+                                        >
+                                          Payslip
+                                        </Link>
+                                      )}
+                                    </>
                                   )}
 
                                   {!isFrozenOrComplete && (

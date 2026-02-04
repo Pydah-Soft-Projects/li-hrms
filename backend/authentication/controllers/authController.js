@@ -135,7 +135,6 @@ exports.getMe = async (req, res) => {
   try {
     let user = await User.findById(req.user.userId)
       .populate('department', 'name')
-      .populate('activeWorkspaceId', 'name code type')
       .select('-password');
 
     let userType = 'user';
