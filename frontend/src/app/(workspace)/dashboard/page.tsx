@@ -196,8 +196,7 @@ export default function DashboardPage() {
                 </div>
               </div>
             </div>
-            ) : (
-              <div className="bg-black/10 rounded-2xl p-4 border border-white/10 backdrop-blur-sm">
+            <div className="bg-black/10 rounded-2xl p-4 border border-white/10 backdrop-blur-sm">
                 {attendanceData && attendanceData.length > 0 ? (
                   attendanceData.map((record: any, recordIdx: number) => (
                     <div key={recordIdx} className="w-full">
@@ -243,7 +242,6 @@ export default function DashboardPage() {
                   </div>
                 )}
               </div>
-            )}
           </div>
         )}
 
