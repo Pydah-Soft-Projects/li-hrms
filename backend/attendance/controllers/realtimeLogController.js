@@ -6,6 +6,8 @@
 const AttendanceRawLog = require('../model/AttendanceRawLog');
 const Employee = require('../../employees/model/Employee');
 const { processAndAggregateLogs, formatDate } = require('../services/attendanceSyncService');
+const { processMultiShiftAttendance } = require('../services/multiShiftProcessingService');
+const Settings = require('../../settings/model/Settings');
 
 // Valid Log Types whitelist
 const VALID_LOG_TYPES = ['CHECK-IN', 'CHECK-OUT', 'BREAK-OUT', 'BREAK-IN', 'OVERTIME-IN', 'OVERTIME-OUT'];
@@ -114,25 +116,61 @@ exports.receiveRealTimeLogs = async (req, res) => {
             });
         }
 
-        // 4. Trigger Processing Engine (Fire & Forget mostly, but we await to ensure correctness before ack)
-        // We only trigger for the specific employees affected to keep it fast.
+        // 4. Trigger Multi-Shift Processing Engine
+        // Process each affected employee/date combination with multi-shift support
 
         if (uniqueEmployees.size > 0) {
-            // We reconstruct the "rawLogs" array format expected by processAndAggregateLogs
-            // Just strictly for the affected users. Note: processAndAggregateLogs 
-            // re-fetches from DB anyway to get the full day's picture, so passing just these is fine/safe.
-            // WE DO NOT PASS 'rawLogs' argument heavily Because the service refetches from DB. 
-            // We just need to ensure the DB has the data (Step 3 done).
+            console.log(`[RealTime] Processing ${uniqueEmployees.size} employee(s) with multi-shift support`);
 
-            // However, processAndAggregateLogs logic expects an input array to determine WHO to process.
-            // So we mock the input array based on the unique set.
+            // Get general settings for shift detection
+            const generalConfig = await Settings.getSettingsByCategory('general');
 
-            const triggerSamples = Array.from(uniqueEmployees).map(empId => ({
-                employeeNumber: empId,
-                timestamp: new Date() // Dummy time, just triggers the fetch-by-date logic
-            }));
+            // Process each unique employee
+            for (const empNo of uniqueEmployees) {
+                try {
+                    // Get all raw logs for this employee (for context)
+                    const dates = Array.from(uniqueDates);
 
-            await processAndAggregateLogs(triggerSamples, false, true);
+                    // Extend date range by 1 day on each side for overnight shifts
+                    const minDate = new Date(Math.min(...dates.map(d => new Date(d))));
+                    minDate.setDate(minDate.getDate() - 1);
+                    const maxDate = new Date(Math.max(...dates.map(d => new Date(d))));
+                    maxDate.setDate(maxDate.getDate() + 1);
+
+                    // Fetch all logs for this employee in the date range
+                    const allLogs = await AttendanceRawLog.find({
+                        employeeNumber: empNo,
+                        date: {
+                            $gte: formatDate(minDate),
+                            $lte: formatDate(maxDate),
+                        },
+                        timestamp: { $gte: new Date('2020-01-01') },
+                        type: { $in: ['IN', 'OUT'] }, // Only IN/OUT logs
+                    }).sort({ timestamp: 1 }).lean();
+
+                    // Convert to simple format
+                    const logs = allLogs.map(log => ({
+                        timestamp: new Date(log.timestamp),
+                        type: log.type,
+                        punch_state: log.type === 'IN' ? 0 : 1,
+                        _id: log._id,
+                    }));
+
+                    // Process each unique date
+                    for (const date of uniqueDates) {
+                        await processMultiShiftAttendance(
+                            empNo,
+                            date,
+                            logs,
+                            generalConfig
+                        );
+                    }
+
+                } catch (empError) {
+                    console.error(`[RealTime] Error processing employee ${empNo}:`, empError);
+                    // Continue with other employees
+                }
+            }
         }
 
         const duration = Date.now() - startTime;

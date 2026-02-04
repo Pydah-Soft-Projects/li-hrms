@@ -63,6 +63,7 @@ const navItems: NavItem[] = [
   { href: '/superadmin/departments', label: 'Departments', icon: Building, category: 'Organization', moduleCode: 'DEPARTMENTS' },
   { href: '/superadmin/settings/departmental', label: 'Departmental Settings', icon: Settings2, category: 'Organization', moduleCode: 'DEPARTMENTAL_SETTINGS' },
   { href: '/superadmin/users', label: 'Users', icon: UserCog, category: 'Administration', moduleCode: 'USERS' },
+  { href: '/superadmin/live-attendance', label: 'Live Attendance', icon: Clock, category: 'Administration', moduleCode: 'LIVE_ATTENDANCE' },
   { href: '/superadmin/reports', label: 'Reports', icon: BarChart3, category: 'Administration', moduleCode: 'REPORTS' },
   { href: '/superadmin/payments', label: 'Payments', icon: CreditCard, category: 'Finance & Payroll', moduleCode: 'PAYMENTS' },
   { href: '/superadmin/payments/second-salary', label: '2nd Salary Payments', icon: Banknote, category: 'Finance & Payroll', moduleCode: 'PAYMENTS' },

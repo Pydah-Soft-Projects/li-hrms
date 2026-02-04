@@ -1,8 +1,13 @@
 'use client';
 
+
+
 import { useState, useEffect, useRef } from 'react';
+
 import { api } from '@/lib/api';
+
 import { toast } from 'react-toastify';
+
 import { useAuth } from '@/contexts/AuthContext';
 import {
   canViewAttendance,
@@ -10,115 +15,260 @@ import {
 } from '@/lib/permissions';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 
+
+
 interface AttendanceRecord {
+
   date: string;
+
   inTime: string | null;
+
   outTime: string | null;
+
   totalHours: number | null;
+
   status: 'PRESENT' | 'ABSENT' | 'PARTIAL' | 'LEAVE' | 'OD' | 'HALF_DAY' | 'HOLIDAY' | 'WEEK_OFF';
+
   shiftId?: { _id: string; name: string; startTime: string; endTime: string; duration: number; payableShifts?: number } | string | null;
+
   isLateIn?: boolean;
+
   isEarlyOut?: boolean;
+
   lateInMinutes?: number | null;
+
   earlyOutMinutes?: number | null;
+
   expectedHours?: number | null;
+
   hasLeave?: boolean;
+
   leaveInfo?: {
+
     leaveId: string;
+
     leaveType: string;
+
     isHalfDay: boolean;
+
     halfDayType?: string;
+
     purpose?: string;
+
     fromDate?: string;
+
     toDate?: string;
+
     numberOfDays?: number;
+
     dayInLeave?: number;
+
     appliedAt?: string;
+
     approvedBy?: { name: string; email?: string } | null;
+
     approvedAt?: string;
+
   } | null;
+
   hasOD?: boolean;
+
   odInfo?: {
+
     odId: string;
+
     odType: string;
+
     odType_extended?: 'full_day' | 'half_day' | 'hours' | null; // NEW: OD type
+
     isHalfDay: boolean;
+
     halfDayType?: string;
+
     purpose?: string;
+
     placeVisited?: string;
+
     fromDate?: string;
+
     toDate?: string;
+
     numberOfDays?: number;
+
     durationHours?: number; // NEW: Duration in hours for hour-based OD
+
     odStartTime?: string; // NEW: Start time for hour-based OD
+
     odEndTime?: string; // NEW: End time for hour-based OD
+
     dayInOD?: number;
+
     appliedAt?: string;
+
     approvedBy?: { name: string; email?: string } | null;
+
     approvedAt?: string;
+
   } | null;
+
   isConflict?: boolean;
+
   otHours?: number;
+
   extraHours?: number;
+
   permissionHours?: number;
+
   permissionCount?: number;
+
+  shifts?: Array<{
+
+    _id: string;
+
+    shiftId: { _id: string; name: string; startTime: string; endTime: string } | string;
+
+    inTime: string;
+
+    outTime?: string;
+
+    workingHours?: number;
+
+    status?: string;
+
+    lateInMinutes?: number;
+
+    earlyOutMinutes?: number;
+
+  }>;
+
+  isEdited?: boolean;
+
+  editHistory?: Array<{
+
+    action: string;
+
+    modifiedBy: string;
+
+    modifiedAt: string;
+
+    details: string;
+
+  }>;
+
   source?: string[];
+
 }
+
+
 
 interface Employee {
+
   _id: string;
+
   emp_no: string;
+
   employee_name: string;
+
   department?: { _id: string; name: string };
+
   designation?: { _id: string; name: string };
+
   division?: { _id: string; name: string };
+
 }
+
+
 
 interface MonthlyAttendanceData {
+
   employee: Employee;
+
   dailyAttendance: Record<string, AttendanceRecord | null>;
+
   presentDays?: number;
+
   payableShifts?: number;
+
   summary?: {
+
     _id: string;
+
     employeeId: string;
+
     emp_no: string;
+
     month: string;
+
     year: number;
+
     totalLeaves: number;
+
     totalODs: number;
+
     totalPresentDays: number;
+
     totalDaysInMonth: number;
+
     totalPayableShifts: number;
+
     lastCalculatedAt: string;
+
     createdAt: string;
+
     updatedAt: string;
+
   };
+
 }
+
+
 
 interface Department {
+
   _id: string;
+
   name: string;
+
   code?: string;
+
 }
+
+
 
 interface Designation {
+
   _id: string;
+
   name: string;
+
   department: string;
+
 }
 
+
+
 export default function AttendancePage() {
+
   const { user } = useAuth();
+
   const { activeWorkspace } = useWorkspace();
+
+
 
   const isEmployee = user?.role === 'employee' || activeWorkspace?.type === 'employee';
 
+  const isHR = !isEmployee;
+
+
+
   const [currentDate, setCurrentDate] = useState(new Date());
+
+
 
   // Helper to format time in IST
   const formatTimeIST = (timeStr: string | null, showDateIfDifferent?: boolean, recordDate?: string) => {
     if (!timeStr) return '-';
+
     try {
       const date = new Date(timeStr);
       let formattedTime = date.toLocaleTimeString('en-US', {
@@ -143,230 +293,457 @@ export default function AttendancePage() {
 
       return formattedTime;
     } catch {
+
       return '-';
+
     }
+
   };
 
+
+
   const [showPayslipModal, setShowPayslipModal] = useState(false);
+
   const [selectedEmployeeForPayslip, setSelectedEmployeeForPayslip] = useState<Employee | null>(null);
+
   const [payslipData, setPayslipData] = useState<any>(null);
+
   const [loadingPayslip, setLoadingPayslip] = useState(false);
+
   const [calculatingPayroll, setCalculatingPayroll] = useState(false);
+
   const [monthlyData, setMonthlyData] = useState<MonthlyAttendanceData[]>([]);
+
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+
   const [attendanceDetail, setAttendanceDetail] = useState<any>(null);
+
   const [showDetailDialog, setShowDetailDialog] = useState(false);
+
   const [attendanceData, setAttendanceData] = useState<Record<string, Record<string, AttendanceRecord | null>>>({});
+
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
+
   const [loading, setLoading] = useState(true);
+
   const [loadingAttendance, setLoadingAttendance] = useState(false);
+
   const [uploading, setUploading] = useState(false);
+
   const [uploadFile, setUploadFile] = useState<File | null>(null);
+
   const [showUploadDialog, setShowUploadDialog] = useState(false);
+
   const [syncingShifts, setSyncingShifts] = useState(false);
+
   const [error, setError] = useState('');
+
   const [success, setSuccess] = useState('');
+
   const [showSummaryModal, setShowSummaryModal] = useState(false);
+
   const [selectedEmployeeForSummary, setSelectedEmployeeForSummary] = useState<Employee | null>(null);
+
   const [monthlySummary, setMonthlySummary] = useState<any>(null);
+
   const [loadingSummary, setLoadingSummary] = useState(false);
 
+
+
   // Filter states
+
   const [divisions, setDivisions] = useState<any[]>([]);
+
   const [departments, setDepartments] = useState<Department[]>([]);
+
   const [designations, setDesignations] = useState<Designation[]>([]);
+
   const [selectedDivision, setSelectedDivision] = useState<string>('');
+
   const [selectedDepartment, setSelectedDepartment] = useState<string>('');
+
   const [selectedDesignation, setSelectedDesignation] = useState<string>('');
+
   const [filteredMonthlyData, setFilteredMonthlyData] = useState<MonthlyAttendanceData[]>([]);
 
+
+
   // Search state
+
   const [showSearch, setShowSearch] = useState(false);
+
   const [searchQuery, setSearchQuery] = useState('');
 
+
+
   // Pagination states for infinite scroll (NEW)
+
   const [page, setPage] = useState(1);
+
   const [limit, setLimit] = useState(50);
+
   const [totalPages, setTotalPages] = useState(1);
+
   const [totalCount, setTotalCount] = useState(0);
+
   const [loadingMore, setLoadingMore] = useState(false);
+
   const [hasMore, setHasMore] = useState(true);
+
   const observerTarget = useRef<HTMLDivElement>(null);  // NEW: Ref for IntersectionObserver
 
+
+
   // Table type state
+
   const [tableType, setTableType] = useState<'complete' | 'present_absent' | 'in_out' | 'leaves' | 'od' | 'ot'>('complete');
 
+
+
   // OT conversion state
+
   const [convertingToOT, setConvertingToOT] = useState(false);
+
   const [hasExistingOT, setHasExistingOT] = useState(false);
 
+
+
   // Type-specific summary state
+
   const [showTypeSummaryModal, setShowTypeSummaryModal] = useState(false);
+
   const [typeSummaryData, setTypeSummaryData] = useState<{ type: string; item: MonthlyAttendanceData } | null>(null);
 
+
+
   // Shift selection and out-time state
+
   const [availableShifts, setAvailableShifts] = useState<any[]>([]);
+
   const [loadingShifts, setLoadingShifts] = useState(false);
+
   const [selectedShiftId, setSelectedShiftId] = useState<string>('');
+
   const [editingShift, setEditingShift] = useState(false);
+
   const [outTimeInput, setOutTimeInput] = useState('');
+
   const [editingOutTime, setEditingOutTime] = useState(false);
+
   const [savingShift, setSavingShift] = useState(false);
+
   const [savingOutTime, setSavingOutTime] = useState(false);
 
+
+
   const [showOutTimeDialog, setShowOutTimeDialog] = useState(false);
+
   const [selectedRecordForOutTime, setSelectedRecordForOutTime] = useState<any>(null);
+
+  const [selectedShiftRecordId, setSelectedShiftRecordId] = useState<string | null>(null);
+
   const [outTimeValue, setOutTimeValue] = useState('');
+
   const [updatingOutTime, setUpdatingOutTime] = useState(false);
 
+
+
   // Leave conflict state
+
   const [leaveConflicts, setLeaveConflicts] = useState<any[]>([]);
+
   const [loadingConflicts, setLoadingConflicts] = useState(false);
+
   const [revokingLeave, setRevokingLeave] = useState(false);
+
   const [updatingLeave, setUpdatingLeave] = useState(false);
 
+
+
   const year = currentDate.getFullYear();
+
   const month = currentDate.getMonth() + 1;
 
+
+
   useEffect(() => {
+
     if (activeWorkspace) {
+
       loadDivisions();
+
       loadDepartments();
+
     }
+
   }, [activeWorkspace]);
 
+
+
   useEffect(() => {
+
     if (selectedDivision) {
+
       loadDepartments(selectedDivision);
+
     } else {
+
       setDepartments([]);
+
       setSelectedDepartment('');
+
       setDesignations([]);
+
       setSelectedDesignation('');
+
     }
+
   }, [selectedDivision]);
 
+
+
   useEffect(() => {
+
     if (selectedDepartment) {
+
       loadDesignations(selectedDepartment);
+
     } else {
+
       setDesignations([]);
+
       setSelectedDesignation('');
+
     }
+
   }, [selectedDepartment]);
 
+
+
   useEffect(() => {
+
     if (isEmployee && user) {
+
       // Auto-select current employee
+
       const emp: Employee = {
+
         _id: user.id || (user as any)._id || '', // Handle different ID formats
+
         emp_no: user.emp_no || user.employeeId || '',
+
         employee_name: user.name,
+
         department: typeof user.department === 'object' ? user.department : undefined,
+
       };
+
       setSelectedEmployee(emp);
+
       // Load their specific attendance
+
       const fetchEmpAttendance = async () => {
+
         if (emp.emp_no) {
+
           setLoadingAttendance(true);
+
           try {
+
             const response = await api.getAttendanceCalendar(emp.emp_no, year, month);
+
             if (response.success) {
+
               setAttendanceData(prev => ({ ...prev, [emp._id]: response.data || {} }));
+
             }
+
           } catch (e) { console.error(e); }
+
           setLoadingAttendance(false);
+
         }
+
       }
+
       fetchEmpAttendance();
+
     } else {
+
       // NEW: Reset pagination and load first page
+
       setPage(1);
+
       setHasMore(true);
+
       loadMonthlyAttendance(true);
+
     }
+
   }, [year, month, isEmployee, user]);
 
+
+
   // NEW: Reset page when filters change
+
   useEffect(() => {
+
     if (!isEmployee) {
+
       setPage(1);
+
       setHasMore(true);
+
       loadMonthlyAttendance(true);
+
     }
+
   }, [selectedDivision, selectedDepartment, selectedDesignation]);
 
+
+
   // NEW: Handle Load More when page changes
+
   useEffect(() => {
+
     if (page > 1 && !isEmployee) {
+
       loadMonthlyAttendance(false);
+
     }
+
   }, [page]);
 
+
+
   // NEW: Intersection Observer for infinite scroll
+
   useEffect(() => {
+
     const observer = new IntersectionObserver(
+
       (entries) => {
+
         if (entries[0].isIntersecting && hasMore && !loading && !loadingMore) {
+
           setPage(prev => prev + 1);
+
         }
+
       },
+
       { threshold: 0.1 }
+
     );
 
+
+
     const currentTarget = observerTarget.current;
+
     if (currentTarget) {
+
       observer.observe(currentTarget);
+
     }
+
+
 
     return () => {
+
       if (currentTarget) {
+
         observer.unobserve(currentTarget);
+
       }
+
     };
+
   }, [hasMore, loading, loadingMore, page]);
 
+
+
   useEffect(() => {
+
     // Apply filters to monthly data
+
     let filtered = [...monthlyData];
 
+
+
     if (searchQuery) {
+
       const query = searchQuery.toLowerCase();
+
       filtered = filtered.filter(item =>
+
         item.employee.employee_name.toLowerCase().includes(query) ||
+
         item.employee.emp_no.toLowerCase().includes(query)
+
       );
+
     }
+
+
 
     if (selectedDivision) {
+
       filtered = filtered.filter(item => {
+
         // Prefer direct division on employee
+
         if (item.employee.division) {
+
           const divId = typeof item.employee.division === 'string' ? item.employee.division : (item.employee.division as any)?._id || (item.employee as any).division_id?._id || (item.employee as any).division_id;
+
           if (divId === selectedDivision) return true;
+
         }
 
+
+
         // Fallback to department's division
+
         const dept = item.employee.department as any;
+
         if (!dept) return false;
+
         const divId = typeof dept.division === 'string' ? dept.division : (dept.division?._id || dept.divisionId?._id || dept.divisionId);
+
         return divId === selectedDivision;
+
       });
+
     }
+
+
 
     if (selectedDepartment) {
+
       filtered = filtered.filter(item =>
+
         item.employee.department?._id === selectedDepartment
+
       );
+
     }
+
+
 
     if (selectedDesignation) {
+
       filtered = filtered.filter(item =>
+
         item.employee.designation?._id === selectedDesignation
+
       );
+
     }
 
+
+
     setFilteredMonthlyData(filtered);
+
   }, [monthlyData, selectedDivision, selectedDepartment, selectedDesignation, searchQuery]);
 
   // Permission checks using read/write pattern
@@ -376,919 +753,1939 @@ export default function AttendancePage() {
   const hasViewPermission = user ? canViewAttendance(user as any) : false;
   const hasManagePermission = user ? canEditAttendance(user as any) : false; // Write permission for ALL actions
 
+
   const loadDivisions = async () => {
+
     try {
+
       const response = await api.getDivisions(true);
+
       if (response.success && response.data) {
+
         let divs = response.data;
 
+
+
         // If workspace has specific divisions assigned, filter them
+
         if (activeWorkspace?.scopeConfig?.divisions && activeWorkspace.scopeConfig.divisions.length > 0) {
+
           const allowedIds = activeWorkspace.scopeConfig.divisions.map(id => typeof id === 'string' ? id : (id as any)._id);
+
           divs = divs.filter((d: any) => allowedIds.includes(d._id));
+
         } else if (activeWorkspace?.scopeConfig?.divisionMapping && activeWorkspace.scopeConfig.divisionMapping.length > 0) {
+
           // If workspace uses division mapping, extract those divisions
+
           const allowedIds = activeWorkspace.scopeConfig.divisionMapping.map(m => typeof m.division === 'string' ? m.division : (m.division as any)?._id);
+
           divs = divs.filter((d: any) => allowedIds.includes(d._id));
+
         }
 
+
+
         setDivisions(divs);
+
       }
+
     } catch (err) {
+
       console.error('Error loading divisions:', err);
+
     }
+
   };
 
 
 
 
   const loadDepartments = async (divisionId?: string) => {
+
     try {
+
       const response = await api.getDepartments(true);
+
       if (response.success && response.data) {
+
         let depts = response.data;
+
         if (divisionId) {
+
           depts = depts.filter((d: any) =>
+
             d.division === divisionId ||
+
             (d.division?._id === divisionId) ||
+
             (Array.isArray(d.divisions) && d.divisions.some((div: any) => (typeof div === 'string' ? div : div._id) === divisionId))
+
           );
+
         }
+
         setDepartments(depts);
+
       }
+
     } catch (err) {
+
       console.error('Error loading departments:', err);
+
     }
+
   };
+
+
 
   const loadDesignations = async (departmentId: string) => {
+
     try {
+
       const response = await api.getDesignations(departmentId);
+
       if (response.success && response.data) {
+
         setDesignations(response.data);
+
       }
+
     } catch (err) {
+
       console.error('Error loading designations:', err);
+
     }
+
   };
+
+
 
   const loadMonthlyAttendance = async (reset: boolean = false) => {
+
     try {
+
       if (reset) {
+
         setLoading(true);
+
       } else {
+
         setLoadingMore(true);
+
       }
 
+
+
       setError('');
+
       const targetPage = reset ? 1 : page;
 
+
+
       const response = await api.getMonthlyAttendance(year, month, {
+
         page: targetPage,
+
         limit,
+
         search: searchQuery,
+
         divisionId: selectedDivision,
+
         departmentId: selectedDepartment,
+
         designationId: selectedDesignation
+
       });
 
+
+
       if (response.success) {
+
         const newData = response.data || [];
 
+
+
         if (reset) {
+
           setMonthlyData(newData);
+
         } else {
+
           // Append new data, filter out duplicates
+
           setMonthlyData(prev => {
+
             const existingIds = new Set(prev.map(i => i.employee._id));
+
             const uniqueNewData = newData.filter((i: any) => !existingIds.has(i.employee._id));
+
             return [...prev, ...uniqueNewData];
+
           });
+
         }
+
+
 
         // Update pagination status
+
         const pagInfo = (response as any).pagination;
+
         if (pagInfo) {
+
           setTotalPages(pagInfo.totalPages || 1);
+
           setTotalCount(pagInfo.total || 0);
+
           setHasMore(targetPage < pagInfo.totalPages);
+
         } else {
+
           setHasMore(false);
+
         }
+
       } else {
+
         setError(response.message || 'Failed to load monthly attendance');
+
       }
+
     } catch (err: any) {
+
       console.error('Error loading monthly attendance:', err);
+
       setError(err.message || 'Failed to load monthly attendance');
+
     } finally {
+
       if (reset) setLoading(false);
+
       setLoadingMore(false);
+
     }
+
   };
+
+
 
   const loadAllEmployeesAttendance = async () => {
+
     try {
+
       setLoadingAttendance(true);
+
       setError('');
+
       const response = await api.getMonthlyAttendance(year, month);
+
       if (response.success) {
+
         // Convert monthly data to calendar format for all employees
+
         const calendarData: Record<string, Record<string, AttendanceRecord | null>> = {};
+
         (response.data || []).forEach((item: MonthlyAttendanceData) => {
+
           // Apply filters
+
           if (selectedDepartment && item.employee.department?._id !== selectedDepartment) return;
+
           if (selectedDesignation && item.employee.designation?._id !== selectedDesignation) return;
 
+
+
           // Store dailyAttendance for this employee
+
           calendarData[item.employee._id] = item.dailyAttendance;
+
         });
+
         setAttendanceData(calendarData);
+
         setMonthlyData(response.data || []);
+
       } else {
+
         setError(response.message || 'Failed to load attendance');
+
       }
+
     } catch (err: any) {
+
       console.error('Error loading attendance:', err);
+
       setError(err.message || 'Failed to load attendance');
+
     } finally {
+
       setLoadingAttendance(false);
+
     }
+
   };
+
+
 
   const loadAttendance = async () => {
+
     if (!selectedEmployee) return;
 
+
+
     try {
+
       setLoadingAttendance(true);
+
       const response = await api.getAttendanceCalendar(selectedEmployee.emp_no, year, month);
+
       if (response.success) {
+
         setAttendanceData(response.data || {});
+
       }
+
     } catch (err) {
+
       console.error('Error loading attendance:', err);
+
       setError('Failed to load attendance data');
+
     } finally {
+
       setLoadingAttendance(false);
+
     }
+
   };
+
+
 
   const loadAvailableShifts = async (employeeNumber: string, date: string) => {
+
     try {
+
       setLoadingShifts(true);
+
       const response = await api.getAvailableShifts(employeeNumber, date);
+
       if (response.success && response.data) {
+
         setAvailableShifts(response.data);
+
       }
+
     } catch (err) {
+
       console.error('Error loading available shifts:', err);
+
     } finally {
+
       setLoadingShifts(false);
+
     }
+
   };
+
+
 
   const handleAssignShift = async () => {
+
     if (!selectedEmployee || !selectedDate || !selectedShiftId) {
+
       setError('Please select a shift');
+
       return;
+
     }
 
+
+
     try {
+
       setSavingShift(true);
+
       setError('');
+
       setSuccess('');
+
+
 
       const response = await api.assignShiftToAttendance(
+
         selectedEmployee.emp_no,
+
         selectedDate,
+
         selectedShiftId
+
       );
 
+
+
       if (response.success) {
+
         setSuccess('Shift assigned successfully!');
+
         setEditingShift(false);
+
         setSelectedShiftId('');
 
+
+
         // Optimistic update: mark as manually edited
+
         setMonthlyData(prevData => prevData.map(empData => {
+
           if (empData.employee.emp_no === selectedEmployee.emp_no) {
+
             const updatedDaily = { ...empData.dailyAttendance };
+
             if (updatedDaily[selectedDate]) {
+
               const record = updatedDaily[selectedDate];
+
               if (record) {
+
                 const newSource = record.source ? [...record.source] : [];
+
                 if (!newSource.includes('manual')) newSource.push('manual');
+
                 updatedDaily[selectedDate] = { ...record, source: newSource };
+
               }
+
             }
+
             return { ...empData, dailyAttendance: updatedDaily };
+
           }
+
           return empData;
+
         }));
 
+
+
         // Reload attendance detail and monthly data
+
         await loadMonthlyAttendance();
 
+
+
         // Refresh the detail view
+
         const updatedResponse = await api.getAttendanceDetail(selectedEmployee.emp_no, selectedDate);
+
         if (updatedResponse.success) {
+
           setAttendanceDetail(updatedResponse.data);
+
         }
 
+
+
         setTimeout(() => {
+
           setSuccess('');
+
         }, 2000);
+
       } else {
+
         setError(response.message || 'Failed to assign shift');
+
       }
+
     } catch (err: any) {
+
       console.error('Error assigning shift:', err);
+
       setError(err.message || 'An error occurred while assigning shift');
+
     } finally {
+
       setSavingShift(false);
+
     }
+
   };
+
+
 
   const handleSaveOutTime = async () => {
+
     if (!selectedEmployee || !selectedDate || !outTimeInput) {
+
       setError('Please enter out-time');
+
       return;
+
     }
 
+
+
     try {
+
       setSavingOutTime(true);
+
       setError('');
+
       setSuccess('');
+
+
 
       // Combine date with time to create proper datetime string
+
       const outTimeDateTime = `${selectedDate}T${outTimeInput}:00`;
 
+
+
       const response = await api.updateAttendanceOutTime(
+
         selectedEmployee.emp_no,
+
         selectedDate,
+
         outTimeDateTime
+
       );
 
+
+
       if (response.success) {
+
         setSuccess('Out-time updated successfully!');
+
         setEditingOutTime(false);
+
         setOutTimeInput('');
 
+
+
         // Optimistic update: mark as manually edited
+
         setMonthlyData(prevData => prevData.map(empData => {
+
           if (empData.employee.emp_no === selectedEmployee.emp_no) {
+
             const updatedDaily = { ...empData.dailyAttendance };
+
             if (updatedDaily[selectedDate]) {
+
               const record = updatedDaily[selectedDate];
+
               if (record) {
+
                 const newSource = record.source ? [...record.source] : [];
+
                 if (!newSource.includes('manual')) newSource.push('manual');
+
                 updatedDaily[selectedDate] = { ...record, source: newSource };
+
               }
+
             }
+
             return { ...empData, dailyAttendance: updatedDaily };
+
           }
+
           return empData;
+
         }));
 
+
+
         // Reload attendance detail and monthly data
+
         await loadMonthlyAttendance();
 
+
+
         // Refresh the detail view
+
         const updatedResponse = await api.getAttendanceDetail(selectedEmployee.emp_no, selectedDate);
+
         if (updatedResponse.success) {
+
           setAttendanceDetail(updatedResponse.data);
+
         }
 
+
+
         setTimeout(() => {
+
           setSuccess('');
+
         }, 2000);
+
       } else {
+
         setError(response.message || 'Failed to update out-time');
+
       }
+
     } catch (err: any) {
+
       console.error('Error updating out-time:', err);
+
       setError(err.message || 'An error occurred while updating out-time');
+
     } finally {
+
       setSavingOutTime(false);
+
     }
+
   };
+
+
 
   const loadLeaveConflicts = async (employeeNumber: string, date: string) => {
+
     try {
+
       setLoadingConflicts(true);
+
       const response = await api.getLeaveConflicts(employeeNumber, date);
+
       if (response.success && response.data) {
+
         setLeaveConflicts(response.data);
+
       } else {
+
         setLeaveConflicts([]);
+
       }
+
     } catch (err) {
+
       console.error('Error loading leave conflicts:', err);
+
       setLeaveConflicts([]);
+
     } finally {
+
       setLoadingConflicts(false);
+
     }
+
   };
 
+
+
   const handleRevokeLeave = async (leaveId: string) => {
+
     if (!selectedEmployee || !selectedDate) return;
 
+
+
     try {
+
       setRevokingLeave(true);
+
       setError('');
+
       setSuccess('');
+
+
 
       const response = await api.revokeLeaveForAttendance(leaveId);
 
+
+
       if (response.success) {
+
         setSuccess('Leave revoked successfully!');
+
         setLeaveConflicts([]);
 
+
+
         // Reload attendance detail and monthly data
+
         await loadMonthlyAttendance();
 
+
+
         // Refresh the detail view
+
         const updatedResponse = await api.getAttendanceDetail(selectedEmployee.emp_no, selectedDate);
+
         if (updatedResponse.success) {
+
           setAttendanceDetail(updatedResponse.data);
+
         }
 
+
+
         // Reload conflicts
+
         await loadLeaveConflicts(selectedEmployee.emp_no, selectedDate);
 
+
+
         setTimeout(() => {
+
           setSuccess('');
+
         }, 3000);
+
       } else {
+
         setError(response.message || 'Failed to revoke leave');
+
       }
+
     } catch (err: any) {
+
       console.error('Error revoking leave:', err);
+
       setError(err.message || 'An error occurred while revoking leave');
+
     } finally {
+
       setRevokingLeave(false);
+
     }
+
   };
 
+
+
   const handleUpdateLeave = async (leaveId: string) => {
+
     if (!selectedEmployee || !selectedDate) return;
 
+
+
     try {
+
       setUpdatingLeave(true);
+
       setError('');
+
       setSuccess('');
+
+
 
       const response = await api.updateLeaveForAttendance(leaveId, selectedEmployee.emp_no, selectedDate);
 
+
+
       if (response.success) {
+
         setSuccess(response.message || 'Leave updated successfully!');
+
         setLeaveConflicts([]);
 
+
+
         // Reload attendance detail and monthly data
+
         await loadMonthlyAttendance();
+
+
 
         // Refresh the detail view
+
         const updatedResponse = await api.getAttendanceDetail(selectedEmployee.emp_no, selectedDate);
+
         if (updatedResponse.success) {
+
           setAttendanceDetail(updatedResponse.data);
+
         }
+
+
 
         // Reload conflicts
+
         await loadLeaveConflicts(selectedEmployee.emp_no, selectedDate);
 
+
+
         setTimeout(() => {
+
           setSuccess('');
+
         }, 3000);
+
       } else {
+
         setError(response.message || 'Failed to update leave');
+
       }
+
     } catch (err: any) {
+
       console.error('Error updating leave:', err);
+
       setError(err.message || 'An error occurred while updating leave');
+
     } finally {
+
       setUpdatingLeave(false);
+
     }
+
   };
+
+
 
   const handleDateClick = async (employee: Employee, date: string) => {
+
     setSelectedDate(date);
+
     setSelectedEmployee(employee);
+
     setHasExistingOT(false);
+
     setEditingShift(false);
+
     setEditingOutTime(false);
+
     setSelectedShiftId('');
+
     setOutTimeInput('');
+
     setLeaveConflicts([]);
 
+
+
     try {
+
       // Load available shifts for this employee/date
+
       await loadAvailableShifts(employee.emp_no, date);
 
+
+
       // Load leave conflicts
+
       await loadLeaveConflicts(employee.emp_no, date);
 
+
+
       // Get the daily attendance record from monthly data if available
+
       const employeeData = monthlyData.find(item => item.employee._id === employee._id);
+
       const dayRecord = employeeData?.dailyAttendance[date];
 
+
+
       // Check if OT already exists for this date
+
       try {
+
         const otResponse = await api.getOTRequests({
+
           employeeId: employee._id,
+
           employeeNumber: employee.emp_no,
+
           date: date,
+
           status: 'approved',
+
         });
+
         if (otResponse.success && otResponse.data && otResponse.data.length > 0) {
+
           setHasExistingOT(true);
+
         }
+
       } catch (otErr) {
+
         console.error('Error checking existing OT:', otErr);
+
       }
+
+
 
       // If we have the record with leave/OD info, use it directly
+
       if (dayRecord) {
+
         console.log('Day record from monthly data:', dayRecord);
+
         console.log('Leave info:', dayRecord.leaveInfo);
+
         setAttendanceDetail(dayRecord);
+
         setShowDetailDialog(true);
+
       } else {
+
         // Otherwise fetch from API
+
         const response = await api.getAttendanceDetail(employee.emp_no, date);
+
         if (response.success) {
+
           console.log('Day record from API:', response.data);
+
           setAttendanceDetail(response.data);
+
           setShowDetailDialog(true);
+
         }
+
       }
+
     } catch (err) {
+
       console.error('Error loading attendance detail:', err);
+
       setError('Failed to load attendance detail');
+
     }
+
   };
+
+
 
   const handleConvertExtraHoursToOT = async () => {
+
     if (!selectedEmployee || !selectedDate || !attendanceDetail) {
+
       setError('Missing employee or date information');
+
       return;
+
     }
+
+
 
     if (!attendanceDetail.extraHours || attendanceDetail.extraHours <= 0) {
+
       setError('No extra hours to convert');
+
       return;
+
     }
+
+
 
     if (hasExistingOT) {
+
       setError('OT record already exists for this date');
+
       return;
+
     }
+
+
 
     if (!attendanceDetail.shiftId) {
+
       setError('Shift not assigned. Please assign shift first.');
+
       return;
+
     }
+
+
 
     if (!confirm(`Convert ${attendanceDetail.extraHours.toFixed(2)} extra hours to OT for ${selectedDate}?`)) {
+
       return;
+
     }
 
+
+
     try {
+
       setConvertingToOT(true);
+
       setError('');
+
       setSuccess('');
+
+
 
       const response = await api.convertExtraHoursToOT({
+
         employeeId: selectedEmployee._id,
+
         employeeNumber: selectedEmployee.emp_no,
+
         date: selectedDate,
+
       });
 
+
+
       if (response.success) {
+
         setSuccess(response.message || 'Extra hours converted to OT successfully!');
+
         setHasExistingOT(true);
 
+
+
         // Update attendance detail - clear extra hours, add OT hours
+
         setAttendanceDetail({
+
           ...attendanceDetail,
+
           extraHours: 0,
+
           otHours: (attendanceDetail.otHours || 0) + attendanceDetail.extraHours,
+
         });
 
+
+
         // Reload monthly attendance to refresh the view
+
         await loadMonthlyAttendance();
 
+
+
         // Close dialog after a short delay
+
         setTimeout(() => {
+
           setShowDetailDialog(false);
+
           setSuccess('');
+
         }, 2000);
+
       } else {
+
         setError(response.message || 'Failed to convert extra hours to OT');
+
       }
+
     } catch (err: any) {
+
       console.error('Error converting extra hours to OT:', err);
+
       setError(err.message || 'An error occurred while converting');
+
     } finally {
+
       setConvertingToOT(false);
+
     }
+
   };
+
+
 
   const navigateMonth = (direction: 'prev' | 'next') => {
+
     setCurrentDate(prev => {
+
       const newDate = new Date(prev);
+
       if (direction === 'prev') {
+
         newDate.setMonth(newDate.getMonth() - 1);
+
       } else {
+
         newDate.setMonth(newDate.getMonth() + 1);
+
       }
+
       return newDate;
+
     });
+
   };
+
+
 
   const handleExcelUpload = async () => {
+
     if (!uploadFile) {
+
       setError('Please select a file to upload');
+
       return;
+
     }
 
+
+
     try {
+
       setUploading(true);
+
       setError('');
+
       setSuccess('');
+
       const response = await api.uploadAttendanceExcel(uploadFile);
+
       if (response.success) {
+
         if (response.isAsync) {
+
           // Large file, processing in background
+
           toast.info(response.data.message || 'Processing started in background');
+
         } else {
+
           toast.success(response.message || 'File uploaded successfully');
+
           loadMonthlyAttendance();
+
         }
+
+
 
         setUploadFile(null);
+
         setShowUploadDialog(false);
+
         const fileInput = document.getElementById('excel-upload-input') as HTMLInputElement;
+
         if (fileInput) fileInput.value = '';
+
       } else {
+
         toast.error(response.message || 'Upload failed');
+
         setError(response.message || 'Upload failed');
+
       }
+
     } catch (err: any) {
+
       setError(err.message || 'An error occurred during upload');
+
     } finally {
+
       setUploading(false);
+
     }
+
   };
+
+
 
   const handleDownloadTemplate = async () => {
+
     try {
+
       await api.downloadAttendanceTemplate();
+
       setSuccess('Template downloaded successfully');
+
     } catch (err) {
+
       setError('Failed to download template');
+
     }
+
   };
+
+
 
   const handleViewPayslip = async (employee: Employee) => {
+
     setSelectedEmployeeForPayslip(employee);
+
     setShowPayslipModal(true);
+
     setLoadingPayslip(true);
+
     setPayslipData(null);
+
     setError('');
 
+
+
     try {
+
       const monthStr = `${year}-${String(month).padStart(2, '0')}`;
+
       const response = await api.getPayslip(employee._id, monthStr);
 
+
+
       if (response.success && response.data) {
+
         setPayslipData(response.data);
+
       } else {
+
         // If payslip doesn't exist, offer to calculate
+
         setError('Payslip not found. Would you like to calculate payroll?');
+
       }
+
     } catch (err: any) {
+
       console.error('Error loading payslip:', err);
+
       if (err.message?.includes('not found') || err.message?.includes('404')) {
+
         setError('Payslip not found. Would you like to calculate payroll?');
+
       } else {
+
         setError('Failed to load payslip');
+
       }
+
     } finally {
+
       setLoadingPayslip(false);
+
     }
+
   };
+
+
 
   const handleCalculatePayroll = async () => {
+
     if (!selectedEmployeeForPayslip) return;
 
+
+
     try {
+
       setCalculatingPayroll(true);
+
       setError('');
+
       const monthStr = `${year}-${String(month).padStart(2, '0')}`;
+
       const response = await api.calculatePayroll(selectedEmployeeForPayslip._id, monthStr);
 
+
+
       if (response.success) {
+
         toast.success('Payroll calculated successfully!');
+
         // Reload payslip
+
         const payslipResponse = await api.getPayslip(selectedEmployeeForPayslip._id, monthStr);
+
         if (payslipResponse.success && payslipResponse.data) {
+
           setPayslipData(payslipResponse.data);
+
           setError('');
+
         }
+
       } else {
+
         const errorMsg = response.message || 'Failed to calculate payroll';
+
         setError(errorMsg);
+
         toast.error(errorMsg);
+
       }
+
     } catch (err: any) {
+
       console.error('Error calculating payroll:', err);
+
       setError(err.message || 'Failed to calculate payroll');
+
     } finally {
+
       setCalculatingPayroll(false);
+
     }
+
   };
+
+
 
   const handleEmployeeClick = async (employee: Employee) => {
+
     setSelectedEmployeeForSummary(employee);
+
     setShowSummaryModal(true);
+
     setLoadingSummary(true);
+
     try {
+
       // First try to get summary from the monthly data if available
+
       const employeeData = monthlyData.find(item => item.employee._id === employee._id);
+
       if (employeeData && employeeData.summary) {
+
         setMonthlySummary(employeeData.summary);
+
         setLoadingSummary(false);
+
         return;
+
       }
+
+
 
       // If not in monthly data, fetch from API
+
       const monthStr = `${year}-${String(month).padStart(2, '0')}`;
+
       const response = await api.getMonthlySummary(employee._id, monthStr);
+
       if (response.success) {
+
         setMonthlySummary(response.data);
+
       } else {
+
         setError('Failed to load monthly summary');
+
       }
+
     } catch (err: any) {
+
       console.error('Error loading monthly summary:', err);
+
       setError('Failed to load monthly summary');
+
     } finally {
+
       setLoadingSummary(false);
+
     }
+
   };
+
+
 
   const handleViewTypeSummary = (item: MonthlyAttendanceData, type: string) => {
+
     setTypeSummaryData({ item, type });
+
     setShowTypeSummaryModal(true);
+
   };
+
+
 
   const handleExportPDF = () => {
+
     window.print();
+
   };
+
+
 
   const handleSyncShifts = async () => {
+
     if (!confirm('This will sync shifts for all attendance records that don\'t have shifts assigned. This may take a few minutes. Continue?')) {
+
       return;
+
     }
 
+
+
     try {
+
       setSyncingShifts(true);
+
       setError('');
+
       setSuccess('');
+
       const response = await api.syncShifts();
+
       if (response.success) {
+
         setSuccess(response.message || `Processed ${response.data?.processed || 0} records: ${response.data?.assigned || 0} assigned, ${response.data?.confused || 0} flagged for review`);
+
         loadMonthlyAttendance();
+
       } else {
+
         setError(response.message || 'Failed to sync shifts');
+
       }
+
     } catch (err: any) {
+
       setError(err.message || 'An error occurred during shift sync');
+
     } finally {
+
       setSyncingShifts(false);
+
     }
+
   };
+
+
 
   const handleUpdateOutTime = async () => {
+
     if (!selectedRecordForOutTime || !outTimeValue) {
+
       alert('Please enter out time');
+
       return;
+
     }
+
+
 
     try {
+
       setUpdatingOutTime(true);
+
       setError('');
+
       setSuccess('');
 
+
+
       // Format datetime for API
+
       const outTimeDate = new Date(outTimeValue);
+
       const isoString = outTimeDate.toISOString();
 
+
+
       const response = await api.updateAttendanceOutTime(
+
         selectedRecordForOutTime.employee.emp_no,
+
         selectedRecordForOutTime.date,
+
         isoString
+
       );
 
+
+
       if (response.success) {
+
         setSuccess('Out time updated successfully. Shift will be automatically assigned.');
+
         setShowOutTimeDialog(false);
+
         setSelectedRecordForOutTime(null);
+
         setOutTimeValue('');
 
+
+
         // Optimistic update: mark as manually edited
+
         setMonthlyData(prevData => prevData.map(empData => {
+
           if (empData.employee.emp_no === selectedRecordForOutTime.employee.emp_no) {
+
             const updatedDaily = { ...empData.dailyAttendance };
+
             if (updatedDaily[selectedRecordForOutTime.date]) {
+
               const record = updatedDaily[selectedRecordForOutTime.date];
+
               if (record) {
+
                 const newSource = record.source ? [...record.source] : [];
+
                 if (!newSource.includes('manual')) newSource.push('manual');
+
                 updatedDaily[selectedRecordForOutTime.date] = { ...record, source: newSource };
+
               }
+
             }
+
             return { ...empData, dailyAttendance: updatedDaily };
+
           }
+
           return empData;
+
         }));
 
+
+
         loadMonthlyAttendance();
+
       } else {
+
         setError(response.message || 'Failed to update out time');
+
       }
+
     } catch (err: any) {
+
       setError(err.message || 'An error occurred while updating out time');
+
     } finally {
+
       setUpdatingOutTime(false);
+
     }
+
   };
+
+
+
+  const handleShiftOutTimeUpdate = async () => {
+
+    if (!attendanceDetail || !outTimeInput) {
+
+      alert('Please enter out time');
+
+      return;
+
+    }
+
+
+
+    try {
+
+      setSavingOutTime(true);
+
+      setError('');
+
+      setSuccess('');
+
+
+
+      // Format datetime for API
+
+      // Use the attendance date + time input
+
+      const dateStr = attendanceDetail.date;
+
+      const timeStr = outTimeInput; // HH:mm
+
+      const dateTimeStr = `${dateStr}T${timeStr}:00.000Z`;
+
+      // Note: The backend expects ISO. We should probably respect local time?
+
+      // Actually, simple string concatenation might assume UTC if Z is appended.
+
+      // Better to construct a Date object correctly.
+
+      const [year, month, day] = dateStr.split('-').map(Number);
+
+      const [hours, minutes] = timeStr.split(':').map(Number);
+
+      const outTimeDate = new Date(year, month - 1, day, hours, minutes);
+
+
+
+      // Adjust for timezone if necessary OR backend handles local time?
+
+      // api.updateAttendanceOutTime implementation usually expects ISO.
+
+      // Let's stick to a safe ISO conversion.
+
+      const isoString = outTimeDate.toISOString();
+
+
+
+      const response = await api.updateAttendanceOutTime(
+
+        attendanceDetail.employee.emp_no,
+
+        attendanceDetail.date,
+
+        isoString,
+
+        selectedShiftRecordId || undefined
+
+      );
+
+
+
+      if (response.success) {
+
+        setSuccess('Out time updated successfully.');
+
+        setEditingOutTime(false);
+
+        setOutTimeInput('');
+
+        setSelectedShiftRecordId(null);
+
+        // Refresh detail
+
+        const detailRes = await api.getAttendanceDetail(attendanceDetail.employee.emp_no, attendanceDetail.date);
+
+        if (detailRes.success) {
+
+          setAttendanceDetail(detailRes.data);
+
+        }
+
+        // Also refresh monthly list
+
+        loadMonthlyAttendance();
+
+      } else {
+
+        setError(response.message || 'Failed to update out time');
+
+      }
+
+    } catch (err: any) {
+
+      setError(err.message || 'An error occurred while saving out time');
+
+    } finally {
+
+      setSavingOutTime(false);
+
+    }
+
+  };
+
+
 
   const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-  const dayNames = ['Sun', 'Mon', 'Tue', 'Thu', 'Fri', 'Sat'];
+
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+
 
   const getDaysInMonth = () => {
+
     const lastDay = new Date(year, month, 0);
+
     return lastDay.getDate();
+
   };
 
+
+
   const getCalendarDays = () => {
+
     const firstDay = new Date(year, month - 1, 1);
+
     const lastDay = new Date(year, month, 0);
+
     const daysInMonth = lastDay.getDate();
+
     const startingDayOfWeek = firstDay.getDay();
+
+
 
     const days = [];
 
+
+
     // Add empty cells for days before the first day of the month
+
     for (let i = 0; i < startingDayOfWeek; i++) {
+
       days.push(null);
+
     }
+
+
 
     // Add all days of the month
+
     for (let day = 1; day <= daysInMonth; day++) {
+
       const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
       days.push({
+
         day,
+
         date: dateStr,
+
       });
+
     }
+
+
 
     return days;
+
   };
+
+
 
   const getStatusColor = (record: AttendanceRecord | null) => {
+
     if (!record) return '';
+
     if (record.status === 'PRESENT') return 'bg-green-50 border-green-200 text-green-800 dark:bg-green-900/10 dark:border-green-800 dark:text-green-400';
+
     if (record.status === 'PARTIAL') return 'bg-yellow-50 border-yellow-200 text-yellow-800 dark:bg-yellow-900/10 dark:border-yellow-800 dark:text-yellow-400';
+
     if (record.status === 'HOLIDAY') return 'bg-red-50 border-red-200 text-red-800 dark:bg-red-900/10 dark:border-red-800 dark:text-red-400';
+
     if (record.status === 'WEEK_OFF') return 'bg-orange-50 border-orange-200 text-orange-800 dark:bg-orange-900/10 dark:border-orange-800 dark:text-orange-400';
+
     return '';
+
   };
+
+
 
   const getCellBackgroundColor = (record: AttendanceRecord | null) => {
+
     if (!record) {
+
       return 'bg-slate-100 dark:bg-slate-800';
+
     }
+
+
 
     // Priority: Conflict (purple) > Leave (orange) > OD (blue) > Absent (gray) > Present (default)
+
     if (record.isConflict) {
+
       return 'bg-purple-100 border-purple-300 dark:bg-purple-900/30 dark:border-purple-700';
+
     }
+
     if (record.hasLeave && !record.hasOD) {
+
       if (record.leaveInfo?.numberOfDays && record.leaveInfo.numberOfDays >= 3) {
+
         return 'bg-amber-200 border-amber-400 dark:bg-amber-900/50 dark:border-amber-600';
+
       }
+
       return 'bg-orange-100 border-orange-300 dark:bg-orange-900/30 dark:border-orange-700';
+
     }
+
     if (record.hasOD && !record.hasLeave) {
+
       return 'bg-blue-100 border-blue-300 dark:bg-blue-900/30 dark:border-blue-700';
+
     }
+
     if (record.hasLeave && record.hasOD) {
+
       // Both leave and OD - show as conflict
+
       return 'bg-purple-100 border-purple-300 dark:bg-purple-900/30 dark:border-purple-700';
+
     }
+
     if (record.status === 'ABSENT' || record.status === 'LEAVE' || record.status === 'OD') {
+
       return 'bg-slate-100 dark:bg-slate-800';
+
     }
+
     if (record.status === 'HOLIDAY') {
+
       return 'bg-red-100 dark:bg-red-900/20 border-red-300 dark:border-red-700';
+
     }
+
     if (record.status === 'WEEK_OFF') {
+
       return 'bg-orange-100 dark:bg-orange-900/20 border-orange-300 dark:border-orange-700';
+
     }
+
     return '';
+
   };
+
+
 
   const formatTime = (time: string | null, showDateIfDifferent?: boolean, recordDate?: string) => {
+
     if (!time) return '-';
+
     try {
+
       const date = new Date(time);
+
       const timeStr = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
 
+
+
       // If showDateIfDifferent is true and recordDate is provided, check if dates differ
+
       if (showDateIfDifferent && recordDate) {
+
         const timeDateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
         if (timeDateStr !== recordDate) {
+
           // Dates are different - show date with time
+
           const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
           return `${dateStr}, ${timeStr}`;
+
         }
+
       }
 
+
+
       return timeStr;
+
     } catch {
+
       return time;
+
     }
+
   };
+
+
 
   const formatHours = (hours: number | null) => {
+
     if (hours === null || hours === undefined) return '-';
+
     return `${hours.toFixed(2)}h`;
+
   };
 
+
+
   const daysInMonth = getDaysInMonth();
+
   const daysArray = Array.from({ length: daysInMonth }, (_, i) => i + 1);
 
+
+
   return (
+
     <div className="relative min-h-screen">
+
       {/* Background */}
+
       <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(to_right,#e2e8f01f_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f01f_1px,transparent_1px)] bg-[size:28px_28px] dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.12)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.12)_1px,transparent_1px)]" />
+
       <div className="pointer-events-none fixed inset-0 bg-gradient-to-br from-green-50/40 via-green-50/35 to-transparent dark:from-slate-900/60 dark:via-slate-900/65 dark:to-slate-900/80" />
 
+
+
       <div className="relative z-10 mx-auto max-w-[1920px]">
+
         {/* Header */}
+
         <div className="mb-6 flex flex-nowrap items-center justify-between gap-4 overflow-x-auto pb-2 scrollbar-hide">
+
           <div className="flex flex-nowrap items-center gap-4">
+
             {/* Title Section */}
+
             <div className="flex flex-nowrap items-center gap-3 shrink-0">
+
               <div className="flex flex-col">
                 <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white whitespace-nowrap">Attendance Management</h1>
               </div>
 
+
+
               <div className="h-8 w-px bg-slate-200 dark:bg-slate-800 hidden md:block" />
 
+
+
               {/* Search Toggle */}
+
               <div className="flex items-center gap-2">
+
                 {showSearch ? (
+
                   <div className="flex items-center gap-2 animate-in fade-in slide-in-from-left-2 duration-300">
+
                     <div className="relative group">
+
                       <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+
                         <svg className="h-3.5 w-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+
                         </svg>
+
                       </div>
+
                       <input
+
                         autoFocus
+
                         type="text"
+
                         value={searchQuery}
+
                         onChange={(e) => setSearchQuery(e.target.value)}
+
                         placeholder="Search..."
+
                         className="w-40 h-9 pl-9 pr-3 text-xs rounded-xl border border-slate-200 bg-white focus:border-green-500 focus:ring-2 focus:ring-green-500/10 transition-all dark:border-slate-700 dark:bg-slate-800 dark:text-white shadow-sm"
+
                       />
+
                     </div>
                     <button
+
                       onClick={() => { setShowSearch(false); setSearchQuery(''); }}
+
                       className="h-9 w-9 flex items-center justify-center rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 transition-all"
+
                     >
+
                       <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+
                       </svg>
+
                     </button>
+
                   </div>
+
                 ) : (
+
                   <button
+
                     onClick={() => setShowSearch(true)}
+
                     className="h-9 w-9 flex items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:text-green-600 hover:border-green-200 hover:bg-green-50/50 transition-all shadow-sm dark:border-slate-700 dark:bg-slate-800"
+
                     title="Search Records"
+
                   >
+
                     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+
                     </svg>
+
                   </button>
+
                 )}
+
               </div>
+
             </div>
 
             {/* Filters Group - Hide for Employee */}
@@ -1326,19 +2723,26 @@ export default function AttendancePage() {
 
                 {selectedDepartment && (
                   <select
+
                     value={selectedDesignation}
+
                     onChange={(e) => setSelectedDesignation(e.target.value)}
                     className="h-8 pl-2 pr-6 text-[11px] font-semibold bg-white dark:bg-slate-800 border-0 rounded-lg focus:ring-2 focus:ring-green-500/20 text-slate-700 dark:text-slate-300 shadow-sm min-w-[100px] max-w-[140px] animate-in slide-in-from-left-2"
                   >
+
                     <option value="">All Designations</option>
+
                     {designations.map((desig) => (
                       <option key={desig._id} value={desig._id}>{desig.name}</option>
                     ))}
+
                   </select>
                 )}
                 {/* Table Type Dropdown */}
                 <select
+
                   value={tableType}
+
                   onChange={(e) => setTableType(e.target.value as any)}
                   className="h-8 pl-2 pr-6 text-[11px] font-bold bg-green-50 dark:bg-green-900/20 border-0 rounded-lg focus:ring-2 focus:ring-green-500/20 text-green-700 dark:text-green-400 shadow-sm cursor-pointer"
                 >
@@ -1350,57 +2754,110 @@ export default function AttendancePage() {
                   <option value="ot">OT</option>
                 </select>
               </div>
+
             )}
+
           </div>
 
+
+
           <div className="flex flex-nowrap items-center gap-3 shrink-0">
+
             {/* Month/Year Navigation */}
+
             <div className="flex items-center gap-0.5 p-0.5 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+
               <button
+
                 onClick={() => navigateMonth('prev')}
+
                 className="h-8 w-8 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+
               >
+
                 <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+
                 </svg>
+
               </button>
+
               <div className="flex items-center px-1 space-x-0.5">
+
                 <select
+
                   value={month}
+
                   onChange={(e) => {
+
                     const newDate = new Date(currentDate);
+
                     newDate.setMonth(parseInt(e.target.value) - 1);
+
                     setCurrentDate(newDate);
+
                   }}
+
                   className="bg-transparent border-0 text-[11px] font-bold text-slate-900 dark:text-white focus:ring-0 p-0 cursor-pointer"
+
                 >
+
                   {monthNames.map((name, idx) => (
+
                     <option key={idx} value={idx + 1}>{name.substring(0, 3)}</option>
+
                   ))}
+
                 </select>
+
                 <select
+
                   value={year}
+
                   onChange={(e) => {
+
                     const newDate = new Date(currentDate);
+
                     newDate.setFullYear(parseInt(e.target.value));
+
                     setCurrentDate(newDate);
+
                   }}
+
                   className="bg-transparent border-0 text-[11px] font-bold text-slate-900 dark:text-white focus:ring-0 p-0 cursor-pointer"
+
                 >
+
                   {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i).map((y) => (
+
                     <option key={y} value={y}>{y}</option>
+
                   ))}
+
                 </select>
+
               </div>
+
               <button
+
                 onClick={() => navigateMonth('next')}
+
                 className="h-8 w-8 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+
               >
+
                 <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+
                 </svg>
+
               </button>
+
             </div>
+
+
 
             <div className="flex items-center gap-2">
               {hasManagePermission && (
@@ -1434,7 +2891,9 @@ export default function AttendancePage() {
                 </button>
               )}
             </div>
+
           </div>
+
         </div>
 
 
@@ -1833,9 +3292,13 @@ export default function AttendancePage() {
                 <div className="mb-4 flex items-center justify-between">
                   <h3 className="text-lg font-bold text-slate-900 dark:text-white">Upload Attendance Excel</h3>
                   <button
+
                     onClick={() => {
+
                       setShowUploadDialog(false);
+
                       setUploadFile(null);
+
                     }}
                     className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
                   >
@@ -1843,6 +3306,7 @@ export default function AttendancePage() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                     </svg>
                   </button>
+
                 </div>
 
                 <div className="space-y-4">
@@ -1900,10 +3364,15 @@ export default function AttendancePage() {
                 <div className="mb-4 flex items-center justify-between">
                   <h3 className="text-lg font-bold text-slate-900 dark:text-white">Enter Out Time</h3>
                   <button
+
                     onClick={() => {
+
                       setShowOutTimeDialog(false);
+
                       setSelectedRecordForOutTime(null);
+
                       setOutTimeValue('');
+
                     }}
                     className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
                   >
@@ -1911,6 +3380,7 @@ export default function AttendancePage() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                     </svg>
                   </button>
+
                 </div>
 
                 <div className="space-y-4">
@@ -1921,6 +3391,7 @@ export default function AttendancePage() {
                     <div className="text-xs text-slate-600 dark:text-slate-400">
                       {selectedRecordForOutTime.employee.emp_no} • {selectedRecordForOutTime.date}
                     </div>
+
                   </div>
 
                   <div>
@@ -2069,6 +3540,7 @@ export default function AttendancePage() {
                           </div>
                         )}
                       </div>
+
                     </div>
                     <div>
                       <label className="text-xs font-medium text-slate-600 dark:text-slate-400">In Time</label>
@@ -2137,13 +3609,16 @@ export default function AttendancePage() {
                             </button>
                           </div>
                         )}
+
                       </div>
+
                     </div>
                     <div>
                       <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Total Hours</label>
                       <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
                         {formatHours(attendanceDetail.totalHours)}
                       </div>
+
                     </div>
                     {attendanceDetail.isLateIn && attendanceDetail.lateInMinutes && (
                       <div>
@@ -2151,6 +3626,7 @@ export default function AttendancePage() {
                         <div className="mt-1 text-sm font-semibold text-orange-600 dark:text-orange-400">
                           +{attendanceDetail.lateInMinutes} minutes
                         </div>
+
                       </div>
                     )}
                     {attendanceDetail.isEarlyOut && attendanceDetail.earlyOutMinutes && (
@@ -2191,6 +3667,7 @@ export default function AttendancePage() {
                             >
                               {convertingToOT ? 'Converting...' : 'Convert to OT'}
                             </button>
+
                           )}
                           {hasExistingOT && (
                             <span className="ml-3 rounded-full bg-green-100 px-2 py-1 text-[10px] font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
@@ -2198,6 +3675,7 @@ export default function AttendancePage() {
                             </span>
                           )}
                         </div>
+
                       </div>
                     )}
                     {attendanceDetail.permissionHours && attendanceDetail.permissionHours > 0 && (
@@ -2206,6 +3684,7 @@ export default function AttendancePage() {
                         <div className="mt-1 text-sm font-semibold text-cyan-600 dark:text-cyan-400">
                           {attendanceDetail.permissionHours.toFixed(2)} hrs ({attendanceDetail.permissionCount || 0} permissions)
                         </div>
+
                       </div>
                     )}
 
@@ -2225,6 +3704,7 @@ export default function AttendancePage() {
                             </div>
                           </div>
                         </div>
+
                       </div>
                     )}
                   </div>
@@ -2305,6 +3785,7 @@ export default function AttendancePage() {
                               <span className="ml-1 text-xs">({attendanceDetail.leaveInfo.halfDayType === 'first_half' ? 'First Half' : 'Second Half'})</span>
                             )}
                           </div>
+
                         </div>
                       </div>
 
@@ -2327,6 +3808,7 @@ export default function AttendancePage() {
                               ? `${attendanceDetail.leaveInfo.numberOfDays} ${attendanceDetail.leaveInfo.numberOfDays === 1 ? 'day' : 'days'}`
                               : 'N/A'}
                           </div>
+
                         </div>
                         {attendanceDetail.leaveInfo.dayInLeave !== undefined && attendanceDetail.leaveInfo.dayInLeave !== null && (
                           <div>
@@ -2334,8 +3816,11 @@ export default function AttendancePage() {
                             <div className="mt-1 font-semibold text-orange-900 dark:text-orange-100">
                               {attendanceDetail.leaveInfo.dayInLeave === 1 ? '1st day' : attendanceDetail.leaveInfo.dayInLeave === 2 ? '2nd day' : attendanceDetail.leaveInfo.dayInLeave === 3 ? '3rd day' : `${attendanceDetail.leaveInfo.dayInLeave}th day`}
                             </div>
+
                           </div>
+
                         )}
+
                       </div>
 
                       {/* Applied Date */}
@@ -2364,7 +3849,9 @@ export default function AttendancePage() {
                                 {new Date(attendanceDetail.leaveInfo.approvedAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                               </div>
                             </div>
+
                           )}
+
                         </div>
                       )}
 
@@ -2415,6 +3902,7 @@ export default function AttendancePage() {
                               {attendanceDetail.earlyOutDeduction.reason}
                             </p>
                           )}
+
                         </div>
                       )}
 
@@ -2439,11 +3927,13 @@ export default function AttendancePage() {
                       )}
 
                       <div className="grid grid-cols-2 gap-3 text-sm mb-3">
+
                         <div>
                           <label className="text-xs font-medium text-blue-700 dark:text-blue-300">OD Type</label>
                           <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
                             {attendanceDetail.odInfo.odType || 'N/A'}
                           </div>
+
                         </div>
                         <div>
                           <label className="text-xs font-medium text-blue-700 dark:text-blue-300">
@@ -2464,6 +3954,7 @@ export default function AttendancePage() {
                             )}
                           </div>
                         </div>
+
                       </div>
 
                       {/* Date Range */}
@@ -2473,6 +3964,7 @@ export default function AttendancePage() {
                           <div className="mt-1 text-sm font-semibold text-blue-900 dark:text-blue-100">
                             {new Date(attendanceDetail.odInfo.fromDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} - {new Date(attendanceDetail.odInfo.toDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
                           </div>
+
                         </div>
                       )}
 
@@ -2503,6 +3995,7 @@ export default function AttendancePage() {
                             <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
                               {attendanceDetail.odInfo.numberOfDays || 'N/A'} {attendanceDetail.odInfo.numberOfDays === 1 ? 'day' : 'days'}
                             </div>
+
                           </div>
                           {attendanceDetail.odInfo.dayInOD && (
                             <div>
@@ -2523,6 +4016,7 @@ export default function AttendancePage() {
                             {new Date(attendanceDetail.odInfo.appliedAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                           </div>
                         </div>
+
                       )}
 
                       {/* Approved By and When */}
@@ -2819,7 +4313,9 @@ export default function AttendancePage() {
                   >
                     Close
                   </button>
+
                 </div>
+
               </div>
             </div>
           )
@@ -2970,6 +4466,7 @@ export default function AttendancePage() {
                             <span className="text-slate-900 dark:text-white">{payslipData.earnings?.grossSalary?.toFixed(2) || '0.00'}</span>
                           </div>
                         </div>
+
                       </div>
 
                       {/* Deductions Section - Right Side */}
@@ -3024,7 +4521,9 @@ export default function AttendancePage() {
                             </span>
                           </div>
                         </div>
+
                       </div>
+
                     </div>
 
                     {/* Net Salary and Payment Details */}
@@ -3042,6 +4541,7 @@ export default function AttendancePage() {
                         <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Rupees In Words:</span>
                         <span className="ml-2 text-sm text-slate-900 dark:text-white">{numberToWords(payslipData.netSalary || 0)}</span>
                       </div>
+
                     </div>
 
                     {/* Print Button */}
@@ -3053,6 +4553,7 @@ export default function AttendancePage() {
                         Print Payslip
                       </button>
                     </div>
+
                   </div>
                 ) : (
                   <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-yellow-800 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-200">
@@ -3066,6 +4567,7 @@ export default function AttendancePage() {
       </div>
     </div>
   );
+
 }
 
 
@@ -3076,7 +4578,6 @@ function numberToWords(num: number): string {
 
   if (num === 0) return 'Zero Rupees Only';
 
-  // Separate integer and decimal parts
   const integerPart = Math.floor(num);
   const decimalPart = Math.round((num - integerPart) * 100);
 
@@ -3106,7 +4607,6 @@ function numberToWords(num: number): string {
   let words = '';
   let remaining = integerPart;
 
-  // Crores
   const crores = Math.floor(remaining / 10000000);
   if (crores > 0) {
     const croreWords = convertHundreds(crores);
@@ -3116,7 +4616,6 @@ function numberToWords(num: number): string {
     remaining %= 10000000;
   }
 
-  // Lakhs
   const lakhs = Math.floor(remaining / 100000);
   if (lakhs > 0) {
     const lakhWords = convertHundreds(lakhs);
@@ -3126,7 +4625,6 @@ function numberToWords(num: number): string {
     remaining %= 100000;
   }
 
-  // Thousands
   const thousands = Math.floor(remaining / 1000);
   if (thousands > 0) {
     const thousandWords = convertHundreds(thousands);
@@ -3136,7 +4634,6 @@ function numberToWords(num: number): string {
     remaining %= 1000;
   }
 
-  // Hundreds, Tens, Ones
   if (remaining > 0) {
     const remainingWords = convertHundreds(remaining);
     if (remainingWords) {
@@ -3144,7 +4641,6 @@ function numberToWords(num: number): string {
     }
   }
 
-  // Add paise if exists
   if (decimalPart > 0) {
     if (words.trim()) {
       words += ` and ${decimalPart}/100`;
@@ -3153,7 +4649,6 @@ function numberToWords(num: number): string {
     }
   }
 
-  // Clean up and format
   words = words.trim();
   if (!words) {
     return 'Zero Rupees Only';

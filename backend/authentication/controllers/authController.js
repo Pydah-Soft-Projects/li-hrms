@@ -183,6 +183,216 @@ exports.getMe = async (req, res) => {
   }
 };
 
+// @desc    SSO login: verify external token and create local session
+// @route   POST /api/auth/sso-login
+// @access  Public
+exports.ssoLogin = async (req, res) => {
+  try {
+    const { encryptedToken } = req.body;
+
+    if (!encryptedToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'SSO token is required',
+      });
+    }
+
+    const verifyUrl = process.env.SSO_VERIFY_URL || process.env.CRM_SSO_VERIFY_URL;
+    if (!verifyUrl) {
+      console.warn('[SSOLogin] SSO_VERIFY_URL (or CRM_SSO_VERIFY_URL) is not configured');
+      return res.status(503).json({
+        success: false,
+        message: 'SSO is not configured. Please set SSO_VERIFY_URL.',
+      });
+    }
+
+    // Verify token with external CRM/auth gateway
+    let verifyResponse;
+    try {
+      verifyResponse = await fetch(verifyUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ encryptedToken }),
+      });
+    } catch (fetchError) {
+      console.error('[SSOLogin] Failed to reach SSO verify endpoint:', fetchError.message);
+      return res.status(502).json({
+        success: false,
+        message: 'Could not verify SSO token. Please try again.',
+      });
+    }
+
+    const verifyResult = await verifyResponse.json();
+
+    if (!verifyResult.success || !verifyResult.valid) {
+      return res.status(401).json({
+        success: false,
+        message: verifyResult.message || 'Invalid or expired SSO token',
+      });
+    }
+
+    const { userId, role: externalRole, expiresAt, email: externalEmail } = verifyResult.data || {};
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid SSO token payload',
+      });
+    }
+
+    // Optional: reject if token already expired
+    if (expiresAt) {
+      const expiryTime = new Date(expiresAt).getTime();
+      if (Date.now() >= expiryTime) {
+        return res.status(401).json({
+          success: false,
+          message: 'SSO token has expired',
+        });
+      }
+    }
+
+    const mongoose = require('mongoose');
+    let user = null;
+    let userType = null;
+
+    // Resolve to our User or Employee: try by _id, then email, then employeeId/emp_no
+    if (mongoose.Types.ObjectId.isValid(userId) && String(new mongoose.Types.ObjectId(userId)) === String(userId)) {
+      user = await User.findById(userId).select('+password');
+      if (user) userType = 'user';
+      if (!user) {
+        user = await Employee.findById(userId).select('+password');
+        if (user) userType = 'employee';
+      }
+    }
+
+    if (!user && (externalEmail || userId.includes('@'))) {
+      const email = (externalEmail || userId).toLowerCase();
+      user = await User.findOne({ email }).select('+password');
+      if (user) userType = 'user';
+      if (!user) {
+        user = await Employee.findOne({ email }).select('+password');
+        if (user) userType = 'employee';
+      }
+    }
+
+    if (!user) {
+      user = await User.findOne({
+        $or: [
+          { employeeId: userId.toUpperCase() },
+          { name: userId },
+        ],
+      }).select('+password');
+      if (user) userType = 'user';
+    }
+
+    if (!user) {
+      user = await Employee.findOne({
+        $or: [
+          { emp_no: userId.toUpperCase() },
+          { employee_name: userId },
+        ],
+      }).select('+password');
+      if (user) userType = 'employee';
+    }
+
+    if (!user) {
+      console.warn('[SSOLogin] No local user found for SSO userId:', userId);
+      return res.status(401).json({
+        success: false,
+        message: 'User not found in HRMS. Please contact administrator.',
+      });
+    }
+
+    const isActive = userType === 'user' ? user.isActive : user.is_active;
+    if (!isActive) {
+      return res.status(401).json({
+        success: false,
+        message: 'Account is deactivated. Please contact administrator',
+      });
+    }
+
+    user.lastLogin = new Date();
+    await user.save();
+
+    const token = generateToken(user._id);
+
+    let workspaces = [];
+    let activeWorkspace = null;
+
+    if (userType === 'user') {
+      try {
+        const assignments = await RoleAssignment.getUserWorkspaces(user._id);
+        workspaces = assignments.map((assignment) => ({
+          _id: assignment.workspaceId._id,
+          name: assignment.workspaceId.name,
+          code: assignment.workspaceId.code,
+          type: assignment.workspaceId.type,
+          description: assignment.workspaceId.description,
+          theme: assignment.workspaceId.theme,
+          modules: assignment.workspaceId.modules?.filter((m) => m.isEnabled) || [],
+          defaultModuleCode: assignment.workspaceId.defaultModuleCode,
+          role: assignment.role,
+          isPrimary: assignment.isPrimary,
+        }));
+        activeWorkspace = user.activeWorkspaceId
+          ? workspaces.find((w) => w._id.toString() === user.activeWorkspaceId.toString())
+          : workspaces.find((w) => w.isPrimary) || workspaces[0];
+      } catch (wsError) {
+        console.log('Workspaces not configured yet:', wsError.message);
+      }
+    } else {
+      try {
+        const Workspace = require('../../workspaces/model/Workspace');
+        const empWorkspace = await Workspace.findOne({ code: 'EMP' });
+        if (empWorkspace) {
+          activeWorkspace = {
+            _id: empWorkspace._id,
+            name: empWorkspace.name,
+            code: empWorkspace.code,
+            type: empWorkspace.type,
+            role: 'employee',
+          };
+          workspaces = [activeWorkspace];
+        }
+      } catch (wsError) {
+        console.log('Error fetching employee workspace:', wsError.message);
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Login successful',
+      data: {
+        token,
+        user: {
+          id: user._id,
+          email: user.email,
+          name: userType === 'user' ? user.name : user.employee_name,
+          role: userType === 'user' ? user.role : 'employee',
+          roles: userType === 'user' ? user.roles : ['employee'],
+          department: userType === 'user' ? user.department : user.department_id,
+          emp_no: userType === 'employee' ? user.emp_no : user.employeeId,
+          type: userType,
+          featureControl: userType === 'user' ? user.featureControl : undefined,
+          dataScope: userType === 'user' ? user.dataScope : 'own',
+          allowedDivisions: userType === 'user' ? user.allowedDivisions : undefined,
+          divisionMapping: userType === 'user' ? user.divisionMapping : undefined,
+          departments: userType === 'user' ? user.departments : undefined,
+        },
+        workspaces,
+        activeWorkspace,
+      },
+    });
+  } catch (error) {
+    console.error('[SSOLogin] Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error during SSO login',
+      error: error.message,
+    });
+  }
+};
+
 // @desc    Change password
 // @route   PUT /api/auth/change-password
 // @access  Private

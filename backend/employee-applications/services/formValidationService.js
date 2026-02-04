@@ -31,7 +31,6 @@ exports.validateFormData = async (formData, settings = null) => {
       'division_id',
       'department_id',
       'designation_id',
-      'proposedSalary',
       'doj',
       'dob',
       'gender',
