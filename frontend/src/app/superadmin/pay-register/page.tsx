@@ -4,11 +4,10 @@ import { useState, useEffect } from 'react';
 import { useRouter } from "next/navigation";
 import Link from 'next/link';
 import { api, apiRequest, Employee, Division } from '@/lib/api';
-import { toast, ToastContainer } from 'react-toastify';
 import ArrearsPayrollSection from '@/components/Arrears/ArrearsPayrollSection';
 import Spinner from '@/components/Spinner';
 import * as XLSX from 'xlsx';
-import 'react-toastify/dist/ReactToastify.css';
+import Swal from 'sweetalert2';
 
 
 
@@ -116,7 +115,11 @@ export default function PayRegisterPage() {
   const [leaveTypes, setLeaveTypes] = useState<any[]>([]);
   const [calculatingId, setCalculatingId] = useState<string | null>(null);
   const [bulkCalculating, setBulkCalculating] = useState(false);
+  const [downloadingTemplate, setDownloadingTemplate] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
+  const [calculatingJobId, setCalculatingJobId] = useState<string | null>(null);
+  const [calculationProgress, setCalculationProgress] = useState<any>(null);
+  const [payrollStrategy, setPayrollStrategy] = useState<'new' | 'legacy'>('new');
 
 
 
@@ -138,6 +141,58 @@ export default function PayRegisterPage() {
   const [selectedArrears, setSelectedArrears] = useState<Array<{ id: string, amount: number, employeeId?: string }>>([]);
   const [payrollStartDate, setPayrollStartDate] = useState<string | null>(null);
   const [payrollEndDate, setPayrollEndDate] = useState<string | null>(null);
+
+  useEffect(() => {
+    let pollInterval: any;
+
+    if (calculatingJobId) {
+      pollInterval = setInterval(async () => {
+        try {
+          const status = await api.getJobStatus(calculatingJobId);
+          if (status.success) {
+            // Correctly map the progress object
+            if (status.data.progress) {
+              setCalculationProgress(status.data.progress);
+            }
+
+            // BullMQ state is returned as 'state', not 'status'
+            if (status.data.state === 'completed') {
+              clearInterval(pollInterval);
+              setCalculatingJobId(null);
+              setBulkCalculating(false);
+              setCalculationProgress(null);
+              Swal.fire({
+                icon: 'success',
+                title: 'Calculation Complete',
+                text: 'Payroll calculation finished successfully.',
+                timer: 3000,
+                showConfirmButton: false,
+                toast: true,
+                position: 'top-end'
+              });
+              loadPayRegisters();
+            } else if (status.data.state === 'failed') {
+              clearInterval(pollInterval);
+              setCalculatingJobId(null);
+              setBulkCalculating(false);
+              setCalculationProgress(null);
+              Swal.fire({
+                icon: 'error',
+                title: 'Calculation Failed',
+                text: status.data.failedReason || 'The background job failed.',
+              });
+            }
+          }
+        } catch (err) {
+          console.error('Error polling job status:', err);
+        }
+      }, 1500);
+    }
+
+    return () => {
+      if (pollInterval) clearInterval(pollInterval);
+    };
+  }, [calculatingJobId]);
 
   const normalizeHalfDay = (
     half?: Partial<DailyRecord['firstHalf']>,
@@ -174,7 +229,6 @@ export default function PayRegisterPage() {
   const [editingRecord, setEditingRecord] = useState<{ employeeId: string; month: string; date: string; record: DailyRecord; employee: Employee } | null>(null);
   const [editData, setEditData] = useState<Partial<DailyRecord>>({});
   const [isHalfDayMode, setIsHalfDayMode] = useState(false);
-  const [payrollStrategy, setPayrollStrategy] = useState<'legacy' | 'new'>('new');
 
   // Pagination State
   const [page, setPage] = useState(1);
@@ -332,19 +386,35 @@ export default function PayRegisterPage() {
         }
 
         if (payRegisterList.length === 0 && !append) {
-          toast.info('No employees found for this selection');
+          Swal.fire({
+            icon: 'info',
+            title: 'No Employees',
+            text: 'No employees found for this selection',
+            timer: 2000,
+            showConfirmButton: false,
+            toast: true,
+            position: 'top-end'
+          });
         }
       } else {
         console.error('[Pay Register] API call failed:', response);
         if (!append) setPayRegisters([]);
         if (response.message) {
-          toast.error(response.message);
+          Swal.fire({
+            icon: 'error',
+            title: 'API Error',
+            text: response.message,
+          });
         }
       }
     } catch (err: any) {
       console.error('[Pay Register] Error loading pay registers:', err);
       if (!append) setPayRegisters([]);
-      toast.error(err.message || 'Failed to load pay registers');
+      Swal.fire({
+        icon: 'error',
+        title: 'Load Failed',
+        text: err.message || 'Failed to load pay registers',
+      });
     } finally {
       setLoading(false);
       setLoadingMore(false);
@@ -364,7 +434,15 @@ export default function PayRegisterPage() {
       // 1. First trigger a global attendance sync for this payroll cycle's date range
       // This ensures MongoDB records are updated from MSSQL/Biometric for the spanned dates
       if (payrollStartDate && payrollEndDate) {
-        toast.info('Syncing logs from biometric source...', { autoClose: 2000 });
+        Swal.fire({
+          icon: 'info',
+          title: 'Syncing',
+          text: 'Syncing logs from biometric source...',
+          timer: 2000,
+          showConfirmButton: false,
+          toast: true,
+          position: 'top-end'
+        });
         await apiRequest('/attendance/sync', {
           method: 'POST',
           body: JSON.stringify({
@@ -382,10 +460,22 @@ export default function PayRegisterPage() {
 
       await Promise.all(syncPromises);
       await loadPayRegisters();
-      toast.success('All data synced successfully');
+      Swal.fire({
+        icon: 'success',
+        title: 'Synced',
+        text: 'All data synced successfully',
+        timer: 2000,
+        showConfirmButton: false,
+        toast: true,
+        position: 'top-end'
+      });
     } catch (err: any) {
       console.error('Error syncing pay registers:', err);
-      toast.error(err.message || 'Failed to sync pay registers');
+      Swal.fire({
+        icon: 'error',
+        title: 'Sync Failed',
+        text: err.message || 'Failed to sync pay registers',
+      });
     } finally {
       setSyncing(false);
     }
@@ -424,13 +514,29 @@ export default function PayRegisterPage() {
         setShowEditModal(false);
         setEditingRecord(null);
         setIsHalfDayMode(false);
-        toast.success('Date updated successfully');
+        Swal.fire({
+          icon: 'success',
+          title: 'Updated',
+          text: 'Date updated successfully',
+          timer: 2000,
+          showConfirmButton: false,
+          toast: true,
+          position: 'top-end'
+        });
       } else {
-        toast.error(response.message || 'Failed to update date');
+        Swal.fire({
+          icon: 'error',
+          title: 'Update Failed',
+          text: response.message || 'Failed to update date',
+        });
       }
     } catch (err: any) {
       console.error('Error updating date:', err);
-      toast.error(err.message || 'Failed to update date');
+      Swal.fire({
+        icon: 'error',
+        title: 'Update Failed',
+        text: err.message || 'Failed to update date',
+      });
     } finally {
       setSaving({ ...saving, [editingRecord.employeeId]: false });
     }
@@ -631,7 +737,15 @@ export default function PayRegisterPage() {
       const employeeId = typeof employee === 'object' ? employee._id : employee;
       const params = payrollStrategy === 'new' ? '?strategy=new' : '?strategy=legacy';
       setCalculatingId(employeeId);
-      toast.info('Calculating payroll...', { autoClose: 1200 });
+      Swal.fire({
+        icon: 'info',
+        title: 'Calculating',
+        text: 'Calculating payroll...',
+        timer: 1200,
+        showConfirmButton: false,
+        toast: true,
+        position: 'top-end'
+      });
 
       // Filter arrears for this specific employee
       // Note: ArrearsPayrollSection component stores arrears with employee info
@@ -644,13 +758,29 @@ export default function PayRegisterPage() {
       const response = await api.calculatePayroll(employeeId, monthStr, params, employeeArrears);
 
       if (response && response.data && response.data.batchId) {
-        toast.success('Payroll calculated! Redirecting to batch...');
+        Swal.fire({
+          icon: 'success',
+          title: 'Calculated',
+          text: 'Payroll calculated! Redirecting to batch...',
+          timer: 2000,
+          showConfirmButton: false,
+          toast: true,
+          position: 'top-end'
+        });
         // Small delay to let the toast be seen
         setTimeout(() => {
           router.push(`/superadmin/payments/${response.data.batchId}`);
         }, 1000);
       } else {
-        toast.success('Payroll calculated');
+        Swal.fire({
+          icon: 'success',
+          title: 'Success',
+          text: 'Payroll calculated',
+          timer: 2000,
+          showConfirmButton: false,
+          toast: true,
+          position: 'top-end'
+        });
       }
     } catch (err: any) {
       console.error('Error calculating payroll:', err);
@@ -679,7 +809,11 @@ export default function PayRegisterPage() {
         }
       }
 
-      toast.error(err.message || 'Failed to calculate payroll');
+      Swal.fire({
+        icon: 'error',
+        title: 'Calculation Error',
+        text: err.message || 'Failed to calculate payroll',
+      });
     } finally {
       setCalculatingId(null);
     }
@@ -690,25 +824,44 @@ export default function PayRegisterPage() {
     try {
       const response = await api.requestRecalculation(pendingBatchId, permissionReason);
       if (response.success) {
-        toast.success('Permission requested successfully');
+        Swal.fire({
+          icon: 'success',
+          title: 'Permission Requested',
+          text: 'Permission requested successfully',
+          timer: 2000,
+          showConfirmButton: false,
+          toast: true,
+          position: 'top-end'
+        });
         setShowPermissionModal(false);
         setPendingBatchId(null);
         setPermissionReason('');
       } else {
-        toast.error(response.message || 'Failed to request permission');
+        Swal.fire({
+          icon: 'error',
+          title: 'Request Failed',
+          text: response.message || 'Failed to request permission',
+        });
       }
     } catch (error: any) {
-      toast.error(error.message || 'Error asking for permission');
+      Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: error.message || 'Error asking for permission',
+      });
     }
   };
 
   const downloadPayrollExcel = async (employeeIds?: string[]) => {
     try {
       setExportingExcel(true);
+      const targetDeptId = selectedDepartment && selectedDepartment.trim() !== '' ? selectedDepartment : undefined;
+      const targetDivId = selectedDivision && selectedDivision.trim() !== '' ? selectedDivision : undefined;
+
       const blob = await api.exportPayrollExcel({
         month: monthStr,
-        departmentId:
-          selectedDepartment && selectedDepartment.trim() !== '' ? selectedDepartment : undefined,
+        departmentId: targetDeptId,
+        divisionId: targetDivId,
         employeeIds,
       });
       const url = window.URL.createObjectURL(blob);
@@ -719,14 +872,26 @@ export default function PayRegisterPage() {
       a.click();
       a.remove();
       window.URL.revokeObjectURL(url);
-      toast.success('Payroll Excel ready');
+      Swal.fire({
+        icon: 'success',
+        title: 'Ready',
+        text: 'Payroll Excel ready',
+        timer: 2000,
+        showConfirmButton: false,
+        toast: true,
+        position: 'top-end'
+      });
     } catch (err: any) {
       // Debug: Log the error details
       console.log('[Export Error]', err?.message || err);
       // Show user-friendly error message via toast
       const errorMessage = err?.message || 'Failed to export payroll Excel';
       console.log('[Showing Toast]', errorMessage);
-      toast.error(errorMessage);
+      Swal.fire({
+        icon: 'error',
+        title: 'Export Failed',
+        text: errorMessage,
+      });
     } finally {
       setExportingExcel(false);
     }
@@ -734,7 +899,15 @@ export default function PayRegisterPage() {
 
   const handleCalculatePayrollForAll = async () => {
     if (!payRegisters || payRegisters.length === 0) {
-      toast.info('No employees to calculate payroll for.');
+      Swal.fire({
+        icon: 'info',
+        title: 'No Employees',
+        text: 'No employees to calculate payroll for.',
+        timer: 2000,
+        showConfirmButton: false,
+        toast: true,
+        position: 'top-end'
+      });
       return;
     }
     const params = payrollStrategy === 'new' ? '?strategy=new' : '?strategy=legacy';
@@ -743,7 +916,15 @@ export default function PayRegisterPage() {
     const batchIds = new Set<string>(); // Store unique batch IDs
 
     setBulkCalculating(true);
-    toast.info('Calculating payroll for listed employees...');
+    Swal.fire({
+      icon: 'info',
+      title: 'Calculating',
+      text: 'Calculating payroll for listed employees...',
+      timer: 2000,
+      showConfirmButton: false,
+      toast: true,
+      position: 'top-end'
+    });
     try {
       const requestData = {
         month: monthStr,
@@ -759,6 +940,20 @@ export default function PayRegisterPage() {
       console.log('[Bulk Calculate] Response:', response);
 
       if (response.success) {
+        if (response.status === 'queued' || response.jobId) {
+          setCalculatingJobId(response.jobId || null);
+          Swal.fire({
+            icon: 'info',
+            title: 'Calculation Queued',
+            text: 'Bulk payroll calculation has been queued. You can track progress below.',
+            timer: 2000,
+            showConfirmButton: false,
+            toast: true,
+            position: 'top-end'
+          });
+          return;
+        }
+
         successCount = response.data.successCount;
         failCount = response.data.failCount;
         if (response.data.batchIds) {
@@ -766,25 +961,53 @@ export default function PayRegisterPage() {
         }
 
         if (failCount === 0) {
-          toast.success(`Payroll calculated for ${successCount} employees`);
+          Swal.fire({
+            icon: 'success',
+            title: 'Success',
+            text: 'Payroll calculated successfully for all employees',
+          });
         } else {
-          toast.error(`Calculated ${successCount}, failed ${failCount}`);
+          Swal.fire({
+            icon: 'warning',
+            title: 'Partial Success',
+            text: `Calculation completed with ${failCount} failures`,
+          });
         }
       } else {
-        toast.error(response.message || 'Bulk calculation failed');
+        Swal.fire({
+          icon: 'error',
+          title: 'Bulk Calculation Failed',
+          text: response.message || 'Bulk calculation failed',
+        });
       }
 
       // Redirect logic based on batches created
       if (batchIds.size === 1) {
         // Single batch -> Redirect to that batch
         const batchId = Array.from(batchIds)[0];
-        toast.info('Redirecting to Batch Details...');
+        Swal.fire({
+          icon: 'info',
+          title: 'Redirecting',
+          text: 'Redirecting to Batch Details...',
+          timer: 1500,
+          showConfirmButton: false,
+          toast: true,
+          position: 'top-end'
+        });
         setTimeout(() => {
           router.push(`/superadmin/payments/${batchId}`);
         }, 1500);
       } else if (batchIds.size > 1) {
         // Multiple batches -> Redirect to list
-        toast.info('Redirecting to Payments List...');
+        Swal.fire({
+          icon: 'info',
+          title: 'Redirecting',
+          text: 'Redirecting to Payments List...',
+          timer: 1500,
+          showConfirmButton: false,
+          toast: true,
+          position: 'top-end'
+        });
         setTimeout(() => {
           router.push('/superadmin/payments');
         }, 1500);
@@ -796,12 +1019,24 @@ export default function PayRegisterPage() {
         );
         await downloadPayrollExcel(listedEmployeeIds);
       } else {
-        toast.warning('Calculation failed for all employees. Nothing to export.');
+        Swal.fire({
+          icon: 'warning',
+          title: 'No Export',
+          text: 'Calculation failed for all employees. Nothing to export.',
+          timer: 2000,
+          showConfirmButton: false,
+          toast: true,
+          position: 'top-end'
+        });
       }
 
     } catch (error: any) {
       console.log('[Bulk Calculate] Error:', error);
-      toast.error(error?.message || 'Failed to calculate payroll');
+      Swal.fire({
+        icon: 'error',
+        title: 'Calculation Failed',
+        text: error?.message || 'Failed to calculate payroll',
+      });
     } finally {
       setBulkCalculating(false);
     }
@@ -814,7 +1049,11 @@ export default function PayRegisterPage() {
   const processPayroll = async () => {
     try {
       if (!selectedEmployee) {
-        toast.error('Please select an employee');
+        Swal.fire({
+          icon: 'error',
+          title: 'No Employee Selected',
+          text: 'Please select an employee',
+        });
         return;
       }
 
@@ -835,18 +1074,33 @@ export default function PayRegisterPage() {
       });
 
       // Process arrears settlement after successful payroll
-      if (selectedArrears.length > 0 && response.success) {
-        await settleArrears(response.data.payrollId);
-      }
-
       if (response.success) {
-        toast.success('Payroll processed successfully');
+        if (selectedArrears.length > 0) {
+          await settleArrears(response.data.payrollId);
+        }
+        Swal.fire({
+          icon: 'success',
+          title: 'Success',
+          text: 'Payroll processed successfully',
+          timer: 2000,
+          showConfirmButton: false,
+          toast: true,
+          position: 'top-end'
+        });
       } else {
-        toast.error(response.message || 'Failed to process payroll');
+        Swal.fire({
+          icon: 'error',
+          title: 'Processing Failed',
+          text: response.message || 'Failed to process payroll',
+        });
       }
     } catch (error: any) {
       console.error('Error processing payroll:', error);
-      toast.error('Failed to process payroll');
+      Swal.fire({
+        icon: 'error',
+        title: 'Processing Failed',
+        text: 'Failed to process payroll',
+      });
     }
   };
 
@@ -861,10 +1115,22 @@ export default function PayRegisterPage() {
           year: selectedYear,
         });
       }
-      toast.success('Arrears settled successfully');
+      Swal.fire({
+        icon: 'success',
+        title: 'Arrears Settled',
+        text: 'Arrears settled successfully',
+        timer: 2000,
+        showConfirmButton: false,
+        toast: true,
+        position: 'top-end'
+      });
     } catch (error) {
       console.error('Error settling arrears:', error);
-      toast.error('Failed to settle arrears');
+      Swal.fire({
+        icon: 'error',
+        title: 'Settlement Failed',
+        text: 'Failed to settle arrears',
+      });
     }
   };
 
@@ -990,11 +1256,17 @@ export default function PayRegisterPage() {
               {syncing ? 'Syncing...' : 'Sync All'}
             </button>
 
+            <button
+              onClick={() => setShowUploadModal(true)}
+              className="h-9 px-4 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-sm transition-all"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+              Upload Summary
+            </button>
+
             {(() => {
-              if (isPastMonth) {
-                const hasPayrollRecords = payRegisters.some(pr => !!pr.payrollId);
-                if (hasPayrollRecords) return null;
-              }
 
               if (selectedDepartment) {
                 const batchInfo = departmentBatchStatus.get(selectedDepartment);
@@ -1011,7 +1283,11 @@ export default function PayRegisterPage() {
                           setPendingBatchId(batchInfo.batchId);
                           setShowPermissionModal(true);
                         } else {
-                          toast.error("Batch ID not found");
+                          Swal.fire({
+                            icon: 'error',
+                            title: 'Error',
+                            text: "Batch ID not found",
+                          });
                         }
                       }}
                       className="h-9 px-4 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-xl shadow-sm transition-all"
@@ -1043,21 +1319,8 @@ export default function PayRegisterPage() {
                   </button>
 
                   <button
-                    onClick={() => setShowUploadModal(true)}
-                    className="h-9 px-4 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-sm transition-all"
-                  >
-                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                    </svg>
-                    Upload Summary
-                  </button>
-
-                  <button
                     onClick={async () => {
-                      const listedEmployeeIds = payRegisters.map((pr) =>
-                        typeof pr.employeeId === 'object' ? pr.employeeId._id : pr.employeeId
-                      );
-                      await downloadPayrollExcel(listedEmployeeIds);
+                      await downloadPayrollExcel();
                     }}
                     disabled={exportingExcel || payRegisters.length === 0}
                     className="h-9 px-4 flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold rounded-xl shadow-sm disabled:opacity-50 transition-all"
@@ -1072,6 +1335,33 @@ export default function PayRegisterPage() {
             })()}
           </div>
         </div>
+
+        {/* Progress Bar for Bulk Calculation */}
+        {calculationProgress && (
+          <div className="mb-6 animate-fade-in relative z-20">
+            <div className="mt-6 space-y-3 p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl border border-indigo-100 dark:border-indigo-900/30 shadow-sm backdrop-blur-sm">
+              <div className="flex justify-between items-center text-sm font-medium">
+                <span className="text-indigo-700 dark:text-indigo-300 flex items-center gap-2">
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  {calculationProgress.currentEmployee ? `Calculating for: ${calculationProgress.currentEmployee}` : 'Processing bulk payroll...'}
+                </span>
+                <span className="text-indigo-600 dark:text-indigo-400 font-bold">
+                  {calculatingJobId && <span className="mr-3 opacity-50 font-mono text-[10px] font-normal">ID: {calculatingJobId}</span>}
+                  {calculationProgress.processed} / {calculationProgress.total} ({calculationProgress.percentage}%)
+                </span>
+              </div>
+              <div className="w-full bg-indigo-200/50 dark:bg-indigo-900/50 rounded-full h-2.5 overflow-hidden">
+                <div
+                  className="bg-indigo-600 h-2.5 rounded-full transition-all duration-500 ease-out shadow-sm"
+                  style={{ width: `${calculationProgress.percentage}%` }}
+                ></div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Bulk Summary Upload Modal */}
         {showUploadModal && (
@@ -1124,9 +1414,9 @@ export default function PayRegisterPage() {
                               const ws = wb.Sheets[wsname];
                               const data = XLSX.utils.sheet_to_json(ws);
 
-                              const monthStr = currentDate.toISOString().slice(0, 7);
+                              const uploadMonthStr = monthStr;
                               const response = await apiRequest<{ success: number; failed: number; total: number; errors: string[] }>(
-                                `/pay-register/upload-summary/${monthStr}`,
+                                `/pay-register/upload-summary/${uploadMonthStr}`,
                                 {
                                   method: 'POST',
                                   body: JSON.stringify({ data })
@@ -1135,13 +1425,29 @@ export default function PayRegisterPage() {
 
                               if (response.success && response.data) {
                                 setUploadResults(response.data);
-                                toast.success("Upload processed successfully!");
+                                Swal.fire({
+                                  icon: 'success',
+                                  title: 'Uploaded',
+                                  text: "Upload processed successfully!",
+                                  timer: 2000,
+                                  showConfirmButton: false,
+                                  toast: true,
+                                  position: 'top-end'
+                                });
                                 loadPayRegisters(); // Refresh table
                               } else {
-                                toast.error(response.error || "Failed to process upload");
+                                Swal.fire({
+                                  icon: 'error',
+                                  title: 'Upload Failed',
+                                  text: response.error || "Failed to process upload",
+                                });
                               }
                             } catch (err: any) {
-                              toast.error(err.message || "Error parsing file");
+                              Swal.fire({
+                                icon: 'error',
+                                title: 'Error',
+                                text: err.message || "Error parsing file",
+                              });
                             } finally {
                               setUploadingSummary(false);
                             }
@@ -1173,35 +1479,79 @@ export default function PayRegisterPage() {
 
                   <div className="flex justify-between items-center">
                     <button
-                      onClick={() => {
-                        const headers = ["Employee Code", "Employee Name", "Department", "Division", "Total Present", "Total Absent", "Paid Leaves", "LOP Count", "Total OD", "Total Extra Days", "Total OT Hours", "Holidays", "Lates"];
-                        const sampleData = payRegisters.map(pr => ({
-                          "Employee Code": typeof pr.employeeId === 'object' ? pr.employeeId.emp_no : pr.emp_no,
-                          "Employee Name": typeof pr.employeeId === 'object' ? pr.employeeId.employee_name : '',
-                          "Department": (typeof pr.employeeId === 'object' && pr.employeeId.department_id) ? (pr.employeeId.department_id as any).name : '',
-                          "Division": (typeof pr.employeeId === 'object' && pr.employeeId.division_id) ? (pr.employeeId.division_id as any).name : '',
-                          "Total Present": 0,
-                          "Total Absent": 0,
-                          "Paid Leaves": 0,
-                          "LOP Count": 0,
-                          "Total OD": 0,
-                          "Total Extra Days": 0,
-                          "Total OT Hours": 0,
-                          "Holidays": 0,
-                          "Lates": 0
-                        }));
+                      onClick={async () => {
+                        setDownloadingTemplate(true);
+                        try {
+                          // Fetch ALL employees for this month/division/dept by passing limit: -1
+                          const targetDeptId = selectedDepartment && selectedDepartment.trim() !== '' ? selectedDepartment : undefined;
+                          const targetDivId = selectedDivision && selectedDivision.trim() !== '' ? selectedDivision : undefined;
 
-                        const ws = XLSX.utils.json_to_sheet(sampleData);
-                        const wb = XLSX.utils.book_new();
-                        XLSX.utils.book_append_sheet(wb, ws, "Attendance Summary");
-                        XLSX.writeFile(wb, `Payroll_Summary_Template_${currentDate.toISOString().slice(0, 7)}.xlsx`);
+                          const response = await api.getEmployeesWithPayRegister(monthStr, targetDeptId, targetDivId, undefined, 1, -1);
+
+                          if (response.success) {
+                            const allEmployees = response.data || [];
+                            const headers = ["Employee Code", "Employee Name", "Department", "Division", "Total Present", "Total Absent", "Paid Leaves", "LOP Count", "Total OD", "Total Extra Days", "Total OT Hours", "Holidays", "Lates"];
+                            const sampleData = allEmployees.map((pr: any) => ({
+                              "Employee Code": typeof pr.employeeId === 'object' ? pr.employeeId.emp_no : pr.emp_no,
+                              "Employee Name": typeof pr.employeeId === 'object' ? pr.employeeId.employee_name : '',
+                              "Department": (typeof pr.employeeId === 'object' && pr.employeeId.department_id) ? (pr.employeeId.department_id as any).name : '',
+                              "Division": (typeof pr.employeeId === 'object' && pr.employeeId.division_id) ? (pr.employeeId.division_id as any).name : '',
+                              "Total Present": 0,
+                              "Total Absent": 0,
+                              "Paid Leaves": 0,
+                              "LOP Count": 0,
+                              "Total OD": 0,
+                              "Total Extra Days": 0,
+                              "Total OT Hours": 0,
+                              "Holidays": 0,
+                              "Lates": 0
+                            }));
+
+                            const ws = XLSX.utils.json_to_sheet(sampleData);
+                            const wb = XLSX.utils.book_new();
+                            XLSX.utils.book_append_sheet(wb, ws, "Attendance Summary");
+                            XLSX.writeFile(wb, `Payroll_Summary_Template_${monthStr}.xlsx`);
+                            Swal.fire({
+                              icon: 'success',
+                              title: 'Template Ready',
+                              text: `Template downloaded with ${allEmployees.length} employees`,
+                              timer: 2000,
+                              showConfirmButton: false,
+                              toast: true,
+                              position: 'top-end'
+                            });
+                          } else {
+                            Swal.fire({
+                              icon: 'error',
+                              title: 'Fetch Failed',
+                              text: response.message || "Failed to fetch employees for template",
+                            });
+                          }
+                        } catch (err: any) {
+                          console.error('Error downloading template:', err);
+                          Swal.fire({
+                            icon: 'error',
+                            title: 'Generation Failed',
+                            text: err.message || 'Error generating template',
+                          });
+                        } finally {
+                          setDownloadingTemplate(false);
+                        }
                       }}
+                      disabled={downloadingTemplate}
                       className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
                     >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      <svg className={`w-4 h-4 ${downloadingTemplate ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        {downloadingTemplate ? (
+                          <>
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </>
+                        ) : (
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        )}
                       </svg>
-                      Download Template
+                      {downloadingTemplate ? "Generating..." : "Download Template"}
                     </button>
                   </div>
                 </>
@@ -1303,91 +1653,93 @@ export default function PayRegisterPage() {
       </div>
 
       {/* Summary Table */}
-      {!loading && payRegisters.length > 0 && (
-        <div className="mt-4 mb-8 rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-lg dark:border-slate-700 dark:bg-slate-900/80 overflow-x-auto">
-          <div className="p-4">
-            <h3 className="text-base font-semibold text-slate-900 dark:text-white mb-3">Monthly Summary</h3>
-            <table className="w-full border-collapse text-xs">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
-                  <th className="sticky left-0 z-10 w-[180px] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                    Employee
-                  </th>
-                  {[
-                    'Total Present',
-                    'Total Absent',
-                    'Total Leaves',
-                    'Paid Leaves',
-                    'LOP Count',
-                    'Total OD',
-                    'Total OT Hours',
-                    'Total Extra Days',
-                    'Lates',
-                    'Holidays & Weekoffs',
-                    'Paid Days',
-                    'Month Days',
-                    'Counted Days',
-                  ].map((label) => (
-                    <th
-                      key={label}
-                      className="border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 last:border-r-0"
-                    >
-                      {label}
+      {
+        !loading && payRegisters.length > 0 && (
+          <div className="mt-4 mb-8 rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-lg dark:border-slate-700 dark:bg-slate-900/80 overflow-x-auto">
+            <div className="p-4">
+              <h3 className="text-base font-semibold text-slate-900 dark:text-white mb-3">Monthly Summary</h3>
+              <table className="w-full border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
+                    <th className="sticky left-0 z-10 w-[180px] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                      Employee
                     </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                {getSummaryRows().map((row) => {
-                  const employee = typeof row.pr.employeeId === 'object' ? row.pr.employeeId : null;
-                  const empNo =
-                    typeof row.pr.employeeId === 'object' ? row.pr.employeeId.emp_no : row.pr.emp_no;
-                  const empName = typeof row.pr.employeeId === 'object' ? row.pr.employeeId.employee_name : '';
-                  const department =
-                    typeof row.pr.employeeId === 'object' && row.pr.employeeId.department_id
-                      ? typeof row.pr.employeeId.department_id === 'object'
-                        ? row.pr.employeeId.department_id.name
-                        : ''
-                      : '';
-                  return (
-                    <tr key={row.pr._id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                      <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 text-[11px] font-medium text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white">
-                        <div>
-                          <div className="font-semibold truncate">{empName}</div>
-                          <div className="text-[9px] text-slate-500 dark:text-slate-400 truncate">
-                            {empNo}
-                            {department && ` • ${department}`}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="text-center px-2 py-2">{row.present.toFixed(1)}</td>
-                      <td className="text-center px-2 py-2">{row.absent.toFixed(1)}</td>
-                      <td className="text-center px-2 py-2">{row.leave.toFixed(1)}</td>
-                      <td className="text-center px-2 py-2 font-medium text-green-600 dark:text-green-400">{row.paidLeave.toFixed(1)}</td>
-                      <td className="text-center px-2 py-2 font-medium text-red-600 dark:text-red-400">{row.lop.toFixed(1)}</td>
-                      <td className="text-center px-2 py-2">{row.od.toFixed(1)}</td>
-                      <td className="text-center px-2 py-2">{row.ot.toFixed(1)}</td>
-                      <td className="text-center px-2 py-2">{row.extra.toFixed(1)}</td>
-                      <td className="text-center px-2 py-2 font-bold text-amber-600 dark:text-amber-400">{row.lateCount}</td>
-                      <td className="text-center px-2 py-2">{row.holidayAndWeekoffs.toFixed(1)}</td>
-                      <td className="text-center px-2 py-2 font-bold text-blue-600 dark:text-blue-400">{row.totalPaidDays.toFixed(1)}</td>
-                      <td className="text-center px-2 py-2">{row.monthDays}</td>
-                      <td
-                        className={`text-center px-2 py-2 font-semibold ${row.matchesMonth
-                          ? 'text-green-700 dark:text-green-400'
-                          : 'text-red-700 dark:text-red-400'
-                          }`}
+                    {[
+                      'Total Present',
+                      'Total Absent',
+                      'Total Leaves',
+                      'Paid Leaves',
+                      'LOP Count',
+                      'Total OD',
+                      'Total OT Hours',
+                      'Total Extra Days',
+                      'Lates',
+                      'Holidays & Weekoffs',
+                      'Paid Days',
+                      'Month Days',
+                      'Counted Days',
+                    ].map((label) => (
+                      <th
+                        key={label}
+                        className="border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 last:border-r-0"
                       >
-                        {row.countedDays.toFixed(1)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        {label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                  {getSummaryRows().map((row) => {
+                    const employee = typeof row.pr.employeeId === 'object' ? row.pr.employeeId : null;
+                    const empNo =
+                      typeof row.pr.employeeId === 'object' ? row.pr.employeeId.emp_no : row.pr.emp_no;
+                    const empName = typeof row.pr.employeeId === 'object' ? row.pr.employeeId.employee_name : '';
+                    const department =
+                      typeof row.pr.employeeId === 'object' && row.pr.employeeId.department_id
+                        ? typeof row.pr.employeeId.department_id === 'object'
+                          ? row.pr.employeeId.department_id.name
+                          : ''
+                        : '';
+                    return (
+                      <tr key={row.pr._id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                        <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 text-[11px] font-medium text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white">
+                          <div>
+                            <div className="font-semibold truncate">{empName}</div>
+                            <div className="text-[9px] text-slate-500 dark:text-slate-400 truncate">
+                              {empNo}
+                              {department && ` • ${department}`}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="text-center px-2 py-2">{row.present.toFixed(1)}</td>
+                        <td className="text-center px-2 py-2">{row.absent.toFixed(1)}</td>
+                        <td className="text-center px-2 py-2">{row.leave.toFixed(1)}</td>
+                        <td className="text-center px-2 py-2 font-medium text-green-600 dark:text-green-400">{row.paidLeave.toFixed(1)}</td>
+                        <td className="text-center px-2 py-2 font-medium text-red-600 dark:text-red-400">{row.lop.toFixed(1)}</td>
+                        <td className="text-center px-2 py-2">{row.od.toFixed(1)}</td>
+                        <td className="text-center px-2 py-2">{row.ot.toFixed(1)}</td>
+                        <td className="text-center px-2 py-2">{row.extra.toFixed(1)}</td>
+                        <td className="text-center px-2 py-2 font-bold text-amber-600 dark:text-amber-400">{row.lateCount}</td>
+                        <td className="text-center px-2 py-2">{row.holidayAndWeekoffs.toFixed(1)}</td>
+                        <td className="text-center px-2 py-2 font-bold text-blue-600 dark:text-blue-400">{row.totalPaidDays.toFixed(1)}</td>
+                        <td className="text-center px-2 py-2">{row.monthDays}</td>
+                        <td
+                          className={`text-center px-2 py-2 font-semibold ${row.matchesMonth
+                            ? 'text-green-700 dark:text-green-400'
+                            : 'text-red-700 dark:text-red-400'
+                            }`}
+                        >
+                          {row.countedDays.toFixed(1)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Table Tabs */}
       <div className="bg-white dark:bg-slate-800 rounded-lg shadow mb-8">
@@ -1542,11 +1894,7 @@ export default function PayRegisterPage() {
                       const batchStatus = batchInfo?.status || 'pending';
                       const hasPermission = batchInfo?.permissionGranted || false;
 
-                      const isPastMonth = new Date(year, month - 1, 1).getTime() < new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
-
-                      // Locked if Approved/Frozen/Complete AND no permission
-                      // OR if it is a past month (strict modification lock)
-                      const isLocked = (['approved', 'freeze', 'complete'].includes(batchStatus) && !hasPermission) || isPastMonth;
+                      const isLocked = (['approved', 'freeze', 'complete'].includes(batchStatus) && !hasPermission);
                       const isFrozenOrComplete = ['freeze', 'complete'].includes(batchStatus);
 
                       return (
@@ -1565,7 +1913,7 @@ export default function PayRegisterPage() {
                                   )}
                                 </div>
                                 <div className="flex gap-2">
-                                  {isPastMonth && !pr.payrollId ? (
+                                  {!pr.payrollId ? (
                                     <button
                                       onClick={(e) => {
                                         e.stopPropagation();
@@ -1767,337 +2115,83 @@ export default function PayRegisterPage() {
       </div>
 
       {/* Edit Modal - Tab-specific dialogs */}
-      {showEditModal && editingRecord && (
-        <div className="fixed inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto border border-slate-200 dark:border-slate-700">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                  Edit: {editingRecord.date} - {editingRecord.employee.employee_name}
-                </h2>
-                <button
-                  onClick={() => setShowEditModal(false)}
-                  className="text-slate-400 hover:text-slate-600"
-                >
-                  ✕
-                </button>
-              </div>
-
-              <div className="space-y-6">
-                {/* Half-Day Mode Toggle */}
-                <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={isHalfDayMode}
-                      onChange={(e) => {
-                        setIsHalfDayMode(e.target.checked);
-                        if (!e.target.checked) {
-                          // When disabling half-day mode, sync both halves to the same status
-                          const currentStatus = editData.status || editData.firstHalf?.status || 'absent';
-                          setEditData({
-                            ...editData,
-                            status: currentStatus,
-                            firstHalf: normalizeHalfDay(editData.firstHalf, currentStatus as any),
-                            secondHalf: normalizeHalfDay(editData.secondHalf, currentStatus as any),
-                            isSplit: false,
-                          });
-                        } else {
-                          setEditData({
-                            ...editData,
-                            isSplit: true,
-                          });
-                        }
-                      }}
-                      className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Enable Half-Day Mode
-                    </span>
-                  </label>
-                  {isHalfDayMode && (
-                    <span className="text-xs text-slate-500 dark:text-slate-400">
-                      (Edit first and second half separately)
-                    </span>
-                  )}
+      {
+        showEditModal && editingRecord && (
+          <div className="fixed inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto border border-slate-200 dark:border-slate-700">
+              <div className="p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                    Edit: {editingRecord.date} - {editingRecord.employee.employee_name}
+                  </h2>
+                  <button
+                    onClick={() => setShowEditModal(false)}
+                    className="text-slate-400 hover:text-slate-600"
+                  >
+                    ✕
+                  </button>
                 </div>
 
-                {/* First Half - Only show if half-day mode is enabled */}
-                {isHalfDayMode && (
-                  <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
-                    <h3 className="text-lg font-semibold mb-3 text-slate-900 dark:text-white">First Half</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          Status
-                        </label>
-                        <select
-                          value={editData.firstHalf?.status || 'absent'}
-                          onChange={(e) => setEditData({
-                            ...editData,
-                            firstHalf: {
-                              ...editData.firstHalf!,
-                              status: e.target.value as any,
-                              leaveType: e.target.value === 'leave' ? (editData.firstHalf?.leaveType || null) : null,
-                              leaveNature: e.target.value === 'leave' ? (editData.firstHalf?.leaveNature || null) : null,
-                              isOD: e.target.value === 'od',
-                            },
-                          })}
-                          className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                        >
-                          <option value="present">Present</option>
-                          <option value="absent">Absent</option>
-                          <option value="leave">Leave</option>
-                          <option value="od">OD</option>
-                          <option value="holiday">Holiday</option>
-                          <option value="week_off">Week Off</option>
-                        </select>
-                      </div>
-                      {editData.firstHalf?.status === 'leave' && (
-                        <>
-                          <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                              Leave Type
-                            </label>
-                            <select
-                              value={editData.firstHalf?.leaveType || ''}
-                              onChange={(e) => setEditData({
-                                ...editData,
-                                firstHalf: {
-                                  ...editData.firstHalf!,
-                                  leaveType: e.target.value,
-                                },
-                              })}
-                              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                            >
-                              <option value="">Select Leave Type</option>
-                              {leaveTypes.map((lt) => (
-                                <option key={lt.code} value={lt.code}>
-                                  {lt.name} ({lt.code})
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                              Leave Nature
-                            </label>
-                            <select
-                              value={editData.firstHalf?.leaveNature || 'paid'}
-                              onChange={(e) => setEditData({
-                                ...editData,
-                                firstHalf: {
-                                  ...editData.firstHalf!,
-                                  leaveNature: e.target.value as any,
-                                },
-                              })}
-                              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                            >
-                              <option value="paid">Paid</option>
-                              <option value="lop">LOP (Loss of Pay)</option>
-                            </select>
-                          </div>
-                        </>
-                      )}
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          OT Hours
-                        </label>
-                        <input
-                          type="number"
-                          step="0.5"
-                          min="0"
-                          value={editData.firstHalf?.otHours || 0}
-                          onChange={(e) => setEditData({
-                            ...editData,
-                            firstHalf: {
-                              ...editData.firstHalf!,
-                              otHours: parseFloat(e.target.value) || 0,
-                            },
-                          })}
-                          className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          Shift
-                        </label>
-                        <select
-                          value={editData.shiftId || ''}
-                          onChange={(e) => {
-                            const shift = shifts.find((s) => s._id === e.target.value);
+                <div className="space-y-6">
+                  {/* Half-Day Mode Toggle */}
+                  <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={isHalfDayMode}
+                        onChange={(e) => {
+                          setIsHalfDayMode(e.target.checked);
+                          if (!e.target.checked) {
+                            // When disabling half-day mode, sync both halves to the same status
+                            const currentStatus = editData.status || editData.firstHalf?.status || 'absent';
                             setEditData({
                               ...editData,
-                              shiftId: e.target.value || null,
-                              shiftName: shift?.name || null,
-                              firstHalf: {
-                                ...editData.firstHalf!,
-                                shiftId: e.target.value || null,
-                              },
-                              secondHalf: {
-                                ...editData.secondHalf!,
-                                shiftId: e.target.value || null,
-                              },
+                              status: currentStatus,
+                              firstHalf: normalizeHalfDay(editData.firstHalf, currentStatus as any),
+                              secondHalf: normalizeHalfDay(editData.secondHalf, currentStatus as any),
+                              isSplit: false,
                             });
-                          }}
-                          className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                        >
-                          <option value="">Select Shift</option>
-                          {shifts.map((shift) => (
-                            <option key={shift._id} value={shift._id}>
-                              {shift.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
+                          } else {
+                            setEditData({
+                              ...editData,
+                              isSplit: true,
+                            });
+                          }
+                        }}
+                        className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                        Enable Half-Day Mode
+                      </span>
+                    </label>
+                    {isHalfDayMode && (
+                      <span className="text-xs text-slate-500 dark:text-slate-400">
+                        (Edit first and second half separately)
+                      </span>
+                    )}
                   </div>
-                )}
 
-                {/* Second Half - Only show if half-day mode is enabled */}
-                {isHalfDayMode && (
-                  <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
-                    <h3 className="text-lg font-semibold mb-3 text-slate-900 dark:text-white">Second Half</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          Status
-                        </label>
-                        <select
-                          value={editData.secondHalf?.status || 'absent'}
-                          onChange={(e) => setEditData({
-                            ...editData,
-                            secondHalf: {
-                              ...editData.secondHalf!,
-                              status: e.target.value as any,
-                              leaveType: e.target.value === 'leave' ? (editData.secondHalf?.leaveType || null) : null,
-                              leaveNature: e.target.value === 'leave' ? (editData.secondHalf?.leaveNature || null) : null,
-                              isOD: e.target.value === 'od',
-                            },
-                          })}
-                          className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                        >
-                          <option value="present">Present</option>
-                          <option value="absent">Absent</option>
-                          <option value="leave">Leave</option>
-                          <option value="od">OD</option>
-                          <option value="holiday">Holiday</option>
-                          <option value="week_off">Week Off</option>
-                        </select>
-                      </div>
-                      {editData.secondHalf?.status === 'leave' && (
-                        <>
-                          <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                              Leave Type
-                            </label>
-                            <select
-                              value={editData.secondHalf?.leaveType || ''}
-                              onChange={(e) => setEditData({
-                                ...editData,
-                                secondHalf: {
-                                  ...editData.secondHalf!,
-                                  leaveType: e.target.value,
-                                },
-                              })}
-                              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                            >
-                              <option value="">Select Leave Type</option>
-                              {leaveTypes.map((lt) => (
-                                <option key={lt.code} value={lt.code}>
-                                  {lt.name} ({lt.code})
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                              Leave Nature
-                            </label>
-                            <select
-                              value={editData.secondHalf?.leaveNature || 'paid'}
-                              onChange={(e) => setEditData({
-                                ...editData,
-                                secondHalf: {
-                                  ...editData.secondHalf!,
-                                  leaveNature: e.target.value as any,
-                                },
-                              })}
-                              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                            >
-                              <option value="paid">Paid</option>
-                              <option value="lop">LOP (Loss of Pay)</option>
-                            </select>
-                          </div>
-                        </>
-                      )}
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          OT Hours
-                        </label>
-                        <input
-                          type="number"
-                          step="0.5"
-                          min="0"
-                          value={editData.secondHalf?.otHours || 0}
-                          onChange={(e) => setEditData({
-                            ...editData,
-                            secondHalf: {
-                              ...editData.secondHalf!,
-                              otHours: parseFloat(e.target.value) || 0,
-                            },
-                          })}
-                          className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Full Day Fields - Show when NOT in half-day mode OR for specific tabs */}
-                {!isHalfDayMode && (
-                  <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
-                    <h3 className="text-lg font-semibold mb-3 text-slate-900 dark:text-white">
-                      {activeTable === 'present' ? 'Present Status' :
-                        activeTable === 'absent' ? 'Absent Status' :
-                          activeTable === 'leaves' ? 'Leave Details' :
-                            activeTable === 'od' ? 'OD Details' :
-                              activeTable === 'ot' || activeTable === 'extraHours' ? 'OT Hours' :
-                                'Full Day'}
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {(activeTable === 'present' || activeTable === 'absent' || activeTable === 'leaves' || activeTable === 'od') && (
+                  {/* First Half - Only show if half-day mode is enabled */}
+                  {isHalfDayMode && (
+                    <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+                      <h3 className="text-lg font-semibold mb-3 text-slate-900 dark:text-white">First Half</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                             Status
                           </label>
                           <select
-                            value={editData.status || 'absent'}
-                            onChange={(e) => {
-                              const newStatus = e.target.value as any;
-                              setEditData({
-                                ...editData,
-                                status: newStatus,
-                                firstHalf: {
-                                  ...editData.firstHalf!,
-                                  status: newStatus,
-                                  leaveType: newStatus === 'leave' ? (editData.firstHalf?.leaveType || null) : null,
-                                  leaveNature: newStatus === 'leave' ? (editData.firstHalf?.leaveNature || null) : null,
-                                  isOD: newStatus === 'od',
-                                },
-                                secondHalf: {
-                                  ...editData.secondHalf!,
-                                  status: newStatus,
-                                  leaveType: newStatus === 'leave' ? (editData.secondHalf?.leaveType || null) : null,
-                                  leaveNature: newStatus === 'leave' ? (editData.secondHalf?.leaveNature || null) : null,
-                                  isOD: newStatus === 'od',
-                                },
-                                leaveType: newStatus === 'leave' ? (editData.leaveType || null) : null,
-                                leaveNature: newStatus === 'leave' ? (editData.leaveNature || null) : null,
-                                isOD: newStatus === 'od',
-                                isSplit: false,
-                              });
-                            }}
+                            value={editData.firstHalf?.status || 'absent'}
+                            onChange={(e) => setEditData({
+                              ...editData,
+                              firstHalf: {
+                                ...editData.firstHalf!,
+                                status: e.target.value as any,
+                                leaveType: e.target.value === 'leave' ? (editData.firstHalf?.leaveType || null) : null,
+                                leaveNature: e.target.value === 'leave' ? (editData.firstHalf?.leaveNature || null) : null,
+                                isOD: e.target.value === 'od',
+                              },
+                            })}
                             className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
                           >
                             <option value="present">Present</option>
@@ -2108,188 +2202,444 @@ export default function PayRegisterPage() {
                             <option value="week_off">Week Off</option>
                           </select>
                         </div>
-                      )}
-                      {editData.status === 'leave' && (activeTable === 'leaves' || !isHalfDayMode) && (
-                        <>
-                          <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                              Leave Type
-                            </label>
-                            <select
-                              value={editData.leaveType || ''}
-                              onChange={(e) => setEditData({
-                                ...editData,
-                                leaveType: e.target.value,
-                                firstHalf: {
-                                  ...editData.firstHalf!,
-                                  leaveType: e.target.value,
-                                },
-                                secondHalf: {
-                                  ...editData.secondHalf!,
-                                  leaveType: e.target.value,
-                                },
-                              })}
-                              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                            >
-                              <option value="">Select Leave Type</option>
-                              {leaveTypes.map((lt) => (
-                                <option key={lt.code} value={lt.code}>
-                                  {lt.name} ({lt.code})
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                              Leave Nature
-                            </label>
-                            <select
-                              value={editData.leaveNature || 'paid'}
-                              onChange={(e) => setEditData({
-                                ...editData,
-                                leaveNature: e.target.value as any,
-                                firstHalf: {
-                                  ...editData.firstHalf!,
-                                  leaveNature: e.target.value as any,
-                                },
-                                secondHalf: {
-                                  ...editData.secondHalf!,
-                                  leaveNature: e.target.value as any,
-                                },
-                              })}
-                              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                            >
-                              <option value="paid">Paid</option>
-                              <option value="lop">LOP (Loss of Pay)</option>
-                              <option value="without_pay">Without Pay</option>
-                            </select>
-                          </div>
-                        </>
-                      )}
-                      {/* Shift field for full day */}
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          Shift
-                        </label>
-                        <select
-                          value={editData.shiftId || ''}
-                          onChange={(e) => {
-                            const shift = shifts.find((s) => s._id === e.target.value);
-                            setEditData({
+                        {editData.firstHalf?.status === 'leave' && (
+                          <>
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                Leave Type
+                              </label>
+                              <select
+                                value={editData.firstHalf?.leaveType || ''}
+                                onChange={(e) => setEditData({
+                                  ...editData,
+                                  firstHalf: {
+                                    ...editData.firstHalf!,
+                                    leaveType: e.target.value,
+                                  },
+                                })}
+                                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                              >
+                                <option value="">Select Leave Type</option>
+                                {leaveTypes.map((lt) => (
+                                  <option key={lt.code} value={lt.code}>
+                                    {lt.name} ({lt.code})
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                Leave Nature
+                              </label>
+                              <select
+                                value={editData.firstHalf?.leaveNature || 'paid'}
+                                onChange={(e) => setEditData({
+                                  ...editData,
+                                  firstHalf: {
+                                    ...editData.firstHalf!,
+                                    leaveNature: e.target.value as any,
+                                  },
+                                })}
+                                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                              >
+                                <option value="paid">Paid</option>
+                                <option value="lop">LOP (Loss of Pay)</option>
+                              </select>
+                            </div>
+                          </>
+                        )}
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                            OT Hours
+                          </label>
+                          <input
+                            type="number"
+                            step="0.5"
+                            min="0"
+                            value={editData.firstHalf?.otHours || 0}
+                            onChange={(e) => setEditData({
                               ...editData,
-                              shiftId: e.target.value || null,
-                              shiftName: shift?.name || null,
                               firstHalf: {
                                 ...editData.firstHalf!,
+                                otHours: parseFloat(e.target.value) || 0,
+                              },
+                            })}
+                            className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                            Shift
+                          </label>
+                          <select
+                            value={editData.shiftId || ''}
+                            onChange={(e) => {
+                              const shift = shifts.find((s) => s._id === e.target.value);
+                              setEditData({
+                                ...editData,
                                 shiftId: e.target.value || null,
+                                shiftName: shift?.name || null,
+                                firstHalf: {
+                                  ...editData.firstHalf!,
+                                  shiftId: e.target.value || null,
+                                },
+                                secondHalf: {
+                                  ...editData.secondHalf!,
+                                  shiftId: e.target.value || null,
+                                },
+                              });
+                            }}
+                            className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                          >
+                            <option value="">Select Shift</option>
+                            {shifts.map((shift) => (
+                              <option key={shift._id} value={shift._id}>
+                                {shift.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Second Half - Only show if half-day mode is enabled */}
+                  {isHalfDayMode && (
+                    <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+                      <h3 className="text-lg font-semibold mb-3 text-slate-900 dark:text-white">Second Half</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                            Status
+                          </label>
+                          <select
+                            value={editData.secondHalf?.status || 'absent'}
+                            onChange={(e) => setEditData({
+                              ...editData,
+                              secondHalf: {
+                                ...editData.secondHalf!,
+                                status: e.target.value as any,
+                                leaveType: e.target.value === 'leave' ? (editData.secondHalf?.leaveType || null) : null,
+                                leaveNature: e.target.value === 'leave' ? (editData.secondHalf?.leaveNature || null) : null,
+                                isOD: e.target.value === 'od',
+                              },
+                            })}
+                            className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                          >
+                            <option value="present">Present</option>
+                            <option value="absent">Absent</option>
+                            <option value="leave">Leave</option>
+                            <option value="od">OD</option>
+                            <option value="holiday">Holiday</option>
+                            <option value="week_off">Week Off</option>
+                          </select>
+                        </div>
+                        {editData.secondHalf?.status === 'leave' && (
+                          <>
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                Leave Type
+                              </label>
+                              <select
+                                value={editData.secondHalf?.leaveType || ''}
+                                onChange={(e) => setEditData({
+                                  ...editData,
+                                  secondHalf: {
+                                    ...editData.secondHalf!,
+                                    leaveType: e.target.value,
+                                  },
+                                })}
+                                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                              >
+                                <option value="">Select Leave Type</option>
+                                {leaveTypes.map((lt) => (
+                                  <option key={lt.code} value={lt.code}>
+                                    {lt.name} ({lt.code})
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                Leave Nature
+                              </label>
+                              <select
+                                value={editData.secondHalf?.leaveNature || 'paid'}
+                                onChange={(e) => setEditData({
+                                  ...editData,
+                                  secondHalf: {
+                                    ...editData.secondHalf!,
+                                    leaveNature: e.target.value as any,
+                                  },
+                                })}
+                                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                              >
+                                <option value="paid">Paid</option>
+                                <option value="lop">LOP (Loss of Pay)</option>
+                              </select>
+                            </div>
+                          </>
+                        )}
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                            OT Hours
+                          </label>
+                          <input
+                            type="number"
+                            step="0.5"
+                            min="0"
+                            value={editData.secondHalf?.otHours || 0}
+                            onChange={(e) => setEditData({
+                              ...editData,
+                              secondHalf: {
+                                ...editData.secondHalf!,
+                                otHours: parseFloat(e.target.value) || 0,
+                              },
+                            })}
+                            className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Full Day Fields - Show when NOT in half-day mode OR for specific tabs */}
+                  {!isHalfDayMode && (
+                    <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+                      <h3 className="text-lg font-semibold mb-3 text-slate-900 dark:text-white">
+                        {activeTable === 'present' ? 'Present Status' :
+                          activeTable === 'absent' ? 'Absent Status' :
+                            activeTable === 'leaves' ? 'Leave Details' :
+                              activeTable === 'od' ? 'OD Details' :
+                                activeTable === 'ot' || activeTable === 'extraHours' ? 'OT Hours' :
+                                  'Full Day'}
+                      </h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {(activeTable === 'present' || activeTable === 'absent' || activeTable === 'leaves' || activeTable === 'od') && (
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                              Status
+                            </label>
+                            <select
+                              value={editData.status || 'absent'}
+                              onChange={(e) => {
+                                const newStatus = e.target.value as any;
+                                setEditData({
+                                  ...editData,
+                                  status: newStatus,
+                                  firstHalf: {
+                                    ...editData.firstHalf!,
+                                    status: newStatus,
+                                    leaveType: newStatus === 'leave' ? (editData.firstHalf?.leaveType || null) : null,
+                                    leaveNature: newStatus === 'leave' ? (editData.firstHalf?.leaveNature || null) : null,
+                                    isOD: newStatus === 'od',
+                                  },
+                                  secondHalf: {
+                                    ...editData.secondHalf!,
+                                    status: newStatus,
+                                    leaveType: newStatus === 'leave' ? (editData.secondHalf?.leaveType || null) : null,
+                                    leaveNature: newStatus === 'leave' ? (editData.secondHalf?.leaveNature || null) : null,
+                                    isOD: newStatus === 'od',
+                                  },
+                                  leaveType: newStatus === 'leave' ? (editData.leaveType || null) : null,
+                                  leaveNature: newStatus === 'leave' ? (editData.leaveNature || null) : null,
+                                  isOD: newStatus === 'od',
+                                  isSplit: false,
+                                });
+                              }}
+                              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                            >
+                              <option value="present">Present</option>
+                              <option value="absent">Absent</option>
+                              <option value="leave">Leave</option>
+                              <option value="od">OD</option>
+                              <option value="holiday">Holiday</option>
+                              <option value="week_off">Week Off</option>
+                            </select>
+                          </div>
+                        )}
+                        {editData.status === 'leave' && (activeTable === 'leaves' || !isHalfDayMode) && (
+                          <>
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                Leave Type
+                              </label>
+                              <select
+                                value={editData.leaveType || ''}
+                                onChange={(e) => setEditData({
+                                  ...editData,
+                                  leaveType: e.target.value,
+                                  firstHalf: {
+                                    ...editData.firstHalf!,
+                                    leaveType: e.target.value,
+                                  },
+                                  secondHalf: {
+                                    ...editData.secondHalf!,
+                                    leaveType: e.target.value,
+                                  },
+                                })}
+                                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                              >
+                                <option value="">Select Leave Type</option>
+                                {leaveTypes.map((lt) => (
+                                  <option key={lt.code} value={lt.code}>
+                                    {lt.name} ({lt.code})
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                Leave Nature
+                              </label>
+                              <select
+                                value={editData.leaveNature || 'paid'}
+                                onChange={(e) => setEditData({
+                                  ...editData,
+                                  leaveNature: e.target.value as any,
+                                  firstHalf: {
+                                    ...editData.firstHalf!,
+                                    leaveNature: e.target.value as any,
+                                  },
+                                  secondHalf: {
+                                    ...editData.secondHalf!,
+                                    leaveNature: e.target.value as any,
+                                  },
+                                })}
+                                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                              >
+                                <option value="paid">Paid</option>
+                                <option value="lop">LOP (Loss of Pay)</option>
+                                <option value="without_pay">Without Pay</option>
+                              </select>
+                            </div>
+                          </>
+                        )}
+                        {/* Shift field for full day */}
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                            Shift
+                          </label>
+                          <select
+                            value={editData.shiftId || ''}
+                            onChange={(e) => {
+                              const shift = shifts.find((s) => s._id === e.target.value);
+                              setEditData({
+                                ...editData,
+                                shiftId: e.target.value || null,
+                                shiftName: shift?.name || null,
+                                firstHalf: {
+                                  ...editData.firstHalf!,
+                                  shiftId: e.target.value || null,
+                                },
+                                secondHalf: {
+                                  ...editData.secondHalf!,
+                                  shiftId: e.target.value || null,
+                                },
+                              });
+                            }}
+                            className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                          >
+                            <option value="">Select Shift</option>
+                            {shifts.map((shift) => (
+                              <option key={shift._id} value={shift._id}>
+                                {shift.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Full Day OT Hours - Show for OT/Extra Hours tabs or when not in half-day mode */}
+                  {(activeTable === 'ot' || activeTable === 'extraHours' || !isHalfDayMode) && (
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                        {isHalfDayMode ? 'Total OT Hours (First + Second Half)' : 'Total OT Hours (Full Day)'}
+                      </label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="0"
+                        value={editData.otHours || 0}
+                        onChange={(e) => {
+                          const otValue = parseFloat(e.target.value) || 0;
+                          if (isHalfDayMode) {
+                            // Distribute OT hours equally between halves
+                            setEditData({
+                              ...editData,
+                              otHours: otValue,
+                              firstHalf: {
+                                ...editData.firstHalf!,
+                                otHours: otValue / 2,
                               },
                               secondHalf: {
                                 ...editData.secondHalf!,
-                                shiftId: e.target.value || null,
+                                otHours: otValue / 2,
                               },
                             });
-                          }}
-                          className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                        >
-                          <option value="">Select Shift</option>
-                          {shifts.map((shift) => (
-                            <option key={shift._id} value={shift._id}>
-                              {shift.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                          } else {
+                            setEditData({
+                              ...editData,
+                              otHours: otValue,
+                              firstHalf: {
+                                ...editData.firstHalf!,
+                                otHours: otValue,
+                              },
+                              secondHalf: {
+                                ...editData.secondHalf!,
+                                otHours: otValue,
+                              },
+                            });
+                          }
+                        }}
+                        className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                      />
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {/* Full Day OT Hours - Show for OT/Extra Hours tabs or when not in half-day mode */}
-                {(activeTable === 'ot' || activeTable === 'extraHours' || !isHalfDayMode) && (
+                  {/* Remarks */}
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      {isHalfDayMode ? 'Total OT Hours (First + Second Half)' : 'Total OT Hours (Full Day)'}
+                      Remarks
                     </label>
-                    <input
-                      type="number"
-                      step="0.5"
-                      min="0"
-                      value={editData.otHours || 0}
-                      onChange={(e) => {
-                        const otValue = parseFloat(e.target.value) || 0;
-                        if (isHalfDayMode) {
-                          // Distribute OT hours equally between halves
-                          setEditData({
-                            ...editData,
-                            otHours: otValue,
-                            firstHalf: {
-                              ...editData.firstHalf!,
-                              otHours: otValue / 2,
-                            },
-                            secondHalf: {
-                              ...editData.secondHalf!,
-                              otHours: otValue / 2,
-                            },
-                          });
-                        } else {
-                          setEditData({
-                            ...editData,
-                            otHours: otValue,
-                            firstHalf: {
-                              ...editData.firstHalf!,
-                              otHours: otValue,
-                            },
-                            secondHalf: {
-                              ...editData.secondHalf!,
-                              otHours: otValue,
-                            },
-                          });
-                        }
-                      }}
+                    <textarea
+                      value={editData.remarks || ''}
+                      onChange={(e) => setEditData({
+                        ...editData,
+                        remarks: e.target.value,
+                      })}
+                      rows={3}
                       className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
                     />
                   </div>
-                )}
-
-                {/* Remarks */}
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Remarks
-                  </label>
-                  <textarea
-                    value={editData.remarks || ''}
-                    onChange={(e) => setEditData({
-                      ...editData,
-                      remarks: e.target.value,
-                    })}
-                    rows={3}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                  />
                 </div>
-              </div>
 
-              <div className="flex justify-end gap-3 mt-6">
-                <button
-                  onClick={handleSaveDate}
-                  disabled={saving[editingRecord.employeeId]}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {saving[editingRecord.employeeId] ? 'Saving...' : 'Save'}
-                </button>
-                <button
-                  onClick={() => {
-                    setShowEditModal(false);
-                    setEditingRecord(null);
-                    setIsHalfDayMode(false);
-                  }}
-                  className="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-md text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
-                >
-                  Cancel
-                </button>
+                <div className="flex justify-end gap-3 mt-6">
+                  <button
+                    onClick={handleSaveDate}
+                    disabled={saving[editingRecord.employeeId]}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {saving[editingRecord.employeeId] ? 'Saving...' : 'Save'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowEditModal(false);
+                      setEditingRecord(null);
+                      setIsHalfDayMode(false);
+                    }}
+                    className="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-md text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Arrears Section - Placed at the bottom of the page */}
       <div className="mt-8 bg-white dark:bg-slate-800 rounded-lg shadow p-6">
@@ -2308,7 +2658,6 @@ export default function PayRegisterPage() {
           onArrearsSelected={handleArrearsSelected}
         />
       </div>
-      <ToastContainer position="top-right" autoClose={3000} />
-    </div>
+    </div >
   );
 }

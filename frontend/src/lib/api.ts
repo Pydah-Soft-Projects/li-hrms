@@ -264,6 +264,7 @@ export interface ApiResponse<T> {
   error?: string;
   dataSource?: string;
   jobId?: string;
+  status?: string;
   pagination?: {
     total: number;
     totalPages: number;
@@ -2567,10 +2568,20 @@ export const api = {
     });
   },
 
-  exportPayrollExcel: async (params: { month: string; departmentId?: string; employeeIds?: string[] }) => {
+  exportPayrollExcel: async (params: {
+    month: string;
+    departmentId?: string;
+    divisionId?: string;
+    status?: string;
+    search?: string;
+    employeeIds?: string[]
+  }) => {
     const query = new URLSearchParams();
     query.append('month', params.month);
     if (params.departmentId) query.append('departmentId', params.departmentId);
+    if (params.divisionId) query.append('divisionId', params.divisionId);
+    if (params.status) query.append('status', params.status);
+    if (params.search) query.append('search', params.search);
     if (params.employeeIds && params.employeeIds.length > 0) {
       query.append('employeeIds', params.employeeIds.join(','));
     }
@@ -3017,7 +3028,7 @@ export const api = {
   // Second Salary Bulk Update
   downloadSecondSalaryTemplate: async () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-    const response = await fetch(`${API_BASE_URL}/payroll/second-salary/bulk-update/template`, {
+    const response = await fetch(`${API_BASE_URL}/salary-updates/second-salary/template`, {
       method: 'GET',
       headers: { 'Authorization': `Bearer ${token}` }
     });
@@ -3026,9 +3037,83 @@ export const api = {
   },
 
   updateSecondSalaryBulk: async (data: FormData) => {
-    return apiRequest<any>('/payroll/second-salary/bulk-update', {
+    return apiRequest<any>('/salary-updates/second-salary/upload', {
       method: 'POST',
       body: data,
     });
+  },
+
+  exportSecondSalaryExcel: async (params: {
+    month: string;
+    departmentId?: string;
+    divisionId?: string;
+    employeeIds?: string[];
+    search?: string;
+  }) => {
+    const query = new URLSearchParams();
+    query.append('month', params.month);
+    if (params.departmentId) query.append('departmentId', params.departmentId);
+    if (params.divisionId) query.append('divisionId', params.divisionId);
+    if (params.search) query.append('search', params.search);
+    if (params.employeeIds && params.employeeIds.length > 0) {
+      query.append('employeeIds', params.employeeIds.join(','));
+    }
+
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/second-salary/export?${query.toString()}`, {
+      method: 'GET',
+      credentials: 'include',
+      headers,
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || 'Failed to export second salary');
+    }
+
+    const blob = await response.blob();
+    return blob;
+  },
+
+  exportSalaryComparisonExcel: async (params: {
+    month: string;
+    departmentId?: string;
+    divisionId?: string;
+    designationId?: string;
+    search?: string;
+  }) => {
+    const query = new URLSearchParams();
+    query.append('month', params.month);
+    if (params.departmentId) query.append('departmentId', params.departmentId);
+    if (params.divisionId) query.append('divisionId', params.divisionId);
+    if (params.designationId) query.append('designationId', params.designationId);
+    if (params.search) query.append('search', params.search);
+
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/second-salary/comparison/export?${query.toString()}`, {
+      method: 'GET',
+      credentials: 'include',
+      headers,
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || 'Failed to export salary comparison');
+    }
+
+    const blob = await response.blob();
+    return blob;
+  },
+
+  getJobStatus: async (jobId: string, queue: string = 'payroll') => {
+    return apiRequest<any>(`/jobs/status/${jobId}?queue=${queue}`, { method: 'GET' });
   },
 };

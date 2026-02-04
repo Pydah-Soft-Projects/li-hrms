@@ -26,10 +26,11 @@ const secondSalaryComparisonService = {
         const regularRecords = await PayrollRecord.find(matchQuery)
             .populate({
                 path: 'employeeId',
-                select: 'employee_name emp_no designation_id department_id photo',
+                select: 'employee_name emp_no designation_id department_id photo gender date_of_joining payment_mode bank_name bank_account_no division_id',
                 populate: [
                     { path: 'designation_id', select: 'name' },
-                    { path: 'department_id', select: 'name' }
+                    { path: 'department_id', select: 'name' },
+                    { path: 'division_id', select: 'name' }
                 ]
             })
             .lean();
@@ -38,10 +39,11 @@ const secondSalaryComparisonService = {
         const secondSalaryRecords = await SecondSalaryRecord.find(matchQuery)
             .populate({
                 path: 'employeeId',
-                select: 'employee_name emp_no designation_id department_id photo',
+                select: 'employee_name emp_no designation_id department_id photo gender date_of_joining payment_mode bank_name bank_account_no division_id',
                 populate: [
                     { path: 'designation_id', select: 'name' },
-                    { path: 'department_id', select: 'name' }
+                    { path: 'department_id', select: 'name' },
+                    { path: 'division_id', select: 'name' }
                 ]
             })
             .lean();
@@ -80,8 +82,17 @@ const secondSalaryComparisonService = {
                             emp_no: emp.emp_no,
                             photo: emp.photo,
                             designation: emp.designation_id?.name || 'N/A',
-                            department: emp.department_id?.name || 'N/A'
+                            department: emp.department_id?.name || 'N/A',
+                            division: emp.division_id?.name || 'N/A',
+                            gender: emp.gender,
+                            date_of_joining: emp.date_of_joining,
+                            payment_mode: emp.payment_mode,
+                            bank_name: emp.bank_name,
+                            bank_account_no: emp.bank_account_no
                         },
+                        attendance: record.attendance || {},
+                        regularRecord: null,
+                        secondSalaryRecord: null,
                         regularNetSalary: 0,
                         secondSalaryNet: 0
                     });
@@ -90,8 +101,18 @@ const secondSalaryComparisonService = {
                 const entry = employeeMap.get(empId);
                 if (type === 'regular') {
                     entry.regularNetSalary = record.netSalary || 0;
+                    entry.regularRecord = record;
+                    // Use regular record attendance if second salary missing (though they should be same)
+                    if (!entry.attendance || Object.keys(entry.attendance).length === 0) {
+                        entry.attendance = record.attendance || {};
+                    }
                 } else if (type === 'second') {
                     entry.secondSalaryNet = record.netSalary || 0;
+                    entry.secondSalaryRecord = record;
+                    // Update attendance from second salary if preferred
+                    if (record.attendance && Object.keys(record.attendance).length > 0) {
+                        entry.attendance = record.attendance;
+                    }
                 }
             });
         };
@@ -101,7 +122,7 @@ const secondSalaryComparisonService = {
 
         const comparisonList = Array.from(employeeMap.values()).map(item => ({
             ...item,
-            difference: item.regularNetSalary - item.secondSalaryNet
+            difference: item.secondSalaryNet - item.regularNetSalary // Second - Regular as requested
         }));
 
         // Sort by Emp No

@@ -18,15 +18,16 @@ import {
     Search
 } from 'lucide-react';
 import Link from 'next/link';
-import { toast } from 'react-toastify';
+import Swal from 'sweetalert2';
 import { format } from 'date-fns';
-import * as XLSX from 'xlsx';
 
 export default function SecondSalaryPaymentsPage() {
     const [batches, setBatches] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isCalculating, setIsCalculating] = useState(false);
     const [viewMode, setViewMode] = useState<'batches' | 'comparison'>('batches');
+    const [calculatingJobId, setCalculatingJobId] = useState<string | null>(null);
+    const [calculationProgress, setCalculationProgress] = useState<{ processed: number, total: number, percentage: number, currentEmployee?: string } | null>(null);
 
     // Filters
     const [month, setMonth] = useState(format(new Date(), 'yyyy-MM'));
@@ -42,6 +43,7 @@ export default function SecondSalaryPaymentsPage() {
     // Comparison Data
     const [comparisonData, setComparisonData] = useState<any[]>([]);
     const [isComparing, setIsComparing] = useState(false);
+    const [exportingExcel, setExportingExcel] = useState(false);
 
     useEffect(() => {
         fetchInitialData();
@@ -106,100 +108,236 @@ export default function SecondSalaryPaymentsPage() {
             }
         } catch (error) {
             console.error('Error fetching comparison:', error);
-            toast.error('Failed to load comparison data');
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: 'Failed to load comparison data',
+            });
         } finally {
             setIsComparing(false);
         }
     };
 
     const handleRunPayroll = async () => {
-        if (!selectedDivision || !selectedDepartment || !month) {
-            toast.error('Please select Division, Department and Month');
+        if (!month) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Missing Month',
+                text: 'Please select a Month',
+            });
             return;
         }
 
+        const isGlobal = (!selectedDivision || selectedDivision === 'all') && (!selectedDepartment || selectedDepartment === 'all');
+
+        if (isGlobal) {
+            const confirmAll = await Swal.fire({
+                title: 'Global Calculation?',
+                text: `This will calculate 2nd salary for ALL employees across ALL divisions and departments for ${month}. Continue?`,
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonText: 'Yes, calculate all',
+                cancelButtonText: 'Cancel'
+            });
+            if (!confirmAll.isConfirmed) return;
+        }
+
         setIsCalculating(true);
+        setCalculationProgress(null);
         try {
             const res = await api.post('/second-salary/calculate', {
+                divisionId: selectedDivision || 'all',
+                departmentId: selectedDepartment || 'all',
+                month
+            });
+
+            if (res.success) {
+                if (res.data?.status === 'queued' && res.data?.jobId) {
+                    setCalculatingJobId(res.data.jobId);
+                    startPollingProgress(res.data.jobId);
+                } else {
+                    // Backend returned immediate success (fallback for small batches if implemented)
+                    const { successCount, failCount } = res.data || {};
+                    showSuccessMessage(successCount, failCount);
+                    fetchBatches();
+                    setIsCalculating(false);
+                }
+            } else {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Calculation Failed',
+                    text: res.message || 'Failed to calculate',
+                });
+                setIsCalculating(false);
+            }
+        } catch (error: any) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: error.message || 'Error running 2nd salary payroll',
+            });
+            setIsCalculating(false);
+        }
+    };
+
+    const showSuccessMessage = (successCount: number, failCount: number) => {
+        if (failCount === 0) {
+            Swal.fire({
+                icon: 'success',
+                title: 'Success',
+                text: `2nd Salary calculated for ${successCount} employees.`,
+                timer: 3000,
+                showConfirmButton: false,
+                toast: true,
+                position: 'top-end'
+            });
+        } else {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Partial Success',
+                text: `Calculated ${successCount} successfully, but ${failCount} failed.`,
+            });
+        }
+    };
+
+    const startPollingProgress = async (jobId: string) => {
+        const interval = setInterval(async () => {
+            try {
+                const res = await (api as any).getJobStatus(jobId);
+                if (res.success) {
+                    const { state, progress } = res.data;
+
+                    if (progress) {
+                        setCalculationProgress(progress);
+                    }
+
+                    if (state === 'completed') {
+                        clearInterval(interval);
+                        setCalculatingJobId(null);
+                        setCalculationProgress(null);
+                        setIsCalculating(false);
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Calculation Complete',
+                            text: '2nd Salary background calculation finished successfully.',
+                            timer: 3000,
+                            showConfirmButton: false,
+                            toast: true,
+                            position: 'top-end'
+                        });
+                        fetchBatches();
+                    } else if (state === 'failed') {
+                        clearInterval(interval);
+                        setCalculatingJobId(null);
+                        setCalculationProgress(null);
+                        setIsCalculating(false);
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Calculation Failed',
+                            text: res.data.failedReason || 'Background calculation failed.',
+                        });
+                    }
+                }
+            } catch (error) {
+                console.error('Error polling job status:', error);
+                // We keep polling unless it fails many times or 404
+            }
+        }, 1500); // Poll every 1.5 seconds
+    };
+
+
+    const handleExportExcel = async () => {
+        setExportingExcel(true);
+        try {
+            const blob = await api.exportSecondSalaryExcel({
+                month,
                 divisionId: selectedDivision,
                 departmentId: selectedDepartment,
-                month
+                search: searchTerm
             });
 
-            if (res.success) {
-                const { successCount, failCount } = res.data || res;
-                if (failCount === 0) {
-                    toast.success(`Success: 2nd Salary calculated for ${successCount} employees.`);
-                } else {
-                    toast.warning(`Calculated ${successCount} successfully, but ${failCount} failed.`);
-                }
-                fetchBatches();
-            } else {
-                toast.error(res.message || 'Failed to calculate');
-            }
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Second_Salary_Export_${month}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+
+            Swal.fire({
+                icon: 'success',
+                title: 'Export Complete',
+                text: 'Excel file has been downloaded successfully.',
+                timer: 2000,
+                showConfirmButton: false,
+                toast: true,
+                position: 'top-end'
+            });
         } catch (error: any) {
-            toast.error(error.message || 'Error running 2nd salary payroll');
+            console.error('Export error:', error);
+            Swal.fire({
+                icon: 'error',
+                title: 'Export Failed',
+                text: error.message || 'Failed to export to Excel',
+            });
         } finally {
-            setIsCalculating(false);
+            setExportingExcel(false);
         }
     };
 
-    const handleCalculateAll = async () => {
-        if (!month) {
-            alert('Please select Month');
-            return;
-        }
-
-        const confirmReset = window.confirm(`This will calculate 2nd salary for ALL employees across ALL divisions and departments for ${month}. Continue?`);
-        if (!confirmReset) return;
-
-        setIsCalculating(true);
-        try {
-            const res = await api.post('/second-salary/calculate', {
-                divisionId: 'all',
-                departmentId: 'all',
-                month
-            });
-
-            if (res.success) {
-                const { successCount, failCount } = res.data || res;
-                if (failCount === 0) {
-                    toast.success(`Global success: 2nd Salary calculated for ${successCount} employees.`);
-                } else {
-                    toast.warning(`Global processing complete. ${successCount} success, ${failCount} failed.`);
-                }
-                fetchBatches();
-            } else {
-                toast.error(res.message || 'Failed to calculate');
-            }
-        } catch (error: any) {
-            toast.error(error.message || 'Error running global calculation');
-        } finally {
-            setIsCalculating(false);
-        }
-    };
-
-    const handleExportExcel = () => {
+    const handleExportComparisonExcel = async () => {
         if (comparisonData.length === 0) {
-            toast.warning('No data to export');
+            Swal.fire({
+                icon: 'warning',
+                title: 'No Data',
+                text: 'No data to export',
+                timer: 2000,
+                showConfirmButton: false,
+                toast: true,
+                position: 'top-end'
+            });
             return;
         }
 
-        const exportData = comparisonData.map(item => ({
-            'Employee ID': item.employee.emp_no,
-            'Name': item.employee.name,
-            'Department': item.employee.department,
-            'Designation': item.employee.designation,
-            'Regular Net Salary': item.regularNetSalary,
-            '2nd Salary Net': item.secondSalaryNet,
-            'Difference': item.difference,
-            'Month': month
-        }));
+        setExportingExcel(true);
+        try {
+            const blob = await (api as any).exportSalaryComparisonExcel({
+                month,
+                divisionId: selectedDivision,
+                departmentId: selectedDepartment,
+                designationId: selectedDesignation,
+                search: searchTerm
+            });
 
-        const ws = XLSX.utils.json_to_sheet(exportData);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Salary Comparison");
-        XLSX.writeFile(wb, `Salary_Comparison_${month}.xlsx`);
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Salary_Comparison_${month}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+
+            Swal.fire({
+                icon: 'success',
+                title: 'Export Complete',
+                text: 'Comparison Excel file has been downloaded successfully.',
+                timer: 2000,
+                showConfirmButton: false,
+                toast: true,
+                position: 'top-end'
+            });
+        } catch (error: any) {
+            console.error('Export error:', error);
+            Swal.fire({
+                icon: 'error',
+                title: 'Export Failed',
+                text: error.message || 'Failed to export comparison to Excel',
+            });
+        } finally {
+            setExportingExcel(false);
+        }
     };
 
     const formatCurrency = (amount: number) => {
@@ -237,6 +375,15 @@ export default function SecondSalaryPaymentsPage() {
 
                 <div className="flex items-center gap-3">
                     <button
+                        onClick={handleExportExcel}
+                        disabled={exportingExcel || !month}
+                        className="inline-flex items-center px-4 py-2 text-sm font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl hover:bg-emerald-100 transition-all shadow-sm"
+                    >
+                        {exportingExcel ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
+                        Export Excel
+                    </button>
+
+                    <button
                         onClick={() => setViewMode(viewMode === 'batches' ? 'comparison' : 'batches')}
                         className={`inline-flex items-center px-4 py-2 text-sm font-medium rounded-xl transition-all shadow-sm ${viewMode === 'comparison'
                             ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 ring-2 ring-indigo-500/20'
@@ -249,14 +396,6 @@ export default function SecondSalaryPaymentsPage() {
 
                     {viewMode === 'batches' && (
                         <>
-                            <button
-                                onClick={handleCalculateAll}
-                                disabled={isCalculating || !month}
-                                className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 transition-all shadow-sm shadow-indigo-200 disabled:opacity-50"
-                            >
-                                {isCalculating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
-                                Calculate for All
-                            </button>
                             <Link
                                 href="/superadmin/payslips/second-salary"
                                 className="inline-flex items-center px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-all shadow-sm"
@@ -286,7 +425,7 @@ export default function SecondSalaryPaymentsPage() {
                                     onChange={(e) => setSelectedDivision(e.target.value)}
                                     className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 transition-all"
                                 >
-                                    <option value="">Select Division</option>
+                                    <option value="all">All Divisions</option>
                                     {divisions.map(div => <option key={div._id} value={div._id}>{div.name}</option>)}
                                 </select>
                             </div>
@@ -298,9 +437,9 @@ export default function SecondSalaryPaymentsPage() {
                                     onChange={(e) => setSelectedDepartment(e.target.value)}
                                     className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 transition-all"
                                 >
-                                    <option value="">Select Department</option>
+                                    <option value="all">All Departments</option>
                                     {departments
-                                        .filter(dept => !selectedDivision || dept.divisions?.includes(selectedDivision as any))
+                                        .filter(dept => !selectedDivision || selectedDivision === 'all' || dept.divisions?.includes(selectedDivision as any))
                                         .map(dept => <option key={dept._id} value={dept._id}>{dept.name}</option>)}
                                 </select>
                             </div>
@@ -318,7 +457,7 @@ export default function SecondSalaryPaymentsPage() {
                             <div className="flex items-end">
                                 <button
                                     onClick={handleRunPayroll}
-                                    disabled={isCalculating || !selectedDepartment || !selectedDivision}
+                                    disabled={isCalculating || !month}
                                     className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 dark:disabled:bg-slate-800 text-white font-semibold py-2.5 rounded-xl transition-all shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2"
                                 >
                                     {isCalculating ? (
@@ -335,6 +474,27 @@ export default function SecondSalaryPaymentsPage() {
                                 </button>
                             </div>
                         </div>
+
+                        {isCalculating && calculationProgress && (
+                            <div className="mt-6 space-y-3 p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl border border-indigo-100 dark:border-indigo-900/30">
+                                <div className="flex justify-between items-center text-sm font-medium">
+                                    <span className="text-indigo-700 dark:text-indigo-300 flex items-center gap-2">
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                        {calculationProgress.currentEmployee ? `Calculating for: ${calculationProgress.currentEmployee}` : 'Processing batch...'}
+                                    </span>
+                                    <span className="text-indigo-600 dark:text-indigo-400">
+                                        {calculatingJobId && <span className="mr-3 opacity-50 font-mono text-[10px]">ID: {calculatingJobId}</span>}
+                                        {calculationProgress.processed} / {calculationProgress.total} ({calculationProgress.percentage}%)
+                                    </span>
+                                </div>
+                                <div className="w-full bg-indigo-200/50 dark:bg-indigo-900/50 rounded-full h-2.5 overflow-hidden">
+                                    <div
+                                        className="bg-indigo-600 h-2.5 rounded-full transition-all duration-500 ease-out"
+                                        style={{ width: `${calculationProgress.percentage}%` }}
+                                    ></div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
@@ -348,7 +508,7 @@ export default function SecondSalaryPaymentsPage() {
                             Salary Comparison
                         </h2>
                         <button
-                            onClick={handleExportExcel}
+                            onClick={handleExportComparisonExcel}
                             className="inline-flex items-center px-4 py-2 text-sm font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl hover:bg-emerald-100 transition-all"
                         >
                             <Download className="w-4 h-4 mr-2" />

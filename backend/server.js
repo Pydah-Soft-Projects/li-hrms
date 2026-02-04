@@ -151,6 +151,14 @@ app.use('/api/bonus', bonusRoutes);
 const dashboardRoutes = require('./dashboard/index.js');
 app.use('/api/dashboard', dashboardRoutes);
 
+// Job routes
+const jobRoutes = require('./shared/routes/jobRoutes');
+app.use('/api/jobs', jobRoutes);
+
+// Second Salary routes
+const secondSalaryRoutes = require('./payroll/routes/secondSalaryRoutes.js');
+app.use('/api/second-salary', secondSalaryRoutes);
+
 // Salary updates (employee bulk update template/upload, second-salary template/upload)
 const salaryUpdateRoutes = require('./salary-updates/index.js');
 app.use('/api/salary-updates', salaryUpdateRoutes);

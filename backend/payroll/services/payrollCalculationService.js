@@ -49,7 +49,8 @@ const normalizeOverrides = (list, fallbackCategory) => {
     })
     .map((ov) => {
       // Create a clean copy of the override
-      const override = { ...ov };
+      // Use toObject() if it's a Mongoose subdocument, otherwise spread properties
+      const override = (ov && typeof ov.toObject === 'function') ? ov.toObject() : { ...ov };
 
       // Ensure category is set
       override.category = override.category || fallbackCategory;
@@ -314,7 +315,18 @@ async function calculatePayroll(employeeId, month, userId) {
     });
 
     // Merge allowances and apply employee overrides
-    const allAllowances = [...allowances, ...allowancesWithGrossBase];
+    const rawAllAllowances = [...allowances, ...allowancesWithGrossBase];
+
+    // Deduplicate base allowances (masterId or name)
+    const uniqueBaseAllowancesMap = new Map();
+    rawAllAllowances.forEach(allow => {
+      const key = allow.masterId ? allow.masterId.toString() : allow.name?.trim().toLowerCase();
+      if (key && !uniqueBaseAllowancesMap.has(key)) {
+        uniqueBaseAllowancesMap.set(key, allow);
+      }
+    });
+    const allAllowances = Array.from(uniqueBaseAllowancesMap.values());
+
     const includeMissing = await getIncludeMissingFlag(departmentId, employee.division_id);
 
     // Accept employee overrides even if category was missing/old; normalize to 'allowance'
@@ -330,6 +342,11 @@ async function calculatePayroll(employeeId, month, userId) {
     console.log(`\n--- Base Allowances (Dept/Global): ${allAllowances.length} items ---`);
     allAllowances.forEach((base, idx) => {
       console.log(`  [${idx + 1}] ${base.name} (masterId: ${base.masterId}, amount: ${base.amount})`);
+    });
+
+    console.log(`\n--- Normalized Allowance Overrides: ${allowanceOverrides.length} items ---`);
+    allowanceOverrides.forEach((ov, idx) => {
+      console.log(`  [${idx + 1}] ${ov.name} (masterId: ${ov.masterId}, amount: ${ov.amount}, category: ${ov.category})`);
     });
 
     const mergedAllowances = mergeWithOverrides(allAllowances, allowanceOverrides, includeMissing);
@@ -484,6 +501,11 @@ async function calculatePayroll(employeeId, month, userId) {
     console.log(`\n--- Base Deductions (Dept/Global): ${allOtherDeductions.length} items ---`);
     allOtherDeductions.forEach((base, idx) => {
       console.log(`  [${idx + 1}] ${base.name} (masterId: ${base.masterId}, amount: ${base.amount})`);
+    });
+
+    console.log(`\n--- Normalized Deduction Overrides: ${deductionOverrides.length} items ---`);
+    deductionOverrides.forEach((ov, idx) => {
+      console.log(`  [${idx + 1}] ${ov.name} (masterId: ${ov.masterId}, amount: ${ov.amount}, category: ${ov.category})`);
     });
 
     const mergedDeductions = mergeWithOverrides(allOtherDeductions, deductionOverrides, includeMissing);
@@ -863,7 +885,7 @@ async function calculatePayroll(employeeId, month, userId) {
  * @param {String} options.source - Data source ('payregister' or 'all')
  * @param {Array} options.arrearsSettlements - Array of arrears settlements {id, amount}
  */
-async function calculatePayrollNew(employeeId, month, userId, options = { source: 'payregister', arrearsSettlements: [] }) {
+async function calculatePayrollNew(employeeId, month, userId, options = { source: 'payregister', arrearsSettlements: [] }, sharedContext = null) {
   try {
     const employee = await Employee.findById(employeeId).populate('department_id designation_id division_id');
     if (!employee) throw new Error('Employee not found');
@@ -1029,7 +1051,12 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     console.log('========================================\n');
 
     // Get includeMissing setting (whether to include non-overridden base items)
-    const includeMissing = await getIncludeMissingFlag(departmentId, divisionId);
+    let includeMissing;
+    if (sharedContext && sharedContext.includeMissing !== undefined && sharedContext.department && sharedContext.department._id.toString() === departmentId.toString()) {
+      includeMissing = sharedContext.includeMissing;
+    } else {
+      includeMissing = await getIncludeMissingFlag(departmentId, divisionId);
+    }
 
     // Log the setting for debugging
     console.log(`[Payroll] Include missing allowances/deductions: ${includeMissing}`);
