@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { auth } from "@/lib/auth";
+import { setWorkspaceDataFromLogin } from "@/contexts/WorkspaceContext";
 import LiquidEther from "@/components/LiquidEther";
 import "@/components/LiquidEther.css";
 
