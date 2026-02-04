@@ -187,11 +187,16 @@ export default function DynamicEmployeeForm({
   const renderField = (field: Field, groupId: string, arrayIndex?: number) => {
     if (excludeFields.includes(field.id)) return null;
 
-    const fieldId = arrayIndex !== undefined ? `${field.id}[${arrayIndex}]` : field.id;
+    // When editing an employee (formData.gross_salary exists), map proposedSalary field to gross_salary
+    const actualFieldId = field.id === 'proposedSalary' && formData?.gross_salary !== undefined
+      ? 'gross_salary'
+      : field.id;
+
+    const fieldId = arrayIndex !== undefined ? `${actualFieldId}[${arrayIndex}]` : actualFieldId;
     const value = arrayIndex !== undefined
-      ? formData[field.id]?.[arrayIndex]
-      : formData[field.id];
-    const error = errors[field.id] || errors[fieldId];
+      ? formData[actualFieldId]?.[arrayIndex]
+      : formData[actualFieldId];
+    const error = errors[actualFieldId] || errors[fieldId];
     const fieldKey = `${groupId}-${field.id}${arrayIndex !== undefined ? `-${arrayIndex}` : ''}`;
     const displayLabel =
       // In employee edit flows, salary is stored as `gross_salary` but settings may expose it as `proposedSalary`.
@@ -330,7 +335,7 @@ export default function DynamicEmployeeForm({
             </label>
             <textarea
               value={value || ''}
-              onChange={(e) => handleFieldChange(field.id, e.target.value)}
+              onChange={(e) => handleFieldChange(actualFieldId, e.target.value)}
               placeholder={field.placeholder}
               required={field.isRequired}
               rows={3}
@@ -352,7 +357,7 @@ export default function DynamicEmployeeForm({
             <input
               type="number"
               value={value || ''}
-              onChange={(e) => handleFieldChange(field.id, parseFloat(e.target.value) || 0)}
+              onChange={(e) => handleFieldChange(actualFieldId, parseFloat(e.target.value) || 0)}
               placeholder={field.placeholder}
               required={field.isRequired}
               min={field.validation?.min}
@@ -375,7 +380,7 @@ export default function DynamicEmployeeForm({
             <input
               type="date"
               value={value ? new Date(value).toISOString().split('T')[0] : ''}
-              onChange={(e) => handleFieldChange(field.id, e.target.value)}
+              onChange={(e) => handleFieldChange(actualFieldId, e.target.value)}
               required={field.isRequired}
               className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
                 }`}

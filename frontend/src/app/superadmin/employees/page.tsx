@@ -715,8 +715,8 @@ export default function EmployeesPage() {
   useEffect(() => {
     const deptId = formData.department_id;
     // Check both gross_salary and proposedSalary (form might use either)
-    const gross = formData.gross_salary || (formData as any).proposedSalary;
-    if (deptId && gross !== undefined && gross !== null && gross > 0) {
+    const gross = (formData as any).proposedSalary || formData.gross_salary;
+    if (deptId && gross !== undefined && gross !== null && Number(gross) > 0) {
       // If editing and salary changed, preserve current overrides so user edits aren't lost
       const preserveOverrides = !!editingEmployee && (Object.keys(overrideAllowances).length > 0 || Object.keys(overrideDeductions).length > 0);
       fetchComponentDefaults(deptId as string, Number(gross), editingEmployee?.emp_no, preserveOverrides);
@@ -1152,6 +1152,9 @@ export default function EmployeesPage() {
         editingEmployee?.employeeDeductions
       );
 
+      // DEBUG: Check formData before creating submitData
+      console.log('DEBUG: formData.gross_salary:', formData.gross_salary);
+
       // Clean up enum fields - convert empty strings to null/undefined
       const submitData = {
         ...formData,
@@ -1162,6 +1165,9 @@ export default function EmployeesPage() {
         ctcSalary: salarySummary.ctcSalary,
         calculatedSalary: salarySummary.netSalary,
       };
+
+      // DEBUG: Check submitData after creation
+      console.log('DEBUG: submitData.gross_salary:', (submitData as any).gross_salary);
 
       // Consolidate 'reporting_to' and 'reporting_to_' - ensure we use 'reporting_to' only
       // If reporting_to_ has data and reporting_to is empty, use the data from reporting_to_
@@ -1482,6 +1488,7 @@ export default function EmployeesPage() {
       // Merge dynamicFields at root level for form
       ...dynamicFieldsData,
       // Override with processed values (after dynamicFields so they take precedence)
+      second_salary: employee.second_salary, // Ensure root value takes precedence over dynamicFields
       reporting_to: reportingToValue,
       reporting_to_: reportingToValue,
       // Salary mode dropdown defaults to Cash when editing if not set
@@ -3467,13 +3474,15 @@ export default function EmployeesPage() {
                 <form onSubmit={handleSubmit} className="space-y-6">
                   <DynamicEmployeeForm
                     formData={formData}
-                    onChange={setFormData}
+                    onChange={(newData) => {
+                      setFormData(newData);
+                    }}
                     errors={{}}
                     divisions={divisions}
                     departments={departments}
                     designations={designations as any}
                     onSettingsLoaded={setFormSettings}
-                    excludeFields={editingEmployee ? ['proposedSalary', 'gross_salary'] : []}
+                    excludeFields={[]}
                   />
 
                   {/* Leave Settings (Optional) */}
