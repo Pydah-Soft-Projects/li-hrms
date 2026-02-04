@@ -56,19 +56,19 @@ export const PAGE_PERMISSIONS: Record<string, UserRole[]> = {
     '/departments': ['sub_admin', 'hr', 'hod'],
     '/shifts': ['sub_admin', 'hr', 'hod'],
     '/shift-roster': ['sub_admin', 'hr', 'hod'],
-    '/payroll-transactions': ['sub_admin', 'hr'],
-    '/pay-register': ['sub_admin', 'hr'],
-    '/payments': ['sub_admin', 'hr'],
+    '/payroll-transactions': ['sub_admin', 'hr', 'manager'],
+    '/pay-register': ['sub_admin', 'hr', 'manager'],
+    '/payments': ['sub_admin', 'hr', 'manager'],
     '/payslips': ['sub_admin', 'hr', 'hod', 'manager', 'employee'],
-    '/allowances-deductions': ['sub_admin', 'hr'],
-    '/loans': ['sub_admin', 'hr', 'employee'],
-    '/arrears': ['sub_admin', 'hr'],
+    '/allowances-deductions': ['sub_admin', 'hr', 'manager'],
+    '/loans': ['sub_admin', 'hr', 'manager', 'employee'],
+    '/arrears': ['sub_admin', 'hr', 'manager'],
     '/ot-permissions': ['sub_admin', 'hr', 'hod', 'manager', 'employee'],
     '/reports': ['sub_admin', 'hr', 'hod', 'manager'],
-    '/settings': ['sub_admin', 'hr'],
-    '/users': ['sub_admin', 'hr'],
+    '/settings': ['sub_admin', 'hr', 'manager'],
+    '/users': ['sub_admin', 'hr', 'manager'],
     '/profile': ['sub_admin', 'hr', 'hod', 'manager', 'employee'],
-    '/confused-shifts': ['sub_admin', 'hr', 'hod'],
+    '/confused-shifts': ['sub_admin', 'hr', 'hod', 'manager'],
 };
 
 export function canAccessPage(user: User, pagePath: string): boolean {
@@ -174,7 +174,11 @@ export function canGeneratePayslips(user: User): boolean {
 }
 
 export function canViewPayRegister(user: User): boolean {
-    return hasAnyRole(user, ['sub_admin', 'hr']) && canViewFeature(user, 'PAY_REGISTER');
+    return hasAnyRole(user, ['sub_admin', 'hr', 'manager']) && canViewFeature(user, 'PAY_REGISTER');
+}
+
+export function canManagePayRegister(user: User): boolean {
+    return hasAnyRole(user, ['sub_admin', 'hr', 'manager']) && canManageFeature(user, 'PAY_REGISTER');
 }
 
 export function canViewAllowances(user: User): boolean {
