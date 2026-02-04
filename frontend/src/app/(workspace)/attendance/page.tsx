@@ -1170,14 +1170,17 @@ export default function AttendancePage() {
     if (!time) return '-';
     try {
       const date = new Date(time);
-      const timeStr = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+      const istOptions: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' };
+      const timeStr = date.toLocaleTimeString('en-US', istOptions);
 
-      // If showDateIfDifferent is true and recordDate is provided, check if dates differ
+      // If showDateIfDifferent is true and recordDate is provided, check if dates differ (in IST)
       if (showDateIfDifferent && recordDate) {
-        const timeDateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        const y = date.toLocaleString('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric' });
+        const mo = date.toLocaleString('en-CA', { timeZone: 'Asia/Kolkata', month: '2-digit' });
+        const d = date.toLocaleString('en-CA', { timeZone: 'Asia/Kolkata', day: '2-digit' });
+        const timeDateStr = `${y}-${mo}-${d}`;
         if (timeDateStr !== recordDate) {
-          // Dates are different - show date with time
-          const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'Asia/Kolkata' });
           return `${dateStr}, ${timeStr}`;
         }
       }
@@ -2066,7 +2069,7 @@ export default function AttendancePage() {
                                       setSelectedShiftRecordId(shift._id);
                                       if (shift.outTime) {
                                         const d = new Date(shift.outTime);
-                                        setOutTimeInput(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
+                                        setOutTimeInput(d.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false }));
                                       } else {
                                         setOutTimeInput('');
                                       }
@@ -2160,7 +2163,7 @@ export default function AttendancePage() {
                                     setEditingOutTime(true);
                                     if (attendanceDetail.outTime) {
                                       const date = new Date(attendanceDetail.outTime);
-                                      setOutTimeInput(`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`);
+                                      setOutTimeInput(date.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false }));
                                     }
                                   }}
                                   className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"
@@ -2173,7 +2176,7 @@ export default function AttendancePage() {
                                   onClick={() => {
                                     setEditingOutTime(true);
                                     const date = new Date(attendanceDetail.outTime);
-                                    setOutTimeInput(`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`);
+                                    setOutTimeInput(date.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false }));
                                   }}
                                   className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"
                                 >
