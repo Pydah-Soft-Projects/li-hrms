@@ -1445,25 +1445,71 @@ export default function UsersPage() {
                               {category.name}
                             </h4>
                             <div className="grid grid-cols-2 gap-2">
-                              {category.modules.map((module) => (
-                                <label key={module.code} className="flex items-center gap-2 rounded-xl border border-slate-100 bg-slate-50 p-2.5 transition-all hover:border-blue-100 hover:bg-white dark:border-slate-800 dark:bg-slate-900">
-                                  <input
-                                    type="checkbox"
-                                    checked={(formData.featureControl || []).includes(module.code)}
-                                    onChange={(e) => {
-                                      if (e.target.checked) {
-                                        setFormData({ ...formData, featureControl: [...(formData.featureControl || []), module.code] });
-                                      } else {
-                                        setFormData({ ...formData, featureControl: (formData.featureControl || []).filter(m => m !== module.code) });
-                                      }
-                                    }}
-                                    className="h-4 w-4 rounded-md border-slate-300 text-blue-600 focus:ring-blue-500"
-                                  />
-                                  <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
-                                    {module.label}
-                                  </span>
-                                </label>
-                              ))}
+                              {category.modules.map((module) => {
+                                const hasLegacy = (formData.featureControl || []).includes(module.code);
+                                const hasRead = hasLegacy || (formData.featureControl || []).includes(`${module.code}:read`) || (formData.featureControl || []).includes(`${module.code}:write`);
+                                const hasWrite = hasLegacy || (formData.featureControl || []).includes(`${module.code}:write`);
+
+                                return (
+                                  <div key={module.code} className="flex flex-col gap-2 rounded-xl border border-slate-100 bg-slate-50 p-2.5 transition-all hover:border-blue-100 hover:bg-white dark:border-slate-800 dark:bg-slate-900">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                                        {module.label}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                      <label className="flex items-center gap-1.5 cursor-pointer">
+                                        <input
+                                          type="checkbox"
+                                          checked={hasRead}
+                                          onChange={(e) => {
+                                            const isChecked = e.target.checked;
+                                            let current = [...(formData.featureControl || [])];
+
+                                            // Remove legacy and this specific permission
+                                            current = current.filter(c => c !== module.code && c !== `${module.code}:read`);
+
+                                            // If legacy or write exists, we need to explicitly keep write
+                                            if (hasLegacy || hasWrite) {
+                                              if (!current.includes(`${module.code}:write`)) current.push(`${module.code}:write`);
+                                            }
+
+                                            if (isChecked) current.push(`${module.code}:read`);
+
+                                            setFormData({ ...formData, featureControl: current });
+                                          }}
+                                          className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                        />
+                                        <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wide">View</span>
+                                      </label>
+                                      <label className="flex items-center gap-1.5 cursor-pointer">
+                                        <input
+                                          type="checkbox"
+                                          checked={hasWrite}
+                                          onChange={(e) => {
+                                            const isChecked = e.target.checked;
+                                            let current = [...(formData.featureControl || [])];
+
+                                            // Remove legacy and this specific permission
+                                            current = current.filter(c => c !== module.code && c !== `${module.code}:write`);
+
+                                            // If legacy or read exists, explicitly keep read
+                                            if (hasLegacy || hasRead) {
+                                              if (!current.includes(`${module.code}:read`)) current.push(`${module.code}:read`);
+                                            }
+
+                                            if (isChecked) current.push(`${module.code}:write`);
+
+                                            setFormData({ ...formData, featureControl: current });
+                                          }}
+                                          className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                        />
+                                        <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wide">Manage</span>
+                                      </label>
+                                    </div>
+                                  </div>
+                                )
+                              })}
                             </div>
                           </div>
                         ))}
@@ -1820,25 +1866,71 @@ export default function UsersPage() {
                               <span className="text-[10px] font-bold uppercase text-slate-400">{category.name}</span>
                             </div>
                             <div className="space-y-1">
-                              {category.modules.map((module) => (
-                                <label key={module.code} className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors">
-                                  <input
-                                    type="checkbox"
-                                    checked={(formData.featureControl || []).includes(module.code)}
-                                    onChange={(e) => {
-                                      if (e.target.checked) {
-                                        setFormData({ ...formData, featureControl: [...(formData.featureControl || []), module.code] });
-                                      } else {
-                                        setFormData({ ...formData, featureControl: (formData.featureControl || []).filter(m => m !== module.code) });
-                                      }
-                                    }}
-                                    className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/20"
-                                  />
-                                  <span className="text-xs text-slate-700 dark:text-slate-300">
-                                    {module.label}
-                                  </span>
-                                </label>
-                              ))}
+                              {category.modules.map((module) => {
+                                const hasLegacy = (formData.featureControl || []).includes(module.code);
+                                const hasRead = hasLegacy || (formData.featureControl || []).includes(`${module.code}:read`) || (formData.featureControl || []).includes(`${module.code}:write`);
+                                const hasWrite = hasLegacy || (formData.featureControl || []).includes(`${module.code}:write`);
+
+                                return (
+                                  <div key={module.code} className="flex flex-col gap-2 rounded-lg border border-slate-100 bg-slate-50 p-2 transition-all hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                                        {module.label}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                      <label className="flex items-center gap-1.5 cursor-pointer">
+                                        <input
+                                          type="checkbox"
+                                          checked={hasRead}
+                                          onChange={(e) => {
+                                            const isChecked = e.target.checked;
+                                            let current = [...(formData.featureControl || [])];
+
+                                            // Remove legacy and this specific permission
+                                            current = current.filter(c => c !== module.code && c !== `${module.code}:read`);
+
+                                            // If legacy or write exists, we need to explicitly keep write
+                                            if (hasLegacy || hasWrite) {
+                                              if (!current.includes(`${module.code}:write`)) current.push(`${module.code}:write`);
+                                            }
+
+                                            if (isChecked) current.push(`${module.code}:read`);
+
+                                            setFormData({ ...formData, featureControl: current });
+                                          }}
+                                          className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/20"
+                                        />
+                                        <span className="text-[10px] font-medium text-slate-500">View</span>
+                                      </label>
+                                      <label className="flex items-center gap-1.5 cursor-pointer">
+                                        <input
+                                          type="checkbox"
+                                          checked={hasWrite}
+                                          onChange={(e) => {
+                                            const isChecked = e.target.checked;
+                                            let current = [...(formData.featureControl || [])];
+
+                                            // Remove legacy and this specific permission
+                                            current = current.filter(c => c !== module.code && c !== `${module.code}:write`);
+
+                                            // If legacy or read exists, explicitly keep read
+                                            if (hasLegacy || hasRead) {
+                                              if (!current.includes(`${module.code}:read`)) current.push(`${module.code}:read`);
+                                            }
+
+                                            if (isChecked) current.push(`${module.code}:write`);
+
+                                            setFormData({ ...formData, featureControl: current });
+                                          }}
+                                          className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/20"
+                                        />
+                                        <span className="text-[10px] font-medium text-slate-500">Manage</span>
+                                      </label>
+                                    </div>
+                                  </div>
+                                )
+                              })}
                             </div>
                           </div>
                         ))}

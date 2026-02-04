@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { auth } from "@/lib/auth";
-import { setWorkspaceDataFromLogin } from "@/contexts/WorkspaceContext";
 import LiquidEther from "@/components/LiquidEther";
 import "@/components/LiquidEther.css";
 
@@ -84,14 +83,6 @@ export default function LoginPage() {
         // Store token and user data
         auth.setToken(response.data.token);
         auth.setUser(response.data.user);
-
-        // Store workspace data for non-super_admin users
-        if (response.data.user.role !== 'super_admin') {
-          setWorkspaceDataFromLogin({
-            workspaces: response.data.workspaces || [],
-            activeWorkspace: response.data.activeWorkspace || response.data.workspaces?.[0],
-          });
-        }
 
         // Navigate based on role
         const dashboardPath = auth.getRoleBasedPath(response.data.user.role);
