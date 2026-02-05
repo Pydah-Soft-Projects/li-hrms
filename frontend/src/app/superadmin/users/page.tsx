@@ -563,21 +563,44 @@ export default function UsersPage() {
     }));
 
     // For HOD/Manager, prioritize the managed division and departments from division mapping
-    const mapping = normalizedMapping.length > 0 ? normalizedMapping[0] : null;
+    let mapping = normalizedMapping.length > 0 ? normalizedMapping[0] : null;
+    let finalMapping = normalizedMapping;
+
+    // HOD fallback: if user has department but no divisionMapping, derive division from department
+    const deptId = user.department?._id || (typeof user.department === 'string' ? user.department : '');
+    if (user.role === 'hod' && deptId && (!mapping || !mapping.division)) {
+      let divId = '';
+      const dept = departments.find((d: Department) => d._id === deptId);
+      const firstDiv = dept?.divisions?.[0];
+      if (firstDiv) {
+        divId = typeof firstDiv === 'string' ? firstDiv : (firstDiv as any)?._id || '';
+      }
+      // Fallback: find division that contains this department (Division.departments)
+      if (!divId && divisions.length > 0) {
+        const divWithDept = divisions.find((d: Division) =>
+          (d.departments || []).some((dep: any) => (typeof dep === 'string' ? dep : dep?._id) === deptId)
+        );
+        if (divWithDept) divId = (divWithDept as any)._id;
+      }
+      if (divId) {
+        mapping = { division: divId, departments: [deptId] };
+        finalMapping = [mapping];
+      }
+    }
 
     setFormData({
       email: user.email,
       name: user.name,
       role: user.role,
       departmentType: user.departmentType || (user.departments && user.departments.length > 1 ? 'multiple' : 'single'),
-      department: user.role === 'hod' && mapping && mapping.departments?.length > 0 ? mapping.departments[0] : (user.department?._id || ''),
-      departments: user.role === 'manager' && mapping ? mapping.departments : (user.departments?.map((d) => d._id) || []),
+      department: user.role === 'hod' && mapping && mapping.departments?.length > 0 ? mapping.departments[0] : (user.department?._id || deptId || ''),
+      departments: user.role === 'manager' && mapping ? mapping.departments : (user.departments?.map((d: any) => d._id || d) || []),
       password: '',
       autoGeneratePassword: false,
       featureControl: user.featureControl || [],
       dataScope: user.dataScope || 'all',
       allowedDivisions: user.allowedDivisions?.map(d => typeof d === 'string' ? d : d?._id) || [],
-      divisionMapping: normalizedMapping,
+      divisionMapping: finalMapping,
       division: (user.role === 'hod' || user.role === 'manager') && mapping ? mapping.division : '',
     });
     // Prevent useEffect from reloading defaults and overwriting user data
