@@ -6,6 +6,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Biometric ADMS Dashboard</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <!-- Export Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
         :root {
             --primary: #6366f1;
@@ -253,7 +257,11 @@
             justify-content: center;
             padding: 20px;
         }
-        .dialog-overlay.open { display: flex; }
+
+        .dialog-overlay.open {
+            display: flex;
+        }
+
         .dialog-box {
             background: var(--card-bg);
             border: 1px solid var(--border);
@@ -261,35 +269,43 @@
             padding: 28px;
             max-width: 440px;
             width: 100%;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
         }
+
         .dialog-box h3 {
             margin-bottom: 20px;
             font-size: 1.2rem;
             color: var(--text-main);
         }
+
         .dialog-row {
             margin-bottom: 16px;
         }
+
         .dialog-row label {
             display: block;
             font-size: 0.85rem;
             color: var(--text-dim);
             margin-bottom: 6px;
         }
-        .dialog-row input, .dialog-row select {
+
+        .dialog-row input,
+        .dialog-row select {
             width: 100%;
             padding: 10px 14px;
-            background: rgba(255,255,255,0.06);
+            background: rgba(255, 255, 255, 0.06);
             border: 1px solid var(--border);
             border-radius: 8px;
             color: var(--text-main);
             font-size: 0.95rem;
         }
-        .dialog-row input:focus, .dialog-row select:focus {
+
+        .dialog-row input:focus,
+        .dialog-row select:focus {
             outline: none;
             border-color: var(--primary);
         }
+
         .dialog-actions {
             display: flex;
             gap: 12px;
@@ -298,6 +314,7 @@
             padding-top: 16px;
             border-top: 1px solid var(--border);
         }
+
         .dialog-actions button {
             padding: 10px 20px;
             border-radius: 8px;
@@ -305,17 +322,25 @@
             cursor: pointer;
             border: none;
         }
+
         .btn-download {
             background: var(--primary);
             color: white;
         }
-        .btn-download:hover { opacity: 0.9; }
+
+        .btn-download:hover {
+            opacity: 0.9;
+        }
+
         .btn-cancel {
             background: transparent;
             color: var(--text-dim);
             border: 1px solid var(--border);
         }
-        .btn-cancel:hover { color: var(--text-main); }
+
+        .btn-cancel:hover {
+            color: var(--text-main);
+        }
     </style>
 </head>
 
@@ -341,6 +366,10 @@
             </div>
             <div style="display: flex; gap: 12px; align-items: center;">
                 <button class="btn-refresh" onclick="openDownloadDialog()">Download Report</button>
+                <button class="btn-refresh" onclick="exportPdfSummary()"
+                    style="border-color: #f43f5e; color: #f43f5e;">PDF Summary</button>
+                <button class="btn-refresh" onclick="exportUniqueUsersExcel()"
+                    style="border-color: #10b981; color: #10b981;">Export Excel (Unique IDs)</button>
                 <button class="btn-refresh" onclick="refreshData()">Refresh Data</button>
             </div>
         </div>
@@ -400,7 +429,10 @@
     <div class="dialog-overlay" id="download-dialog">
         <div class="dialog-box">
             <h3>Download Attendance Report</h3>
-            <p style="color: var(--text-dim); font-size: 0.85rem; margin-bottom: 20px;">Date range required. Optional: Employee Number, Department, Division. Report is grouped by Division then Department (with gaps between groups). Columns: SNO, E.NO, EMPLOYEE NAME, DIVISION, DEPARTMENT, PDate, IN 1, OUT 1, IN 2, OUT 2, No. of INs, No. of OUTs, TOT HRS (cumulative of all IN–OUT pairs).</p>
+            <p style="color: var(--text-dim); font-size: 0.85rem; margin-bottom: 20px;">Date range required. Optional:
+                Employee Number, Department, Division. Report is grouped by Division then Department (with gaps between
+                groups). Columns: SNO, E.NO, EMPLOYEE NAME, DIVISION, DEPARTMENT, PDate, IN 1, OUT 1, IN 2, OUT 2, No.
+                of INs, No. of OUTs, TOT HRS (cumulative of all IN–OUT pairs).</p>
             <div class="dialog-row">
                 <label>Employee Number (optional)</label>
                 <input type="text" id="dl-employee-id" placeholder="e.g. 7074">
@@ -792,6 +824,99 @@
                 closeDownloadDialog();
             } catch (err) {
                 alert('Download failed: ' + err.message);
+            }
+        }
+
+        async function exportPdfSummary() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+
+            // Fetch unique users count
+            let uniqueUsersCount = 0;
+            try {
+                const res = await fetch('/api/adms/users');
+                const data = await res.json();
+                if (data.success) {
+                    uniqueUsersCount = data.data.length;
+                }
+            } catch (err) {
+                console.error('Failed to fetch unique users:', err);
+            }
+
+            // Title
+            doc.setFontSize(20);
+            doc.text('Biometric Device Summary Report', 14, 22);
+            doc.setFontSize(12);
+            doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 30);
+
+            // Device details table
+            const tableData = allDevices.map(dev => {
+                const health = dev.status || {};
+                return [
+                    dev.name,
+                    dev.deviceId,
+                    dev.ip,
+                    health.userCount || 0,
+                    health.fingerCount || 0,
+                    health.attCount || 0,
+                    dev.enabled ? 'Active' : 'Offline'
+                ];
+            });
+
+            doc.autoTable({
+                startY: 40,
+                head: [['Device Name', 'Serial Number', 'IP Address', 'Users', 'Fingers', 'Logs', 'Status']],
+                body: tableData,
+                theme: 'striped',
+                headStyles: { fillColor: [99, 102, 241] }
+            });
+
+            const finalY = doc.lastAutoTable.finalY + 15;
+
+            // Summary text
+            const totalUsersAcrossDevices = allDevices.reduce((sum, dev) => sum + (dev.status?.userCount || 0), 0);
+
+            doc.setFontSize(14);
+            doc.text('Global Statistics:', 14, finalY);
+            doc.setFontSize(11);
+            doc.text(`Total User Records (all devices): ${totalUsersAcrossDevices}`, 14, finalY + 8);
+            doc.text(`Total Unique User IDs (system-wide): ${uniqueUsersCount}`, 14, finalY + 16);
+            doc.text(`Total Devices Monitored: ${allDevices.length}`, 14, finalY + 24);
+
+            doc.save(`biometric_summary_${new Date().toISOString().slice(0, 10)}.pdf`);
+        }
+
+        async function exportUniqueUsersExcel() {
+            try {
+                const res = await fetch('/api/adms/users');
+                const result = await res.json();
+
+                if (!result.success || !result.data) {
+                    alert('Failed to fetch users for export');
+                    return;
+                }
+
+                const users = result.data.map(u => ({
+                    'User ID': u.userId,
+                    'Name': u.name || 'N/A',
+                    'Card Number': u.card || 'None',
+                    'Fingers': u.fingerprints?.length || 0,
+                    'Face Support': u.face?.templateData ? 'Yes' : 'No',
+                    'Last Device': u.lastDeviceId || 'Unknown',
+                    'Last Synced': new Date(u.lastSyncedAt).toLocaleString()
+                }));
+
+                const worksheet = XLSX.utils.json_to_sheet(users);
+                const workbook = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(workbook, worksheet, "Unique Users");
+
+                // Auto-adjust column widths
+                const wscols = Object.keys(users[0] || {}).map(k => ({ wch: Math.max(k.length, 15) }));
+                worksheet['!cols'] = wscols;
+
+                XLSX.writeFile(workbook, `unique_users_${new Date().toISOString().slice(0, 10)}.xlsx`);
+            } catch (err) {
+                alert('Excel export failed: ' + err.message);
             }
         }
 
