@@ -237,7 +237,12 @@ const calculateEarlySettlement = (loan, settlementDate = new Date()) => {
 exports.getLoans = async (req, res) => {
   try {
     const { status, employeeId, department, requestType, page = 1, limit = 20 } = req.query;
-    const filter = { isActive: true, ...(req.scopeFilter || {}) };
+    const { getEmployeeIdsInScope } = require('../../shared/middleware/dataScopeMiddleware');
+    const scopedEmployeeIds = await getEmployeeIdsInScope(req.scopedUser || req.user);
+    const baseFilter = scopedEmployeeIds.length > 0
+      ? { $or: [{ employeeId: { $in: scopedEmployeeIds } }, { appliedBy: req.user._id }] }
+      : (req.scopeFilter || {});
+    const filter = { isActive: true, ...baseFilter };
 
     if (status) filter.status = status;
     if (employeeId) filter.employeeId = employeeId;

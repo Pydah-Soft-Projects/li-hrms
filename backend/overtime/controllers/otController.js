@@ -201,14 +201,17 @@ exports.getOTRequests = async (req, res) => {
     // Apply Sequential Workflow Visibility ("Travel Flow")
     const workflowFilter = buildWorkflowVisibilityFilter(req.user);
 
-    // Apply Employee-First Scoping for Scoped Roles (HOD, HR, Manager)
-    let scopeLimitFilter = req.scopeFilter || {};
-    if (['hod', 'hr', 'manager'].includes(req.user.role)) {
-      const employeeIds = await getEmployeeIdsInScope(req.user);
-      scopeLimitFilter = { ...scopeLimitFilter, employeeId: { $in: employeeIds } };
-    }
+    // Employee-First Scoping: (Scope + Workflow) OR (Reporting-based: employee reports to me, all statuses)
+    const scopedEmployeeIds = await getEmployeeIdsInScope(req.scopedUser || req.user);
+    const reportingToMeIds = req.reportingToMeEmployeeIds || [];
 
-    const combinedQuery = { $and: [query, scopeLimitFilter, workflowFilter] };
+    const scopeOrFilter = [
+      ...(reportingToMeIds.length > 0 ? [{ employeeId: { $in: reportingToMeIds } }] : []),
+      ...(scopedEmployeeIds.length > 0 ? [{ $and: [{ employeeId: { $in: scopedEmployeeIds } }, workflowFilter] }] : [])
+    ];
+
+    const scopeFilter = scopeOrFilter.length > 0 ? { $or: scopeOrFilter } : req.scopeFilter || {};
+    const combinedQuery = { $and: [query, scopeFilter] };
 
     const otRequests = await OT.find(combinedQuery)
       .populate('employeeId', 'emp_no employee_name department designation')

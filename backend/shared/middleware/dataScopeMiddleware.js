@@ -44,6 +44,17 @@ const createDivisionFilter = (divIds) => {
 };
 
 /**
+ * Employees who have reporting_to set are "reporting-based" - excluded from general admin scope.
+ * Only their reporting manager(s) see them. Match employees with empty/no reporting_to.
+ */
+const excludeReportingBasedEmployeesFilter = {
+    $and: [
+        { $or: [{ reporting_to: { $exists: false } }, { reporting_to: null }, { reporting_to: [] }] },
+        { $or: [{ 'dynamicFields.reporting_to': { $exists: false } }, { 'dynamicFields.reporting_to': null }, { 'dynamicFields.reporting_to': [] }] }
+    ]
+};
+
+/**
  * Build scope filter for MongoDB queries
  * @param {Object} user - User object from req.user
  * @returns {Object} MongoDB filter object
@@ -91,10 +102,12 @@ function buildScopeFilter(user) {
     }
 
     if (scope === 'own') {
-        return ownFilter;
+        // For 'own' scope, still include direct reports (reportingToMeFilter)
+        const reportingToMeFilter = buildReportingToMeFilter(user);
+        return { $or: [ownFilter, reportingToMeFilter] };
     }
 
-    // 2. Administrative Scope Filter
+    // 2. Administrative Scope Filter (excludes employees who have reporting_to - they follow reporting-based flow only)
     let administrativeFilter = { _id: null };
 
     switch (scope) {
@@ -103,33 +116,22 @@ function buildScopeFilter(user) {
             if (user.divisionMapping && Array.isArray(user.divisionMapping) && user.divisionMapping.length > 0) {
                 const orConditions = [];
                 user.divisionMapping.forEach(mapping => {
-                    // Filter matching Division
                     const divisionId = typeof mapping.division === 'string' ? mapping.division : mapping.division?._id;
                     const divisionCondition = createDivisionFilter([divisionId]);
-
-                    // Filter matching Departments within Division
                     let departmentCondition = null;
                     if (mapping.departments && Array.isArray(mapping.departments) && mapping.departments.length > 0) {
                         departmentCondition = createDepartmentFilter(mapping.departments);
                     }
-
-                    // Combined condition for this mapping entry
-                    // (Division MATCH) AND (Optional Department MATCH)
-                    // If no specific departments provided, user gets access to ALL departments in that division
                     if (departmentCondition && Object.keys(departmentCondition).length > 0 && !departmentCondition._id) {
-                        orConditions.push({
-                            $and: [divisionCondition, departmentCondition]
-                        });
+                        orConditions.push({ $and: [divisionCondition, departmentCondition] });
                     } else {
                         orConditions.push(divisionCondition);
                     }
                 });
                 administrativeFilter = orConditions.length === 1 ? orConditions[0] : { $or: orConditions };
             } else if (user.allowedDivisions && user.allowedDivisions.length > 0) {
-                // If mapping is empty but divisions are assigned, allow access to all departments in those divisions
                 administrativeFilter = createDivisionFilter(user.allowedDivisions);
             } else if (user.departments && user.departments.length > 0) {
-                // Fallback to departments if divisions not setup correctly
                 administrativeFilter = createDepartmentFilter(user.departments);
             }
             break;
@@ -142,7 +144,6 @@ function buildScopeFilter(user) {
 
         case 'hr':
         case 'departments':
-            // Priority 1: Division Mapping (Complex Scoping)
             if (user.divisionMapping && Array.isArray(user.divisionMapping) && user.divisionMapping.length > 0) {
                 const orConditions = [];
                 user.divisionMapping.forEach(mapping => {
@@ -156,13 +157,9 @@ function buildScopeFilter(user) {
                     }
                 });
                 administrativeFilter = orConditions.length === 1 ? orConditions[0] : { $or: orConditions };
-            }
-            // Priority 2: Allowed Divisions (Broad Division Scope)
-            else if (user.allowedDivisions && Array.isArray(user.allowedDivisions) && user.allowedDivisions.length > 0) {
+            } else if (user.allowedDivisions && Array.isArray(user.allowedDivisions) && user.allowedDivisions.length > 0) {
                 administrativeFilter = createDivisionFilter(user.allowedDivisions);
-            }
-            // Priority 3: Specific Departments (Traditional HR Scope)
-            else if (user.departments && user.departments.length > 0) {
+            } else if (user.departments && user.departments.length > 0) {
                 administrativeFilter = createDepartmentFilter(user.departments);
             }
             break;
@@ -171,8 +168,36 @@ function buildScopeFilter(user) {
             administrativeFilter = { _id: user._id };
     }
 
-    // Return combined filter: (Own Records) OR (Administrative Scope)
-    return { $or: [ownFilter, administrativeFilter] };
+    // Exclude reporting-based employees from administrative scope (they only appear for their reporting manager)
+    if (administrativeFilter && Object.keys(administrativeFilter).length > 0 && !administrativeFilter._id) {
+        administrativeFilter = { $and: [administrativeFilter, excludeReportingBasedEmployeesFilter] };
+    }
+
+    // 3. Reporting-to-me filter: employees who report to this user (direct reports)
+    const reportingToMeFilter = buildReportingToMeFilter(user);
+
+    // Return combined filter: (Own Records) OR (Administrative Scope) OR (Direct Reports)
+    return { $or: [ownFilter, administrativeFilter, reportingToMeFilter] };
+}
+
+/**
+ * Build filter for employees who report TO this user (direct reports)
+ * Check both root reporting_to and dynamicFields.reporting_to
+ * Supports both User._id and User.employeeRef (Employee._id) for flexible matching
+ */
+function buildReportingToMeFilter(user) {
+    if (!user || !user._id) return { _id: null };
+    const userId = user._id;
+    const employeeRef = user.employeeRef;
+    const conditions = [
+        { reporting_to: userId },
+        { 'dynamicFields.reporting_to': userId }
+    ];
+    if (employeeRef) {
+        conditions.push({ reporting_to: employeeRef });
+        conditions.push({ 'dynamicFields.reporting_to': employeeRef });
+    }
+    return { $or: conditions };
 }
 
 /**
@@ -260,6 +285,9 @@ const applyScopeFilter = async (req, res, next) => {
         req.scopeFilter = buildScopeFilter(user);
         req.scopedUser = user;
 
+        // For record-based controllers (Leave, OD, Loan, OT, Permission): employee IDs who report to this user
+        req.reportingToMeEmployeeIds = await getReportingToMeEmployeeIds(user);
+
         next();
     } catch (error) {
         console.error('[DataScope] Error applying scope filter:', error);
@@ -275,9 +303,9 @@ const applyScopeFilter = async (req, res, next) => {
  * Verifies if a record falls within the user's assigned administrative data scope.
  * @param {Object} user - User object from req.scopedUser or full database fetch
  * @param {Object} record - The document (Leave, OD, OT, Permission) to check
- * @returns {Boolean} True if authorized, false otherwise
+ * @returns {Promise<Boolean>} True if authorized, false otherwise
  */
-function checkJurisdiction(user, record) {
+async function checkJurisdiction(user, record) {
     if (!user || !record) return false;
 
     // 1. Global Bypass (Super Admin / Sub Admin / Global HR)
@@ -294,7 +322,24 @@ function checkJurisdiction(user, record) {
 
     if (isOwner) return true;
 
-    // 3. Organizational Scope Enforcement
+    // 3. Reporting-based: Record's employee reports to this user (direct report)
+    if (record.employeeId) {
+        const emp = await Employee.findById(record.employeeId).select('reporting_to dynamicFields.reporting_to').lean();
+        if (emp) {
+            const rt = emp.reporting_to || emp.dynamicFields?.reporting_to;
+            if (Array.isArray(rt) && rt.length > 0) {
+                const userStr = user._id.toString();
+                const empRefStr = user.employeeRef?.toString();
+                const reportsToUser = rt.some(r => {
+                    const rStr = (r && r._id ? r._id : r).toString();
+                    return rStr === userStr || (empRefStr && rStr === empRefStr);
+                });
+                if (reportsToUser) return true;
+            }
+        }
+    }
+
+    // 4. Organizational Scope Enforcement (excludes reporting-based employees - they only appear for their reporting manager)
     // Capture IDs from record (dual-field support)
     const resDivId = record.division_id?.toString() || record.division?.toString();
     const resDeptId = (record.department_id || record.department)?.toString();
@@ -345,7 +390,29 @@ function checkJurisdiction(user, record) {
 }
 
 /**
+ * Get employee IDs whose reporting_to includes this user (direct reports)
+ * @param {Object} user - User object
+ * @returns {Promise<Array>} Array of Employee ObjectIds
+ */
+async function getReportingToMeEmployeeIds(user) {
+    if (!user) return [];
+    const userId = user._id;
+    const employeeRef = user.employeeRef;
+    const conditions = [
+        { reporting_to: userId },
+        { 'dynamicFields.reporting_to': userId }
+    ];
+    if (employeeRef) {
+        conditions.push({ reporting_to: employeeRef });
+        conditions.push({ 'dynamicFields.reporting_to': employeeRef });
+    }
+    const employees = await Employee.find({ $or: conditions, is_active: true }).select('_id').lean();
+    return employees.map(e => e._id);
+}
+
+/**
  * Get all employee IDs that fall within a user's assigned scope
+ * Excludes reporting-based employees from administrative scope; includes reporting-to-me
  * Use this for "Employee-First Scoping" in controllers
  * @param {Object} user - User object with scoping fields
  * @returns {Promise<Array>} Array of Employee ObjectIds
@@ -359,41 +426,82 @@ async function getEmployeeIdsInScope(user) {
         return employees.map(e => e._id);
     }
 
+    const scope = user.dataScope || getDefaultScope(user.role);
     const { allowedDivisions, divisionMapping, departments, department } = user;
     const orConditions = [];
 
-    // 1. Division Mapping (Strict mandatory intersection)
-    if (divisionMapping && Array.isArray(divisionMapping) && divisionMapping.length > 0) {
-        divisionMapping.forEach(m => {
-            const divId = typeof m.division === 'string' ? m.division : m.division?._id;
-            if (divId) {
-                const divCondition = createDivisionFilter([divId]);
-                if (m.departments && Array.isArray(m.departments) && m.departments.length > 0) {
-                    const deptFilter = createDepartmentFilter(m.departments);
-                    orConditions.push({ $and: [divCondition, deptFilter] });
-                } else {
-                    orConditions.push(divCondition);
-                }
+    // 1. Own employee (always include)
+    if (user.employeeRef) {
+        orConditions.push({ _id: user.employeeRef });
+    }
+
+    // 2. Administrative scope - EXCLUDE employees who have reporting_to (they follow reporting-based flow only)
+    let adminScopeCondition = null;
+    switch (scope) {
+        case 'division':
+        case 'divisions':
+            if (divisionMapping && Array.isArray(divisionMapping) && divisionMapping.length > 0) {
+                const mappingConditions = [];
+                divisionMapping.forEach(m => {
+                    const divId = typeof m.division === 'string' ? m.division : m.division?._id;
+                    if (divId) {
+                        const divCondition = createDivisionFilter([divId]);
+                        if (m.departments && Array.isArray(m.departments) && m.departments.length > 0) {
+                            mappingConditions.push({ $and: [divCondition, createDepartmentFilter(m.departments)] });
+                        } else {
+                            mappingConditions.push(divCondition);
+                        }
+                    }
+                });
+                adminScopeCondition = mappingConditions.length === 1 ? mappingConditions[0] : { $or: mappingConditions };
+            } else if (allowedDivisions && allowedDivisions.length > 0) {
+                adminScopeCondition = createDivisionFilter(allowedDivisions);
+            } else if (departments && departments.length > 0) {
+                adminScopeCondition = createDepartmentFilter(departments);
             }
-        });
+            break;
+        case 'department':
+            if (department) {
+                adminScopeCondition = createDepartmentFilter([department]);
+            }
+            break;
+        case 'hr':
+        case 'departments':
+            if (divisionMapping && Array.isArray(divisionMapping) && divisionMapping.length > 0) {
+                const mappingConditions = [];
+                divisionMapping.forEach(m => {
+                    const divId = typeof m.division === 'string' ? m.division : m.division?._id;
+                    if (divId) {
+                        const divCondition = createDivisionFilter([divId]);
+                        if (m.departments && Array.isArray(m.departments) && m.departments.length > 0) {
+                            mappingConditions.push({ $and: [divCondition, createDepartmentFilter(m.departments)] });
+                        } else {
+                            mappingConditions.push(divCondition);
+                        }
+                    }
+                });
+                adminScopeCondition = mappingConditions.length === 1 ? mappingConditions[0] : { $or: mappingConditions };
+            } else if (allowedDivisions && allowedDivisions.length > 0) {
+                adminScopeCondition = createDivisionFilter(allowedDivisions);
+            } else if (departments && departments.length > 0) {
+                adminScopeCondition = createDepartmentFilter(departments);
+            }
+            break;
     }
 
-    // 2. Allowed Divisions (fallback/broad access)
-    if (allowedDivisions && Array.isArray(allowedDivisions) && allowedDivisions.length > 0) {
-        orConditions.push({ division_id: { $in: allowedDivisions } });
+    if (adminScopeCondition && Object.keys(adminScopeCondition).length > 0 && !adminScopeCondition._id) {
+        orConditions.push({ $and: [excludeReportingBasedEmployeesFilter, adminScopeCondition] });
     }
 
-    // 3. Direct Departments
-    if (departments && Array.isArray(departments) && departments.length > 0) {
-        orConditions.push(createDepartmentFilter(departments));
-    }
-    if (department) {
-        orConditions.push(createDepartmentFilter([department]));
+    // 3. Reporting-to-me (direct reports) - always include
+    const reportingToMeFilter = buildReportingToMeFilter(user);
+    if (reportingToMeFilter && !reportingToMeFilter._id) {
+        orConditions.push(reportingToMeFilter);
     }
 
     if (orConditions.length === 0) return [];
 
-    const employees = await Employee.find({ $or: orConditions }).select('_id');
+    const employees = await Employee.find({ $or: orConditions }).select('_id').lean();
     return employees.map(e => e._id);
 }
 
@@ -403,5 +511,6 @@ module.exports = {
     buildWorkflowVisibilityFilter,
     checkJurisdiction,
     getDefaultScope,
-    getEmployeeIdsInScope
+    getEmployeeIdsInScope,
+    getReportingToMeEmployeeIds
 };

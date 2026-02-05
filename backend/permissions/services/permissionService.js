@@ -274,7 +274,7 @@ const approvePermissionRequest = async (permissionId, userId, baseUrl = '', user
       }
 
       // Enforce Centralized Jurisdictional Check
-      if (!checkJurisdiction(fullUser, permissionRequest)) {
+      if (!(await checkJurisdiction(fullUser, permissionRequest))) {
         return { success: false, message: 'Not authorized. Permission request is outside your assigned data scope.' };
       }
 

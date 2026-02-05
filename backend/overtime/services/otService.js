@@ -350,7 +350,7 @@ const approveOTRequest = async (otId, userId, userRole) => {
       }
 
       // Enforce Centralized Jurisdictional Check
-      if (!checkJurisdiction(fullUser, otRequest)) {
+      if (!(await checkJurisdiction(fullUser, otRequest))) {
         return { success: false, message: 'Not authorized. OT request is outside your assigned data scope.' };
       }
 

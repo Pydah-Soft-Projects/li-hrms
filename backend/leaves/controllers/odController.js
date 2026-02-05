@@ -138,16 +138,20 @@ exports.getODs = async (req, res) => {
   try {
     const { status, employeeId, department, fromDate, toDate, page = 1, limit = 20 } = req.query;
 
-    // Multi-layered filter: Jurisdiction (Scope) AND Timing (Workflow)
-    const scopeFilter = req.scopeFilter || { isActive: true };
+    // Multi-layered: (Scope + Workflow) OR (Reporting-based: employee reports to me, all statuses)
     const workflowFilter = buildWorkflowVisibilityFilter(req.user);
+    const scopedEmployeeIds = await getEmployeeIdsInScope(req.scopedUser || req.user);
+    const reportingToMeIds = req.reportingToMeEmployeeIds || [];
+
+    const scopeOrFilter = [
+      { appliedBy: req.user._id },
+      ...(reportingToMeIds.length > 0 ? [{ employeeId: { $in: reportingToMeIds } }] : []),
+      ...(scopedEmployeeIds.length > 0 ? [{ $and: [{ employeeId: { $in: scopedEmployeeIds } }, workflowFilter] }] : [])
+    ];
 
     const filter = {
-      $and: [
-        scopeFilter,
-        workflowFilter,
-        { isActive: true }
-      ]
+      isActive: true,
+      $or: scopeOrFilter
     };
 
     if (status) filter.status = status;
@@ -1126,7 +1130,7 @@ exports.processODAction = async (req, res) => {
       canProcess = true;
     } else if (isRoleMatch) {
       // 2. If roles match, enforce Jurisdictional Check
-      canProcess = checkJurisdiction(fullUser, od);
+      canProcess = await checkJurisdiction(fullUser, od);
     }
 
     if (!canProcess) {
