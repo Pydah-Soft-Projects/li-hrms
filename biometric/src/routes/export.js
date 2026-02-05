@@ -7,7 +7,12 @@ const express = require('express');
 const router = express.Router();
 const { getHRMSModels } = require('../config/hrmsConnection');
 const AttendanceLog = require('../models/AttendanceLog');
+const Device = require('../models/Device');
+const DeviceUser = require('../models/DeviceUser');
 const logger = require('../utils/logger');
+const { jsPDF } = require('jspdf');
+const autoTable = require('jspdf-autotable').default;
+const XLSX = require('xlsx');
 
 // Date format DD-Mon-YY (e.g. 01-Dec-25)
 function formatPDate(d) {
@@ -280,6 +285,107 @@ router.get('/export/attendance', async (req, res) => {
         res.send('\uFEFF' + csv); // BOM for Excel UTF-8
     } catch (err) {
         logger.error('Export attendance error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+/**
+ * GET /api/export/summary/pdf
+ * Generates a PDF summary of all devices and user counts
+ */
+router.get('/export/summary/pdf', async (req, res) => {
+    try {
+        const devices = await Device.find({}).lean();
+        const totalUniqueUsers = await DeviceUser.countDocuments();
+
+        const doc = new jsPDF();
+
+        // Title
+        doc.setFontSize(20);
+        doc.text('Biometric Device Summary Report', 14, 22);
+        doc.setFontSize(12);
+        doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 30);
+
+        // Device details table
+        const tableData = devices.map(dev => {
+            const health = dev.status || {};
+            return [
+                dev.name,
+                dev.deviceId,
+                dev.ip,
+                health.userCount || 0,
+                health.fingerCount || 0,
+                health.attCount || 0,
+                dev.enabled ? 'Active' : 'Offline'
+            ];
+        });
+
+        autoTable(doc, {
+            startY: 40,
+            head: [['Device Name', 'Serial Number', 'IP Address', 'Users', 'Fingers', 'Logs', 'Status']],
+            body: tableData,
+            theme: 'striped',
+            headStyles: { fillColor: [99, 102, 241] }
+        });
+
+        const finalY = doc.lastAutoTable.finalY + 15;
+
+        // Summary text
+        const totalUsersAcrossDevices = devices.reduce((sum, dev) => sum + (dev.status?.userCount || 0), 0);
+
+        doc.setFontSize(14);
+        doc.text('Global Statistics:', 14, finalY);
+        doc.setFontSize(11);
+        doc.text(`Total User Records (all devices): ${totalUsersAcrossDevices}`, 14, finalY + 8);
+        doc.text(`Total Unique User IDs (system-wide): ${totalUniqueUsers}`, 14, finalY + 16);
+        doc.text(`Total Devices Monitored: ${devices.length}`, 14, finalY + 24);
+
+        const pdfBuffer = doc.output('arraybuffer');
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="biometric_summary_${new Date().toISOString().slice(0, 10)}.pdf"`);
+        res.send(Buffer.from(pdfBuffer));
+
+    } catch (err) {
+        logger.error('Export PDF summary error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+/**
+ * GET /api/export/unique-users/excel
+ * Generates an Excel file with all unique users
+ */
+router.get('/export/unique-users/excel', async (req, res) => {
+    try {
+        const usersData = await DeviceUser.find({}).lean();
+
+        const users = usersData.map(u => ({
+            'User ID': u.userId,
+            'Name': u.name || 'N/A',
+            'Card Number': u.card || 'None',
+            'Fingers': u.fingerprints?.length || 0,
+            'Face Support': u.face?.templateData ? 'Yes' : 'No',
+            'Last Device': u.lastDeviceId || 'Unknown',
+            'Last Synced': new Date(u.lastSyncedAt).toLocaleString()
+        }));
+
+        const worksheet = XLSX.utils.json_to_sheet(users);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Unique Users");
+
+        // Auto-adjust column widths
+        const wscols = Object.keys(users[0] || {}).map(k => ({ wch: Math.max(k.length, 15) }));
+        worksheet['!cols'] = wscols;
+
+        const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="unique_users_${new Date().toISOString().slice(0, 10)}.xlsx"`);
+        res.send(buffer);
+
+    } catch (err) {
+        logger.error('Export Excel unique users error:', err);
         res.status(500).json({ success: false, error: err.message });
     }
 });

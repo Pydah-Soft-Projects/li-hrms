@@ -6,10 +6,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Biometric ADMS Dashboard</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
-    <!-- Export Libraries -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
         :root {
             --primary: #6366f1;
@@ -828,93 +824,38 @@
         }
 
         async function exportPdfSummary() {
-            const { jsPDF } = window.jspdf;
-            const doc = new jsPDF();
-
-            // Fetch unique users count
-            let uniqueUsersCount = 0;
             try {
-                const res = await fetch('/api/adms/users');
-                const data = await res.json();
-                if (data.success) {
-                    uniqueUsersCount = data.data.length;
-                }
+                const res = await fetch('/api/export/summary/pdf');
+                if (!res.ok) throw new Error('PDF export failed');
+
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `biometric_summary_${new Date().toISOString().slice(0, 10)}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                a.remove();
             } catch (err) {
-                console.error('Failed to fetch unique users:', err);
+                alert('PDF export failed: ' + err.message);
             }
-
-            // Title
-            doc.setFontSize(20);
-            doc.text('Biometric Device Summary Report', 14, 22);
-            doc.setFontSize(12);
-            doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 30);
-
-            // Device details table
-            const tableData = allDevices.map(dev => {
-                const health = dev.status || {};
-                return [
-                    dev.name,
-                    dev.deviceId,
-                    dev.ip,
-                    health.userCount || 0,
-                    health.fingerCount || 0,
-                    health.attCount || 0,
-                    dev.enabled ? 'Active' : 'Offline'
-                ];
-            });
-
-            doc.autoTable({
-                startY: 40,
-                head: [['Device Name', 'Serial Number', 'IP Address', 'Users', 'Fingers', 'Logs', 'Status']],
-                body: tableData,
-                theme: 'striped',
-                headStyles: { fillColor: [99, 102, 241] }
-            });
-
-            const finalY = doc.lastAutoTable.finalY + 15;
-
-            // Summary text
-            const totalUsersAcrossDevices = allDevices.reduce((sum, dev) => sum + (dev.status?.userCount || 0), 0);
-
-            doc.setFontSize(14);
-            doc.text('Global Statistics:', 14, finalY);
-            doc.setFontSize(11);
-            doc.text(`Total User Records (all devices): ${totalUsersAcrossDevices}`, 14, finalY + 8);
-            doc.text(`Total Unique User IDs (system-wide): ${uniqueUsersCount}`, 14, finalY + 16);
-            doc.text(`Total Devices Monitored: ${allDevices.length}`, 14, finalY + 24);
-
-            doc.save(`biometric_summary_${new Date().toISOString().slice(0, 10)}.pdf`);
         }
 
         async function exportUniqueUsersExcel() {
             try {
-                const res = await fetch('/api/adms/users');
-                const result = await res.json();
+                const res = await fetch('/api/export/unique-users/excel');
+                if (!res.ok) throw new Error('Excel export failed');
 
-                if (!result.success || !result.data) {
-                    alert('Failed to fetch users for export');
-                    return;
-                }
-
-                const users = result.data.map(u => ({
-                    'User ID': u.userId,
-                    'Name': u.name || 'N/A',
-                    'Card Number': u.card || 'None',
-                    'Fingers': u.fingerprints?.length || 0,
-                    'Face Support': u.face?.templateData ? 'Yes' : 'No',
-                    'Last Device': u.lastDeviceId || 'Unknown',
-                    'Last Synced': new Date(u.lastSyncedAt).toLocaleString()
-                }));
-
-                const worksheet = XLSX.utils.json_to_sheet(users);
-                const workbook = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(workbook, worksheet, "Unique Users");
-
-                // Auto-adjust column widths
-                const wscols = Object.keys(users[0] || {}).map(k => ({ wch: Math.max(k.length, 15) }));
-                worksheet['!cols'] = wscols;
-
-                XLSX.writeFile(workbook, `unique_users_${new Date().toISOString().slice(0, 10)}.xlsx`);
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `unique_users_${new Date().toISOString().slice(0, 10)}.xlsx`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                a.remove();
             } catch (err) {
                 alert('Excel export failed: ' + err.message);
             }
