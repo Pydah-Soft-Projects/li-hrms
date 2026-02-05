@@ -1168,9 +1168,14 @@ exports.processLeaveAction = async (req, res) => {
           currentStep.updatedAt = new Date();
           currentStep.isCurrent = false;
 
-          // Legacy approvals object update
+          // Legacy approvals object update (mapped to role)
           if (['hod', 'manager', 'hr'].includes(currentStep.role)) {
-            leave.approvals[currentStep.role] = { status: 'approved', approvedBy: req.user._id, approvedAt: new Date(), comments };
+            leave.approvals[currentStep.role] = {
+              status: 'approved',
+              approvedBy: req.user._id,
+              approvedAt: new Date(),
+              comments
+            };
           }
         }
 
@@ -1182,6 +1187,7 @@ exports.processLeaveAction = async (req, res) => {
           leave.workflow.currentStepRole = 'completed';
           leave.workflow.nextApprover = null;
           leave.workflow.nextApproverRole = null;
+          leave.workflow.currentStep = 'completed'; // Legacy sync
           historyEntry.action = 'approved';
         } else {
           // MOVE TO NEXT DESK
@@ -1191,14 +1197,15 @@ exports.processLeaveAction = async (req, res) => {
           leave.workflow.currentStepRole = nextStep.role;
           leave.workflow.nextApprover = nextStep.role;
           leave.workflow.nextApproverRole = nextStep.role;
+          leave.workflow.currentStep = nextStep.role; // Legacy sync
 
-          // Set intermediate status
+          // Set intermediate status based on WHO approved the current step
+          // If HOD approved, status becomes 'hod_approved' regardless of who is next (unless it's final)
           if (requiredRole === 'hod') leave.status = 'hod_approved';
           else if (requiredRole === 'manager') leave.status = 'manager_approved';
           else if (requiredRole === 'hr') leave.status = 'hr_approved';
-          else leave.status = 'pending';
-
-          historyEntry.action = 'approved';
+          // No else - keep current status or default to pending if it was draft
+          if (!leave.status || leave.status === 'draft') leave.status = 'pending';
         }
 
         if (approvalWarnings.length > 0) historyEntry.warnings = approvalWarnings;

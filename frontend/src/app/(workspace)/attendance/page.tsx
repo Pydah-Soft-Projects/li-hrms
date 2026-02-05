@@ -11,7 +11,8 @@ import { toast } from 'react-toastify';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   canViewAttendance,
-  canEditAttendance  // Used as canManageAttendance
+  canEditAttendance,  // Used as canManageAttendance
+  isManagementRole
 } from '@/lib/permissions';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 
@@ -539,36 +540,25 @@ export default function AttendancePage() {
       };
 
       setSelectedEmployee(emp);
-
       // Load their specific attendance
-
       const fetchEmpAttendance = async () => {
-
         if (emp.emp_no) {
-
           setLoadingAttendance(true);
-
           try {
-
             const response = await api.getAttendanceCalendar(emp.emp_no, year, month);
-
             if (response.success) {
-
               setAttendanceData(prev => ({ ...prev, [emp._id]: response.data || {} }));
-
+              // Populate monthlyData with just this employee so they see their own row
+              setMonthlyData([{
+                employee: emp,
+                dailyAttendance: response.data || {}
+              }]);
             }
-
           } catch (e) { console.error(e); }
-
           setLoadingAttendance(false);
-
         }
-
       }
-
       fetchEmpAttendance();
-
-    } else {
 
       // NEW: Reset pagination and load first page
 
