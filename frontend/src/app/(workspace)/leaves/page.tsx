@@ -1498,28 +1498,41 @@ export default function LeavesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-green-50/50 pb-10 px-4 sm:px-6">
-      <div className="max-w-[1920px] mx-auto">
-        {/* Header */}
-        <div className="mb-5">
-          <div className="flex items-center justify-between">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 pb-10">
+      {/* Sticky Header */}
+      <div className="sticky top-0 z-30 bg-slate-50/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200/60 dark:border-slate-700/60 shadow-sm mb-6">
+        <div className="max-w-[1920px] mx-auto h-16 flex items-center justify-between px-6">
+          <div className="flex items-center gap-4">
+            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center text-white shadow-lg shadow-green-500/20">
+              <CalendarIcon className="w-5 h-5" />
+            </div>
             <div>
-              <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Leave & OD Management</h1>
-              <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                Manage leave applications and on-duty requests
+              <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300">
+                Leave & OD Management
+              </h1>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                Workspace <span className="h-1 w-1 rounded-full bg-slate-300"></span> Management
               </p>
             </div>
+          </div>
+
+          <div className="flex items-center gap-3">
             {hasManagePermission && (canApplyForSelf || canApplyForOthers || currentUser?.role === 'employee' || ['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser?.role)) && (
               <button
                 onClick={() => openApplyDialog('leave')}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-green-500 to-green-600 text-white text-xs font-semibold shadow-sm hover:shadow-md transition-all"
+                className="group h-10 px-4 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-bold flex items-center gap-2 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-slate-900/10 dark:shadow-white/10"
               >
-                <PlusIcon />
-                Apply Leave / OD
+                <div className="h-5 w-5 rounded-lg bg-white/20 dark:bg-slate-900/10 flex items-center justify-center group-hover:rotate-90 transition-transform">
+                  <PlusIcon className="w-3.5 h-3.5" />
+                </div>
+                Apply Request
               </button>
             )}
           </div>
         </div>
+      </div>
+
+      <div className="max-w-[1920px] mx-auto px-6">
 
         {/* Toast Container */}
         <ToastContainer
@@ -1535,1019 +1548,984 @@ export default function LeavesPage() {
           theme="light"
         />
 
-        {/* Stats */}
+        {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center">
-                <CalendarIcon />
-              </div>
-              <div>
-                <div className="text-2xl font-bold text-slate-900 dark:text-white">{leaves.length}</div>
-                <div className="text-sm text-slate-500">Total Leaves</div>
-              </div>
-            </div>
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-purple-100 flex items-center justify-center">
-                <BriefcaseIcon />
-              </div>
-              <div>
-                <div className="text-2xl font-bold text-slate-900 dark:text-white">{ods.length}</div>
-                <div className="text-sm text-slate-500">Total ODs</div>
-              </div>
-            </div>
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-yellow-100 dark:bg-yellow-900/50 flex items-center justify-center text-yellow-600 dark:text-yellow-400">
-                <ClockIcon />
-              </div>
-              <div>
-                <div className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{totalPending}</div>
-                <div className="text-sm text-slate-500 dark:text-slate-400">Pending Approvals</div>
-              </div>
-            </div>
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-green-100 flex items-center justify-center">
-                <CheckIcon />
-              </div>
-              <div>
-                <div className="text-2xl font-bold text-green-600">
-                  {leaves.filter(l => l.status === 'approved').length + ods.filter(o => o.status === 'approved').length}
+          {[
+            { label: 'Total Leaves', value: leaves.length, icon: CalendarIcon, color: 'blue' },
+            { label: 'Total ODs', value: ods.length, icon: BriefcaseIcon, color: 'purple' },
+            { label: 'Pending Approvals', value: totalPending, icon: ClockIcon, color: 'orange', highlight: true },
+            { label: 'Approved Records', value: leaves.filter(l => l.status === 'approved').length + ods.filter(o => o.status === 'approved').length, icon: CheckIcon, color: 'green' }
+          ].map((stat, i) => (
+            <div key={i} className="group relative overflow-hidden rounded-2xl border border-slate-200/60 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 shadow-sm hover:shadow-md transition-all">
+              <div className="flex items-center gap-4 relative z-10">
+                <div className={`w-12 h-12 rounded-2xl bg-${stat.color}-50 dark:bg-${stat.color}-900/20 flex items-center justify-center text-${stat.color}-600 dark:text-${stat.color}-400 group-hover:scale-110 transition-transform duration-500`}>
+                  <stat.icon className="w-6 h-6" />
                 </div>
-                <div className="text-sm text-slate-500">Approved</div>
+                <div>
+                  <div className={`text-2xl font-black ${stat.highlight ? `text-${stat.color}-600 dark:text-${stat.color}-400` : 'text-slate-900 dark:text-white'}`}>
+                    {stat.value}
+                  </div>
+                  <div className="text-[11px] font-bold text-slate-500 uppercase tracking-tight">{stat.label}</div>
+                </div>
               </div>
+              {/* Background Decoration */}
+              <div className={`absolute -right-2 -bottom-2 w-16 h-16 bg-${stat.color}-50/50 dark:bg-${stat.color}-900/10 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-700`} />
             </div>
+          ))}
+        </div>
+
+        {/* Tab Navigation */}
+        <div className="flex items-center justify-between mb-6">
+          <div className="inline-flex items-center p-1 rounded-xl bg-slate-100/50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 backdrop-blur-sm shadow-inner">
+            {[
+              { id: 'leaves', label: 'Leaves', icon: CalendarIcon, count: leaves.length, activeColor: 'blue' },
+              { id: 'od', label: 'On Duty', icon: BriefcaseIcon, count: ods.length, activeColor: 'purple' },
+              { id: 'pending', label: 'Pending', icon: ClockIcon, count: totalPending, activeColor: 'orange' }
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`group relative flex items-center gap-2 px-6 py-2 rounded-lg text-xs font-bold transition-all duration-300 ${activeTab === tab.id
+                  ? `bg-white dark:bg-slate-700 text-${tab.activeColor}-600 dark:text-${tab.activeColor}-400 shadow-sm ring-1 ring-slate-200/50 dark:ring-0`
+                  : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                  }`}
+              >
+                <tab.icon className={`w-3.5 h-3.5 ${activeTab === tab.id ? `text-${tab.activeColor}-600 dark:text-${tab.activeColor}-400` : 'text-slate-400 group-hover:text-slate-600'}`} />
+                <span>{tab.label}</span>
+                {tab.count > 0 && (
+                  <span className={`flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-md text-[10px] font-black ${activeTab === tab.id
+                    ? `bg-${tab.activeColor}-50 text-${tab.activeColor}-600 dark:bg-${tab.activeColor}-900/30 dark:text-${tab.activeColor}-300`
+                    : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                    }`}>
+                    {tab.count}
+                  </span>
+                )}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="mb-6">
-          <div className="inline-flex items-center p-1.5 rounded-xl bg-slate-100/80 dark:bg-slate-800/50 border border-slate-200/50 dark:border-slate-700/50 backdrop-blur-sm">
-            <button
-              onClick={() => setActiveTab('leaves')}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${activeTab === 'leaves'
-                ? 'bg-white text-blue-600 shadow-sm ring-1 ring-slate-200/50 dark:bg-slate-700 dark:text-blue-400 dark:ring-0 dark:shadow-none'
-                : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
-                }`}
-            >
-              <CalendarIcon className="w-4 h-4" />
-              <span>Leaves</span>
-              <span className={`ml-1.5 px-2 py-0.5 rounded-full text-[10px] ${activeTab === 'leaves'
-                ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300'
-                : 'bg-slate-200/50 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
-                }`}>
-                {leaves.length}
-              </span>
-            </button>
-            <button
-              onClick={() => setActiveTab('od')}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${activeTab === 'od'
-                ? 'bg-white text-purple-600 shadow-sm ring-1 ring-slate-200/50 dark:bg-slate-700 dark:text-purple-400 dark:ring-0 dark:shadow-none'
-                : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
-                }`}
-            >
-              <BriefcaseIcon className="w-4 h-4" />
-              <span>On Duty</span>
-              <span className={`ml-1.5 px-2 py-0.5 rounded-full text-[10px] ${activeTab === 'od'
-                ? 'bg-purple-50 text-purple-600 dark:bg-purple-900/30 dark:text-purple-300'
-                : 'bg-slate-200/50 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
-                }`}>
-                {ods.length}
-              </span>
-            </button>
-            <button
-              onClick={() => setActiveTab('pending')}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${activeTab === 'pending'
-                ? 'bg-white text-orange-600 shadow-sm ring-1 ring-slate-200/50 dark:bg-slate-700 dark:text-orange-400 dark:ring-0 dark:shadow-none'
-                : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
-                }`}
-            >
-              <ClockIcon className="w-4 h-4" />
-              <span>Pending</span>
-              {totalPending >= 0 && (
-                <span className={`ml-1.5 px-2 py-0.5 rounded-full text-[10px] ${activeTab === 'pending'
-                  ? 'bg-orange-50 text-orange-600 dark:bg-orange-900/30 dark:text-orange-300'
-                  : 'bg-slate-200/50 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
-                  }`}>
-                  {totalPending}
-                </span>
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* Content */}
         <div className="mt-4">
           {activeTab === 'leaves' && (
-            <div className="bg-white rounded-lg border border-slate-200 shadow-sm dark:bg-slate-800 dark:border-slate-700 overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead className="bg-slate-100/75 border-b border-slate-200 dark:bg-slate-700/50 dark:border-slate-700">
+            <div className="overflow-x-auto bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/60 dark:border-slate-800 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-500">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200/60 dark:border-slate-800">
+                    {currentUser?.role !== 'employee' && (
+                      <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Employee</th>
+                    )}
+                    <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Leave Type</th>
+                    <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Dates</th>
+                    <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 text-center">Duration</th>
+                    <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 text-center">Status</th>
+                    <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {leaves.length === 0 ? (
                     <tr>
-                      {currentUser?.role !== 'employee' && (
-                        <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Employee</th>
-                      )}
-                      <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Leave Type</th>
-                      <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Dates</th>
-                      <th scope="col" className="px-6 py-3.5 text-xs font-bold text-center text-slate-600 uppercase tracking-wider dark:text-slate-300">Duration</th>
-                      <th scope="col" className="px-6 py-3.5 text-xs font-bold text-center text-slate-600 uppercase tracking-wider dark:text-slate-300">Status</th>
-                      <th scope="col" className="px-6 py-3.5 text-right text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Actions</th>
+                      <td colSpan={currentUser?.role !== 'employee' ? 6 : 5} className="px-6 py-10 text-center text-slate-500 text-sm">
+                        No leave applications found
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                    {leaves.length === 0 ? (
-                      <tr>
-                        <td colSpan={currentUser?.role !== 'employee' ? 6 : 5} className="px-6 py-10 text-center text-slate-500 text-sm">
-                          No leave applications found
-                        </td>
-                      </tr>
-                    ) : (
-                      leaves.map((leave) => (
-                        <tr
-                          key={leave._id}
-                          onClick={() => openDetailDialog(leave, 'leave')}
-                          className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors cursor-pointer"
-                        >
-                          {currentUser?.role !== 'employee' && (
-                            <td className="px-6 py-3.5">
-                              <div className="flex items-center gap-3">
-                                <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-700 dark:text-blue-400 font-bold text-xs shrink-0">
-                                  {getEmployeeInitials({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: '' } as any)}
+                  ) : (
+                    leaves.map((leave) => (
+                      <tr
+                        key={leave._id}
+                        onClick={() => openDetailDialog(leave, 'leave')}
+                        className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors cursor-pointer"
+                      >
+                        {currentUser?.role !== 'employee' && (
+                          <td className="px-6 py-3.5">
+                            <div className="flex items-center gap-3">
+                              <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-700 dark:text-blue-400 font-bold text-xs shrink-0">
+                                {getEmployeeInitials({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: '' } as any)}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="font-medium text-slate-900 dark:text-white text-sm truncate max-w-[150px]">
+                                  {leave.employeeId?.employee_name || `${leave.employeeId?.first_name || ''} ${leave.employeeId?.last_name || ''}`.trim() || leave.emp_no}
                                 </div>
-                                <div className="min-w-0">
-                                  <div className="font-medium text-slate-900 dark:text-white text-sm truncate max-w-[150px]">
-                                    {leave.employeeId?.employee_name || `${leave.employeeId?.first_name || ''} ${leave.employeeId?.last_name || ''}`.trim() || leave.emp_no}
-                                  </div>
-                                  <div className="text-xs text-slate-500">
-                                    {leave.employeeId?.emp_no}
-                                  </div>
+                                <div className="text-xs text-slate-500">
+                                  {leave.employeeId?.emp_no}
                                 </div>
                               </div>
-                            </td>
-                          )}
-                          <td className="px-6 py-3.5">
-                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300 capitalize">
-                              {leave.leaveType?.replace('_', ' ')}
-                            </span>
-                          </td>
-                          <td className="px-6 py-3.5 whitespace-nowrap">
-                            <div className="text-sm text-slate-700 dark:text-slate-300">
-                              <span className="font-medium">{formatDate(leave.fromDate)}</span>
-                              {leave.fromDate !== leave.toDate && (
-                                <span className="text-slate-400 mx-1.5">-</span>
-                              )}
-                              {leave.fromDate !== leave.toDate && (
-                                <span>{formatDate(leave.toDate)}</span>
-                              )}
                             </div>
                           </td>
-                          <td className="px-6 py-3.5 text-center">
-                            <div className="inline-flex items-center gap-1.5 bg-slate-100 rounded-md px-2 py-1 dark:bg-slate-800">
-                              <span className="font-semibold text-slate-700 dark:text-slate-300 text-sm">
-                                {leave.numberOfDays}d
+                        )}
+                        <td className="px-6 py-3.5">
+                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300 capitalize">
+                            {leave.leaveType?.replace('_', ' ')}
+                          </span>
+                        </td>
+                        <td className="px-6 py-3.5 whitespace-nowrap">
+                          <div className="text-sm text-slate-700 dark:text-slate-300">
+                            <span className="font-medium">{formatDate(leave.fromDate)}</span>
+                            {leave.fromDate !== leave.toDate && (
+                              <span className="text-slate-400 mx-1.5">-</span>
+                            )}
+                            {leave.fromDate !== leave.toDate && (
+                              <span>{formatDate(leave.toDate)}</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-3.5 text-center">
+                          <div className="inline-flex items-center gap-1.5 bg-slate-100 rounded-md px-2 py-1 dark:bg-slate-800">
+                            <span className="font-semibold text-slate-700 dark:text-slate-300 text-sm">
+                              {leave.numberOfDays}d
+                            </span>
+                            {leave.isHalfDay && (
+                              <span className="text-[10px] font-bold text-orange-600 uppercase">
+                                {leave.halfDayType === 'first_half' ? '(1st)' : '(2nd)'}
                               </span>
-                              {leave.isHalfDay && (
-                                <span className="text-[10px] font-bold text-orange-600 uppercase">
-                                  {leave.halfDayType === 'first_half' ? '(1st)' : '(2nd)'}
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-6 py-3.5 text-center">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize border ${getStatusColor(leave.status) === 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' ? 'border-green-200' : 'border-transparent' // subtle border for approved
-                              } ${getStatusColor(leave.status)}`}>
-                              {leave.status?.replace('_', ' ')}
-                            </span>
-                          </td>
-                          <td className="px-6 py-3.5 text-right">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openDetailDialog(leave, 'leave');
-                              }}
-                              className="text-sm text-blue-600 hover:text-blue-800 font-medium dark:text-blue-400 dark:hover:text-blue-300"
-                            >
-                              View
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-3.5 text-center">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize border ${getStatusColor(leave.status) === 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' ? 'border-green-200' : 'border-transparent' // subtle border for approved
+                            } ${getStatusColor(leave.status)}`}>
+                            {leave.status?.replace('_', ' ')}
+                          </span>
+                        </td>
+                        <td className="px-6 py-3.5 text-right">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openDetailDialog(leave, 'leave');
+                            }}
+                            className="text-sm text-blue-600 hover:text-blue-800 font-medium dark:text-blue-400 dark:hover:text-blue-300"
+                          >
+                            View
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           )}
 
 
           {activeTab === 'od' && (
-            <div className="bg-white rounded-lg border border-slate-200 shadow-sm dark:bg-slate-800 dark:border-slate-700 overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead className="bg-slate-100/75 border-b border-slate-200 dark:bg-slate-700/50 dark:border-slate-700">
+            <div className="overflow-x-auto bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/60 dark:border-slate-800 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-500">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200/60 dark:border-slate-800">
+                    {currentUser?.role !== 'employee' && (
+                      <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Employee</th>
+                    )}
+                    <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">OD Type</th>
+                    <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Place Visited</th>
+                    <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Dates</th>
+                    <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 text-center">Duration</th>
+                    <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 text-center">Status</th>
+                    <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {ods.length === 0 ? (
                     <tr>
-                      {currentUser?.role !== 'employee' && (
-                        <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Employee</th>
-                      )}
-                      <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">OD Type</th>
-                      <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Place Visited</th>
-                      <th scope="col" className="px-6 py-3.5 text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Dates</th>
-                      <th scope="col" className="px-6 py-3.5 text-xs font-bold text-center text-slate-600 uppercase tracking-wider dark:text-slate-300">Duration</th>
-                      <th scope="col" className="px-6 py-3.5 text-xs font-bold text-center text-slate-600 uppercase tracking-wider dark:text-slate-300">Status</th>
-                      <th scope="col" className="px-6 py-3.5 text-right text-xs font-bold text-slate-600 uppercase tracking-wider dark:text-slate-300">Actions</th>
+                      <td colSpan={currentUser?.role !== 'employee' ? 7 : 6} className="px-6 py-10 text-center text-slate-500 text-sm italic">
+                        No OD applications found
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                    {ods.length === 0 ? (
-                      <tr>
-                        <td colSpan={currentUser?.role !== 'employee' ? 7 : 6} className="px-6 py-10 text-center text-slate-500 text-sm">
-                          No OD applications found
-                        </td>
-                      </tr>
-                    ) : (
-                      ods.map((od) => (
-                        <tr
-                          key={od._id}
-                          onClick={() => openDetailDialog(od, 'od')}
-                          className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors cursor-pointer"
-                        >
-                          {currentUser?.role !== 'employee' && (
-                            <td className="px-6 py-3.5">
-                              <div className="flex items-center gap-3">
-                                <div className="h-8 w-8 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-700 dark:text-purple-400 font-bold text-xs shrink-0">
-                                  {getEmployeeInitials({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: '' } as any)}
+                  ) : (
+                    ods.map((od) => (
+                      <tr
+                        key={od._id}
+                        onClick={() => openDetailDialog(od, 'od')}
+                        className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors cursor-pointer"
+                      >
+                        {currentUser?.role !== 'employee' && (
+                          <td className="px-6 py-3.5">
+                            <div className="flex items-center gap-3">
+                              <div className="h-8 w-8 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-700 dark:text-purple-400 font-bold text-xs shrink-0">
+                                {getEmployeeInitials({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: '' } as any)}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="font-medium text-slate-900 dark:text-white text-sm truncate max-w-[150px]">
+                                  {od.employeeId?.employee_name || `${od.employeeId?.first_name || ''} ${od.employeeId?.last_name || ''}`.trim() || od.emp_no}
                                 </div>
-                                <div className="min-w-0">
-                                  <div className="font-medium text-slate-900 dark:text-white text-sm truncate max-w-[150px]">
-                                    {od.employeeId?.employee_name || `${od.employeeId?.first_name || ''} ${od.employeeId?.last_name || ''}`.trim() || od.emp_no}
-                                  </div>
-                                  <div className="text-xs text-slate-500">
-                                    {od.employeeId?.emp_no}
-                                  </div>
+                                <div className="text-xs text-slate-500">
+                                  {od.employeeId?.emp_no}
                                 </div>
                               </div>
-                            </td>
-                          )}
-                          <td className="px-6 py-3.5">
-                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300 capitalize">
-                              {od.odType?.replace('_', ' ')}
-                            </span>
-                          </td>
-                          <td className="px-6 py-3.5 max-w-[180px] truncate text-sm text-slate-700 dark:text-slate-300" title={od.placeVisited}>
-                            {od.placeVisited || '-'}
-                          </td>
-                          <td className="px-6 py-3.5 whitespace-nowrap">
-                            <div className="text-sm text-slate-700 dark:text-slate-300">
-                              <span className="font-medium">{formatDate(od.fromDate)}</span>
-                              {od.fromDate !== od.toDate && (
-                                <span className="text-slate-400 mx-1.5">-</span>
-                              )}
-                              {od.fromDate !== od.toDate && (
-                                <span>{formatDate(od.toDate)}</span>
-                              )}
                             </div>
                           </td>
-                          <td className="px-6 py-3.5 text-center">
-                            <div className="inline-flex items-center gap-1.5 bg-slate-100 rounded-md px-2 py-1 dark:bg-slate-800">
-                              <span className="font-semibold text-slate-700 dark:text-slate-300 text-sm">
-                                {od.numberOfDays}d
+                        )}
+                        <td className="px-6 py-3.5">
+                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300 capitalize">
+                            {od.odType?.replace('_', ' ')}
+                          </span>
+                        </td>
+                        <td className="px-6 py-3.5 max-w-[180px] truncate text-sm text-slate-700 dark:text-slate-300" title={od.placeVisited}>
+                          {od.placeVisited || '-'}
+                        </td>
+                        <td className="px-6 py-3.5 whitespace-nowrap">
+                          <div className="text-sm text-slate-700 dark:text-slate-300">
+                            <span className="font-medium">{formatDate(od.fromDate)}</span>
+                            {od.fromDate !== od.toDate && (
+                              <span className="text-slate-400 mx-1.5">-</span>
+                            )}
+                            {od.fromDate !== od.toDate && (
+                              <span>{formatDate(od.toDate)}</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-3.5 text-center">
+                          <div className="inline-flex items-center gap-1.5 bg-slate-100 rounded-md px-2 py-1 dark:bg-slate-800">
+                            <span className="font-semibold text-slate-700 dark:text-slate-300 text-sm">
+                              {od.numberOfDays}d
+                            </span>
+                            {od.isHalfDay && (
+                              <span className="text-[10px] font-bold text-orange-600 uppercase">
+                                {od.halfDayType === 'first_half' ? '(1st)' : '(2nd)'}
                               </span>
-                              {od.isHalfDay && (
-                                <span className="text-[10px] font-bold text-orange-600 uppercase">
-                                  {od.halfDayType === 'first_half' ? '(1st)' : '(2nd)'}
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-6 py-3.5 text-center">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize border ${getStatusColor(od.status) === 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' ? 'border-green-200' : 'border-transparent'
-                              } ${getStatusColor(od.status)}`}>
-                              {od.status?.replace('_', ' ')}
-                            </span>
-                          </td>
-                          <td className="px-6 py-3.5 text-right">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openDetailDialog(od, 'od');
-                              }}
-                              className="text-sm text-purple-600 hover:text-purple-800 font-medium dark:text-purple-400 dark:hover:text-purple-300"
-                            >
-                              View
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-3.5 text-center">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize border ${getStatusColor(od.status) === 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' ? 'border-green-200' : 'border-transparent'
+                            } ${getStatusColor(od.status)}`}>
+                            {od.status?.replace('_', ' ')}
+                          </span>
+                        </td>
+                        <td className="px-6 py-3.5 text-right">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openDetailDialog(od, 'od');
+                            }}
+                            className="text-sm text-purple-600 hover:text-purple-800 font-medium dark:text-purple-400 dark:hover:text-purple-300"
+                          >
+                            View
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           )}
 
 
-          {
-            activeTab === 'pending' && (
-              <div className="p-4 space-y-4">
-                {/* Pending Leaves */}
-                {pendingLeaves.length > 0 && (
-                  <div>
-                    <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2">
-                      <CalendarIcon />
+          {activeTab === 'pending' && (
+            <div className="p-4 space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
+              {/* Pending Leaves */}
+              {pendingLeaves.length > 0 && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between px-2">
+                    <h3 className="text-xs font-black text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                      <CalendarIcon className="w-3.5 h-3.5" />
                       Pending Leaves ({pendingLeaves.length})
                     </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                      {pendingLeaves.map((leave) => (
-                        <div key={leave._id} className="group relative flex flex-col justify-between rounded-xl border border-slate-200 border-l-4 border-l-blue-500 bg-white p-5 shadow-sm transition-all hover:shadow-md dark:border-slate-700 dark:bg-slate-800">
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                    {pendingLeaves.map((leave) => (
+                      <div key={leave._id} className="group relative flex flex-col justify-between rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm transition-all hover:shadow-md hover:border-blue-200/60 dark:border-slate-800 dark:bg-slate-900">
+                        {/* Status Strip */}
+                        <div className="absolute top-0 left-0 w-1 h-full bg-blue-500/80 rounded-l-2xl group-hover:w-1.5 transition-all" />
 
-                          {/* Header */}
-                          <div className="flex items-start justify-between gap-3 mb-4">
-                            <div className="flex items-center gap-3">
-                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600 font-bold dark:bg-blue-900/30 dark:text-blue-400">
-                                {getEmployeeInitials({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: '' } as any)}
-                              </div>
-                              <div>
-                                <h4 className="font-semibold text-slate-900 dark:text-white line-clamp-1">
-                                  {leave.employeeId?.first_name} {leave.employeeId?.last_name}
-                                </h4>
-                                <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
-                                  <span>{leave.employeeId?.emp_no}</span>
-                                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                                  {(leave.employeeId as any)?.department?.name && (
-                                    <>
-                                      <span>•</span>
-                                      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                                      <span className="truncate max-w-[100px]">{(leave.employeeId as any)?.department?.name}</span>
-                                    </>
-                                  )}
-                                </p>
-                              </div>
+                        {/* Header */}
+                        <div className="flex items-start justify-between gap-3 mb-4">
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600 font-bold dark:bg-blue-900/30 dark:text-blue-400">
+                              {getEmployeeInitials({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: '' } as any)}
                             </div>
-                            <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(leave.status)}`}>
-                              {leave.status.replace('_', ' ')}
+                            <div>
+                              <h4 className="font-semibold text-slate-900 dark:text-white line-clamp-1">
+                                {leave.employeeId?.first_name} {leave.employeeId?.last_name}
+                              </h4>
+                              <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                                <span>{leave.employeeId?.emp_no}</span>
+                                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                                {(leave.employeeId as any)?.department?.name && (
+                                  <>
+                                    <span>•</span>
+                                    {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                                    <span className="truncate max-w-[100px]">{(leave.employeeId as any)?.department?.name}</span>
+                                  </>
+                                )}
+                              </p>
+                            </div>
+                          </div>
+                          <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(leave.status)}`}>
+                            {leave.status.replace('_', ' ')}
+                          </span>
+                        </div>
+
+                        {/* Content */}
+                        <div className="mb-4 space-y-2.5">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-slate-500 dark:text-slate-400">Type</span>
+                            <span className="font-medium text-slate-700 dark:text-slate-300">{leave.leaveType}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-slate-500 dark:text-slate-400">Duration</span>
+                            <span className="font-medium text-slate-700 dark:text-slate-300">{leave.numberOfDays} Day{leave.numberOfDays !== 1 ? 's' : ''}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-slate-500 dark:text-slate-400">Dates</span>
+                            <span className="font-medium text-slate-700 dark:text-slate-300 text-right">
+                              {formatDate(leave.fromDate)}
+                              {leave.fromDate !== leave.toDate && ` - ${formatDate(leave.toDate)}`}
                             </span>
                           </div>
-
-                          {/* Content */}
-                          <div className="mb-4 space-y-2.5">
-                            <div className="flex items-center justify-between text-sm">
-                              <span className="text-slate-500 dark:text-slate-400">Type</span>
-                              <span className="font-medium text-slate-700 dark:text-slate-300">{leave.leaveType}</span>
-                            </div>
-                            <div className="flex items-center justify-between text-sm">
-                              <span className="text-slate-500 dark:text-slate-400">Duration</span>
-                              <span className="font-medium text-slate-700 dark:text-slate-300">{leave.numberOfDays} Day{leave.numberOfDays !== 1 ? 's' : ''}</span>
-                            </div>
-                            <div className="flex items-center justify-between text-sm">
-                              <span className="text-slate-500 dark:text-slate-400">Dates</span>
-                              <span className="font-medium text-slate-700 dark:text-slate-300 text-right">
-                                {formatDate(leave.fromDate)}
-                                {leave.fromDate !== leave.toDate && ` - ${formatDate(leave.toDate)}`}
-                              </span>
-                            </div>
-                            {leave.purpose && (
-                              <div className="pt-2 mt-2 border-t border-slate-100 dark:border-slate-700">
-                                <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 italic">
-                                  "{leave.purpose}"
-                                </p>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Actions */}
-
-                          {canPerformAction(leave) && (hasManagePermission || hasManagePermission) && (
-                            <div className="flex items-center gap-2 mt-auto">
-                              {hasManagePermission && (
-                                <button
-                                  onClick={() => handleAction(leave._id, 'leave', 'approve')}
-                                  className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-green-500/10 py-2 text-sm font-semibold text-green-600 transition-colors hover:bg-green-500 hover:text-white dark:bg-green-500/20 dark:text-green-400 dark:hover:bg-green-500 dark:hover:text-white"
-                                  title="Approve Leave"
-                                >
-                                  <CheckIcon /> Approve
-                                </button>
-                              )}
-                              {hasManagePermission && (
-                                <button
-                                  onClick={() => handleAction(leave._id, 'leave', 'reject')}
-                                  className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-500/10 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500 hover:text-white dark:bg-red-500/20 dark:text-red-400 dark:hover:bg-red-500 dark:hover:text-white"
-                                  title="Reject Leave"
-                                >
-                                  <XIcon /> Reject
-                                </button>
-                              )}
+                          {leave.purpose && (
+                            <div className="pt-2 mt-2 border-t border-slate-100 dark:border-slate-700">
+                              <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 italic">
+                                "{leave.purpose}"
+                              </p>
                             </div>
                           )}
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
 
-                {/* Pending ODs */}
-                {pendingODs.length > 0 && (
-                  <div>
-                    <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2">
-                      <BriefcaseIcon />
-                      Pending ODs ({pendingODs.length})
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                      {pendingODs.map((od) => (
-                        <div key={od._id} className="group relative flex flex-col justify-between rounded-xl border border-slate-200 border-l-4 border-l-purple-500 bg-white p-5 shadow-sm transition-all hover:shadow-md dark:border-slate-700 dark:bg-slate-800">
+                        {/* Actions */}
 
-                          {/* Header */}
-                          <div className="flex items-start justify-between gap-3 mb-4">
-                            <div className="flex items-center gap-3">
-                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-purple-100 text-purple-600 font-bold dark:bg-purple-900/30 dark:text-purple-400">
-                                {getEmployeeInitials({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: '' } as any)}
-                              </div>
-                              <div>
-                                <h4 className="font-semibold text-slate-900 dark:text-white line-clamp-1">
-                                  {od.employeeId?.first_name} {od.employeeId?.last_name}
-                                </h4>
-                                <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
-                                  <span>{od.employeeId?.emp_no}</span>
-                                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                                  {(od.employeeId as any)?.department?.name && (
-                                    <>
-                                      <span>•</span>
-                                      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                                      <span className="truncate max-w-[100px]">{(od.employeeId as any)?.department?.name}</span>
-                                    </>
-                                  )}
-                                </p>
-                              </div>
-                            </div>
-                            <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(od.status)}`}>
-                              {od.status.replace('_', ' ')}
-                            </span>
-                          </div>
-
-                          {/* Content */}
-                          <div className="mb-4 space-y-2.5">
-                            <div className="flex items-center justify-between text-sm">
-                              <span className="text-slate-500 dark:text-slate-400">Type</span>
-                              <span className="font-medium text-slate-700 dark:text-slate-300">{od.odType}</span>
-                            </div>
-                            <div className="flex items-center justify-between text-sm">
-                              <span className="text-slate-500 dark:text-slate-400">Duration</span>
-                              <span className="font-medium text-slate-700 dark:text-slate-300">{od.numberOfDays} Day{od.numberOfDays !== 1 ? 's' : ''}</span>
-                            </div>
-                            <div className="flex items-center justify-between text-sm">
-                              <span className="text-slate-500 dark:text-slate-400">Dates</span>
-                              <span className="font-medium text-slate-700 dark:text-slate-300 text-right">
-                                {formatDate(od.fromDate)}
-                                {od.fromDate !== od.toDate && ` - ${formatDate(od.toDate)}`}
-                              </span>
-                            </div>
-                            {od.purpose && (
-                              <div className="pt-2 mt-2 border-t border-slate-100 dark:border-slate-700">
-                                <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 italic">
-                                  "{od.purpose}"
-                                </p>
-                              </div>
+                        {canPerformAction(leave) && (hasManagePermission || hasManagePermission) && (
+                          <div className="flex items-center gap-2 mt-auto">
+                            {hasManagePermission && (
+                              <button
+                                onClick={() => handleAction(leave._id, 'leave', 'approve')}
+                                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-green-500/10 py-2 text-sm font-semibold text-green-600 transition-colors hover:bg-green-500 hover:text-white dark:bg-green-500/20 dark:text-green-400 dark:hover:bg-green-500 dark:hover:text-white"
+                                title="Approve Leave"
+                              >
+                                <CheckIcon /> Approve
+                              </button>
+                            )}
+                            {hasManagePermission && (
+                              <button
+                                onClick={() => handleAction(leave._id, 'leave', 'reject')}
+                                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-500/10 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500 hover:text-white dark:bg-red-500/20 dark:text-red-400 dark:hover:bg-red-500 dark:hover:text-white"
+                                title="Reject Leave"
+                              >
+                                <XIcon /> Reject
+                              </button>
                             )}
                           </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
-                          {/* Actions */}
-                          {canPerformAction(od) && (hasManagePermission || hasManagePermission) && (
-                            <div className="flex items-center gap-2 mt-auto">
-                              {hasManagePermission && (
-                                <button
-                                  onClick={() => handleAction(od._id, 'od', 'approve')}
-                                  className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-green-500/10 py-2 text-sm font-semibold text-green-600 transition-colors hover:bg-green-500 hover:text-white dark:bg-green-500/20 dark:text-green-400 dark:hover:bg-green-500 dark:hover:text-white"
-                                  title="Approve OD"
-                                >
-                                  <CheckIcon /> Approve
-                                </button>
-                              )}
-                              {hasManagePermission && (
-                                <button
-                                  onClick={() => handleAction(od._id, 'od', 'reject')}
-                                  className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-500/10 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500 hover:text-white dark:bg-red-500/20 dark:text-red-400 dark:hover:bg-red-500 dark:hover:text-white"
-                                  title="Reject OD"
-                                >
-                                  <XIcon /> Reject
-                                </button>
-                              )}
+              {/* Pending ODs */}
+              {pendingODs.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2">
+                    <BriefcaseIcon />
+                    Pending ODs ({pendingODs.length})
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                    {pendingODs.map((od) => (
+                      <div key={od._id} className="group relative flex flex-col justify-between rounded-xl border border-slate-200 border-l-4 border-l-purple-500 bg-white p-5 shadow-sm transition-all hover:shadow-md dark:border-slate-700 dark:bg-slate-800">
+
+                        {/* Header */}
+                        <div className="flex items-start justify-between gap-3 mb-4">
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-purple-100 text-purple-600 font-bold dark:bg-purple-900/30 dark:text-purple-400">
+                              {getEmployeeInitials({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: '' } as any)}
+                            </div>
+                            <div>
+                              <h4 className="font-semibold text-slate-900 dark:text-white line-clamp-1">
+                                {od.employeeId?.first_name} {od.employeeId?.last_name}
+                              </h4>
+                              <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                                <span>{od.employeeId?.emp_no}</span>
+                                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                                {(od.employeeId as any)?.department?.name && (
+                                  <>
+                                    <span>•</span>
+                                    {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                                    <span className="truncate max-w-[100px]">{(od.employeeId as any)?.department?.name}</span>
+                                  </>
+                                )}
+                              </p>
+                            </div>
+                          </div>
+                          <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(od.status)}`}>
+                            {od.status.replace('_', ' ')}
+                          </span>
+                        </div>
+
+                        {/* Content */}
+                        <div className="mb-4 space-y-2.5">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-slate-500 dark:text-slate-400">Type</span>
+                            <span className="font-medium text-slate-700 dark:text-slate-300">{od.odType}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-slate-500 dark:text-slate-400">Duration</span>
+                            <span className="font-medium text-slate-700 dark:text-slate-300">{od.numberOfDays} Day{od.numberOfDays !== 1 ? 's' : ''}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-slate-500 dark:text-slate-400">Dates</span>
+                            <span className="font-medium text-slate-700 dark:text-slate-300 text-right">
+                              {formatDate(od.fromDate)}
+                              {od.fromDate !== od.toDate && ` - ${formatDate(od.toDate)}`}
+                            </span>
+                          </div>
+                          {od.purpose && (
+                            <div className="pt-2 mt-2 border-t border-slate-100 dark:border-slate-700">
+                              <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 italic">
+                                "{od.purpose}"
+                              </p>
                             </div>
                           )}
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
 
-                {totalPending === 0 && (
-                  <div className="text-center py-12 text-slate-500">
-                    No pending approvals
+                        {/* Actions */}
+                        {canPerformAction(od) && (hasManagePermission || hasManagePermission) && (
+                          <div className="flex items-center gap-2 mt-auto">
+                            {hasManagePermission && (
+                              <button
+                                onClick={() => handleAction(od._id, 'od', 'approve')}
+                                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-green-500/10 py-2 text-sm font-semibold text-green-600 transition-colors hover:bg-green-500 hover:text-white dark:bg-green-500/20 dark:text-green-400 dark:hover:bg-green-500 dark:hover:text-white"
+                                title="Approve OD"
+                              >
+                                <CheckIcon /> Approve
+                              </button>
+                            )}
+                            {hasManagePermission && (
+                              <button
+                                onClick={() => handleAction(od._id, 'od', 'reject')}
+                                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-500/10 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500 hover:text-white dark:bg-red-500/20 dark:text-red-400 dark:hover:bg-red-500 dark:hover:text-white"
+                                title="Reject OD"
+                              >
+                                <XIcon /> Reject
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
-                )}
-              </div>
-            )
+                </div>
+              )}
+
+              {totalPending === 0 && (
+                <div className="text-center py-12 text-slate-500">
+                  No pending approvals
+                </div>
+              )}
+            </div>
+          )
           }
 
 
         </div >
 
-        {/* Apply Leave/OD Dialog */}
-        {
-          showApplyDialog && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowApplyDialog(false)} />
-              <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-                {/* Type Toggle */}
-                <div className="flex gap-2 mb-6">
-                  <button
-                    onClick={() => setApplyType('leave')}
-                    className={`flex-1 py-3 rounded-xl font-medium text-sm transition-all ${applyType === 'leave'
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
-                      }`}
-                  >
-                    <span className="flex items-center justify-center gap-2">
-                      <CalendarIcon />
-                      Leave
-                    </span>
-                  </button>
-                  <button
-                    onClick={() => setApplyType('od')}
-                    className={`flex-1 py-3 rounded-xl font-medium text-sm transition-all ${applyType === 'od'
-                      ? 'bg-purple-500 text-white'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
-                      }`}
-                  >
-                    <span className="flex items-center justify-center gap-2">
-                      <BriefcaseIcon />
-                      On Duty
-                    </span>
-                  </button>
-                </div>
+        {showApplyDialog && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setShowApplyDialog(false)} />
+            <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-white/20 dark:border-slate-800 shadow-2xl p-8 animate-in zoom-in-95 duration-300">
+              {/* Type Toggle */}
+              <div className="inline-flex w-full p-1 rounded-2xl bg-slate-100/50 dark:bg-slate-800/50 border border-slate-200/50 dark:border-slate-700/50 mb-8">
+                <button
+                  type="button"
+                  onClick={() => setApplyType('leave')}
+                  className={`flex-1 py-3.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${applyType === 'leave'
+                    ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm shadow-blue-500/10'
+                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                    }`}
+                >
+                  <div className="flex items-center justify-center gap-2">
+                    <CalendarIcon className="w-4 h-4" />
+                    Leave Request
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setApplyType('od')}
+                  className={`flex-1 py-3.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${applyType === 'od'
+                    ? 'bg-white dark:bg-slate-700 text-purple-600 dark:text-purple-400 shadow-sm shadow-purple-500/10'
+                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                    }`}
+                >
+                  <div className="flex items-center justify-center gap-2">
+                    <BriefcaseIcon className="w-4 h-4" />
+                    On Duty
+                  </div>
+                </button>
+              </div>
 
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-6">
-                  Apply for {applyType === 'leave' ? 'Leave' : 'On Duty'}
+              <div className="mb-8">
+                <h2 className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300">
+                  New {applyType === 'leave' ? 'Leave' : 'OD'} Application
                 </h2>
+                <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">Please fill in the details of your request.</p>
+              </div>
 
-                <form onSubmit={handleApply} className="space-y-4">
-                  {/* Apply For - Employee Selection (Hidden for Employees) */}
-                  {currentUser?.role !== 'employee' && (
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                        Apply For Employee *
-                      </label>
-                      <div className="relative">
-                        {selectedEmployee ? (
-                          <div className="flex items-center justify-between p-3 rounded-xl border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20">
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-semibold">
-                                {getEmployeeInitials(selectedEmployee)}
-                              </div>
-                              <div>
-                                <div className="font-medium text-slate-900 dark:text-white">
-                                  {getEmployeeName(selectedEmployee)}
-                                </div>
-                                <div className="text-xs text-slate-500 dark:text-slate-400">
-                                  {selectedEmployee.emp_no}
-                                </div>
-                                <div className="flex flex-wrap gap-1.5 mt-1">
-                                  {selectedEmployee.department?.name && (
-                                    <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-800 dark:text-blue-300 rounded">
-                                      {selectedEmployee.department.name}
-                                    </span>
-                                  )}
-                                  {selectedEmployee.designation?.name && (
-                                    <span className="px-1.5 py-0.5 text-[10px] font-medium bg-green-100 text-green-700 dark:bg-green-800 dark:text-green-300 rounded">
-                                      {selectedEmployee.designation.name}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSelectedEmployee(null);
-                                setFormData(prev => ({ ...prev, contactNumber: '' }));
-                              }}
-                              className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                            >
-                              <XIcon />
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="relative">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                              <SearchIcon />
-                            </div>
-                            <input
-                              type="text"
-                              value={employeeSearch}
-                              onChange={(e) => {
-                                setEmployeeSearch(e.target.value);
-                                setShowEmployeeDropdown(true);
-                              }}
-                              onFocus={() => setShowEmployeeDropdown(true)}
-                              placeholder="Search by name, emp no, or department..."
-                              className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20"
-                            />
-
-                            {/* Employee Dropdown */}
-                            {showEmployeeDropdown && (
-                              <div className="absolute z-10 w-full mt-1 max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-800">
-                                {filteredEmployees.length === 0 ? (
-                                  <div className="p-4 text-center text-sm text-slate-500">
-                                    {employeeSearch ? 'No employees found' : 'Type to search employees'}
-                                  </div>
-                                ) : (
-                                  filteredEmployees.slice(0, 10).map((emp, idx) => (
-                                    <button
-                                      key={emp._id || emp.emp_no || `emp-${idx}`}
-                                      type="button"
-                                      onClick={() => handleSelectEmployee(emp)}
-                                      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700 text-left transition-colors border-b border-slate-100 dark:border-slate-700 last:border-0"
-                                    >
-                                      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-slate-400 to-slate-500 flex items-center justify-center text-white text-sm font-medium">
-                                        {getEmployeeInitials(emp)}
-                                      </div>
-                                      <div className="flex-1 min-w-0">
-                                        <div className="font-medium text-slate-900 dark:text-white truncate">
-                                          {getEmployeeName(emp)}
-                                        </div>
-                                        <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                                          {emp.emp_no} • {emp.department?.name || 'No Department'} • {emp.designation?.name || 'No Designation'}
-                                        </div>
-                                      </div>
-                                    </button>
-                                  ))
-                                )}
-                                {filteredEmployees.length > 10 && (
-                                  <div className="px-4 py-2 text-center text-xs text-slate-500 bg-slate-50 dark:bg-slate-900">
-                                    Showing 10 of {filteredEmployees.length} results. Type more to filter.
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Type Selection */}
+              <form onSubmit={handleApply} className="space-y-4">
+                {/* Apply For - Employee Selection (Hidden for Employees) */}
+                {currentUser?.role !== 'employee' && (
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      {applyType === 'leave' ? 'Leave Type' : 'OD Type'} *
+                      Apply For Employee *
                     </label>
-                    {((applyType === 'leave' && leaveTypes.length === 1) || (applyType === 'od' && odTypes.length === 1)) ? (
-                      <div className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-700 dark:text-white">
-                        <span className="font-medium">
-                          {applyType === 'leave'
-                            ? leaveTypes[0]?.name || leaveTypes[0]?.code
-                            : odTypes[0]?.name || odTypes[0]?.code}
-                        </span>
-                        <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">(Only type available)</span>
-                      </div>
-                    ) : (
-                      <select
-                        value={applyType === 'leave' ? formData.leaveType : formData.odType}
-                        onChange={(e) => {
-                          if (applyType === 'leave') {
-                            setFormData({ ...formData, leaveType: e.target.value });
-                          } else {
-                            setFormData({ ...formData, odType: e.target.value });
-                          }
-                        }}
-                        required
-                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                      >
-                        <option value="">Select {applyType === 'leave' ? 'leave' : 'OD'} type</option>
-                        {(applyType === 'leave' ? leaveTypes : odTypes).map((type) => (
-                          <option key={type.code} value={type.code}>{type.name}</option>
-                        ))}
-                      </select>
-                    )}
-                  </div>
+                    <div className="relative">
+                      {selectedEmployee ? (
+                        <div className="flex items-center justify-between p-3 rounded-xl border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-semibold">
+                              {getEmployeeInitials(selectedEmployee!)}
+                            </div>
+                            <div>
+                              <div className="font-medium text-slate-900 dark:text-white">
+                                {getEmployeeName(selectedEmployee!)}
+                              </div>
+                              <div className="text-xs text-slate-500 dark:text-slate-400">
+                                {selectedEmployee!.emp_no}
+                              </div>
+                              <div className="flex flex-wrap gap-1.5 mt-1">
+                                {selectedEmployee!.department?.name && (
+                                  <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-800 dark:text-blue-300 rounded">
+                                    {selectedEmployee!.department.name}
+                                  </span>
+                                )}
+                                {selectedEmployee.designation?.name && (
+                                  <span className="px-1.5 py-0.5 text-[10px] font-medium bg-green-100 text-green-700 dark:bg-green-800 dark:text-green-300 rounded">
+                                    {selectedEmployee.designation.name}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedEmployee(null);
+                              setFormData(prev => ({ ...prev, contactNumber: '' }));
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                          >
+                            <XIcon />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="relative">
+                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <SearchIcon />
+                          </div>
+                          <input
+                            type="text"
+                            value={employeeSearch}
+                            onChange={(e) => {
+                              setEmployeeSearch(e.target.value);
+                              setShowEmployeeDropdown(true);
+                            }}
+                            onFocus={() => setShowEmployeeDropdown(true)}
+                            placeholder="Search by name, emp no, or department..."
+                            className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20"
+                          />
 
-                  {/* OD Type Extended Selector */}
-                  {applyType === 'od' && (
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">Duration Type</label>
-                      <div className="grid grid-cols-3 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setFormData({ ...formData, odType_extended: 'full_day', isHalfDay: false })}
-                          className={`py-2.5 px-3 rounded-lg text-sm font-medium transition-all ${formData.odType_extended === 'full_day'
-                            ? 'bg-purple-500 text-white shadow-md'
-                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300'
-                            }`}
-                        >
-                          Full Day
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setFormData({ ...formData, odType_extended: 'half_day', isHalfDay: true, halfDayType: formData.halfDayType || 'first_half' })}
-                          className={`py-2.5 px-3 rounded-lg text-sm font-medium transition-all ${formData.odType_extended === 'half_day'
-                            ? 'bg-purple-500 text-white shadow-md'
-                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300'
-                            }`}
-                        >
-                          Half Day
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setFormData({ ...formData, odType_extended: 'hours', isHalfDay: false })}
-                          className={`py-2.5 px-3 rounded-lg text-sm font-medium transition-all ${formData.odType_extended === 'hours'
-                            ? 'bg-purple-500 text-white shadow-md'
-                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300'
-                            }`}
-                        >
-                          Hours
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Date Selection Logic */}
-                  {((applyType === 'leave' && formData.isHalfDay) ||
-                    (applyType === 'od' && (formData.odType_extended === 'half_day' || formData.odType_extended === 'hours'))) ? (
-                    /* Single Date Input for Half Day / Specific Hours */
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Date *</label>
-                      <input
-                        type="date"
-                        min={new Date().toISOString().split('T')[0]}
-                        value={formData.fromDate} // Use fromDate as the single source of truth
-                        onChange={(e) => setFormData({ ...formData, fromDate: e.target.value, toDate: e.target.value })}
-                        required
-                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                      />
-                    </div>
-                  ) : (
-                    /* Two Date Inputs for Full Day */
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">From Date *</label>
-                        <input
-                          type="date"
-                          min={new Date().toISOString().split('T')[0]}
-                          value={formData.fromDate}
-                          onChange={(e) => setFormData({ ...formData, fromDate: e.target.value })}
-                          required
-                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">To Date *</label>
-                        <input
-                          type="date"
-                          min={new Date().toISOString().split('T')[0]}
-                          value={formData.toDate}
-                          onChange={(e) => setFormData({ ...formData, toDate: e.target.value })}
-                          required
-                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Hour-Based OD - Time Pickers */}
-                  {applyType === 'od' && formData.odType_extended === 'hours' && (
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Start Time *</label>
-                        <input
-                          type="time"
-                          value={formData.odStartTime || ''}
-                          onChange={(e) => setFormData({ ...formData, odStartTime: e.target.value })}
-                          required
-                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">End Time *</label>
-                        <input
-                          type="time"
-                          value={formData.odEndTime || ''}
-                          onChange={(e) => setFormData({ ...formData, odEndTime: e.target.value })}
-                          required
-                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                        />
-                      </div>
-                      {formData.odStartTime && formData.odEndTime && (
-                        <div className="col-span-2 p-3 rounded-lg bg-white dark:bg-slate-800 border border-fuchsia-200 dark:border-fuchsia-700">
-                          {(() => {
-                            const [startH, startM] = formData.odStartTime!.split(':').map(Number);
-                            const [endH, endM] = formData.odEndTime!.split(':').map(Number);
-                            const startMin = startH * 60 + startM;
-                            const endMin = endH * 60 + endM;
-
-                            if (startMin >= endMin) {
-                              return <p className="text-sm text-red-600 dark:text-red-400">⚠️ End time must be after start time</p>;
-                            }
-
-                            const durationMin = endMin - startMin;
-                            const hours = Math.floor(durationMin / 60);
-                            const mins = durationMin % 60;
-
-                            if (durationMin > 480) {
-                              return <p className="text-sm text-red-600 dark:text-red-400">⚠️ Maximum duration is 8 hours</p>;
-                            }
-
-                            return (
-                              <p className="text-sm font-medium text-fuchsia-700 dark:text-fuchsia-300">
-                                ✓ Duration: {hours}h {mins}m
-                              </p>
-                            );
-                          })()}
+                          {/* Employee Dropdown */}
+                          {showEmployeeDropdown && (
+                            <div className="absolute z-10 w-full mt-1 max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-800">
+                              {filteredEmployees.length === 0 ? (
+                                <div className="p-4 text-center text-sm text-slate-500">
+                                  {employeeSearch ? 'No employees found' : 'Type to search employees'}
+                                </div>
+                              ) : (
+                                filteredEmployees.slice(0, 10).map((emp, idx) => (
+                                  <button
+                                    key={emp._id || emp.emp_no || `emp-${idx}`}
+                                    type="button"
+                                    onClick={() => handleSelectEmployee(emp)}
+                                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700 text-left transition-colors border-b border-slate-100 dark:border-slate-700 last:border-0"
+                                  >
+                                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-slate-400 to-slate-500 flex items-center justify-center text-white text-sm font-medium">
+                                      {getEmployeeInitials(emp)}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="font-medium text-slate-900 dark:text-white truncate">
+                                        {getEmployeeName(emp)}
+                                      </div>
+                                      <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                                        {emp.emp_no} • {emp.department?.name || 'No Department'} • {emp.designation?.name || 'No Designation'}
+                                      </div>
+                                    </div>
+                                  </button>
+                                ))
+                              )}
+                              {filteredEmployees.length > 10 && (
+                                <div className="px-4 py-2 text-center text-xs text-slate-500 bg-slate-50 dark:bg-slate-900">
+                                  Showing 10 of {filteredEmployees.length} results. Type more to filter.
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
-                  )}
+                  </div>
+                )}
 
-                  {/* Half Day Selection (Leave Only - OD handled above via buttons) */}
-                  {applyType === 'leave' && (
-                    <div className="flex items-center gap-4">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={formData.isHalfDay}
-                          onChange={(e) => {
-                            if (!e.target.checked) {
-                              setFormData({ ...formData, isHalfDay: false, halfDayType: null });
-                            } else {
-                              // When toggling half-day on, sync toDate to fromDate and default to first_half
-                              setFormData({ ...formData, isHalfDay: true, halfDayType: formData.halfDayType || 'first_half', toDate: formData.fromDate });
-                            }
-                          }}
-                          className="w-4 h-4 rounded border-slate-300"
-                        />
-                        <span className="text-sm text-slate-700 dark:text-slate-300">Half Day</span>
-                      </label>
-                      {formData.isHalfDay && (
-                        <select
-                          value={formData.halfDayType || 'first_half'}
-                          onChange={(e) => setFormData({ ...formData, halfDayType: e.target.value as any })}
-                          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                        >
-                          <option value="first_half">First Half</option>
-                          <option value="second_half">Second Half</option>
-                        </select>
-                      )}
+                {/* Type Selection */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    {applyType === 'leave' ? 'Leave Type' : 'OD Type'} *
+                  </label>
+                  {((applyType === 'leave' && leaveTypes.length === 1) || (applyType === 'od' && odTypes.length === 1)) ? (
+                    <div className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-700 dark:text-white">
+                      <span className="font-medium">
+                        {applyType === 'leave'
+                          ? leaveTypes[0]?.name || leaveTypes[0]?.code
+                          : odTypes[0]?.name || odTypes[0]?.code}
+                      </span>
+                      <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">(Only type available)</span>
                     </div>
-                  )}
-
-                  {/* Purpose */}
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Purpose *</label>
-                    <textarea
-                      value={formData.purpose}
-                      onChange={(e) => setFormData({ ...formData, purpose: e.target.value })}
+                  ) : (
+                    <select
+                      value={applyType === 'leave' ? formData.leaveType : formData.odType}
+                      onChange={(e) => {
+                        if (applyType === 'leave') {
+                          setFormData({ ...formData, leaveType: e.target.value });
+                        } else {
+                          setFormData({ ...formData, odType: e.target.value });
+                        }
+                      }}
                       required
-                      rows={2}
                       className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                      placeholder="Reason..."
+                    >
+                      <option value="">Select {applyType === 'leave' ? 'leave' : 'OD'} type</option>
+                      {(applyType === 'leave' ? leaveTypes : odTypes).map((type) => (
+                        <option key={type.code} value={type.code}>{type.name}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                {/* OD Type Extended Selector */}
+                {applyType === 'od' && (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">Duration Type</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, odType_extended: 'full_day', isHalfDay: false })}
+                        className={`py-2.5 px-3 rounded-lg text-sm font-medium transition-all ${formData.odType_extended === 'full_day'
+                          ? 'bg-purple-500 text-white shadow-md'
+                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300'
+                          }`}
+                      >
+                        Full Day
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, odType_extended: 'half_day', isHalfDay: true, halfDayType: formData.halfDayType || 'first_half' })}
+                        className={`py-2.5 px-3 rounded-lg text-sm font-medium transition-all ${formData.odType_extended === 'half_day'
+                          ? 'bg-purple-500 text-white shadow-md'
+                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300'
+                          }`}
+                      >
+                        Half Day
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, odType_extended: 'hours', isHalfDay: false })}
+                        className={`py-2.5 px-3 rounded-lg text-sm font-medium transition-all ${formData.odType_extended === 'hours'
+                          ? 'bg-purple-500 text-white shadow-md'
+                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300'
+                          }`}
+                      >
+                        Hours
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Date Selection Logic */}
+                {((applyType === 'leave' && formData.isHalfDay) ||
+                  (applyType === 'od' && (formData.odType_extended === 'half_day' || formData.odType_extended === 'hours'))) ? (
+                  /* Single Date Input for Half Day / Specific Hours */
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Date *</label>
+                    <input
+                      type="date"
+                      min={new Date().toISOString().split('T')[0]}
+                      value={formData.fromDate} // Use fromDate as the single source of truth
+                      onChange={(e) => setFormData({ ...formData, fromDate: e.target.value, toDate: e.target.value })}
+                      required
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                     />
                   </div>
-
-                  {/* OD Specific - Place & Evidence */}
-                  {applyType === 'od' && (
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Place to Visit *</label>
-                        <input
-                          type="text"
-                          value={formData.placeVisited}
-                          onChange={(e) => setFormData({ ...formData, placeVisited: e.target.value })}
-                          required
-                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                          placeholder="Location"
-                        />
-                      </div>
-                      <LocationPhotoCapture
-                        required={(getModuleConfig('OD')?.settings as any)?.requirePhotoEvidence || false}
-                        label="Photo Evidence"
-                        onCapture={(loc, photo) => {
-                          setEvidenceFile(photo.file);
-                          setLocationData(loc);
-                        }}
-                        onClear={() => {
-                          setEvidenceFile(null);
-                          setLocationData(null);
-                        }}
+                ) : (
+                  /* Two Date Inputs for Full Day */
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">From Date *</label>
+                      <input
+                        type="date"
+                        min={new Date().toISOString().split('T')[0]}
+                        value={formData.fromDate}
+                        onChange={(e) => setFormData({ ...formData, fromDate: e.target.value })}
+                        required
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                       />
                     </div>
-                  )}
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">To Date *</label>
+                      <input
+                        type="date"
+                        min={new Date().toISOString().split('T')[0]}
+                        value={formData.toDate}
+                        onChange={(e) => setFormData({ ...formData, toDate: e.target.value })}
+                        required
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      />
+                    </div>
+                  </div>
+                )}
 
-                  {/* Contact Number */}
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Contact Number *</label>
-                    <input
-                      type="tel"
-                      value={formData.contactNumber}
-                      onChange={(e) => setFormData({ ...formData, contactNumber: e.target.value })}
-                      required
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                {/* Hour-Based OD - Time Pickers */}
+                {applyType === 'od' && formData.odType_extended === 'hours' && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Start Time *</label>
+                      <input
+                        type="time"
+                        value={formData.odStartTime || ''}
+                        onChange={(e) => setFormData({ ...formData, odStartTime: e.target.value })}
+                        required
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">End Time *</label>
+                      <input
+                        type="time"
+                        value={formData.odEndTime || ''}
+                        onChange={(e) => setFormData({ ...formData, odEndTime: e.target.value })}
+                        required
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      />
+                    </div>
+                    {formData.odStartTime && formData.odEndTime && (
+                      <div className="col-span-2 p-3 rounded-lg bg-white dark:bg-slate-800 border border-fuchsia-200 dark:border-fuchsia-700">
+                        {(() => {
+                          const [startH, startM] = formData.odStartTime!.split(':').map(Number);
+                          const [endH, endM] = formData.odEndTime!.split(':').map(Number);
+                          const startMin = startH * 60 + startM;
+                          const endMin = endH * 60 + endM;
+
+                          if (startMin >= endMin) {
+                            return <p className="text-sm text-red-600 dark:text-red-400">⚠️ End time must be after start time</p>;
+                          }
+
+                          const durationMin = endMin - startMin;
+                          const hours = Math.floor(durationMin / 60);
+                          const mins = durationMin % 60;
+
+                          if (durationMin > 480) {
+                            return <p className="text-sm text-red-600 dark:text-red-400">⚠️ Maximum duration is 8 hours</p>;
+                          }
+
+                          return (
+                            <p className="text-sm font-medium text-fuchsia-700 dark:text-fuchsia-300">
+                              ✓ Duration: {hours}h {mins}m
+                            </p>
+                          );
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Half Day Selection (Leave Only - OD handled above via buttons) */}
+                {applyType === 'leave' && (
+                  <div className="flex items-center gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.isHalfDay}
+                        onChange={(e) => {
+                          if (!e.target.checked) {
+                            setFormData({ ...formData, isHalfDay: false, halfDayType: null });
+                          } else {
+                            // When toggling half-day on, sync toDate to fromDate and default to first_half
+                            setFormData({ ...formData, isHalfDay: true, halfDayType: formData.halfDayType || 'first_half', toDate: formData.fromDate });
+                          }
+                        }}
+                        className="w-4 h-4 rounded border-slate-300"
+                      />
+                      <span className="text-sm text-slate-700 dark:text-slate-300">Half Day</span>
+                    </label>
+                    {formData.isHalfDay && (
+                      <select
+                        value={formData.halfDayType || 'first_half'}
+                        onChange={(e) => setFormData({ ...formData, halfDayType: e.target.value as any })}
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      >
+                        <option value="first_half">First Half</option>
+                        <option value="second_half">Second Half</option>
+                      </select>
+                    )}
+                  </div>
+                )}
+
+                {/* Purpose */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Purpose *</label>
+                  <textarea
+                    value={formData.purpose}
+                    onChange={(e) => setFormData({ ...formData, purpose: e.target.value })}
+                    required
+                    rows={2}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    placeholder="Reason..."
+                  />
+                </div>
+
+                {/* OD Specific - Place & Evidence */}
+                {applyType === 'od' && (
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Place to Visit *</label>
+                      <input
+                        type="text"
+                        value={formData.placeVisited}
+                        onChange={(e) => setFormData({ ...formData, placeVisited: e.target.value })}
+                        required
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                        placeholder="Location"
+                      />
+                    </div>
+                    <LocationPhotoCapture
+                      required={(getModuleConfig('OD')?.settings as any)?.requirePhotoEvidence || false}
+                      label="Photo Evidence"
+                      onCapture={(loc, photo) => {
+                        setEvidenceFile(photo.file);
+                        setLocationData(loc);
+                      }}
+                      onClear={() => {
+                        setEvidenceFile(null);
+                        setLocationData(null);
+                      }}
                     />
                   </div>
+                )}
 
-                  {/* Remarks */}
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Remarks</label>
-                    <input
-                      type="text"
-                      value={formData.remarks}
-                      onChange={(e) => setFormData({ ...formData, remarks: e.target.value })}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                    />
-                  </div>
+                {/* Contact Number */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Contact Number *</label>
+                  <input
+                    type="tel"
+                    value={formData.contactNumber}
+                    onChange={(e) => setFormData({ ...formData, contactNumber: e.target.value })}
+                    required
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  />
+                </div>
 
-                  {/* Actions */}
-                  <div className="flex gap-3 pt-2">
-                    <button
-                      type="button"
-                      onClick={() => setShowApplyDialog(false)}
-                      className="flex-1 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      className={`flex-1 py-2.5 text-sm font-bold text-white rounded-xl ${applyType === 'leave' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-purple-600 hover:bg-purple-700'}`}
-                    >
-                      Apply {applyType === 'leave' ? 'Leave' : 'OD'}
-                    </button>
-                  </div>
-                </form>
-              </div>
+                {/* Remarks */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Remarks</label>
+                  <input
+                    type="text"
+                    value={formData.remarks}
+                    onChange={(e) => setFormData({ ...formData, remarks: e.target.value })}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  />
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowApplyDialog(false)}
+                    className="flex-1 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className={`flex-1 py-2.5 text-sm font-bold text-white rounded-xl ${applyType === 'leave' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-purple-600 hover:bg-purple-700'}`}
+                  >
+                    Apply {applyType === 'leave' ? 'Leave' : 'OD'}
+                  </button>
+                </div>
+              </form>
             </div>
-          )
+          </div>
+        )
         }
 
         {/* Detail Dialog */}
         {
           showDetailDialog && selectedItem && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-              <div className="w-full max-w-4xl md:w-[60vw] rounded-xl bg-white shadow-2xl overflow-hidden dark:bg-slate-800 flex flex-col h-[80vh]">
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setShowDetailDialog(false)} />
+              <div className="relative z-50 w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-3xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-white/20 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
                 {/* Header */}
-                <div className={`shrink-0 px-6 py-4 border-b border-white/10 ${detailType === 'leave'
-                  ? 'bg-blue-600'
-                  : 'bg-purple-500'
+                <div className={`shrink-0 px-8 py-6 border-b border-white/10 ${detailType === 'leave'
+                  ? 'bg-gradient-to-r from-blue-600 to-blue-500'
+                  : 'bg-gradient-to-r from-purple-600 to-purple-500'
                   }`}>
                   <div className="flex items-center justify-between text-white">
-                    <h2 className="text-base font-bold flex items-center gap-2">
-                      {detailType === 'leave' ? <CalendarIcon className="w-5 h-5" /> : <BriefcaseIcon className="w-5 h-5" />}
-                      {detailType === 'leave' ? 'Leave Details' : 'OD Details'}
-                    </h2>
-
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-xl bg-white/20 flex items-center justify-center backdrop-blur-md">
+                        {detailType === 'leave' ? <CalendarIcon className="w-5 h-5" /> : <BriefcaseIcon className="w-5 h-5" />}
+                      </div>
+                      <div>
+                        <h2 className="text-lg font-black uppercase tracking-wider">
+                          {detailType === 'leave' ? 'Leave Details' : 'OD Details'}
+                        </h2>
+                        <p className="text-white/70 text-[10px] font-bold uppercase tracking-widest">Workspace Management</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setShowDetailDialog(false)}
+                      className="h-8 w-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
+                    >
+                      <XIcon className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
 
-                {/* Content - Spacious Layout */}
-                <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                  {/* Top Section: Employee & Meta */}
-                  <div className="flex justify-between items-start gap-4">
+                {/* Content */}
+                <div className="flex-1 overflow-y-auto p-8 space-y-8">
+                  {/* Top Section: Employee & Status */}
+                  <div className="flex justify-between items-start gap-6">
                     <div className="flex items-center gap-4">
-                      <div className={`w-14 h-14 rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-sm ${detailType === 'leave'
-                        ? 'bg-blue-600'
-                        : 'bg-purple-600'
+                      <div className={`w-16 h-16 rounded-2xl flex items-center justify-center text-white font-black text-2xl shadow-xl ${detailType === 'leave'
+                        ? 'bg-blue-600 shadow-blue-500/20'
+                        : 'bg-purple-600 shadow-purple-500/20'
                         }`}>
-                        {(selectedItem.employeeId?.employee_name?.[0] || selectedItem.emp_no?.[0] || 'E').toUpperCase()}
+                        {(selectedItem!.employeeId?.employee_name?.[0] || selectedItem!.emp_no?.[0] || 'E').toUpperCase()}
                       </div>
                       <div>
-                        <h3 className="font-bold text-slate-900 dark:text-white text-lg leading-tight">
-                          {selectedItem.employeeId?.employee_name || selectedItem.emp_no}
+                        <h3 className="font-black text-slate-900 dark:text-white text-xl">
+                          {selectedItem!.employeeId?.employee_name || selectedItem!.emp_no}
                         </h3>
-                        <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mt-0.5">
-                          {selectedItem.employeeId?.emp_no}
+                        <p className="text-sm text-slate-500 font-bold uppercase tracking-tight">
+                          {selectedItem!.employeeId?.emp_no}
                         </p>
-                        <div className="flex gap-2 mt-1.5">
-                          {selectedItem.department?.name && (
-                            <span className="px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-600">
-                              {selectedItem.department.name}
+                        <div className="flex gap-2 mt-2">
+                          {selectedItem!.department?.name && (
+                            <span className="px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700">
+                              {selectedItem!.department.name}
                             </span>
                           )}
-                          {selectedItem.designation?.name && (
-                            <span className="px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-600">
-                              {selectedItem.designation.name}
+                          {selectedItem!.designation?.name && (
+                            <span className="px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700">
+                              {selectedItem!.designation.name}
                             </span>
                           )}
                         </div>
                       </div>
                     </div>
 
-                    <div className="text-right">
-                      <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold capitalize mb-1 ${getStatusColor(selectedItem.status)}`}>
-                        {selectedItem.status?.replace('_', ' ')}
+                    <div className="flex flex-col items-end gap-2">
+                      <span className={`px-4 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest border ${getStatusColor(selectedItem!.status)}`}>
+                        {selectedItem!.status?.replace('_', ' ')}
                       </span>
-                      <p className="text-xs text-slate-400 dark:text-slate-500 flex items-center justify-end gap-1.5">
+                      <div className="flex items-center gap-1.5 text-slate-400 font-bold text-[10px] uppercase tracking-wider">
                         <ClockIcon className="w-3.5 h-3.5" />
-                        {formatDate((selectedItem as any).createdAt || selectedItem.appliedAt)}
-                      </p>
+                        Applied {formatDate((selectedItem! as any).createdAt || selectedItem!.appliedAt)}
+                      </div>
                     </div>
                   </div>
 
@@ -2555,23 +2533,23 @@ export default function LeavesPage() {
                   <div className="grid grid-cols-4 gap-4 bg-slate-50 dark:bg-slate-700/30 p-6 rounded-xl">
                     <div className="space-y-1">
                       <p className="text-xs uppercase font-bold text-slate-400 tracking-wider">Type</p>
-                      <p className="text-sm font-bold text-slate-900 dark:text-white truncate" title={detailType === 'leave' ? (selectedItem as LeaveApplication).leaveType : (selectedItem as ODApplication).odType}>
-                        {((detailType === 'leave' ? (selectedItem as LeaveApplication).leaveType : (selectedItem as ODApplication).odType) || '').replace('_', ' ')}
+                      <p className="text-sm font-bold text-slate-900 dark:text-white truncate" title={detailType === 'leave' ? (selectedItem! as LeaveApplication).leaveType : (selectedItem! as ODApplication).odType}>
+                        {((detailType === 'leave' ? (selectedItem! as LeaveApplication).leaveType : (selectedItem! as ODApplication).odType) || '').replace('_', ' ')}
                       </p>
                     </div>
                     <div className="space-y-1">
                       <p className="text-xs uppercase font-bold text-slate-400 tracking-wider">Duration</p>
                       <p className="text-sm font-bold text-slate-900 dark:text-white">
-                        {selectedItem.numberOfDays}d {selectedItem.isHalfDay ? `(${(selectedItem.halfDayType?.replace('_', ' ') || 'first half')})` : ''}
+                        {selectedItem!.numberOfDays}d {selectedItem!.isHalfDay ? `(${(selectedItem!.halfDayType?.replace('_', ' ') || 'first half')})` : ''}
                       </p>
                     </div>
                     <div className="space-y-1">
                       <p className="text-xs uppercase font-bold text-slate-400 tracking-wider">From</p>
-                      <p className="text-sm font-bold text-slate-900 dark:text-white">{formatDate(selectedItem.fromDate)}</p>
+                      <p className="text-sm font-bold text-slate-900 dark:text-white">{formatDate(selectedItem!.fromDate)}</p>
                     </div>
                     <div className="space-y-1">
                       <p className="text-xs uppercase font-bold text-slate-400 tracking-wider">To</p>
-                      <p className="text-sm font-bold text-slate-900 dark:text-white">{formatDate(selectedItem.toDate)}</p>
+                      <p className="text-sm font-bold text-slate-900 dark:text-white">{formatDate(selectedItem!.toDate)}</p>
                     </div>
                   </div>
 
@@ -2580,20 +2558,20 @@ export default function LeavesPage() {
                     <div className="bg-slate-50 dark:bg-slate-900/50 p-6 rounded-xl">
                       <p className="text-xs uppercase font-bold text-slate-400 mb-2 tracking-wider">Purpose / Reason</p>
                       <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
-                        {selectedItem.purpose || 'No purpose specified'}
+                        {selectedItem!.purpose || 'No purpose specified'}
                       </p>
                     </div>
 
-                    {detailType === 'od' && (selectedItem as ODApplication).placeVisited && (
+                    {detailType === 'od' && (selectedItem! as ODApplication).placeVisited && (
                       <div className="flex items-center gap-4 text-sm text-slate-700 dark:text-slate-300 px-2 mt-2">
                         <span className="font-bold text-xs uppercase text-slate-400 tracking-wider min-w-[80px]">Location:</span>
-                        <span className="font-medium">{(selectedItem as ODApplication).placeVisited}</span>
+                        <span className="font-medium">{(selectedItem! as ODApplication).placeVisited}</span>
                       </div>
                     )}
-                    {selectedItem.contactNumber && (
+                    {selectedItem!.contactNumber && (
                       <div className="flex items-center gap-4 text-sm text-slate-700 dark:text-slate-300 px-2 mt-2">
                         <span className="font-bold text-xs uppercase text-slate-400 tracking-wider min-w-[80px]">Contact:</span>
-                        <span className="font-medium text-slate-900 dark:text-white">{selectedItem.contactNumber}</span>
+                        <span className="font-medium text-slate-900 dark:text-white">{selectedItem!.contactNumber}</span>
                       </div>
                     )}
                   </div>
@@ -2686,392 +2664,394 @@ export default function LeavesPage() {
                 </div>
               </div>
             </div>
-          )}
-      </div>
+          )
+        }
+      </div >
 
 
-      {/* Edit Dialog */}
-      {
-        showEditDialog && selectedItem && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowEditDialog(false)} />
-            <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
-              <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-6">
-                Edit {detailType === 'leave' ? 'Leave' : 'OD'}
+      {showEditDialog && selectedItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setShowEditDialog(false)} />
+          <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-white/20 dark:border-slate-800 shadow-2xl p-8 animate-in zoom-in-95 duration-300">
+            <div className="mb-8">
+              <h2 className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300">
+                Edit {detailType === 'leave' ? 'Leave' : 'OD'} Application
               </h2>
+              <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">Modify the existing request details.</p>
+            </div>
 
-              <form onSubmit={async (e) => {
-                e.preventDefault();
-                try {
-                  const user = auth.getUser();
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              try {
+                const user = auth.getUser();
 
-                  // Clean up data before sending - convert empty strings to null for enum fields
-                  const cleanedData: any = {
-                    ...editFormData,
-                    // Fix halfDayType - must be null if not half day, or valid enum value
-                    halfDayType: editFormData.isHalfDay
-                      ? (editFormData.halfDayType || 'first_half')
-                      : (editFormData.halfDayType === '' || editFormData.halfDayType === null ? null : editFormData.halfDayType),
-                    // For hour-based OD, ensure times are properly set
-                    odStartTime: (detailType === 'od' && editFormData.odType_extended === 'hours')
-                      ? (editFormData.odStartTime || null)
-                      : (editFormData.odStartTime === '' ? null : editFormData.odStartTime),
-                    odEndTime: (detailType === 'od' && editFormData.odType_extended === 'hours')
-                      ? (editFormData.odEndTime || null)
-                      : (editFormData.odEndTime === '' ? null : editFormData.odEndTime),
-                    changeReason: `Edited by ${user?.name || 'Admin'}`,
-                  };
+                // Clean up data before sending - convert empty strings to null for enum fields
+                const cleanedData: any = {
+                  ...editFormData,
+                  // Fix halfDayType - must be null if not half day, or valid enum value
+                  halfDayType: editFormData.isHalfDay
+                    ? (editFormData.halfDayType || 'first_half')
+                    : (editFormData.halfDayType === '' || editFormData.halfDayType === null ? null : editFormData.halfDayType),
+                  // For hour-based OD, ensure times are properly set
+                  odStartTime: (detailType === 'od' && editFormData.odType_extended === 'hours')
+                    ? (editFormData.odStartTime || null)
+                    : (editFormData.odStartTime === '' ? null : editFormData.odStartTime),
+                  odEndTime: (detailType === 'od' && editFormData.odType_extended === 'hours')
+                    ? (editFormData.odEndTime || null)
+                    : (editFormData.odEndTime === '' ? null : editFormData.odEndTime),
+                  changeReason: `Edited by ${user?.name || 'Admin'}`,
+                };
 
-                  // If Super Admin is changing status, include statusChangeReason
-                  if (isSuperAdmin && editFormData.status && editFormData.status !== selectedItem.status) {
-                    cleanedData.statusChangeReason = `Status changed from ${selectedItem.status} to ${editFormData.status}`;
-                  }
+                // If Super Admin is changing status, include statusChangeReason
+                if (isSuperAdmin && editFormData.status && editFormData.status !== selectedItem.status) {
+                  cleanedData.statusChangeReason = `Status changed from ${selectedItem.status} to ${editFormData.status}`;
+                }
 
-                  const response = detailType === 'leave'
-                    ? await api.updateLeave(selectedItem._id, cleanedData)
-                    : await api.updateOD(selectedItem._id, cleanedData);
+                const response = detailType === 'leave'
+                  ? await api.updateLeave(selectedItem._id, cleanedData)
+                  : await api.updateOD(selectedItem._id, cleanedData);
 
-                  if (response.success) {
-                    Swal.fire({
-                      icon: 'success',
-                      title: 'Success!',
-                      text: `${detailType === 'leave' ? 'Leave' : 'OD'} updated successfully`,
-                      timer: 2000,
-                      showConfirmButton: false,
-                    });
-                    setShowEditDialog(false);
-                    setShowDetailDialog(false);
-                    setSelectedItem(null);
-                    setIsChangeHistoryExpanded(false);
-                    loadData();
-                  } else {
-                    Swal.fire({
-                      icon: 'error',
-                      title: 'Failed',
-                      text: response.error || 'Failed to update',
-                    });
-                  }
-                } catch (err: any) {
+                if (response.success) {
+                  Swal.fire({
+                    icon: 'success',
+                    title: 'Success!',
+                    text: `${detailType === 'leave' ? 'Leave' : 'OD'} updated successfully`,
+                    timer: 2000,
+                    showConfirmButton: false,
+                  });
+                  setShowEditDialog(false);
+                  setShowDetailDialog(false);
+                  setSelectedItem(null);
+                  setIsChangeHistoryExpanded(false);
+                  loadData();
+                } else {
                   Swal.fire({
                     icon: 'error',
-                    title: 'Error',
-                    text: err.message || 'Failed to update',
+                    title: 'Failed',
+                    text: response.error || 'Failed to update',
                   });
                 }
-              }} className="space-y-4">
-                {/* Type */}
+              } catch (err: any) {
+                Swal.fire({
+                  icon: 'error',
+                  title: 'Error',
+                  text: err.message || 'Failed to update',
+                });
+              }
+            }} className="space-y-4">
+              {/* Type */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  {detailType === 'leave' ? 'Leave Type' : 'OD Type'} *
+                </label>
+                <input
+                  type="text"
+                  value={detailType === 'leave' ? editFormData.leaveType : editFormData.odType}
+                  onChange={(e) => setEditFormData({
+                    ...editFormData,
+                    [detailType === 'leave' ? 'leaveType' : 'odType']: e.target.value,
+                  })}
+                  required
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+
+              {/* Dates */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">From Date *</label>
+                  <input
+                    type="date"
+                    value={editFormData.fromDate}
+                    onChange={(e) => {
+                      const newFromDate = e.target.value;
+                      // Auto-set end date = start date for half-day and hour-based OD
+                      const newToDate = (detailType === 'od' && (editFormData.odType_extended === 'half_day' || editFormData.odType_extended === 'hours'))
+                        ? newFromDate
+                        : editFormData.toDate;
+                      setEditFormData({ ...editFormData, fromDate: newFromDate, toDate: newToDate });
+                    }}
+                    required
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  />
+                </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    {detailType === 'leave' ? 'Leave Type' : 'OD Type'} *
+                    To Date *
+                    {/* Today button for hour-based OD */}
+                    {detailType === 'od' && editFormData.odType_extended === 'hours' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const today = new Date().toISOString().split('T')[0];
+                          setEditFormData({ ...editFormData, fromDate: today, toDate: today });
+                        }}
+                        className="ml-2 text-xs px-2 py-1 rounded-lg bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50 transition-colors"
+                      >
+                        Today
+                      </button>
+                    )}
                   </label>
                   <input
-                    type="text"
-                    value={detailType === 'leave' ? editFormData.leaveType : editFormData.odType}
-                    onChange={(e) => setEditFormData({
-                      ...editFormData,
-                      [detailType === 'leave' ? 'leaveType' : 'odType']: e.target.value,
-                    })}
+                    type="date"
+                    value={editFormData.toDate}
+                    onChange={(e) => {
+                      // For half-day and hour-based OD, prevent changing end date separately
+                      if (detailType === 'od' && (editFormData.odType_extended === 'half_day' || editFormData.odType_extended === 'hours')) {
+                        // Auto-set to start date
+                        setEditFormData({ ...editFormData, toDate: editFormData.fromDate });
+                      } else {
+                        setEditFormData({ ...editFormData, toDate: e.target.value });
+                      }
+                    }}
                     required
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    disabled={detailType === 'od' && (editFormData.odType_extended === 'half_day' || editFormData.odType_extended === 'hours')}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white disabled:bg-slate-100 dark:disabled:bg-slate-700 disabled:cursor-not-allowed"
                   />
+                  {detailType === 'od' && (editFormData.odType_extended === 'half_day' || editFormData.odType_extended === 'hours') && (
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      End date is automatically set to start date for {editFormData.odType_extended === 'half_day' ? 'half-day' : 'hour-based'} OD
+                    </p>
+                  )}
                 </div>
+              </div>
 
-                {/* Dates */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">From Date *</label>
-                    <input
-                      type="date"
-                      value={editFormData.fromDate}
-                      onChange={(e) => {
-                        const newFromDate = e.target.value;
-                        // Auto-set end date = start date for half-day and hour-based OD
-                        const newToDate = (detailType === 'od' && (editFormData.odType_extended === 'half_day' || editFormData.odType_extended === 'hours'))
-                          ? newFromDate
-                          : editFormData.toDate;
-                        setEditFormData({ ...editFormData, fromDate: newFromDate, toDate: newToDate });
-                      }}
-                      required
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      To Date *
-                      {/* Today button for hour-based OD */}
-                      {detailType === 'od' && editFormData.odType_extended === 'hours' && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const today = new Date().toISOString().split('T')[0];
-                            setEditFormData({ ...editFormData, fromDate: today, toDate: today });
-                          }}
-                          className="ml-2 text-xs px-2 py-1 rounded-lg bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50 transition-colors"
-                        >
-                          Today
-                        </button>
-                      )}
-                    </label>
-                    <input
-                      type="date"
-                      value={editFormData.toDate}
-                      onChange={(e) => {
-                        // For half-day and hour-based OD, prevent changing end date separately
-                        if (detailType === 'od' && (editFormData.odType_extended === 'half_day' || editFormData.odType_extended === 'hours')) {
-                          // Auto-set to start date
-                          setEditFormData({ ...editFormData, toDate: editFormData.fromDate });
-                        } else {
-                          setEditFormData({ ...editFormData, toDate: e.target.value });
-                        }
-                      }}
-                      required
-                      disabled={detailType === 'od' && (editFormData.odType_extended === 'half_day' || editFormData.odType_extended === 'hours')}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white disabled:bg-slate-100 dark:disabled:bg-slate-700 disabled:cursor-not-allowed"
-                    />
-                    {detailType === 'od' && (editFormData.odType_extended === 'half_day' || editFormData.odType_extended === 'hours') && (
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        End date is automatically set to start date for {editFormData.odType_extended === 'half_day' ? 'half-day' : 'hour-based'} OD
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* OD Duration Type (OD only) */}
-                {detailType === 'od' && (
-                  <div className="space-y-3">
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">OD Duration Type *</label>
-                    <div className="grid grid-cols-3 gap-3">
-                      <button
-                        type="button"
-                        onClick={() => setEditFormData({ ...editFormData, odType_extended: 'full_day', isHalfDay: false, halfDayType: null, odStartTime: null, odEndTime: null })}
-                        className={`p-3 rounded-lg border-2 transition-all ${editFormData.odType_extended === 'full_day'
-                          ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
-                          : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
-                          }`}
-                      >
-                        <div className="text-sm font-semibold text-slate-900 dark:text-white">Full Day</div>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const endDate = editFormData.fromDate || editFormData.toDate;
-                          setEditFormData({
-                            ...editFormData,
-                            odType_extended: 'half_day',
-                            isHalfDay: true,
-                            halfDayType: editFormData.halfDayType || 'first_half',
-                            odStartTime: null,
-                            odEndTime: null,
-                            toDate: endDate || editFormData.fromDate
-                          });
-                        }}
-                        className={`p-3 rounded-lg border-2 transition-all ${editFormData.odType_extended === 'half_day'
-                          ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
-                          : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
-                          }`}
-                      >
-                        <div className="text-sm font-semibold text-slate-900 dark:text-white">Half Day</div>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const endDate = editFormData.fromDate || editFormData.toDate;
-                          setEditFormData({
-                            ...editFormData,
-                            odType_extended: 'hours',
-                            isHalfDay: false,
-                            halfDayType: null,
-                            toDate: endDate || editFormData.fromDate
-                          });
-                        }}
-                        className={`p-3 rounded-lg border-2 transition-all ${editFormData.odType_extended === 'hours'
-                          ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
-                          : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
-                          }`}
-                      >
-                        <div className="text-sm font-semibold text-slate-900 dark:text-white">Specific Hours</div>
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Hour Input (for hour-based OD) */}
-                {detailType === 'od' && editFormData.odType_extended === 'hours' && (
-                  <div className="space-y-4 p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-700">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Start Time *</label>
-                        <input
-                          type="time"
-                          value={editFormData.odStartTime || ''}
-                          onChange={(e) => setEditFormData({ ...editFormData, odStartTime: e.target.value })}
-                          required={editFormData.odType_extended === 'hours'}
-                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">End Time *</label>
-                        <input
-                          type="time"
-                          value={editFormData.odEndTime || ''}
-                          onChange={(e) => setEditFormData({ ...editFormData, odEndTime: e.target.value })}
-                          required={editFormData.odType_extended === 'hours'}
-                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                        />
-                      </div>
-                    </div>
-                    {editFormData.odStartTime && editFormData.odEndTime && (
-                      <div className="p-3 bg-white dark:bg-slate-800 rounded-lg border border-purple-300 dark:border-purple-600">
-                        <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                          {(() => {
-                            const [startHour, startMin] = editFormData.odStartTime.split(':').map(Number);
-                            const [endHour, endMin] = editFormData.odEndTime.split(':').map(Number);
-                            const startMinutes = startHour * 60 + startMin;
-                            const endMinutes = endHour * 60 + endMin;
-                            const durationMinutes = endMinutes - startMinutes;
-
-                            if (durationMinutes <= 0) {
-                              return <span className="text-red-600 dark:text-red-400">❌ End time must be after start time</span>;
-                            }
-
-                            const hours = Math.floor(durationMinutes / 60);
-                            const mins = durationMinutes % 60;
-
-                            if (durationMinutes > 480) {
-                              return <span className="text-red-600 dark:text-red-400">❌ Maximum duration is 8 hours</span>;
-                            }
-
-                            return (
-                              <span className="text-green-600 dark:text-green-400">
-                                ✓ Duration: {hours}h {mins}m
-                              </span>
-                            );
-                          })()}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Half Day (for non-hour-based OD) */}
-                {!(detailType === 'od' && editFormData.odType_extended === 'hours') && (
-                  <div className="flex items-center gap-4">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={editFormData.isHalfDay}
-                        onChange={(e) => setEditFormData({ ...editFormData, isHalfDay: e.target.checked, halfDayType: e.target.checked ? (editFormData.halfDayType || 'first_half') : null })}
-                        className="w-4 h-4 rounded border-slate-300"
-                      />
-                      <span className="text-sm text-slate-700 dark:text-slate-300">Half Day</span>
-                    </label>
-                    {editFormData.isHalfDay && (
-                      <select
-                        value={editFormData.halfDayType || ''}
-                        onChange={(e) => setEditFormData({ ...editFormData, halfDayType: e.target.value as 'first_half' | 'second_half' | null || null })}
-                        className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                      >
-                        <option value="first_half">First Half</option>
-                        <option value="second_half">Second Half</option>
-                      </select>
-                    )}
-                  </div>
-                )}
-
-                {/* Purpose */}
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Purpose *</label>
-                  <textarea
-                    value={editFormData.purpose}
-                    onChange={(e) => setEditFormData({ ...editFormData, purpose: e.target.value })}
-                    required
-                    rows={3}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  />
-                </div>
-
-                {/* Place Visited (OD only) */}
-                {detailType === 'od' && (
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Place Visited *</label>
-                    <input
-                      type="text"
-                      value={editFormData.placeVisited}
-                      onChange={(e) => setEditFormData({ ...editFormData, placeVisited: e.target.value })}
-                      required
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                    />
-                  </div>
-                )}
-
-                {/* Contact Number */}
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Contact Number *</label>
-                  <input
-                    type="tel"
-                    value={editFormData.contactNumber}
-                    onChange={(e) => setEditFormData({ ...editFormData, contactNumber: e.target.value })}
-                    required
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  />
-                </div>
-
-                {/* Remarks */}
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Remarks</label>
-                  <input
-                    type="text"
-                    value={editFormData.remarks}
-                    onChange={(e) => setEditFormData({ ...editFormData, remarks: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  />
-                </div>
-
-                {/* Status (Super Admin only) */}
-                {isSuperAdmin && (
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Status (Super Admin)
-                    </label>
-                    <select
-                      value={editFormData.status || selectedItem.status}
-                      onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              {/* OD Duration Type (OD only) */}
+              {detailType === 'od' && (
+                <div className="space-y-3">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">OD Duration Type *</label>
+                  <div className="grid grid-cols-3 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setEditFormData({ ...editFormData, odType_extended: 'full_day', isHalfDay: false, halfDayType: null, odStartTime: null, odEndTime: null })}
+                      className={`p-3 rounded-lg border-2 transition-all ${editFormData.odType_extended === 'full_day'
+                        ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
+                        : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                        }`}
                     >
-                      <option value="pending">Pending</option>
-                      <option value="hod_approved">HOD Approved</option>
-                      <option value="hr_approved">HR Approved</option>
-                      <option value="approved">Approved</option>
-                      <option value="hod_rejected">HOD Rejected</option>
-                      <option value="hr_rejected">HR Rejected</option>
-                      <option value="rejected">Rejected</option>
-                      <option value="cancelled">Cancelled</option>
-                    </select>
+                      <div className="text-sm font-semibold text-slate-900 dark:text-white">Full Day</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const endDate = editFormData.fromDate || editFormData.toDate;
+                        setEditFormData({
+                          ...editFormData,
+                          odType_extended: 'half_day',
+                          isHalfDay: true,
+                          halfDayType: editFormData.halfDayType || 'first_half',
+                          odStartTime: null,
+                          odEndTime: null,
+                          toDate: endDate || editFormData.fromDate
+                        });
+                      }}
+                      className={`p-3 rounded-lg border-2 transition-all ${editFormData.odType_extended === 'half_day'
+                        ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
+                        : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                        }`}
+                    >
+                      <div className="text-sm font-semibold text-slate-900 dark:text-white">Half Day</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const endDate = editFormData.fromDate || editFormData.toDate;
+                        setEditFormData({
+                          ...editFormData,
+                          odType_extended: 'hours',
+                          isHalfDay: false,
+                          halfDayType: null,
+                          toDate: endDate || editFormData.fromDate
+                        });
+                      }}
+                      className={`p-3 rounded-lg border-2 transition-all ${editFormData.odType_extended === 'hours'
+                        ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
+                        : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                        }`}
+                    >
+                      <div className="text-sm font-semibold text-slate-900 dark:text-white">Specific Hours</div>
+                    </button>
                   </div>
-                )}
-
-                {/* Buttons */}
-                <div className="flex gap-3 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => setShowEditDialog(false)}
-                    className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 px-4 py-2.5 text-sm font-semibold text-white rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600"
-                  >
-                    Save Changes
-                  </button>
                 </div>
-              </form>
-            </div>
+              )}
+
+              {/* Hour Input (for hour-based OD) */}
+              {detailType === 'od' && editFormData.odType_extended === 'hours' && (
+                <div className="space-y-4 p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-700">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Start Time *</label>
+                      <input
+                        type="time"
+                        value={editFormData.odStartTime || ''}
+                        onChange={(e) => setEditFormData({ ...editFormData, odStartTime: e.target.value })}
+                        required={editFormData.odType_extended === 'hours'}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">End Time *</label>
+                      <input
+                        type="time"
+                        value={editFormData.odEndTime || ''}
+                        onChange={(e) => setEditFormData({ ...editFormData, odEndTime: e.target.value })}
+                        required={editFormData.odType_extended === 'hours'}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      />
+                    </div>
+                  </div>
+                  {editFormData.odStartTime && editFormData.odEndTime && (
+                    <div className="p-3 bg-white dark:bg-slate-800 rounded-lg border border-purple-300 dark:border-purple-600">
+                      <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                        {(() => {
+                          const [startHour, startMin] = editFormData.odStartTime.split(':').map(Number);
+                          const [endHour, endMin] = editFormData.odEndTime.split(':').map(Number);
+                          const startMinutes = startHour * 60 + startMin;
+                          const endMinutes = endHour * 60 + endMin;
+                          const durationMinutes = endMinutes - startMinutes;
+
+                          if (durationMinutes <= 0) {
+                            return <span className="text-red-600 dark:text-red-400">❌ End time must be after start time</span>;
+                          }
+
+                          const hours = Math.floor(durationMinutes / 60);
+                          const mins = durationMinutes % 60;
+
+                          if (durationMinutes > 480) {
+                            return <span className="text-red-600 dark:text-red-400">❌ Maximum duration is 8 hours</span>;
+                          }
+
+                          return (
+                            <span className="text-green-600 dark:text-green-400">
+                              ✓ Duration: {hours}h {mins}m
+                            </span>
+                          );
+                        })()}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Half Day (for non-hour-based OD) */}
+              {!(detailType === 'od' && editFormData.odType_extended === 'hours') && (
+                <div className="flex items-center gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editFormData.isHalfDay}
+                      onChange={(e) => setEditFormData({ ...editFormData, isHalfDay: e.target.checked, halfDayType: e.target.checked ? (editFormData.halfDayType || 'first_half') : null })}
+                      className="w-4 h-4 rounded border-slate-300"
+                    />
+                    <span className="text-sm text-slate-700 dark:text-slate-300">Half Day</span>
+                  </label>
+                  {editFormData.isHalfDay && (
+                    <select
+                      value={editFormData.halfDayType || ''}
+                      onChange={(e) => setEditFormData({ ...editFormData, halfDayType: e.target.value as 'first_half' | 'second_half' | null || null })}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    >
+                      <option value="first_half">First Half</option>
+                      <option value="second_half">Second Half</option>
+                    </select>
+                  )}
+                </div>
+              )}
+
+              {/* Purpose */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Purpose *</label>
+                <textarea
+                  value={editFormData.purpose}
+                  onChange={(e) => setEditFormData({ ...editFormData, purpose: e.target.value })}
+                  required
+                  rows={3}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+
+              {/* Place Visited (OD only) */}
+              {detailType === 'od' && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Place Visited *</label>
+                  <input
+                    type="text"
+                    value={editFormData.placeVisited}
+                    onChange={(e) => setEditFormData({ ...editFormData, placeVisited: e.target.value })}
+                    required
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  />
+                </div>
+              )}
+
+              {/* Contact Number */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Contact Number *</label>
+                <input
+                  type="tel"
+                  value={editFormData.contactNumber}
+                  onChange={(e) => setEditFormData({ ...editFormData, contactNumber: e.target.value })}
+                  required
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+
+              {/* Remarks */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Remarks</label>
+                <input
+                  type="text"
+                  value={editFormData.remarks}
+                  onChange={(e) => setEditFormData({ ...editFormData, remarks: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+
+              {/* Status (Super Admin only) */}
+              {isSuperAdmin && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    Status (Super Admin)
+                  </label>
+                  <select
+                    value={editFormData.status || selectedItem.status}
+                    onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  >
+                    <option value="pending">Pending</option>
+                    <option value="hod_approved">HOD Approved</option>
+                    <option value="hr_approved">HR Approved</option>
+                    <option value="approved">Approved</option>
+                    <option value="hod_rejected">HOD Rejected</option>
+                    <option value="hr_rejected">HR Rejected</option>
+                    <option value="rejected">Rejected</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                </div>
+              )}
+
+              {/* Buttons */}
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowEditDialog(false)}
+                  className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 px-4 py-2.5 text-sm font-semibold text-white rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
           </div>
-        )
+        </div>
+      )
       }
-    </div>
+    </div >
   );
 }
 
