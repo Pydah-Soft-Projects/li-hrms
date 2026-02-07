@@ -102,7 +102,7 @@ export default function PayRegisterPage() {
   const router = useRouter();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [payRegisters, setPayRegisters] = useState<PayRegisterSummary[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<Record<string, boolean>>({});
   const [syncing, setSyncing] = useState(false);
   const [shifts, setShifts] = useState<Shift[]>([]);
@@ -1151,52 +1151,20 @@ export default function PayRegisterPage() {
       <div className="pointer-events-none fixed inset-0 bg-gradient-to-br from-blue-50/40 via-blue-50/35 to-transparent dark:from-slate-900/60 dark:via-slate-900/65 dark:to-slate-900/80" />
 
       <div className="relative z-10 mx-auto max-w-[1920px] p-6">
-        {/* Header - skeleton when loading, real content otherwise */}
-        {loading ? (
-          <>
-            <div className="mb-1 flex flex-wrap items-center justify-between gap-4 pb-2">
-              <div className="flex flex-wrap items-center gap-4">
-                <div className="flex items-center gap-3 shrink-0">
-                  <div className="flex flex-col gap-1.5">
-                    <div className="h-6 w-28 animate-pulse rounded bg-slate-200 dark:bg-slate-700" />
-                    <div className="h-3 w-40 animate-pulse rounded bg-slate-200 dark:bg-slate-700" />
-                  </div>
-                  <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 hidden md:block" />
-                </div>
-                <div className="flex flex-nowrap items-center gap-1.5 p-1 bg-slate-100/50 dark:bg-slate-800/40 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
-                  <div className="h-8 w-[120px] animate-pulse rounded-lg bg-slate-200 dark:bg-slate-700" />
-                  <div className="h-8 w-[120px] animate-pulse rounded-lg bg-slate-200 dark:bg-slate-700" />
-                  <div className="h-8 w-[100px] animate-pulse rounded-lg bg-slate-200 dark:bg-slate-700" />
-                </div>
-                <div className="flex items-center gap-0.5 p-0.5 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
-                  <div className="h-8 w-8 animate-pulse rounded-lg bg-slate-200 dark:bg-slate-700" />
-                  <div className="h-8 w-[100px] animate-pulse rounded-lg bg-slate-200 dark:bg-slate-700" />
-                  <div className="h-8 w-8 animate-pulse rounded-lg bg-slate-200 dark:bg-slate-700" />
-                </div>
-              </div>
-              <div className="flex flex-nowrap items-center gap-3 shrink-0">
-                <div className="h-9 w-24 animate-pulse rounded-xl bg-slate-200 dark:bg-slate-700" />
-                <div className="h-9 w-32 animate-pulse rounded-xl bg-slate-200 dark:bg-slate-700" />
-                <div className="h-9 w-28 animate-pulse rounded-xl bg-slate-200 dark:bg-slate-700" />
-                <div className="h-9 w-24 animate-pulse rounded-xl bg-slate-200 dark:bg-slate-700" />
-              </div>
-            </div>
-            <div className="w-full mt-1 mb-0 px-1">
-              <div className="h-3 w-48 animate-pulse rounded bg-slate-200 dark:bg-slate-700" />
-            </div>
-          </>
-        ) : (
+        {/* Header - real content; only Period and Employee count use skeleton when loading */}
         <div className="mb-1 flex flex-wrap items-center justify-between gap-4 pb-2">
           <div className="flex flex-wrap items-center gap-4">
             {/* Title Section */}
             <div className="flex items-center gap-3 shrink-0">
               <div className="flex flex-col">
                 <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white whitespace-nowrap">Pay Register</h1>
-                {payrollStartDate && payrollEndDate && (
+                {loading ? (
+                  <div className="h-3 w-40 animate-pulse rounded bg-slate-200 dark:bg-slate-700 mt-0.5" />
+                ) : payrollStartDate && payrollEndDate ? (
                   <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
                     Period: {new Date(payrollStartDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} - {new Date(payrollEndDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                   </p>
-                )}
+                ) : null}
               </div>
 
               <div className="h-6 w-px bg-slate-200 dark:bg-slate-800 hidden md:block" />
@@ -1379,24 +1347,27 @@ export default function PayRegisterPage() {
             })()}
           </div>
 
-          {/* Employee count - own row below header (full width), so buttons stay on the right of row 1 */}
-          {(paginationTotal > 0 || payRegisters.length > 0) && (
+          {/* Employee count - own row below header; skeleton when loading */}
+          {(loading || paginationTotal > 0 || payRegisters.length > 0) && (
             <div className="w-full mt-1 mb-0 px-1 basis-full">
-              <p className="text-xs font-medium text-slate-600 dark:text-slate-400">
-                {paginationTotal > 0
-                  ? (() => {
-                      const from = (page - 1) * PAGE_SIZE + 1;
-                      const to = Math.min(page * PAGE_SIZE, paginationTotal);
-                      return paginationTotal <= PAGE_SIZE
-                        ? `${paginationTotal} employee${paginationTotal !== 1 ? 's' : ''}`
-                        : `Showing ${from}–${to} of ${paginationTotal} employees`;
-                    })()
-                  : `${payRegisters.length} employee${payRegisters.length !== 1 ? 's' : ''} listed`}
-              </p>
+              {loading ? (
+                <div className="h-3 w-48 animate-pulse rounded bg-slate-200 dark:bg-slate-700" />
+              ) : (
+                <p className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                  {paginationTotal > 0
+                    ? (() => {
+                        const from = (page - 1) * PAGE_SIZE + 1;
+                        const to = Math.min(page * PAGE_SIZE, paginationTotal);
+                        return paginationTotal <= PAGE_SIZE
+                          ? `${paginationTotal} employee${paginationTotal !== 1 ? 's' : ''}`
+                          : `Showing ${from}–${to} of ${paginationTotal} employees`;
+                      })()
+                    : `${payRegisters.length} employee${payRegisters.length !== 1 ? 's' : ''} listed`}
+                </p>
+              )}
             </div>
           )}
         </div>
-        )}
 
         {/* Progress Bar for Bulk Calculation */}
         {calculationProgress && (

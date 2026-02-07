@@ -1473,14 +1473,26 @@ exports.calculatePayrollBulk = async (req, res) => {
       });
     }
 
-    // Dynamic query for active employees
+    // Include active employees + employees who left in this payroll month
+    const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+    const [year, monthNum] = month.split('-').map(Number);
+    const { startDate, endDate } = await getPayrollDateRange(year, monthNum);
+    const leftStart = new Date(startDate);
+    leftStart.setHours(0, 0, 0, 0);
+    const leftEnd = new Date(endDate);
+    leftEnd.setHours(23, 59, 59, 999);
+
     console.log('[Bulk Payroll] Req.scopeFilter:', JSON.stringify(req.scopeFilter));
 
-    const query = { ...req.scopeFilter, is_active: true };
+    const query = { ...req.scopeFilter };
     if (divisionId) query.division_id = divisionId;
     if (departmentId) query.department_id = departmentId;
+    query.$or = [
+      { is_active: true, leftDate: null },
+      { leftDate: { $gte: leftStart, $lte: leftEnd } },
+    ];
 
-    console.log('[Bulk Payroll] Final Query:', JSON.stringify(query));
+    console.log('[Bulk Payroll] Final Query (incl. left in month):', JSON.stringify(query));
     console.log('[Bulk Payroll] Filters - Division:', divisionId, 'Department:', departmentId, 'Month:', month);
 
     const employees = await Employee.find(query).select('_id');
@@ -1490,10 +1502,11 @@ exports.calculatePayrollBulk = async (req, res) => {
     if (!employees || employees.length === 0) {
       return res.status(200).json({
         success: false,
-        message: 'No active employees found matching the filters',
+        message: 'No employees found matching the filters (active or left in this payroll month)',
       });
     }
 
+    const employeeIds = employees.map((e) => e._id.toString());
     const { payrollQueue } = require('../../shared/jobs/queueManager');
     const job = await payrollQueue.add('payroll_bulk_calculate', {
       action: 'payroll_bulk_calculate',
@@ -1501,7 +1514,8 @@ exports.calculatePayrollBulk = async (req, res) => {
       divisionId: divisionId === 'all' ? undefined : divisionId,
       departmentId: departmentId === 'all' ? undefined : departmentId,
       strategy,
-      userId: req.user._id
+      userId: req.user._id,
+      employeeIds
     });
 
     res.status(202).json({
