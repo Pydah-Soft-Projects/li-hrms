@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
-import RecentActivityFeed from '@/components/attendance/RecentActivityFeed';
 
 interface DashboardStats {
   totalEmployees: number;
@@ -29,18 +28,10 @@ interface DashboardStats {
   departmentODDistribution: Record<string, number>;
 }
 
-interface RecentActivity {
-  _id: string;
-  type: 'leave' | 'od' | 'permission' | 'attendance' | 'employee' | 'user';
-  title: string;
-  description: string;
-  timestamp: string;
-  status?: string;
-}
 interface DashboardCardProps {
   title: string;
   value: string | number;
-  description: string;
+  description: React.ReactNode;
   change?: string;
   statusBadge?: React.ReactNode;
 }
@@ -69,7 +60,6 @@ const DashboardCard = ({ title, value, description, change, statusBadge }: Dashb
 export default function SuperAdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [recentActivities, setRecentActivities] = useState<RecentActivity[]>([]);
   const [currentDate] = useState(new Date());
 
   useEffect(() => {
@@ -79,124 +69,15 @@ export default function SuperAdminDashboard() {
   const loadDashboardData = async () => {
     try {
       setLoading(true);
-
-      const res = await api.getDashboardStats();
+      // Superadmin uses analytics endpoint for full stats (todayAbsent, yesterdayPresent, etc.)
+      const res = await api.getDashboardAnalytics();
       if (res.success && res.data) {
         setStats(res.data);
       }
-
-      // Load recent activities separately as it's a different UI section/refresh logic
-      await loadRecentActivities();
     } catch (err) {
       console.error('Error loading dashboard data:', err);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const loadRecentActivities = async () => {
-    try {
-      const [leavesRes, odsRes, employeesRes] = await Promise.all([
-        api.getLeaves({ limit: 5 }),
-        api.getODs({ limit: 5 }),
-        api.getEmployees({ is_active: true })
-      ]);
-
-      const activities: RecentActivity[] = [];
-      const now = Date.now();
-
-      // Add recent leaves
-      if (leavesRes.success) {
-        const leaves = leavesRes.data?.data || leavesRes.data || [];
-        leaves.slice(0, 3).forEach((leave: any) => {
-          activities.push({
-            _id: leave._id,
-            type: 'leave',
-            title: `${leave.employeeId?.employee_name || 'Employee'} - ${leave.leaveType || 'Leave'}`,
-            description: leave.purpose || 'Leave application',
-            timestamp: leave.appliedAt || leave.createdAt,
-            status: leave.status,
-          });
-        });
-      }
-
-      // Add recent ODs
-      if (odsRes.success) {
-        const ods = odsRes.data?.data || odsRes.data || [];
-        ods.slice(0, 3).forEach((od: any) => {
-          activities.push({
-            _id: od._id,
-            type: 'od',
-            title: `${od.employeeId?.employee_name || 'Employee'} - ${od.odType || 'On Duty'}`,
-            description: od.purpose || 'On duty application',
-            timestamp: od.appliedAt || od.createdAt,
-            status: od.status,
-          });
-        });
-      }
-
-      // TODO: Add permissions when API is available
-
-      // Sort by timestamp and take most recent
-      activities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      setRecentActivities(activities.slice(0, 10));
-    } catch (err) {
-      console.error('Error loading recent activities:', err);
-    }
-  };
-
-  const formatTimeAgo = (timestamp: string) => {
-    const now = new Date();
-    const time = new Date(timestamp);
-    const diffInSeconds = Math.floor((now.getTime() - time.getTime()) / 1000);
-
-    if (diffInSeconds < 60) return 'Just now';
-    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
-    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
-    if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)}d ago`;
-    return time.toLocaleDateString();
-  };
-
-  const getActivityIcon = (type: string) => {
-    switch (type) {
-      case 'leave':
-        return (
-          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-          </svg>
-        );
-      case 'od':
-        return (
-          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-        );
-      case 'permission':
-        return (
-          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        );
-      default:
-        return (
-          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        );
-    }
-  };
-
-  const getStatusColor = (status?: string) => {
-    switch (status) {
-      case 'approved':
-        return 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400';
-      case 'rejected':
-        return 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400';
-      case 'pending':
-        return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400';
-      default:
-        return 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-400';
     }
   };
 
@@ -257,8 +138,15 @@ export default function SuperAdminDashboard() {
     },
     {
       title: 'Total Employees',
-      value: stats?.totalEmployees || 0,
-      change: `${stats?.activeEmployees || 0} active`,
+      value: stats?.activeEmployees ?? 0,
+      change: (() => {
+        const total = stats?.totalEmployees ?? 0;
+        const active = stats?.activeEmployees ?? 0;
+        const inactive = Math.max(0, total - active);
+        return (
+          <span className="text-orange-500 dark:text-orange-400 font-medium text-[10px] md:text-xs">{inactive} inactive</span>
+        );
+      })(),
       icon: (
         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -357,10 +245,10 @@ export default function SuperAdminDashboard() {
                 key={index}
                 title={card.title}
                 value={card.value}
-                description={card.change.toString()}
+                description={typeof card.change === 'string' ? card.change : card.change}
                 statusBadge={
-                  card.change.toString().includes('absent') || card.change.toString().includes('No') ? (
-                    null // No badge for negative/neutral states on top right, per preference, or use consistent styling
+                  (typeof card.change === 'string' && (card.change.includes('absent') || card.change.includes('No'))) ? (
+                    null
                   ) : (
                     <span className="flex items-center gap-1">
                       <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">

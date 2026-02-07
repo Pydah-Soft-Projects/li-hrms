@@ -40,24 +40,6 @@ const userSchema = new mongoose.Schema(
         enum: ['super_admin', 'sub_admin', 'hr', 'manager', 'hod', 'employee'],
       },
     ], // Multi-role support
-    department: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Department',
-      default: null,
-    },
-    departmentType: {
-      type: String,
-      enum: ['single', 'multiple'],
-      default: 'single',
-    },
-
-    // Legacy field - kept for backward compatibility if any
-    departments: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Department',
-      },
-    ],
     employeeId: {
       type: String,
       unique: true,
@@ -83,12 +65,6 @@ const userSchema = new mongoose.Schema(
         }
       }
     }, // Data access scope
-    allowedDivisions: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Division',
-      }
-    ],
     divisionMapping: [
       {
         division: {

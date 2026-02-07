@@ -153,30 +153,36 @@ exports.applyDataScope = async (req, res, next) => {
         }
         break;
 
-      case 'department':
-        // User's department data
-        if (req.user.department) {
-          req.scopeFilter = { department: req.user.department };
+      case 'department': {
+        const deptIds = (req.user.divisionMapping || []).flatMap(m =>
+          (m.departments || []).map(d => (d?._id || d).toString())
+        );
+        if (deptIds.length > 0) {
+          req.scopeFilter = { $or: [{ department: { $in: deptIds } }, { department_id: { $in: deptIds } }] };
         } else if (req.user.employeeRef) {
-          const employee = await Employee.findById(req.user.employeeRef).select('department');
-          req.scopeFilter = employee?.department ? { department: employee.department } : { _id: null };
+          const employee = await Employee.findById(req.user.employeeRef).select('department_id department');
+          const empDept = employee?.department_id || employee?.department;
+          req.scopeFilter = empDept ? { $or: [{ department: empDept }, { department_id: empDept }] } : { _id: null };
         } else {
           req.scopeFilter = { _id: null };
         }
         break;
+      }
 
-      case 'assigned':
-        // Assigned departments from scopeConfig
+      case 'assigned': {
         const scopeConfig = req.roleAssignment?.scopeConfig;
         if (scopeConfig?.allDepartments) {
-          req.scopeFilter = {}; // No restriction
+          req.scopeFilter = {};
         } else if (scopeConfig?.departments?.length > 0) {
-          req.scopeFilter = { department: { $in: scopeConfig.departments } };
+          req.scopeFilter = { $or: [{ department: { $in: scopeConfig.departments } }, { department_id: { $in: scopeConfig.departments } }] };
         } else {
-          // Fall back to user's department
-          req.scopeFilter = req.user.department ? { department: req.user.department } : { _id: null };
+          const deptIds = (req.user.divisionMapping || []).flatMap(m =>
+            (m.departments || []).map(d => (d?._id || d).toString())
+          );
+          req.scopeFilter = deptIds.length > 0 ? { $or: [{ department: { $in: deptIds } }, { department_id: { $in: deptIds } }] } : { _id: null };
         }
         break;
+      }
 
       case 'all':
         // No restriction

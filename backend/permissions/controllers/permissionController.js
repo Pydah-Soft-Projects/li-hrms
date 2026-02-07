@@ -85,40 +85,16 @@ exports.createPermission = async (req, res) => {
         });
       }
 
-      // Verify Scope
-      const { allowedDivisions, divisionMapping } = req.user;
-
+      const { divisionMapping } = req.user;
       const employeeDivisionId = targetEmployee.division_id?.toString();
-      const isDivisionScoped = allowedDivisions?.some(divId => divId.toString() === employeeDivisionId);
-
-      let isDepartmentScoped = false;
       const targetDeptId = (targetEmployee.department_id || targetEmployee.department)?.toString();
 
-      if (isDivisionScoped) {
-        if (!divisionMapping || divisionMapping.length === 0) {
-          isDepartmentScoped = true; // All departments in this division
-        } else {
-          const mapping = divisionMapping.find(m => m.division?.toString() === employeeDivisionId);
-          if (mapping) {
-            if (!mapping.departments || mapping.departments.length === 0) {
-              isDepartmentScoped = true;
-            } else {
-              isDepartmentScoped = mapping.departments.some(d => d.toString() === targetDeptId);
-            }
-          }
-        }
-      }
+      const mapping = divisionMapping?.find(m => (m.division?._id || m.division)?.toString() === employeeDivisionId);
+      const isDepartmentScoped = mapping
+        ? (!mapping.departments || mapping.departments.length === 0) || mapping.departments.some(d => (d?._id || d).toString() === targetDeptId)
+        : false;
 
-      // Direct Department Check (fallback for HOD/unmapped Managers)
       if (!isDepartmentScoped) {
-        if (req.user.department && req.user.department.toString() === targetDeptId) {
-          isDepartmentScoped = true;
-        } else if (req.user.departments && req.user.departments.length > 0) {
-          isDepartmentScoped = req.user.departments.some(d => d.toString() === targetDeptId);
-        }
-      }
-
-      if (!isDivisionScoped && !isDepartmentScoped) {
         return res.status(403).json({
           success: false,
           message: `You are not authorized to apply for permissions for employees outside your assigned data scope.`

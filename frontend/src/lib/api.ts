@@ -765,6 +765,10 @@ export const api = {
     return apiRequest<any>('/dashboard/stats', { method: 'GET' });
   },
 
+  getDashboardAnalytics: async () => {
+    return apiRequest<any>('/dashboard/analytics', { method: 'GET' });
+  },
+
   getEmployeesWithoutAccount: async () => {
     return apiRequest<any>('/users/employees-without-account', { method: 'GET' });
   },

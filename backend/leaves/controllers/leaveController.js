@@ -405,53 +405,17 @@ exports.applyLeave = async (req, res) => {
             ? employee.department_id.toString()
             : (employee.department ? employee.department._id.toString() : null);
 
-          // Check Allowed Divisions
-          const allowedDivisions = req.user.allowedDivisions || [];
-          const isDivisionScoped = allowedDivisions.some(div =>
-            (typeof div === 'string' ? div : div._id.toString()) === employeeDivisionId
+          const mapping = req.user.divisionMapping?.find(m =>
+            (m.division?._id || m.division)?.toString() === employeeDivisionId
           );
+          const isDepartmentScoped = mapping
+            ? (!mapping.departments || mapping.departments.length === 0) || mapping.departments.some(d =>
+                (d?._id || d).toString() === employeeDepartmentId
+              )
+            : false;
 
-          // Check Allowed Departments (via Division Mapping or Direct Assignment)
-          let isDepartmentScoped = false;
-
-          // Check Division Mapping
-          if (req.user.divisionMapping && req.user.divisionMapping.length > 0) {
-            // Check if user maps to the employee's division
-            const mapping = req.user.divisionMapping.find(m =>
-              (typeof m.division === 'string' ? m.division : m.division._id.toString()) === employeeDivisionId
-            );
-
-            if (mapping) {
-              // If mapping exists, check if it restricts departments
-              if (!mapping.departments || mapping.departments.length === 0) {
-                isDepartmentScoped = true; // All departments in this division
-              } else {
-                // Check if employee's department is in the allowed list
-                isDepartmentScoped = mapping.departments.some(d =>
-                  (typeof d === 'string' ? d : d._id.toString()) === employeeDepartmentId
-                );
-              }
-            }
-          }
-
-          // Check Direct Department Assignment
           if (!isDepartmentScoped) {
-            // Check singular department (common for HOD)
-            if (req.user.department) {
-              isDepartmentScoped = req.user.department.toString() === employeeDepartmentId;
-            }
-
-            // Check departments array
-            if (!isDepartmentScoped && req.user.departments && req.user.departments.length > 0) {
-              isDepartmentScoped = req.user.departments.some(d =>
-                (typeof d === 'string' ? d : d._id.toString()) === employeeDepartmentId
-              );
-            }
-          }
-
-          if (!isDivisionScoped && !isDepartmentScoped) {
             console.log(`[Apply Leave] ❌ ${req.user.role} ${req.user._id} blocked from applying for employee ${empNo}.`);
-            console.log(`Debug: EmpDiv: ${employeeDivisionId}, EmpDept: ${employeeDepartmentId}, UserDivs: ${JSON.stringify(allowedDivisions)}`);
             return res.status(403).json({
               success: false,
               error: `You are not authorized to apply for employees outside your assigned data scope (Division/Department).`,
@@ -1070,10 +1034,14 @@ exports.processLeaveAction = async (req, res) => {
     // 2. Specific Logic for Roles
     if (requiredRole === 'hod') {
       if (userRole === 'hod') {
-        // HOD can process if leave is in their department
-        const isDeptMatch = !req.user.department ||
-          leave.department?.toString() === req.user.department?.toString();
-        canProcess = isDeptMatch;
+        const leaveDeptId = (leave.department_id || leave.department)?.toString();
+        const leaveDivId = (leave.division_id || leave.division)?.toString();
+        const mapping = req.user.divisionMapping?.find(m =>
+          (m.division?._id || m.division)?.toString() === leaveDivId
+        );
+        canProcess = mapping
+          ? (!mapping.departments || mapping.departments.length === 0) || mapping.departments.some(d => (d?._id || d).toString() === leaveDeptId)
+          : false;
       }
     } else if (requiredRole === 'manager' || requiredRole === 'hr' || requiredRole === 'final_authority') {
       // Logic for Manager and HR (Scoped Roles)

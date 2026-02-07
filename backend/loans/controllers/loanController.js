@@ -981,8 +981,11 @@ exports.getPendingApprovals = async (req, res) => {
     // Determine what the user can approve based on their role
     if (userRole === 'hod') {
       filter['workflow.nextApprover'] = 'hod';
-      if (req.user.department) {
-        filter.department = req.user.department;
+      const hodDeptIds = (req.user.divisionMapping || []).flatMap(m =>
+        (m.departments || []).map(d => (d?._id || d).toString())
+      );
+      if (hodDeptIds.length > 0) {
+        filter.$or = [{ department: { $in: hodDeptIds } }, { department_id: { $in: hodDeptIds } }];
       }
     } else if (userRole === 'manager') {
       // Find division where user is manager
@@ -1056,8 +1059,14 @@ exports.processLoanAction = async (req, res) => {
     if (isSuperAdmin) {
       canProcess = true;
     } else if (currentApprover === 'hod' && userRole === 'hod') {
-      canProcess = !req.user.department ||
-        loan.department?.toString() === req.user.department?.toString();
+      const loanDeptId = (loan.department_id || loan.department)?.toString();
+      const loanDivId = (loan.division_id || loan.division)?.toString();
+      const mapping = req.user.divisionMapping?.find(m =>
+        (m.division?._id || m.division)?.toString() === loanDivId
+      );
+      canProcess = mapping
+        ? (!mapping.departments || mapping.departments.length === 0) || mapping.departments.some(d => (d?._id || d).toString() === loanDeptId)
+        : false;
     } else if (currentApprover === 'manager' && userRole === 'manager') {
       // Verify user is the manager for this division
       const Division = require('../../departments/model/Division');

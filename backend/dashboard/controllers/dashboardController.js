@@ -12,7 +12,7 @@ const OD = require('../../leaves/model/OD');
 exports.getDashboardStats = async (req, res) => {
   try {
     const userId = req.user.userId;
-    const user = await User.findById(userId).populate('department');
+    const user = await User.findById(userId);
 
     if (!user) {
       return res.status(404).json({
@@ -55,20 +55,10 @@ exports.getDashboardStats = async (req, res) => {
       };
     }
 
-    // 2. HR - Scoped Stats (Departments)
     else if (role === 'hr') {
-      // Determine accessible departments
-      let departmentIds = [];
-
-      // Check for multi-department assignment
-      if (user.departments && user.departments.length > 0) {
-        // If populated, map to _id, otherwise use as is
-        departmentIds = user.departments.map(d => d._id || d);
-      }
-      // Fallback to single department if no list
-      else if (user.department) {
-        departmentIds = [user.department._id || user.department];
-      }
+      const departmentIds = (user.divisionMapping || []).flatMap(m =>
+        (m.departments || []).map(d => d?._id || d)
+      );
 
       // If dataScope is explicitly 'all', revert to global (optional, based on future needs)
       // For now, enforcing scoped access as per request
@@ -111,12 +101,12 @@ exports.getDashboardStats = async (req, res) => {
       };
     }
 
-    // 2. HOD - Department Stats
     else if (role === 'hod') {
-      const departmentId = user.department?._id;
+      const firstDeptId = user.divisionMapping?.[0]?.departments?.[0]?._id || user.divisionMapping?.[0]?.departments?.[0];
+      const departmentId = firstDeptId;
 
       if (!departmentId) {
-        return res.status(400).json({ success: false, message: 'HOD has no department assigned' });
+        return res.status(400).json({ success: false, message: 'HOD has no department assigned in divisionMapping' });
       }
 
       // Team Squad (Department Employees)
