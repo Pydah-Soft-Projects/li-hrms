@@ -232,6 +232,9 @@ export default function PayRegisterPage() {
   // Pagination State (NEW)
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
+  const [paginationTotal, setPaginationTotal] = useState(0);
+  const [paginationTotalPages, setPaginationTotalPages] = useState(1);
+  const PAGE_SIZE = 50;
   const [loadingMore, setLoadingMore] = useState(false);
 
   const year = currentDate.getFullYear();
@@ -350,13 +353,12 @@ export default function PayRegisterPage() {
       const targetDeptId = selectedDepartment && selectedDepartment.trim() !== '' ? selectedDepartment : undefined;
       const targetDivId = selectedDivision && selectedDivision.trim() !== '' ? selectedDivision : undefined;
 
-      const limit = 50;
+      const limit = PAGE_SIZE;
       const response = await api.getEmployeesWithPayRegister(monthStr, targetDeptId, targetDivId, undefined, pageToLoad, limit);
 
       if (response.success) {
         const payRegisterList = response.data || [];
 
-        // Type guard or explicit cast if we know the structure has these fields
         const respAny = response as any;
         if (respAny.startDate) setPayrollStartDate(respAny.startDate);
         if (respAny.endDate) setPayrollEndDate(respAny.endDate);
@@ -368,7 +370,9 @@ export default function PayRegisterPage() {
         }
 
         if (response.pagination) {
-          setHasMore(pageToLoad < response.pagination.totalPages);
+          setPaginationTotal((response.pagination as any).total ?? 0);
+          setPaginationTotalPages((response.pagination as any).totalPages ?? 1);
+          setHasMore(pageToLoad < (response.pagination as any).totalPages);
         } else {
           setHasMore(payRegisterList.length === limit);
         }
@@ -378,7 +382,11 @@ export default function PayRegisterPage() {
         }
       } else {
         console.error('[Pay Register] API call failed:', response);
-        if (!append) setPayRegisters([]);
+        if (!append) {
+          setPayRegisters([]);
+          setPaginationTotal(0);
+          setPaginationTotalPages(1);
+        }
         if (response.message) {
           toast.error(response.message);
         }
@@ -386,7 +394,11 @@ export default function PayRegisterPage() {
     } catch (error: unknown) {
       const err = error as Error;
       console.error('[Pay Register] Error loading pay registers:', err);
-      if (!append) setPayRegisters([]);
+      if (!append) {
+        setPayRegisters([]);
+        setPaginationTotal(0);
+        setPaginationTotalPages(1);
+      }
       toast.error(err.message || 'Failed to load pay registers');
     } finally {
       setLoading(false);
@@ -815,7 +827,7 @@ export default function PayRegisterPage() {
 
       <div className="relative z-10 mx-auto max-w-[1920px] p-6">
         {/* Header */}
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-4 pb-2">
+        <div className="mb-1 flex flex-wrap items-center justify-between gap-4 pb-2">
           <div className="flex flex-wrap items-center gap-4">
             {/* Title Section */}
             <div className="flex items-center gap-3 shrink-0">
@@ -1023,6 +1035,23 @@ export default function PayRegisterPage() {
               );
             })()}
           </div>
+
+          {/* Employee count - own row below header (full width), so buttons stay on the right of row 1 */}
+          {!loading && (paginationTotal > 0 || payRegisters.length > 0) && (
+            <div className="w-full mt-1 mb-0 px-1 basis-full">
+              <p className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                {paginationTotal > 0
+                  ? (() => {
+                      const from = (page - 1) * PAGE_SIZE + 1;
+                      const to = Math.min(page * PAGE_SIZE, paginationTotal);
+                      return paginationTotal <= PAGE_SIZE
+                        ? `${paginationTotal} employee${paginationTotal !== 1 ? 's' : ''}`
+                        : `Showing ${from}–${to} of ${paginationTotal} employees`;
+                    })()
+                  : `${payRegisters.length} employee${payRegisters.length !== 1 ? 's' : ''} listed`}
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Permission Request Modal */}
@@ -1316,7 +1345,7 @@ export default function PayRegisterPage() {
 
       {/* Summary Table */}
       {!loading && payRegisters.length > 0 && (
-        <div className="mt-4 mb-8 rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-lg dark:border-slate-700 dark:bg-slate-900/80 overflow-x-auto">
+        <div className="mt-1 mb-8 rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-lg dark:border-slate-700 dark:bg-slate-900/80 overflow-x-auto">
           <div className="p-4">
             <h3 className="text-base font-semibold text-slate-900 dark:text-white mb-3">Monthly Summary</h3>
             <table className="w-full border-collapse text-xs">
@@ -1405,6 +1434,30 @@ export default function PayRegisterPage() {
               </tbody>
             </table>
           </div>
+          {/* Pagination below Summary table */}
+          {paginationTotalPages > 1 && (
+            <div className="flex items-center justify-center gap-2 p-4 border-t border-slate-200 dark:border-slate-700">
+              <button
+                type="button"
+                onClick={() => { setPage(p => Math.max(1, p - 1)); loadPayRegisters(Math.max(1, page - 1), false); }}
+                disabled={page <= 1 || loading}
+                className="h-8 px-3 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Previous
+              </button>
+              <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                Page {page} of {paginationTotalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => { setPage(p => Math.min(paginationTotalPages, p + 1)); loadPayRegisters(Math.min(paginationTotalPages, page + 1), false); }}
+                disabled={page >= paginationTotalPages || loading}
+                className="h-8 px-3 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -2310,30 +2363,30 @@ export default function PayRegisterPage() {
         )
       }
 
-      {/* Load More Button (NEW) */}
-      {
-        hasMore && !loading && payRegisters.length > 0 && (
-          <div className="flex justify-center my-6">
-            <button
-              onClick={handleLoadMore}
-              disabled={loadingMore}
-              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md hover:shadow-lg"
-            >
-              {loadingMore ? (
-                <span className="flex items-center gap-2">
-                  <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
-                  Loading More...
-                </span>
-              ) : (
-                `Load More (Page ${page + 1})`
-              )}
-            </button>
-          </div>
-        )
-      }
+      {/* Pagination - below Daily table */}
+      {paginationTotalPages > 1 && !loading && payRegisters.length > 0 && (
+        <div className="flex items-center justify-center gap-2 py-4 my-4 border-t border-slate-200 dark:border-slate-700">
+          <button
+            type="button"
+            onClick={() => { setPage(p => Math.max(1, p - 1)); loadPayRegisters(Math.max(1, page - 1), false); }}
+            disabled={page <= 1 || loading}
+            className="h-8 px-3 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Previous
+          </button>
+          <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
+            Page {page} of {paginationTotalPages}
+          </span>
+          <button
+            type="button"
+            onClick={() => { setPage(p => Math.min(paginationTotalPages, p + 1)); loadPayRegisters(Math.min(paginationTotalPages, page + 1), false); }}
+            disabled={page >= paginationTotalPages || loading}
+            className="h-8 px-3 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Next
+          </button>
+        </div>
+      )}
 
       {/* Arrears Section - Placed at the bottom of the page */}
       <div className="mt-8 bg-white dark:bg-slate-800 rounded-lg shadow p-6">
