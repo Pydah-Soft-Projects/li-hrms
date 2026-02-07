@@ -108,14 +108,12 @@ exports.login = async (req, res) => {
           name: userType === 'user' ? user.name : user.employee_name,
           role: userType === 'user' ? user.role : 'employee',
           roles: userType === 'user' ? user.roles : ['employee'],
-          department: userType === 'user' ? user.department : user.department_id,
+          department: userType === 'employee' ? user.department_id : undefined,
           emp_no: userType === 'employee' ? user.emp_no : user.employeeId,
           type: userType,
           featureControl: userType === 'user' ? user.featureControl : undefined,
           dataScope: userType === 'user' ? user.dataScope : 'own',
-          allowedDivisions: userType === 'user' ? user.allowedDivisions : undefined,
           divisionMapping: userType === 'user' ? user.divisionMapping : undefined,
-          departments: userType === 'user' ? user.departments : undefined,
         },
       },
     });
@@ -134,7 +132,6 @@ exports.login = async (req, res) => {
 exports.getMe = async (req, res) => {
   try {
     let user = await User.findById(req.user.userId)
-      .populate('department', 'name')
       .select('-password');
 
     let userType = 'user';
@@ -162,15 +159,13 @@ exports.getMe = async (req, res) => {
           name: userType === 'user' ? user.name : user.employee_name,
           role: userType === 'user' ? user.role : 'employee',
           roles: userType === 'user' ? user.roles : ['employee'],
-          department: userType === 'user' ? user.department : user.department_id,
+          department: userType === 'employee' ? user.department_id : undefined,
           emp_no: userType === 'employee' ? user.emp_no : user.employeeId,
           type: userType,
           featureControl: userType === 'user' ? user.featureControl : undefined,
           isActive: user.isActive,
           dataScope: userType === 'user' ? user.dataScope : 'own',
-          allowedDivisions: userType === 'user' ? user.allowedDivisions : undefined,
           divisionMapping: userType === 'user' ? user.divisionMapping : undefined,
-          departments: userType === 'user' ? user.departments : undefined,
         },
       },
     });
@@ -370,14 +365,12 @@ exports.ssoLogin = async (req, res) => {
           name: userType === 'user' ? user.name : user.employee_name,
           role: userType === 'user' ? user.role : 'employee',
           roles: userType === 'user' ? user.roles : ['employee'],
-          department: userType === 'user' ? user.department : user.department_id,
+          department: userType === 'employee' ? user.department_id : undefined,
           emp_no: userType === 'employee' ? user.emp_no : user.employeeId,
           type: userType,
           featureControl: userType === 'user' ? user.featureControl : undefined,
           dataScope: userType === 'user' ? user.dataScope : 'own',
-          allowedDivisions: userType === 'user' ? user.allowedDivisions : undefined,
           divisionMapping: userType === 'user' ? user.divisionMapping : undefined,
-          departments: userType === 'user' ? user.departments : undefined,
         },
         workspaces,
         activeWorkspace,

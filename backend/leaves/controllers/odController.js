@@ -345,44 +345,18 @@ exports.applyOD = async (req, res) => {
 
         employee = targetEmployee;
 
-        // --- ENFORCE SCOPE ---
-        const { allowedDivisions, divisionMapping } = req.user;
-
-        // A. Division Check
+        const { divisionMapping } = req.user;
         const employeeDivisionId = targetEmployee.division_id?.toString();
-        const isDivisionScoped = allowedDivisions?.some(divId => divId.toString() === employeeDivisionId);
-
-        // B. Department Check
-        let isDepartmentScoped = false;
         const targetDeptId = (targetEmployee.department_id || targetEmployee.department)?.toString();
 
-        if (isDivisionScoped) {
-          if (!divisionMapping || divisionMapping.length === 0) {
-            isDepartmentScoped = true; // All departments in this division
-          } else {
-            const mapping = divisionMapping.find(m => m.division?.toString() === employeeDivisionId);
-            if (mapping) {
-              if (!mapping.departments || mapping.departments.length === 0) {
-                isDepartmentScoped = true;
-              } else {
-                isDepartmentScoped = mapping.departments.some(d => d.toString() === targetDeptId);
-              }
-            }
-          }
-        }
+        const mapping = divisionMapping?.find(m => (m.division?._id || m.division)?.toString() === employeeDivisionId);
+        const isDepartmentScoped = mapping
+          ? (!mapping.departments || mapping.departments.length === 0) || mapping.departments.some(d => (d?._id || d).toString() === targetDeptId)
+          : false;
 
-        // Direct Department Check (common for HOD or unmapped Manager)
+        console.log(`[Apply OD] ${req.user.role} Scope Check: Div(${employeeDivisionId}) Dept Allowed? ${isDepartmentScoped}`);
+
         if (!isDepartmentScoped) {
-          if (req.user.department && req.user.department.toString() === targetDeptId) {
-            isDepartmentScoped = true;
-          } else if (req.user.departments && req.user.departments.length > 0) {
-            isDepartmentScoped = req.user.departments.some(d => d.toString() === targetDeptId);
-          }
-        }
-
-        console.log(`[Apply OD] ${req.user.role} Scope Check: Div(${employeeDivisionId}) Allowed? ${isDivisionScoped}. Dept Allowed? ${isDepartmentScoped}`);
-
-        if (!isDivisionScoped && !isDepartmentScoped) {
           console.log(`[Apply OD] ❌ ${req.user.role} blocked from applying for employee ${empNo} outside scope.`);
           return res.status(403).json({
             success: false,

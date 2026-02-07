@@ -566,8 +566,8 @@ export default function UsersPage() {
     let mapping = normalizedMapping.length > 0 ? normalizedMapping[0] : null;
     let finalMapping = normalizedMapping;
 
-    // HOD fallback: if user has department but no divisionMapping, derive division from department
-    const deptId = user.department?._id || (typeof user.department === 'string' ? user.department : '');
+    // HOD fallback: if user has department but no divisionMapping, derive division from department (legacy)
+    const deptId = (user as any).department?._id || (typeof (user as any).department === 'string' ? (user as any).department : '') || (mapping?.departments || [])[0];
     if (user.role === 'hod' && deptId && (!mapping || !mapping.division)) {
       let divId = '';
       const dept = departments.find((d: Department) => d._id === deptId);
@@ -588,13 +588,16 @@ export default function UsersPage() {
       }
     }
 
+    const totalDeptsFromMapping = (finalMapping || []).reduce((sum: number, m: any) => sum + (m.departments || []).length, 0);
+    const isMultiple = (finalMapping || []).length > 1 || totalDeptsFromMapping > 1;
+
     setFormData({
       email: user.email,
       name: user.name,
       role: user.role,
-      departmentType: user.departmentType || (user.departments && user.departments.length > 1 ? 'multiple' : 'single'),
-      department: user.role === 'hod' && mapping && mapping.departments?.length > 0 ? mapping.departments[0] : (user.department?._id || deptId || ''),
-      departments: user.role === 'manager' && mapping ? mapping.departments : (user.departments?.map((d: any) => d._id || d) || []),
+      departmentType: user.departmentType || (isMultiple ? 'multiple' : 'single'),
+      department: user.role === 'hod' && mapping && mapping.departments?.length > 0 ? mapping.departments[0] : (deptId || (user as any).department?._id || ''),
+      departments: user.role === 'manager' && mapping ? mapping.departments : (finalMapping || []).flatMap((m: any) => m.departments || []),
       password: '',
       autoGeneratePassword: false,
       featureControl: user.featureControl || [],
@@ -1282,23 +1285,40 @@ export default function UsersPage() {
                     </td>
                     <td className="px-6 py-5">
                       <div className="flex flex-wrap gap-1.5">
-                        {user.departments && user.departments.length > 0 ? (
-                          <>
-                            {user.departments.slice(0, 1).map((dept) => (
-                              <span key={dept._id} className="flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-400">
-                                <Building className="h-2.5 w-2.5" />
-                                {dept.name}
-                              </span>
-                            ))}
-                            {user.departments.length > 1 && (
-                              <span className="rounded-md bg-blue-100/50 px-2 py-0.5 text-[10px] font-bold text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
-                                +{user.departments.length - 1} more
-                              </span>
-                            )}
-                          </>
-                        ) : (
-                          <span className="text-[11px] font-medium text-slate-400 italic">No dept assigned</span>
-                        )}
+                        {(() => {
+                          const mapping = user.divisionMapping || [];
+                          const depts = mapping.flatMap((m: any) =>
+                            (m.departments || []).map((d: any) => ({
+                              _id: typeof d === 'string' ? d : d?._id,
+                              name: typeof d === 'object' && d?.name ? d.name : departments.find((dep) => dep._id === (typeof d === 'string' ? d : d?._id))?.name || 'Dept',
+                            }))
+                          ).filter((d: { _id?: string }) => d._id);
+                          const allDivLabels = mapping
+                            .filter((m: any) => !m.departments || m.departments.length === 0)
+                            .map((m: any) => {
+                              const divId = typeof m.division === 'string' ? m.division : m.division?._id;
+                              const divName = divisions.find((d) => d._id === divId)?.name || (typeof m.division === 'object' && m.division?.name) || 'Division';
+                              return { _id: `div-${divId}`, name: `All in ${divName}` };
+                            });
+                          const items = [...depts, ...allDivLabels];
+                          return items.length > 0 ? (
+                            <>
+                              {items.slice(0, 2).map((item: { _id: string; name: string }, idx: number) => (
+                                <span key={`${user._id}-${item._id}-${idx}`} className="flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                                  <Building className="h-2.5 w-2.5" />
+                                  {item.name}
+                                </span>
+                              ))}
+                              {items.length > 2 && (
+                                <span className="rounded-md bg-blue-100/50 px-2 py-0.5 text-[10px] font-bold text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
+                                  +{items.length - 2} more
+                                </span>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-[11px] font-medium text-slate-400 italic">No dept assigned</span>
+                          );
+                        })()}
                       </div>
                     </td>
                     <td className="px-6 py-5">
