@@ -1700,6 +1700,8 @@ export default function PayRegisterPage() {
                           ? row.pr.employeeId.department_id.name
                           : ''
                         : '';
+                    const leftDate = employee && 'leftDate' in employee ? (employee as any).leftDate : null;
+                    const leftDateStr = leftDate ? (typeof leftDate === 'string' ? new Date(leftDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '') : '';
                     return (
                       <tr key={row.pr._id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                         <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 text-[11px] font-medium text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white">
@@ -1709,6 +1711,11 @@ export default function PayRegisterPage() {
                               {empNo}
                               {department && ` • ${department}`}
                             </div>
+                            {leftDateStr && (
+                              <div className="text-[9px] text-amber-600 dark:text-amber-400 font-medium mt-0.5" title="Left in this payroll period">
+                                Left {leftDateStr}
+                              </div>
+                            )}
                           </div>
                         </td>
                         <td className="text-center px-2 py-2">{row.present.toFixed(1)}</td>
@@ -1882,6 +1889,8 @@ export default function PayRegisterPage() {
                       const department = typeof pr.employeeId === 'object' && pr.employeeId.department_id
                         ? (typeof pr.employeeId.department_id === 'object' ? pr.employeeId.department_id.name : '')
                         : '';
+                      const leftDateDaily = employee && 'leftDate' in employee ? (employee as any).leftDate : null;
+                      const leftDateStrDaily = leftDateDaily ? (typeof leftDateDaily === 'string' ? new Date(leftDateDaily).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '') : '';
 
                       // Create a map of daily records for quick lookup
                       const dailyRecordsMap = new Map(pr.dailyRecords.map(r => [r.date, r]));
@@ -1904,6 +1913,9 @@ export default function PayRegisterPage() {
                               <div className="flex items-center gap-2">
                                 <div className="font-semibold truncate flex-1 flex items-center gap-1">
                                   {employee_name}
+                                  {leftDateStrDaily && (
+                                    <span className="text-[9px] text-amber-600 dark:text-amber-400 font-medium" title="Left in this payroll period">(Left {leftDateStrDaily})</span>
+                                  )}
                                   {isLocked && (
                                     <span title={`Payroll ${batchStatus}`} className="text-slate-400">
                                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
