@@ -2,9 +2,10 @@ const express = require('express');
 const router = express.Router();
 const secondSalaryController = require('../controllers/secondSalaryController');
 const { protect } = require('../../authentication/middleware/authMiddleware');
+const { applyScopeFilter } = require('../../shared/middleware/dataScopeMiddleware');
 
 // Batch Management
-router.post('/calculate', protect, secondSalaryController.calculateSecondSalary);
+router.post('/calculate', protect, applyScopeFilter, secondSalaryController.calculateSecondSalary);
 router.get('/batches', protect, secondSalaryController.getSecondSalaryBatches);
 router.get('/batches/:id', protect, secondSalaryController.getSecondSalaryBatch);
 
