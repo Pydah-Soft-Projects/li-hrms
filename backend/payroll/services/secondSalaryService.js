@@ -28,10 +28,9 @@ class SecondSalaryService {
             const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
             const [year, monthNum] = month ? String(month).split('-').map(Number) : [new Date().getFullYear(), new Date().getMonth() + 1];
             const { startDate, endDate } = month ? await getPayrollDateRange(year, monthNum) : { startDate: null, endDate: null };
-            const leftStart = startDate ? new Date(startDate) : null;
-            const leftEnd = endDate ? new Date(endDate) : null;
-            if (leftStart) leftStart.setHours(0, 0, 0, 0);
-            if (leftEnd) leftEnd.setHours(23, 59, 59, 999);
+            // Use UTC boundaries so "26 Dec–25 Jan" excludes 25 Dec left (avoids TZ shifting 26 Dec 00:00 local into 25 Dec UTC).
+            const leftStart = startDate ? new Date(startDate + 'T00:00:00.000Z') : null;
+            const leftEnd = endDate ? new Date(endDate + 'T23:59:59.999Z') : null;
 
             const query = { ...scopeFilter };
             if (divisionId && divisionId !== 'all') query.division_id = divisionId;

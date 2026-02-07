@@ -16,10 +16,12 @@ function getRegularPayrollEmployeeQuery(opts = {}) {
   const query = {};
 
   if (leftDateRange && leftDateRange.start != null && leftDateRange.end != null) {
-    const start = new Date(leftDateRange.start);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(leftDateRange.end);
-    end.setHours(23, 59, 59, 999);
+    // Use UTC so period boundaries are consistent (e.g. 26 Dec = 26 Dec 00:00 UTC);
+    // avoids including employees who left on 25 Dec when period is 26 Dec–25 Jan (server TZ could shift 26 Dec 00:00 local into 25 Dec UTC).
+    const startStr = typeof leftDateRange.start === 'string' ? leftDateRange.start : leftDateRange.start.toISOString().split('T')[0];
+    const endStr = typeof leftDateRange.end === 'string' ? leftDateRange.end : leftDateRange.end.toISOString().split('T')[0];
+    const start = new Date(startStr + 'T00:00:00.000Z');
+    const end = new Date(endStr + 'T23:59:59.999Z');
     query.$or = [
       { is_active: true, leftDate: null },
       { leftDate: { $gte: start, $lte: end } },
