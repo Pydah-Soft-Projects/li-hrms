@@ -182,7 +182,8 @@ exports.calculateSecondSalary = async (req, res) => {
             departmentId,
             divisionId,
             month,
-            userId
+            userId,
+            scopeFilter: req.scopeFilter || {}
         });
 
         if (result.queued) {

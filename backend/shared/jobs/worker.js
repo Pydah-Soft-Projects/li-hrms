@@ -7,7 +7,7 @@ const startWorkers = () => {
 
     // Payroll Worker
     const payrollWorker = new Worker('payrollQueue', async (job) => {
-        console.log(`[Worker] Processing payroll job: ${job.id} (Name: ${job.name})`);
+        console.log(`[Worker] Processing payroll job: ${job.id} (Name: ${job.name}, action: ${job.data?.action || 'n/a'})`);
 
         const { employeeId, month, userId, batchId, action, departmentId, divisionId } = job.data;
 
@@ -41,16 +41,21 @@ const startWorkers = () => {
                 const Employee = require('../../employees/model/Employee');
                 const Department = require('../../departments/model/Department');
                 const allowanceDeductionResolverService = require('../../payroll/services/allowanceDeductionResolverService');
-                const { getSecondSalaryEmployeeQuery } = require('../../payroll/services/payrollEmployeeQueryHelper');
-                const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
 
-                const [year, monthNum] = month ? month.split('-').map(Number) : [new Date().getFullYear(), new Date().getMonth() + 1];
-                const { startDate, endDate } = month ? await getPayrollDateRange(year, monthNum) : { startDate: null, endDate: null };
-                const leftDateRange = (startDate && endDate) ? { start: new Date(startDate), end: new Date(endDate) } : undefined;
-
-                const query = getSecondSalaryEmployeeQuery({ departmentId, divisionId, leftDateRange });
-                const employees = await Employee.find(query);
-                console.log(`[Worker] Calculating 2nd salary for ${employees.length} employees`);
+                let employees;
+                if (job.data.employeeIds && Array.isArray(job.data.employeeIds) && job.data.employeeIds.length > 0) {
+                    employees = await Employee.find({ _id: { $in: job.data.employeeIds } });
+                    console.log(`[Worker] Calculating 2nd salary for ${employees.length} employees (from controller list)`);
+                } else {
+                    const { getSecondSalaryEmployeeQuery } = require('../../payroll/services/payrollEmployeeQueryHelper');
+                    const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+                    const [year, monthNum] = month ? month.split('-').map(Number) : [new Date().getFullYear(), new Date().getMonth() + 1];
+                    const { startDate, endDate } = month ? await getPayrollDateRange(year, monthNum) : { startDate: null, endDate: null };
+                    const leftDateRange = (startDate && endDate) ? { start: new Date(startDate), end: new Date(endDate) } : undefined;
+                    const query = getSecondSalaryEmployeeQuery({ departmentId, divisionId, leftDateRange });
+                    employees = await Employee.find(query);
+                    console.log(`[Worker] Calculating 2nd salary for ${employees.length} employees (from query)`);
+                }
 
                 // Optimization: Pre-fetch department and settings for context
                 const sharedContext = {
@@ -87,18 +92,22 @@ const startWorkers = () => {
                 const Employee = require('../../employees/model/Employee');
                 const Department = require('../../departments/model/Department');
                 const allowanceDeductionResolverService = require('../../payroll/services/allowanceDeductionResolverService');
-                const SecondSalaryBatchService = require('../../payroll/services/secondSalaryBatchService');
                 const PayrollBatchService = require('../../payroll/services/payrollBatchService');
-                const { getRegularPayrollEmployeeQuery } = require('../../payroll/services/payrollEmployeeQueryHelper');
-                const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
 
-                const [year, monthNum] = month ? month.split('-').map(Number) : [new Date().getFullYear(), new Date().getMonth() + 1];
-                const { startDate, endDate } = month ? await getPayrollDateRange(year, monthNum) : { startDate: null, endDate: null };
-                const leftDateRange = (startDate && endDate) ? { start: new Date(startDate), end: new Date(endDate) } : undefined;
-
-                const query = getRegularPayrollEmployeeQuery({ departmentId, divisionId, leftDateRange });
-                const employees = await Employee.find(query);
-                console.log(`[Worker] Bulk calculating payroll for ${employees.length} employees`);
+                let employees;
+                if (job.data.employeeIds && Array.isArray(job.data.employeeIds) && job.data.employeeIds.length > 0) {
+                    employees = await Employee.find({ _id: { $in: job.data.employeeIds } });
+                    console.log(`[Worker] Bulk calculating payroll for ${employees.length} employees (from controller list)`);
+                } else {
+                    const { getRegularPayrollEmployeeQuery } = require('../../payroll/services/payrollEmployeeQueryHelper');
+                    const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+                    const [year, monthNum] = month ? month.split('-').map(Number) : [new Date().getFullYear(), new Date().getMonth() + 1];
+                    const { startDate, endDate } = month ? await getPayrollDateRange(year, monthNum) : { startDate: null, endDate: null };
+                    const leftDateRange = (startDate && endDate) ? { start: new Date(startDate), end: new Date(endDate) } : undefined;
+                    const query = getRegularPayrollEmployeeQuery({ departmentId, divisionId, leftDateRange });
+                    employees = await Employee.find(query);
+                    console.log(`[Worker] Bulk calculating payroll for ${employees.length} employees (from query)`);
+                }
 
                 // Optimization: Pre-fetch department and settings for context
                 const sharedContext = {
@@ -355,6 +364,10 @@ const startWorkers = () => {
             throw error;
         }
     }, { connection: redisConfig });
+
+    payrollWorker.on('error', (err) => {
+        console.error('[Worker] Payroll worker error (check Redis):', err.message);
+    });
 
     payrollWorker.on('completed', (job) => {
         console.log(`[Worker] Job ${job.id} has completed!`);
