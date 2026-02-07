@@ -461,12 +461,12 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
 
     const employeeIds = employees.map(e => e._id);
 
-    // 2. Bulk Fetch Existing Pay Registers (Include dailyRecords)
+    // 2. Bulk Fetch Existing Pay Registers (Include dailyRecords); include leftDate/leftReason so frontend can show "Left" employees
     const payRegisters = await PayRegisterSummary.find({
       employeeId: { $in: employeeIds },
       month
     })
-      .populate('employeeId', 'employee_name emp_no department_id designation_id')
+      .populate('employeeId', 'employee_name emp_no department_id designation_id leftDate leftReason')
       .select('employeeId emp_no month status totals lastEditedAt dailyRecords startDate endDate totalDaysInMonth');
 
     // Map for O(1) Access

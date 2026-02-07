@@ -185,7 +185,7 @@ function buildWorkflowVisibilityFilter(user) {
     if (!user) return { _id: null };
 
     // Super Admin and Sub Admin see everything within their scope immediately
-    if (user.role === 'super_admin' || user.role === 'sub_admin') {
+    if (user.role === 'super_admin' || user.role === 'sub_admin' || user.role === 'admin') {
         return {};
     }
 
@@ -196,6 +196,7 @@ function buildWorkflowVisibilityFilter(user) {
             // 1. Applicant (Owner) - Always sees their own applications
             { appliedBy: user._id },
             { employeeId: user.employeeRef },
+            { emp_no: user.employeeId },
 
             // 2. Current Desk (Next Approver) - Visible when it's their turn
             { 'workflow.nextApprover': userRole },
@@ -214,8 +215,12 @@ function buildWorkflowVisibilityFilter(user) {
             // 4. Specifically involved in history
             { 'workflow.history.actionBy': user._id },
 
-            // 5. Global HR Visibility for Approved Records
-            ...(userRole === 'hr' ? [{ status: 'approved' }] : [])
+            // 5. Global Management Visibility
+            // HR sees all active leaves in their scope for tracking
+            ...(userRole === 'hr' ? [{ isActive: true }] : []),
+            // HOD/Manager sees everything once it's finalized (regardless of if they were in the chain)
+            // if we want them to see all approved leaves in their department
+            ...((userRole === 'hod' || userRole === 'manager') ? [{ status: { $in: ['approved', 'rejected', 'cancelled'] } }] : [])
         ]
     };
 }

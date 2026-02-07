@@ -41,14 +41,14 @@ const startWorkers = () => {
                 const Employee = require('../../employees/model/Employee');
                 const Department = require('../../departments/model/Department');
                 const allowanceDeductionResolverService = require('../../payroll/services/allowanceDeductionResolverService');
+                const { getSecondSalaryEmployeeQuery } = require('../../payroll/services/payrollEmployeeQueryHelper');
+                const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
 
-                const query = {
-                    is_active: true,
-                    second_salary: { $gt: 0 }
-                };
-                if (departmentId && departmentId !== 'all') query.department_id = departmentId;
-                if (divisionId && divisionId !== 'all') query.division_id = divisionId;
+                const [year, monthNum] = month ? month.split('-').map(Number) : [new Date().getFullYear(), new Date().getMonth() + 1];
+                const { startDate, endDate } = month ? await getPayrollDateRange(year, monthNum) : { startDate: null, endDate: null };
+                const leftDateRange = (startDate && endDate) ? { start: new Date(startDate), end: new Date(endDate) } : undefined;
 
+                const query = getSecondSalaryEmployeeQuery({ departmentId, divisionId, leftDateRange });
                 const employees = await Employee.find(query);
                 console.log(`[Worker] Calculating 2nd salary for ${employees.length} employees`);
 
@@ -89,11 +89,14 @@ const startWorkers = () => {
                 const allowanceDeductionResolverService = require('../../payroll/services/allowanceDeductionResolverService');
                 const SecondSalaryBatchService = require('../../payroll/services/secondSalaryBatchService');
                 const PayrollBatchService = require('../../payroll/services/payrollBatchService');
+                const { getRegularPayrollEmployeeQuery } = require('../../payroll/services/payrollEmployeeQueryHelper');
+                const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
 
-                const query = { is_active: true };
-                if (departmentId && departmentId !== 'all') query.department_id = departmentId;
-                if (divisionId && divisionId !== 'all') query.division_id = divisionId;
+                const [year, monthNum] = month ? month.split('-').map(Number) : [new Date().getFullYear(), new Date().getMonth() + 1];
+                const { startDate, endDate } = month ? await getPayrollDateRange(year, monthNum) : { startDate: null, endDate: null };
+                const leftDateRange = (startDate && endDate) ? { start: new Date(startDate), end: new Date(endDate) } : undefined;
 
+                const query = getRegularPayrollEmployeeQuery({ departmentId, divisionId, leftDateRange });
                 const employees = await Employee.find(query);
                 console.log(`[Worker] Bulk calculating payroll for ${employees.length} employees`);
 

@@ -5,6 +5,7 @@ const Department = require('../../departments/model/Department');
 const mongoose = require('mongoose');
 const { calculateSecondSalary } = require('./secondSalaryCalculationService');
 const SecondSalaryBatchService = require('./secondSalaryBatchService');
+const { getSecondSalaryEmployeeQuery } = require('./payrollEmployeeQueryHelper');
 
 /**
  * Service to handle 2nd Salary operations
@@ -25,18 +26,16 @@ class SecondSalaryService {
                 if (!department) throw new Error('Department not found');
             }
 
-            // 2. Find eligible employees (must have second_salary > 0)
-            const query = {
-                is_active: true,
-                second_salary: { $gt: 0 }
-            };
-            if (departmentId && departmentId !== 'all') query.department_id = departmentId;
-            if (divisionId && divisionId !== 'all') query.division_id = divisionId;
-
+            // 2. Find eligible employees (same set as regular payroll: active or left this month)
+            const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+            const [year, monthNum] = month ? String(month).split('-').map(Number) : [new Date().getFullYear(), new Date().getMonth() + 1];
+            const { startDate, endDate } = month ? await getPayrollDateRange(year, monthNum) : { startDate: null, endDate: null };
+            const leftDateRange = (startDate && endDate) ? { start: new Date(startDate), end: new Date(endDate) } : undefined;
+            const query = getSecondSalaryEmployeeQuery({ departmentId, divisionId, leftDateRange });
             const employeesCount = await Employee.countDocuments(query);
 
             if (employeesCount === 0) {
-                throw new Error('No employees with 2nd salary found matching the filters');
+                throw new Error('No employees found matching the filters');
             }
 
             // 3. Queue the job for background processing
