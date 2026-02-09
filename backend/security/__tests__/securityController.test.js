@@ -1,24 +1,22 @@
-const path = require('path');
+// Mock Permission - use path relative to backend root
+jest.mock('../../permissions/model/Permission', () => ({
+    find: jest.fn().mockReturnThis(),
+    findById: jest.fn().mockReturnThis(),
+    populate: jest.fn().mockReturnThis(),
+    select: jest.fn().mockReturnThis(),
+    sort: jest.fn().mockReturnThis(),
+}));
 
-// Absolute paths for mocking
-const permissionPath = path.resolve(__dirname, '../../permissions/model/Permission');
-
-// Mock Permission model
-jest.doMock(permissionPath, () => {
-    const mock = {
-        find: jest.fn().mockReturnThis(),
-        findById: jest.fn().mockReturnThis(),
-        populate: jest.fn().mockReturnThis(),
-        select: jest.fn().mockReturnThis(),
-        sort: jest.fn().mockReturnThis(),
-    };
-    // For direct findById that returns a promise vs findById that is chained
-    // We'll manage this in each test by overriding the mock behavior
-    return mock;
+// Mock SecurityLog - verifyGatePass creates and saves log entries
+jest.mock('../model/SecurityLog', () => {
+    return jest.fn().mockImplementation(() => ({
+        save: jest.fn().mockResolvedValue(true),
+    }));
 });
 
 const securityController = require('../controllers/securityController');
-const Permission = require(permissionPath);
+const Permission = require('../../permissions/model/Permission');
+const mongoose = require('mongoose');
 const crypto = require('crypto');
 
 describe('Security Controller Unit Tests', () => {
@@ -171,17 +169,21 @@ describe('Security Controller Unit Tests', () => {
 
     describe('verifyGatePass', () => {
         test('should verify Gate Out successfully', async () => {
-            const secret = 'OUT:perm123:random';
+            const permId = new mongoose.Types.ObjectId();
+            const secret = `OUT:${permId}:random`;
             const mockPermission = {
-                _id: 'perm123',
+                _id: permId,
                 gateOutSecret: secret,
-                employeeId: { employee_name: 'Test', emp_no: '101' },
+                employeeId: { _id: new mongoose.Types.ObjectId(), employee_name: 'Test', emp_no: '101' },
                 save: jest.fn().mockResolvedValue(true)
             };
 
-            // Chained mock for findById(...).populate(...)
+            mockReq.user._id = new mongoose.Types.ObjectId();
+
             Permission.findById.mockReturnValue({
-                populate: jest.fn().mockResolvedValue(mockPermission)
+                select: jest.fn().mockReturnValue({
+                    populate: jest.fn().mockResolvedValue(mockPermission)
+                })
             });
 
             mockReq.body.qrSecret = secret;
@@ -189,19 +191,23 @@ describe('Security Controller Unit Tests', () => {
 
             expect(mockRes.status).toHaveBeenCalledWith(200);
             expect(mockPermission.gateOutTime).toBeDefined();
+            expect(mockPermission.status).toBe('checked_out');
             expect(mockPermission.save).toHaveBeenCalled();
         });
 
         test('should fail with invalid secret', async () => {
-            const secret = 'OUT:perm123:random';
+            const permId = new mongoose.Types.ObjectId();
+            const secret = `OUT:${permId}:random`;
             const mockPermission = {
-                _id: 'perm123',
+                _id: permId,
                 gateOutSecret: 'different_secret',
-                employeeId: { employee_name: 'Test', emp_no: '101' }
+                employeeId: { _id: new mongoose.Types.ObjectId(), employee_name: 'Test', emp_no: '101' }
             };
 
             Permission.findById.mockReturnValue({
-                populate: jest.fn().mockResolvedValue(mockPermission)
+                select: jest.fn().mockReturnValue({
+                    populate: jest.fn().mockResolvedValue(mockPermission)
+                })
             });
 
             mockReq.body.qrSecret = secret;

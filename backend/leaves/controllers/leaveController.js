@@ -15,6 +15,7 @@ const {
   getEmployeeIdsInScope,
   checkJurisdiction
 } = require('../../shared/middleware/dataScopeMiddleware');
+const Department = require('../../departments/model/Department');
 
 /**
  * Get employee settings from database
@@ -126,7 +127,7 @@ const getWorkflowSettings = async () => {
       workflow: {
         isEnabled: true,
         steps: [
-          { stepOrder: 1, stepName: 'HOD Approval', approverRole: 'hod', availableActions: ['approve', 'reject', 'forward'], approvedStatus: 'hod_approved', rejectedStatus: 'hod_rejected', nextStepOnApprove: 2, isActive: true },
+          { stepOrder: 1, stepName: 'HOD Approval', approverRole: 'hod', availableActions: ['approve', 'reject'], approvedStatus: 'hod_approved', rejectedStatus: 'hod_rejected', nextStepOnApprove: 2, isActive: true },
           { stepOrder: 2, stepName: 'HR Approval', approverRole: 'hr', availableActions: ['approve', 'reject'], approvedStatus: 'approved', rejectedStatus: 'hr_rejected', nextStepOnApprove: null, isActive: true },
         ],
         finalAuthority: { role: 'hr', anyHRCanApprove: true },
@@ -202,12 +203,31 @@ exports.getLeaves = async (req, res) => {
 // @desc    Get my leaves (for logged-in employee)
 // @route   GET /api/leaves/my
 // @access  Private
+// Returns leaves applied BY me OR leaves applied FOR me (by HOD/Manager/HR on my behalf)
 exports.getMyLeaves = async (req, res) => {
   try {
     const { status, fromDate, toDate } = req.query;
+    const orConditions = [{ appliedBy: req.user._id }];
+
+    // Leaves applied FOR me (by HOD/Manager/HR) - match by employeeId or emp_no
+    if (req.user.employeeRef) {
+      orConditions.push({ employeeId: req.user.employeeRef });
+    }
+    if (req.user.employeeId) {
+      orConditions.push({ emp_no: String(req.user.employeeId).trim() });
+    }
+    // Fallback: User may have emp_no but no employeeRef - resolve Employee by emp_no
+    if (!req.user.employeeRef && req.user.employeeId) {
+      const emp = await Employee.findOne({ $or: [
+        { emp_no: String(req.user.employeeId).trim() },
+        { emp_no: { $regex: new RegExp(`^${String(req.user.employeeId).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } }
+      ] }).select('_id');
+      if (emp) orConditions.push({ employeeId: emp._id });
+    }
+
     const filter = {
       isActive: true,
-      appliedBy: req.user._id,
+      $or: orConditions,
     };
 
     if (status) filter.status = status;
@@ -215,8 +235,10 @@ exports.getMyLeaves = async (req, res) => {
     if (toDate) filter.toDate = { ...filter.toDate, $lte: new Date(toDate) };
 
     const leaves = await Leave.find(filter)
+      .populate('employeeId', 'employee_name emp_no')
       .populate('department', 'name')
       .populate('designation', 'name')
+      .populate('appliedBy', 'name email')
       .sort({ createdAt: -1 });
 
     res.status(200).json({
@@ -388,7 +410,7 @@ exports.applyLeave = async (req, res) => {
         ]);
       }
 
-      // Enforce HOD & Manager Scope
+      // Enforce HOD & Manager Scope (use User model for non-employee roles)
       if (['manager', 'hod'].includes(req.user.role) && employee) {
         // 1. Allow Self Application
         // Check if the target employee is the manager themselves
@@ -396,26 +418,29 @@ exports.applyLeave = async (req, res) => {
           (req.user.employeeRef && req.user.employeeRef.toString() === employee._id.toString());
 
         if (!isSelf) {
-          // We need to fetch division/department details if not populated
-          const employeeDivisionId = employee.division_id
-            ? employee.division_id.toString()
-            : (employee.division ? employee.division._id.toString() : null);
+          // For non-employee roles, use User model (ensure full User with divisionMapping)
+          const scopeUser = await User.findById(req.user._id).select('role divisionMapping').lean();
+          const userForScope = scopeUser || req.user;
+          let scopedEmployeeIds = await getEmployeeIdsInScope(userForScope);
+          const employeeIdStr = employee._id.toString();
+          let isInScope = scopedEmployeeIds.some(id => id.toString() === employeeIdStr);
 
-          const employeeDepartmentId = employee.department_id
-            ? employee.department_id.toString()
-            : (employee.department ? employee.department._id.toString() : null);
+          // Fallback for HOD: if divisionMapping empty, check Department.divisionHODs
+          if (!isInScope && req.user.role === 'hod') {
+            const empDeptId = (employee.department_id?._id || employee.department_id)?.toString();
+            const empDivId = (employee.division_id?._id || employee.division_id)?.toString();
+            if (empDeptId && empDivId) {
+              const dept = await Department.findOne({
+                _id: empDeptId,
+                'divisionHODs.hod': req.user._id,
+                'divisionHODs.division': empDivId
+              }).select('_id');
+              isInScope = !!dept;
+            }
+          }
 
-          const mapping = req.user.divisionMapping?.find(m =>
-            (m.division?._id || m.division)?.toString() === employeeDivisionId
-          );
-          const isDepartmentScoped = mapping
-            ? (!mapping.departments || mapping.departments.length === 0) || mapping.departments.some(d =>
-                (d?._id || d).toString() === employeeDepartmentId
-              )
-            : false;
-
-          if (!isDepartmentScoped) {
-            console.log(`[Apply Leave] ❌ ${req.user.role} ${req.user._id} blocked from applying for employee ${empNo}.`);
+          if (!isInScope) {
+            console.log(`[Apply Leave] ❌ ${req.user.role} ${req.user._id} blocked - employee ${empNo} not in scope.`);
             return res.status(403).json({
               success: false,
               error: `You are not authorized to apply for employees outside your assigned data scope (Division/Department).`,
@@ -905,6 +930,8 @@ exports.cancelLeave = async (req, res) => {
 // @desc    Get pending approvals for current user
 // @route   GET /api/leaves/pending-approvals
 // @access  Private
+// Data scope: Show leaves to ALL workflow participants (roles in approvalChain) with division/department scope.
+// Approve/Reject buttons shown only when nextApproverRole === user.role (enforced in frontend via canPerformAction).
 exports.getPendingApprovals = async (req, res) => {
   try {
     const userRole = req.user.role;
@@ -918,22 +945,18 @@ exports.getPendingApprovals = async (req, res) => {
     if (['sub_admin', 'super_admin'].includes(userRole)) {
       filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
     }
-    // 2, 3, 4: Scoped Roles (HOD, HR, Manager)
+    // 2, 3, 4: Scoped Roles (HOD, HR, Manager) - show to ALL whose role is in the workflow
     else if (['hod', 'hr', 'manager'].includes(userRole)) {
-      // 1. Role-based turn check
-      if (userRole === 'hr') {
-        filter['$or'] = [
-          { 'workflow.nextApprover': { $in: ['hr', 'final_authority'] } },
-          { 'workflow.nextApproverRole': { $in: ['hr', 'final_authority'] } }
-        ];
-      } else {
-        filter['$or'] = [
-          { 'workflow.nextApprover': userRole },
-          { 'workflow.nextApproverRole': userRole }
-        ];
-      }
+      // User's role must appear in the approval chain (they're a workflow participant)
+      const roleVariants = [userRole];
+      if (userRole === 'hr') roleVariants.push('final_authority');
+      filter['workflow.approvalChain'] = {
+        $elemMatch: {
+          role: { $in: roleVariants }
+        }
+      };
 
-      // 2. Strict Employee-First Scope Match
+      // Division/Department scope: only leaves for employees in user's scope
       const employeeIds = await getEmployeeIdsInScope(req.user);
 
       if (employeeIds.length > 0) {
@@ -942,13 +965,15 @@ exports.getPendingApprovals = async (req, res) => {
         console.warn(`[GetPendingApprovals] User ${req.user._id} (${userRole}) has no employees in scope.`);
         filter.employeeId = { $in: [] };
       }
+
+      filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
     }
-    // 5. Generic / Custom Role: View leaves explicitly assigned to this role
+    // 5. Generic / Custom Role: Show if role appears in approval chain
     else {
-      filter['$or'] = [
-        { 'workflow.nextApprover': userRole },
-        { 'workflow.nextApproverRole': userRole }
-      ];
+      filter['workflow.approvalChain'] = {
+        $elemMatch: { role: userRole }
+      };
+      filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
     }
 
     const leaves = await Leave.find(filter)
@@ -1126,115 +1151,101 @@ exports.processLeaveAction = async (req, res) => {
         }
 
         // 2. Process Approval in Chain
+        const stepRole = requiredRole;
+        const actualApproverRole = userRole;
+        const commentText = comments && comments.trim() ? comments : `Approved by ${actualApproverRole}`;
+
         if (activeStepIndex !== -1) {
           const currentStep = leave.workflow.approvalChain[activeStepIndex];
           currentStep.status = 'approved';
           currentStep.actionBy = req.user._id;
           currentStep.actionByName = req.user.name;
-          currentStep.actionByRole = userRole;
-          currentStep.comments = comments;
+          currentStep.actionByRole = actualApproverRole;
+          currentStep.stepRole = stepRole;
+          currentStep.comments = commentText;
           currentStep.updatedAt = new Date();
           currentStep.isCurrent = false;
 
-          // Legacy approvals object update (mapped to role)
-          if (['hod', 'manager', 'hr'].includes(currentStep.role)) {
-            leave.approvals[currentStep.role] = {
+          // Legacy approvals object update
+          if (['hod', 'manager', 'hr'].includes(stepRole)) {
+            leave.approvals[stepRole] = {
               status: 'approved',
               approvedBy: req.user._id,
               approvedAt: new Date(),
-              comments
+              comments: commentText
             };
           }
         }
 
-        // 3. Sequential Travel Logic
-        if (isFinishingChain || isFinalAuth) {
-          // WORKFLOW COMPLETE
+        // 3. Sequential Travel Logic & Step-based status
+        if (isFinishingChain) {
           leave.status = 'approved';
           leave.workflow.isCompleted = true;
           leave.workflow.currentStepRole = 'completed';
           leave.workflow.nextApprover = null;
           leave.workflow.nextApproverRole = null;
-          leave.workflow.currentStep = 'completed'; // Legacy sync
+          leave.workflow.currentStep = 'completed';
           historyEntry.action = 'approved';
+          historyEntry.stepRole = stepRole;
+          historyEntry.actionByRole = actualApproverRole;
+          historyEntry.comments = commentText;
         } else {
-          // MOVE TO NEXT DESK
           const nextStep = leave.workflow.approvalChain[activeStepIndex + 1];
           nextStep.isCurrent = true;
 
           leave.workflow.currentStepRole = nextStep.role;
           leave.workflow.nextApprover = nextStep.role;
           leave.workflow.nextApproverRole = nextStep.role;
-          leave.workflow.currentStep = nextStep.role; // Legacy sync
+          leave.workflow.currentStep = nextStep.role;
 
-          // Set intermediate status based on WHO approved the current step
-          // If HOD approved, status becomes 'hod_approved' regardless of who is next (unless it's final)
-          if (requiredRole === 'hod') leave.status = 'hod_approved';
-          else if (requiredRole === 'manager') leave.status = 'manager_approved';
-          else if (requiredRole === 'hr') leave.status = 'hr_approved';
-          // No else - keep current status or default to pending if it was draft
-          if (!leave.status || leave.status === 'draft') leave.status = 'pending';
+          leave.status = `${stepRole}_approved`;
+          historyEntry.stepRole = stepRole;
+          historyEntry.actionByRole = actualApproverRole;
+          historyEntry.comments = commentText;
         }
 
         if (approvalWarnings.length > 0) historyEntry.warnings = approvalWarnings;
         break;
 
       case 'reject':
-        // Update Chain Step
+        const rejectCommentText = comments && comments.trim() ? comments : `Rejected by ${userRole}`;
+        const isRejectFinalStep = (activeStepIndex === leave.workflow.approvalChain.length - 1);
+
         if (activeStepIndex !== -1) {
           leave.workflow.approvalChain[activeStepIndex].status = 'rejected';
           leave.workflow.approvalChain[activeStepIndex].actionBy = req.user._id;
+          leave.workflow.approvalChain[activeStepIndex].actionByName = req.user.name;
+          leave.workflow.approvalChain[activeStepIndex].actionByRole = userRole;
+          leave.workflow.approvalChain[activeStepIndex].stepRole = requiredRole;
           leave.workflow.approvalChain[activeStepIndex].updatedAt = new Date();
-          leave.workflow.approvalChain[activeStepIndex].comments = comments;
+          leave.workflow.approvalChain[activeStepIndex].comments = rejectCommentText;
         }
 
-        // Legacy Update
         if (['hod', 'manager', 'hr'].includes(requiredRole)) {
           leave.approvals[requiredRole] = {
             status: 'rejected',
             approvedBy: req.user._id,
             approvedAt: new Date(),
-            comments: comments
+            comments: rejectCommentText
           };
         }
 
-        // Finalize Status
-        if (requiredRole === 'hod') leave.status = 'hod_rejected';
-        else if (requiredRole === 'manager') leave.status = 'manager_rejected';
-        else if (requiredRole === 'hr') leave.status = 'hr_rejected';
-        else leave.status = 'rejected';
-
+        leave.status = isRejectFinalStep ? 'rejected' : `${requiredRole}_rejected`;
         leave.workflow.isCompleted = true;
         leave.workflow.currentStepRole = null;
         leave.workflow.nextApprover = null;
+        leave.workflow.nextApproverRole = null;
         historyEntry.action = 'rejected';
+        historyEntry.stepRole = requiredRole;
+        historyEntry.actionByRole = userRole;
+        historyEntry.comments = rejectCommentText;
         break;
 
       case 'forward':
-        if (activeStepIndex !== -1) {
-          leave.workflow.approvalChain[activeStepIndex].status = 'skipped';
-        }
-
-        // Specific: HOD forwards to HR
-        if (requiredRole === 'hod') {
-          leave.status = 'hod_approved';
-          leave.approvals.hod = {
-            status: 'forwarded',
-            approvedBy: req.user._id,
-            approvedAt: new Date(),
-            comments
-          };
-          leave.workflow.currentStepRole = 'hr';
-          leave.workflow.nextApprover = 'hr';
-        } else {
-          if (activeStepIndex < leave.workflow.approvalChain.length - 1) {
-            const nextStep = leave.workflow.approvalChain[activeStepIndex + 1];
-            leave.workflow.currentStepRole = nextStep.role;
-            leave.workflow.nextApprover = nextStep.role;
-          }
-        }
-        historyEntry.action = 'forwarded';
-        break;
+        return res.status(400).json({
+          success: false,
+          error: 'Forward action is disabled. Use Approve or Reject only. Each step must be approved or rejected in sequence.',
+        });
 
       default:
         return res.status(400).json({ success: false, error: 'Invalid action' });
@@ -1288,85 +1299,99 @@ exports.revokeLeaveApproval = async (req, res) => {
       });
     }
 
-    // Check if leave is approved
-    if (leave.status !== 'approved' && leave.status !== 'hod_approved' && leave.status !== 'hr_approved') {
+    const allowedStatuses = ['approved', 'hod_approved', 'manager_approved', 'hr_approved'];
+    if (!allowedStatuses.includes(leave.status)) {
       return res.status(400).json({
         success: false,
         error: 'Only approved or partially approved leaves can be revoked',
       });
     }
 
-    // Check revocation window (2-3 hours)
-    const approvalTime = leave.approvals.hr?.approvedAt || leave.approvals.hod?.approvedAt;
-    if (!approvalTime) {
+    const chain = leave.workflow?.approvalChain || [];
+    if (chain.length === 0) {
       return res.status(400).json({
         success: false,
-        error: 'No approval timestamp found',
+        error: 'No approval chain found',
       });
     }
 
-    const hoursSinceApproval = (new Date() - new Date(approvalTime)) / (1000 * 60 * 60);
-    const revocationWindow = 3; // 3 hours window
+    const approvedSteps = chain
+      .map((s, i) => ({ step: s, index: i }))
+      .filter(({ step }) => step.status === 'approved');
+    const lastApproved = approvedSteps[approvedSteps.length - 1];
+    if (!lastApproved) {
+      return res.status(400).json({
+        success: false,
+        error: 'No approved step found to revoke',
+      });
+    }
 
+    const lastStep = lastApproved.step;
+    const stepIndex = lastApproved.index;
+    const approvedAt = lastStep.updatedAt || leave.approvals?.[lastStep.role]?.approvedAt || leave.approvals?.[lastStep.stepRole]?.approvedAt;
+    if (!approvedAt) {
+      return res.status(400).json({
+        success: false,
+        error: 'No approval timestamp found for this step',
+      });
+    }
+
+    const hoursSinceApproval = (new Date() - new Date(approvedAt)) / (1000 * 60 * 60);
+    const revocationWindow = 3;
     if (hoursSinceApproval > revocationWindow) {
       return res.status(400).json({
         success: false,
-        error: `Approval can only be revoked within ${revocationWindow} hours.${hoursSinceApproval.toFixed(1)} hours have passed.`,
+        error: `Approval can only be revoked within ${revocationWindow} hours. ${hoursSinceApproval.toFixed(1)} hours have passed.`,
       });
     }
 
-    // Check authorization
-    const userRole = req.user.role;
-    const isApprover =
-      (leave.approvals.hod?.approvedBy?.toString() === req.user._id.toString()) ||
-      (leave.approvals.hr?.approvedBy?.toString() === req.user._id.toString());
-    const isAdmin = ['hr', 'sub_admin', 'super_admin'].includes(userRole);
-
-    if (!isApprover && !isAdmin) {
+    const approverId = (lastStep.actionBy?._id || lastStep.actionBy)?.toString();
+    const userId = (req.user._id || req.user.userId)?.toString();
+    if (approverId !== userId) {
       return res.status(403).json({
         success: false,
-        error: 'Not authorized to revoke this approval',
+        error: 'Only the person who approved this step can revoke it',
       });
     }
 
-    // Revoke approval - revert to previous status
-    if (leave.status === 'approved') {
-      // If fully approved, revert to hr_approved or hod_approved
-      if (leave.approvals.hr?.status === 'approved') {
-        leave.status = 'hr_approved';
-        leave.approvals.hr.status = null;
-        leave.approvals.hr.approvedBy = null;
-        leave.approvals.hr.approvedAt = null;
-        leave.workflow.currentStep = 'hr';
-        leave.workflow.nextApprover = 'hr';
-      }
-    } else if (leave.status === 'hr_approved') {
-      leave.status = 'hod_approved';
-      leave.approvals.hr.status = null;
-      leave.approvals.hr.approvedBy = null;
-      leave.approvals.hr.approvedAt = null;
-      leave.workflow.currentStep = 'hr';
-      leave.workflow.nextApprover = 'hr';
-    } else if (leave.status === 'hod_approved') {
-      leave.status = 'pending';
-      leave.approvals.hod.status = null;
-      leave.approvals.hod.approvedBy = null;
-      leave.approvals.hod.approvedAt = null;
-      leave.workflow.currentStep = 'hod';
-      leave.workflow.nextApprover = 'hod';
+    const stepRole = lastStep.role || lastStep.stepRole;
+    lastStep.status = 'pending';
+    lastStep.actionBy = undefined;
+    lastStep.actionByName = undefined;
+    lastStep.actionByRole = undefined;
+    lastStep.comments = undefined;
+    lastStep.updatedAt = undefined;
+    lastStep.isCurrent = true;
+
+    if (leave.approvals && leave.approvals[stepRole]) {
+      leave.approvals[stepRole] = { status: null, approvedBy: null, approvedAt: null, comments: null };
     }
 
-    // Add to timeline (only once)
+    leave.workflow.currentStepRole = stepRole;
+    leave.workflow.nextApprover = stepRole;
+    leave.workflow.nextApproverRole = stepRole;
+    leave.workflow.currentStep = stepRole;
+    leave.workflow.isCompleted = false;
+
+    if (stepIndex === 0) {
+      leave.status = 'pending';
+    } else {
+      const prevRole = chain[stepIndex - 1]?.role || chain[stepIndex - 1]?.stepRole;
+      leave.status = prevRole ? `${prevRole}_approved` : 'pending';
+    }
+
     leave.workflow.history.push({
-      step: userRole,
+      step: stepRole,
       action: 'revoked',
       actionBy: req.user._id,
       actionByName: req.user.name,
-      actionByRole: userRole,
-      comments: reason || `Approval revoked by ${req.user.name} `,
+      actionByRole: req.user.role,
+      comments: reason || `Approval revoked by ${req.user.name}`,
       timestamp: new Date(),
     });
 
+    leave.markModified('workflow');
+    leave.markModified('approvals');
     await leave.save();
 
     res.status(200).json({

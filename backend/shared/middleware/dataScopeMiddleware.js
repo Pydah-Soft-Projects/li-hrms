@@ -66,26 +66,27 @@ function buildScopeFilter(user) {
         ownFilter = {
             $or: [
                 { _id: user.employeeRef },
-                { employeeId: user.employeeRef },
-                { emp_no: user.employeeId },
-                { employeeNumber: user.employeeId },
-                { appliedBy: user._id }
+                { employeeId: user.employeeRef },  // OT, Permission: employeeId is MongoDB ref
+                { emp_no: user.employeeId },      // Leave/OD: emp_no (string)
+                { appliedBy: user._id },
+                { requestedBy: user._id }         // OT, Permission use requestedBy
             ]
         };
     } else if (user.employeeId) {
         ownFilter = {
             $or: [
-                { emp_no: user.employeeId },
-                { employeeNumber: user.employeeId },
-                { employeeId: user.employeeId },
-                { appliedBy: user._id }
+                { emp_no: user.employeeId },      // Leave/OD: emp_no
+                { employeeId: user.employeeId },  // When employeeId is used as ref
+                { appliedBy: user._id },
+                { requestedBy: user._id }
             ]
         };
     } else {
         ownFilter = {
             $or: [
                 { _id: user._id },
-                { appliedBy: user._id }
+                { appliedBy: user._id },
+                { requestedBy: user._id }
             ]
         };
     }
@@ -152,8 +153,9 @@ function buildWorkflowVisibilityFilter(user) {
         $or: [
             // 1. Applicant (Owner) - Always sees their own applications
             { appliedBy: user._id },
-            { employeeId: user.employeeRef },
-            { emp_no: user.employeeId },
+            { requestedBy: user._id },  // OT, Permission use requestedBy
+            { employeeId: user.employeeRef },  // OT, Permission: employeeId is MongoDB ref
+            { emp_no: user.employeeId },  // Leave/OD: emp_no (string)
 
             // 2. Current Desk (Next Approver) - Visible when it's their turn
             { 'workflow.nextApprover': userRole },
@@ -164,7 +166,7 @@ function buildWorkflowVisibilityFilter(user) {
                 'workflow.approvalChain': {
                     $elemMatch: {
                         role: userRole,
-                        status: { $in: ['approved', 'rejected', 'skipped', 'forwarded'] }
+                        status: { $in: ['approved', 'rejected', 'skipped'] }
                     }
                 }
             },
@@ -177,7 +179,7 @@ function buildWorkflowVisibilityFilter(user) {
             ...(userRole === 'hr' ? [{ isActive: true }] : []),
             // HOD/Manager sees everything once it's finalized (regardless of if they were in the chain)
             // if we want them to see all approved leaves in their department
-            ...((userRole === 'hod' || userRole === 'manager') ? [{ status: { $in: ['approved', 'rejected', 'cancelled'] } }] : [])
+            ...((userRole === 'hod' || userRole === 'manager') ? [{ status: { $in: ['approved', 'rejected', 'cancelled', 'checked_out', 'checked_in'] } }] : [])
         ]
     };
 }
@@ -249,7 +251,8 @@ function checkJurisdiction(user, record) {
         (record.employeeId && user.employeeRef && record.employeeId.toString() === user.employeeRef.toString()) ||
         (record.emp_no && user.employeeId && record.emp_no === user.employeeId) ||
         (record.employeeNumber && user.employeeId && record.employeeNumber === user.employeeId) ||
-        (record.appliedBy && user._id && record.appliedBy.toString() === user._id.toString());
+        (record.appliedBy && user._id && record.appliedBy.toString() === user._id.toString()) ||
+        (record.requestedBy && user._id && record.requestedBy.toString() === user._id.toString());
 
     if (isOwner) return true;
 

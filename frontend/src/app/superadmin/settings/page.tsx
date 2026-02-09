@@ -1532,7 +1532,21 @@ export default function SettingsPage() {
 
     try {
       setSaving(true);
-      const response = await api.updateLeaveSettings('leave', leaveSettings);
+      // Normalize steps: deduplicate by approverRole (keep first), then fix stepOrder to 1,2,3...
+      const steps = leaveSettings.workflow?.steps || [];
+      const seen = new Set<string>();
+      const deduped = steps.filter(s => {
+        const role = s.approverRole || '';
+        if (seen.has(role)) return false;
+        seen.add(role);
+        return true;
+      });
+      const normalizedSteps = deduped.map((s, i) => ({ ...s, stepOrder: i + 1 }));
+      const payload = {
+        ...leaveSettings,
+        workflow: { ...leaveSettings.workflow, steps: normalizedSteps }
+      };
+      const response = await api.updateLeaveSettings('leave', payload);
 
       if (response.success) {
         setMessage({ type: 'success', text: 'Leave workflow saved successfully' });
@@ -1549,7 +1563,21 @@ export default function SettingsPage() {
 
     try {
       setSaving(true);
-      const response = await api.updateLeaveSettings('od', odSettings);
+      // Normalize steps: deduplicate by approverRole (keep first), then fix stepOrder to 1,2,3...
+      const steps = odSettings.workflow?.steps || [];
+      const seen = new Set<string>();
+      const deduped = steps.filter(s => {
+        const role = s.approverRole || '';
+        if (seen.has(role)) return false;
+        seen.add(role);
+        return true;
+      });
+      const normalizedSteps = deduped.map((s, i) => ({ ...s, stepOrder: i + 1 }));
+      const payload = {
+        ...odSettings,
+        workflow: { ...odSettings.workflow, steps: normalizedSteps }
+      };
+      const response = await api.updateLeaveSettings('od', payload);
 
       if (response.success) {
         setMessage({ type: 'success', text: 'OD workflow saved successfully' });
@@ -2586,13 +2614,13 @@ export default function SettingsPage() {
                       <div className="p-4">
                         <div className="flex items-center gap-4">
                           {leaveSettings?.workflow?.steps && leaveSettings.workflow.steps.map((step, index) => (
-                            <div key={step.stepOrder} className="flex items-center gap-4">
+                            <div key={`${step.stepOrder}-${step.approverRole}-${index}`} className="flex items-center gap-4">
                               <div className="flex flex-col items-center">
                                 <div className={`flex h-12 w-12 items-center justify-center rounded-full ${step.approverRole === 'hod'
                                   ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300'
                                   : 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300'
                                   }`}>
-                                  <span className="text-lg font-bold">{step.stepOrder}</span>
+                                  <span className="text-lg font-bold">{index + 1}</span>
                                 </div>
                                 <span className="mt-1 text-xs font-medium text-slate-600 dark:text-slate-400">{step.stepName}</span>
                                 <span className="text-[10px] uppercase text-slate-400">{step.approverRole}</span>
@@ -2926,7 +2954,7 @@ export default function SettingsPage() {
                       <div className="p-4 overflow-x-auto">
                         <div className="flex items-center gap-4 min-w-max">
                           {odSettings?.workflow?.steps && odSettings.workflow.steps.map((step, index) => (
-                            <div key={step.stepOrder} className="flex items-center gap-4">
+                            <div key={`${step.stepOrder}-${step.approverRole}-${index}`} className="flex items-center gap-4">
                               <div className="flex flex-col items-center">
                                 <div className={`flex h-12 w-12 items-center justify-center rounded-full ${step.approverRole === 'hod'
                                   ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300'
@@ -2934,7 +2962,7 @@ export default function SettingsPage() {
                                     ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300'
                                     : 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300'
                                   }`}>
-                                  <span className="text-lg font-bold">{step.stepOrder}</span>
+                                  <span className="text-lg font-bold">{index + 1}</span>
                                 </div>
                                 <span className="mt-1 text-xs font-medium text-slate-600 dark:text-slate-400">{step.stepName}</span>
                                 <span className="text-[10px] uppercase text-slate-400">{step.approverRole}</span>

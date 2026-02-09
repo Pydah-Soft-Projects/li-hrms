@@ -1635,8 +1635,8 @@ export const api = {
     return apiRequest<any>('/leaves/pending-approvals', { method: 'GET' });
   },
 
-  // Process leave action (approve/reject/forward)
-  processLeaveAction: async (id: string, action: 'approve' | 'reject' | 'forward', comments?: string) => {
+  // Process leave action (approve/reject)
+  processLeaveAction: async (id: string, action: 'approve' | 'reject', comments?: string) => {
     return apiRequest<any>(`/leaves/${id}/action`, {
       method: 'PUT',
       body: JSON.stringify({ action, comments }),
@@ -1821,8 +1821,8 @@ export const api = {
     return apiRequest<any>('/leaves/od/pending-approvals', { method: 'GET' });
   },
 
-  // Process OD action (approve/reject/forward)
-  processODAction: async (id: string, action: 'approve' | 'reject' | 'forward', comments?: string) => {
+  // Process OD action (approve/reject)
+  processODAction: async (id: string, action: 'approve' | 'reject', comments?: string) => {
     return apiRequest<any>(`/leaves/od/${id}/action`, {
       method: 'PUT',
       body: JSON.stringify({ action, comments }),

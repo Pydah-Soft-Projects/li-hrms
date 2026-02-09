@@ -153,7 +153,7 @@ const LeaveSchema = new mongoose.Schema(
           step: String,
           action: {
             type: String,
-            enum: ['submitted', 'approved', 'rejected', 'forwarded', 'returned', 'cancelled', 'revoked', 'status_changed'],
+            enum: ['submitted', 'approved', 'rejected', 'returned', 'cancelled', 'revoked', 'status_changed'],
           },
           actionBy: {
             type: mongoose.Schema.Types.ObjectId,
@@ -175,7 +175,7 @@ const LeaveSchema = new mongoose.Schema(
       hod: {
         status: {
           type: String,
-          enum: ['pending', 'approved', 'rejected', 'forwarded', null],
+          enum: ['pending', 'approved', 'rejected', null],
           default: null,
         },
         approvedBy: {
@@ -188,7 +188,7 @@ const LeaveSchema = new mongoose.Schema(
       manager: {
         status: {
           type: String,
-          enum: ['pending', 'approved', 'rejected', 'forwarded', null],
+          enum: ['pending', 'approved', 'rejected', null],
           default: null,
         },
         approvedBy: {

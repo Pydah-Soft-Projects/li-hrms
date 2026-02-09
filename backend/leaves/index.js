@@ -36,14 +36,10 @@ router.post('/types/:type', authorize('super_admin'), settingsController.addType
 router.get('/od/my', odController.getMyODs);
 
 // Get pending OD approvals
-router.get('/od/pending-approvals', authorize('hod', 'hr', 'manager', 'sub_admin', 'super_admin'), odController.getPendingApprovals);
-
-// Get all ODs
-router.get('/od', authorize('hod', 'hr', 'manager', 'sub_admin', 'super_admin'), odController.getODs);
 router.get('/od/pending-approvals', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), odController.getPendingApprovals);
 
-// Get all ODs
-router.get('/od', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), odController.getODs);
+// Get all ODs (scoped by division/department) - employee allowed; applyScopeFilter restricts to own/scope
+router.get('/od', authorize('employee', 'manager', 'hod', 'hr', 'sub_admin', 'super_admin'), applyScopeFilter, odController.getODs);
 
 // Get single OD
 router.get('/od/:id', odController.getOD);
@@ -94,8 +90,8 @@ router.post('/:id/revoke-for-attendance', authorize('manager', 'super_admin', 's
 // Update leave for attendance (multi-day leave adjustments)
 router.post('/:id/update-for-attendance', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), leaveController.updateLeaveForAttendance);
 
-// Get all leaves (with filters)
-router.get('/', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), applyScopeFilter, leaveController.getLeaves);
+// Get all leaves (with filters) - employee allowed; applyScopeFilter restricts to own/scope
+router.get('/', authorize('employee', 'manager', 'hod', 'hr', 'sub_admin', 'super_admin'), applyScopeFilter, leaveController.getLeaves);
 
 // Apply for leave
 router.post('/', leaveController.applyLeave);

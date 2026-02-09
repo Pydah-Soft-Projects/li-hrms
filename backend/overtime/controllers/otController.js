@@ -89,16 +89,10 @@ exports.createOT = async (req, res) => {
         });
       }
 
-      const { divisionMapping } = req.user;
-      const employeeDivisionId = targetEmployee.division_id?.toString();
-      const targetDeptId = (targetEmployee.department_id || targetEmployee.department)?.toString();
+      const scopedEmployeeIds = await getEmployeeIdsInScope(req.user);
+      const isInScope = scopedEmployeeIds.some(id => id.toString() === targetEmployee._id.toString());
 
-      const mapping = divisionMapping?.find(m => (m.division?._id || m.division)?.toString() === employeeDivisionId);
-      const isDepartmentScoped = mapping
-        ? (!mapping.departments || mapping.departments.length === 0) || mapping.departments.some(d => (d?._id || d).toString() === targetDeptId)
-        : false;
-
-      if (!isDepartmentScoped) {
+      if (!isInScope) {
         return res.status(403).json({
           success: false,
           message: `You are not authorized to apply for OT for employees outside your assigned data scope.`
@@ -205,6 +199,59 @@ exports.getOTRequests = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error fetching OT requests',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * @desc    Get pending OT approvals (for HOD/Manager/HR)
+ * @route   GET /api/ot/pending-approvals
+ * @access  Private (manager, hod, hr, sub_admin, super_admin)
+ * Data scope: Show OTs to ALL workflow participants (roles in approvalChain) with division/department scope.
+ */
+exports.getPendingOTApprovals = async (req, res) => {
+  try {
+    const userRole = req.user.role;
+    const baseFilter = {
+      isActive: true,
+      requestedBy: { $ne: req.user._id }
+    };
+
+    const finalStatuses = ['approved', 'rejected'];
+
+    if (['sub_admin', 'super_admin'].includes(userRole)) {
+      baseFilter.status = { $nin: finalStatuses };
+    } else if (['hod', 'hr', 'manager'].includes(userRole)) {
+      const roleVariants = [userRole];
+      if (userRole === 'hr') roleVariants.push('final_authority');
+      baseFilter['workflow.approvalChain'] = {
+        $elemMatch: { role: { $in: roleVariants } }
+      };
+      const employeeIds = await getEmployeeIdsInScope(req.user);
+      baseFilter.employeeId = employeeIds.length > 0 ? { $in: employeeIds } : { $in: [] };
+      baseFilter.status = { $nin: finalStatuses };
+    } else {
+      baseFilter['workflow.approvalChain'] = { $elemMatch: { role: userRole } };
+      baseFilter.status = { $nin: finalStatuses };
+    }
+
+    const otRequests = await OT.find(baseFilter)
+      .populate('employeeId', 'emp_no employee_name department designation')
+      .populate('shiftId', 'name startTime endTime duration')
+      .populate('requestedBy', 'name email')
+      .sort({ requestedAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      count: otRequests.length,
+      data: otRequests,
+    });
+  } catch (error) {
+    console.error('Error fetching pending OT approvals:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching pending OT approvals',
       error: error.message,
     });
   }

@@ -5,7 +5,7 @@ interface ApprovalStep {
     stepOrder: number;
     role: string;
     label: string;
-    status: 'pending' | 'approved' | 'rejected' | 'forwarded';
+    status: 'pending' | 'approved' | 'rejected' | 'skipped';
     actionBy?: string;
     actionByName?: string;
     actionByRole?: string;
@@ -46,7 +46,7 @@ export default function WorkflowTimeline({ workflow }: WorkflowTimelineProps) {
             <div className="relative">
                 {steps.map((step, index) => {
                     const isLast = index === steps.length - 1;
-                    const isCompleted = step.status === 'approved' || step.status === 'forwarded';
+                    const isCompleted = step.status === 'approved' || step.status === 'skipped';
                     const isRejected = step.status === 'rejected';
                     const isCurrent = step.isCurrent && !isCompleted && !isRejected;
                     const isPending = step.status === 'pending' && !isCurrent;
