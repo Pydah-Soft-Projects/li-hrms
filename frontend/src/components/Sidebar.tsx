@@ -58,6 +58,7 @@ const navItems: NavItem[] = [
   { href: '/superadmin/confused-shifts', label: 'Confused Shifts', icon: AlertTriangle, category: 'Time & Attendance', moduleCode: 'CONFUSED_SHIFTS' },
   { href: '/superadmin/shift-roster', label: 'Shift Roster', icon: CalendarDays, category: 'Time & Attendance', moduleCode: 'SHIFT_ROSTER' },
   { href: '/superadmin/leaves', label: 'Leave & OD', icon: Plane, category: 'Time & Attendance', moduleCode: 'LEAVE_OD' },
+  { href: '/superadmin/ccl', label: 'CCL (Compensatory)', icon: Plane, category: 'Time & Attendance', moduleCode: 'CCL' },
   { href: '/superadmin/shifts', label: 'Shifts', icon: Watch, category: 'Time & Attendance', moduleCode: 'SHIFTS' },
   { href: '/superadmin/divisions', label: 'Divisions', icon: Building2, category: 'Organization', moduleCode: 'DIVISIONS' },
   { href: '/superadmin/departments', label: 'Departments', icon: Building, category: 'Organization', moduleCode: 'DEPARTMENTS' },

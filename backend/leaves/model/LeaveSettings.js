@@ -6,10 +6,10 @@ const mongoose = require('mongoose');
  */
 const LeaveSettingsSchema = new mongoose.Schema(
   {
-    // Settings type - leave or od
+    // Settings type - leave, od, or ccl
     type: {
       type: String,
-      enum: ['leave', 'od'],
+      enum: ['leave', 'od', 'ccl'],
       required: true,
     },
 
