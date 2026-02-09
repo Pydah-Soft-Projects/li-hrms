@@ -1385,6 +1385,13 @@ export const api = {
     return apiRequest<any>('/employees/settings', { method: 'GET' });
   },
 
+  updateEmployeeSettings: async (data: any) => {
+    return apiRequest<any>('/employees/settings', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
   // Workspaces
   getMyWorkspaces: async () => {
     return apiRequest<any>('/workspaces/my-workspaces', { method: 'GET' });
