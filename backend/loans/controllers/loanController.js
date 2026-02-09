@@ -5,6 +5,7 @@ const Employee = require('../../employees/model/Employee');
 const User = require('../../users/model/User');
 const { isHRMSConnected, getEmployeeByIdMSSQL } = require('../../employees/config/sqlHelper');
 const { getResolvedLoanSettings } = require('../../departments/controllers/departmentSettingsController');
+const { getEmployeeIdsInScope } = require('../../shared/middleware/dataScopeMiddleware');
 
 // ============================================
 // TESTING FLAG - Set to false to disable Super Admin bypass
@@ -978,30 +979,23 @@ exports.getPendingApprovals = async (req, res) => {
     const userRole = req.user.role;
     let filter = { isActive: true };
 
-    // Determine what the user can approve based on their role
+    // Determine what the user can approve based on their role (use divisionMapping for scope)
     if (userRole === 'hod') {
       filter['workflow.nextApprover'] = 'hod';
-      const hodDeptIds = (req.user.divisionMapping || []).flatMap(m =>
-        (m.departments || []).map(d => (d?._id || d).toString())
-      );
-      if (hodDeptIds.length > 0) {
-        filter.$or = [{ department: { $in: hodDeptIds } }, { department_id: { $in: hodDeptIds } }];
+      const scopedEmployeeIds = await getEmployeeIdsInScope(req.user);
+      if (scopedEmployeeIds.length > 0) {
+        filter.employeeId = { $in: scopedEmployeeIds };
+      } else {
+        return res.status(200).json({ success: true, count: 0, data: [] });
       }
     } else if (userRole === 'manager') {
-      // Find division where user is manager
-      const Division = require('../../departments/model/Division');
-      const division = await Division.findOne({ manager: req.user._id });
-
-      if (!division) {
-        return res.status(200).json({
-          success: true,
-          count: 0,
-          data: [],
-        });
-      }
-
       filter['workflow.nextApprover'] = 'manager';
-      filter.division_id = division._id;
+      const scopedEmployeeIds = await getEmployeeIdsInScope(req.user);
+      if (scopedEmployeeIds.length > 0) {
+        filter.employeeId = { $in: scopedEmployeeIds };
+      } else {
+        return res.status(200).json({ success: true, count: 0, data: [] });
+      }
     } else if (userRole === 'hr') {
       filter['workflow.nextApprover'] = { $in: ['hr', 'final_authority'] };
     } else if (['sub_admin', 'super_admin'].includes(userRole)) {
@@ -1068,10 +1062,10 @@ exports.processLoanAction = async (req, res) => {
         ? (!mapping.departments || mapping.departments.length === 0) || mapping.departments.some(d => (d?._id || d).toString() === loanDeptId)
         : false;
     } else if (currentApprover === 'manager' && userRole === 'manager') {
-      // Verify user is the manager for this division
-      const Division = require('../../departments/model/Division');
-      const division = await Division.findById(loan.division_id);
-      canProcess = division && division.manager?.toString() === req.user._id.toString();
+      // Verify via divisionMapping (unified scope)
+      const scopedEmployeeIds = await getEmployeeIdsInScope(req.user);
+      const loanEmpId = (loan.employeeId?._id || loan.employeeId)?.toString();
+      canProcess = loanEmpId && scopedEmployeeIds.some(id => id.toString() === loanEmpId);
     } else if (['hr', 'final_authority'].includes(currentApprover) && userRole === 'hr') {
       canProcess = true;
     }

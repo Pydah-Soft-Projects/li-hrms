@@ -135,7 +135,7 @@ interface OTRequest {
   otInTime: string;
   otOutTime: string;
   otHours: number;
-  status: 'pending' | 'approved' | 'rejected';
+  status: 'pending' | 'approved' | 'rejected' | 'manager_approved' | 'manager_rejected';
   requestedBy: { name: string; email: string };
   approvedBy?: { name: string; email: string };
   rejectedBy?: { name: string; email: string };
@@ -167,7 +167,7 @@ interface PermissionRequest {
   permissionEndTime: string;
   permissionHours: number;
   purpose: string;
-  status: 'pending' | 'approved' | 'rejected';
+  status: 'pending' | 'approved' | 'rejected' | 'manager_approved' | 'manager_rejected' | 'checked_out' | 'checked_in';
   requestedBy: { name: string; email: string };
   approvedBy?: { name: string; email: string };
   rejectedBy?: { name: string; email: string };
@@ -838,7 +838,12 @@ export default function OTAndPermissionsPage() {
       case 'rejected':
         return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
       case 'pending':
+      case 'manager_approved':
         return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400';
+      case 'checked_out':
+        return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
+      case 'checked_in':
+        return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400';
       default:
         return 'bg-slate-100 text-slate-700 dark:bg-slate-900/30 dark:text-slate-400';
     }
@@ -1384,9 +1389,14 @@ export default function OTAndPermissionsPage() {
                               </td>
                               <td className="px-6 py-4 text-xs font-bold text-slate-600 dark:text-slate-400 max-w-[150px] truncate" title={perm.purpose}>{perm.purpose}</td>
                               <td className="px-6 py-4 text-center">
-                                <span className={`inline-flex items-center px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-[0.1em] shadow-sm ${perm.status === 'approved' ? 'bg-green-500 text-white shadow-green-500/20' : perm.status === 'rejected' ? 'bg-red-500 text-white shadow-red-500/20' : 'bg-orange-500 text-white shadow-orange-500/20'
-                                  }`}>
-                                  {perm.status}
+                                <span className={`inline-flex items-center px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-[0.1em] shadow-sm ${
+                                  perm.status === 'approved' ? 'bg-green-500 text-white shadow-green-500/20' :
+                                  perm.status === 'rejected' ? 'bg-red-500 text-white shadow-red-500/20' :
+                                  perm.status === 'checked_out' ? 'bg-blue-500 text-white shadow-blue-500/20' :
+                                  perm.status === 'checked_in' ? 'bg-emerald-500 text-white shadow-emerald-500/20' :
+                                  'bg-orange-500 text-white shadow-orange-500/20'
+                                }`}>
+                                  {perm.status.replace(/_/g, ' ')}
                                 </span>
                               </td>
                               <td className="px-8 py-4 text-right">
