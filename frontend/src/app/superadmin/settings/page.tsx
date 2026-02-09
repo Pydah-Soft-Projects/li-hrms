@@ -1736,49 +1736,55 @@ export default function SettingsPage() {
     { id: 'general', label: 'General' },
   ];
 
+  const tabGroups = [
+    { label: 'Time & Attendance', ids: ['shift', 'attendance', 'overtime', 'attendance_deductions'] as TabType[] },
+    { label: 'Leave & Loans', ids: ['leaves', 'loan', 'salary_advance'] as TabType[] },
+    { label: 'Pay & People', ids: ['payroll', 'employee'] as TabType[] },
+    { label: 'Access & System', ids: ['permissions', 'feature_control', 'communications', 'general'] as TabType[] },
+  ];
+
   return (
-    <div className="relative min-h-screen">
-      {/* Background Pattern */}
-      <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(to_right,#e2e8f01f_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f01f_1px,transparent_1px)] bg-[size:28px_28px] dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.12)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.12)_1px,transparent_1px)]" />
-      <div className="pointer-events-none fixed inset-0 bg-gradient-to-br from-blue-50/40 via-indigo-50/35 to-transparent dark:from-slate-900/60 dark:via-slate-900/65 dark:to-slate-900/80" />
-
-      <div className="relative z-10 p-6 sm:p-8 lg:p-10">
-        {/* Header Section */}
-        <div className="mb-8 flex flex-wrap items-center justify-between gap-4 rounded-3xl border border-slate-200/80 bg-white/95 px-6 py-5 shadow-[0_8px_26px_rgba(30,64,175,0.08)] backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/90 sm:px-8">
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100 sm:text-3xl">
-              Settings
-            </h1>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Configure system settings and preferences
-            </p>
-          </div>
-        </div>
-
-        {/* Tabs */}
-        <div className="mb-6 rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
-          <nav className="flex space-x-1 overflow-x-auto">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => {
-                  setActiveTab(tab.id);
-                  setMessage(null);
-                }}
-                className={`flex-1 whitespace-nowrap rounded-xl px-4 py-3 text-sm font-semibold transition-all ${activeTab === tab.id
-                  ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg shadow-blue-500/30'
-                  : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
-                  }`}
-              >
-                {tab.label}
-              </button>
+    <div className="flex min-h-[calc(100vh-2rem)] m-0">
+      {/* Sidebar Nav */}
+      <aside className="w-56 shrink-0 border-r border-gray-200 bg-white py-6 dark:border-gray-800 dark:bg-gray-900/50">
+        <div className="sticky top-6 px-3">
+          <h2 className="mb-1 px-3 text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">Settings</h2>
+          <p className="mb-6 px-3 text-[11px] text-gray-500 dark:text-gray-400">Configure your system</p>
+          <nav className="space-y-6">
+            {tabGroups.map((group) => (
+              <div key={group.label}>
+                <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-widest text-gray-400 dark:text-gray-500">{group.label}</p>
+                <div className="space-y-0.5">
+                  {group.ids.map((id) => {
+                    const tab = tabs.find((t) => t.id === id);
+                    if (!tab) return null;
+                    const isActive = activeTab === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        onClick={() => { setActiveTab(tab.id); setMessage(null); }}
+                        className={`flex w-full items-center rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors ${
+                          isActive
+                            ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400'
+                            : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800/80 dark:hover:text-gray-200'
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             ))}
           </nav>
         </div>
+      </aside>
 
+      {/* Content */}
+      <main className="min-w-0 flex-1 bg-gray-50/50 py-6 pl-8 pr-8 dark:bg-gray-900/30">
         {/* Tab Content */}
         {activeTab === 'shift' && (
-          <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg dark:border-slate-800 dark:bg-slate-950/95 sm:p-8">
+          <div className="overflow-hidden rounded-xl bg-white p-6 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700 sm:p-8">
             <h2 className="mb-2 text-xl font-semibold text-slate-900 dark:text-slate-100">Shift Durations</h2>
             <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">
               Configure allowed shift durations. These durations will be available when creating shifts.
@@ -4531,7 +4537,7 @@ export default function SettingsPage() {
                       <div>
                         <h4 className="mb-3 text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">⏰ Time & Attendance</h4>
                         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                          {['LEAVE_OD', 'ATTENDANCE', 'OT_PERMISSIONS', 'SHIFTS'].map((module) => (
+                          {['LEAVE_OD', 'CCL', 'ATTENDANCE', 'OT_PERMISSIONS', 'SHIFTS'].map((module) => (
                             <label key={module} className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 transition-all hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800">
                               <input
                                 type="checkbox"
@@ -4546,7 +4552,7 @@ export default function SettingsPage() {
                                 className="h-4 w-4 rounded text-blue-600 focus:ring-blue-500"
                               />
                               <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                                {module === 'LEAVE_OD' ? 'Leave & OD' : module === 'OT_PERMISSIONS' ? 'OT & Permissions' : module === 'SHIFTS' ? 'Shifts' : 'Attendance'}
+                                {module === 'LEAVE_OD' ? 'Leave & OD' : module === 'CCL' ? 'CCL (Compensatory)' : module === 'OT_PERMISSIONS' ? 'OT & Permissions' : module === 'SHIFTS' ? 'Shifts' : 'Attendance'}
                               </span>
                             </label>
                           ))}
@@ -5573,22 +5579,24 @@ export default function SettingsPage() {
         )}
 
         {activeTab === 'general' && (
-          <div className="space-y-6">
+          <div className="overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
             {generalSettingsLoading ? (
-              <div className="flex items-center justify-center rounded-3xl border border-slate-200 bg-white/95 py-16 shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
-                <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
+              <div className="flex items-center justify-center py-20">
+                <Spinner />
               </div>
             ) : (
-              <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg dark:border-slate-800 dark:bg-slate-950/95 sm:p-8">
-                <h2 className="mb-2 text-xl font-semibold text-slate-900 dark:text-slate-100">General System Settings</h2>
-                <p className="mb-8 text-sm text-slate-600 dark:text-slate-400">
-                  Global configurations for attendance, payroll, and system-wide defaults.
-                </p>
+              <div className="p-6 sm:p-8">
+                <div className="border-b border-gray-200 pb-6 dark:border-gray-700">
+                  <h2 className="text-xl font-semibold text-gray-900 dark:text-white">General System Settings</h2>
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    Global configurations for attendance, payroll, and system-wide defaults.
+                  </p>
+                </div>
 
                 {message && activeTab === 'general' && (
                   <div
-                    className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${message.type === 'success'
-                      ? 'border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-900/20 dark:text-green-200'
+                    className={`mt-6 rounded-lg border px-4 py-3 text-sm ${message.type === 'success'
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200'
                       : 'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200'
                       }`}
                   >
@@ -5596,21 +5604,16 @@ export default function SettingsPage() {
                   </div>
                 )}
 
-                <div className="space-y-8">
-                  {/* Grace Period Section */}
+                <div className="mt-8 space-y-8">
+                  {/* Attendance Grace Periods Section */}
                   <section>
-                    <div className="mb-4 flex items-center gap-2">
-                      <div className="h-5 w-1 rounded-full bg-blue-500"></div>
-                      <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Attendance Grace Periods</h3>
-                    </div>
-
-                    <div className="grid gap-6 sm:grid-cols-2">
-                      {/* Late In Grace */}
-                      <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-blue-900/10">
-                        <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Attendance Grace Periods</h3>
+                    <div className="mt-4 grid gap-6 sm:grid-cols-2">
+                      <div className="rounded-lg border border-gray-200 bg-gray-50/50 p-5 dark:border-gray-600 dark:bg-gray-700/30">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                           Late In Grace Period (Minutes)
                         </label>
-                        <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
+                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                           Minutes allowed after shift start before being marked as late.
                         </p>
                         <input
@@ -5618,16 +5621,14 @@ export default function SettingsPage() {
                           min="0"
                           value={lateInGrace}
                           onChange={(e) => setLateInGrace(Number(e.target.value))}
-                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                          className="mt-3 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                         />
                       </div>
-
-                      {/* Early Out Grace */}
-                      <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50/30 p-5 dark:border-slate-700 dark:from-slate-900/50 dark:to-blue-900/10">
-                        <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                      <div className="rounded-lg border border-gray-200 bg-gray-50/50 p-5 dark:border-gray-600 dark:bg-gray-700/30">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                           Early Out Grace Period (Minutes)
                         </label>
-                        <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
+                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                           Minutes allowed before shift end without recording an early exit.
                         </p>
                         <input
@@ -5635,18 +5636,17 @@ export default function SettingsPage() {
                           min="0"
                           value={earlyOutGrace}
                           onChange={(e) => setEarlyOutGrace(Number(e.target.value))}
-                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                          className="mt-3 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                         />
                       </div>
                     </div>
                   </section>
 
-                  {/* Save Button */}
-                  <div className="flex justify-end pt-4">
+                  <div className="flex justify-end border-t border-gray-200 pt-6 dark:border-gray-700">
                     <button
                       onClick={saveGeneralSettings}
                       disabled={saving}
-                      className="rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-600 px-8 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/25 transition-all hover:scale-[1.02] hover:shadow-blue-500/40 active:scale-95 disabled:opacity-50"
+                      className="rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50"
                     >
                       {saving ? 'Saving...' : 'Save General Settings'}
                     </button>
@@ -5656,7 +5656,6 @@ export default function SettingsPage() {
             )}
           </div>
         )}
-      </div>
 
       {/* Edit Modal */}
       {
@@ -5721,6 +5720,7 @@ export default function SettingsPage() {
           </div>
         )
       }
-    </div >
+      </main>
+    </div>
   );
 }

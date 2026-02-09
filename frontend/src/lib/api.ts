@@ -1739,6 +1739,56 @@ export const api = {
     return apiRequest<any>(`/leaves/${id}`, { method: 'DELETE' });
   },
 
+  // ==========================================
+  // CCL (Compensatory Casual Leave) APIs
+  // ==========================================
+  getCCLAssignedByUsers: async (params: { employeeId?: string; empNo?: string }) => {
+    const q = new URLSearchParams();
+    if (params.employeeId) q.append('employeeId', params.employeeId);
+    if (params.empNo) q.append('empNo', params.empNo);
+    return apiRequest<any>(`/leaves/ccl/assigned-by-users?${q.toString()}`, { method: 'GET' });
+  },
+  validateCCLDate: async (date: string, params?: { employeeId?: string; empNo?: string; isHalfDay?: boolean; halfDayType?: 'first_half' | 'second_half' | null }) => {
+    const q = new URLSearchParams();
+    q.append('date', date);
+    if (params?.employeeId) q.append('employeeId', params.employeeId);
+    if (params?.empNo) q.append('empNo', params.empNo);
+    if (params?.isHalfDay !== undefined) q.append('isHalfDay', String(params.isHalfDay));
+    if (params?.halfDayType) q.append('halfDayType', params.halfDayType);
+    return apiRequest<any>(`/leaves/ccl/validate-date?${q.toString()}`, { method: 'GET' });
+  },
+  getMyCCLs: async () => apiRequest<any>('/leaves/ccl/my', { method: 'GET' }),
+  getPendingCCLApprovals: async () => apiRequest<any>('/leaves/ccl/pending-approvals', { method: 'GET' }),
+  getCCLs: async (params?: { status?: string; employeeId?: string; fromDate?: string; toDate?: string; page?: number; limit?: number }) => {
+    const q = new URLSearchParams();
+    if (params?.status) q.append('status', params.status);
+    if (params?.employeeId) q.append('employeeId', params.employeeId);
+    if (params?.fromDate) q.append('fromDate', params.fromDate);
+    if (params?.toDate) q.append('toDate', params.toDate);
+    if (params?.page) q.append('page', String(params.page));
+    if (params?.limit) q.append('limit', String(params.limit));
+    return apiRequest<any>(`/leaves/ccl${q.toString() ? `?${q.toString()}` : ''}`, { method: 'GET' });
+  },
+  getCCL: async (id: string) => apiRequest<any>(`/leaves/ccl/${id}`, { method: 'GET' }),
+  applyCCL: async (data: { date: string; isHalfDay: boolean; halfDayType?: 'first_half' | 'second_half'; assignedBy: string; purpose: string; empNo?: string; employeeId?: string }) => {
+    return apiRequest<any>('/leaves/ccl', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+  processCCLAction: async (id: string, action: 'approve' | 'reject', comments?: string) => {
+    return apiRequest<any>(`/leaves/ccl/${id}/action`, {
+      method: 'PUT',
+      body: JSON.stringify({ action, comments }),
+    });
+  },
+  cancelCCL: async (id: string, reason?: string) => {
+    return apiRequest<any>(`/leaves/ccl/${id}/cancel`, {
+      method: 'PUT',
+      body: JSON.stringify({ reason }),
+    });
+  },
+
   // Get leave conflicts for attendance date
   getLeaveConflicts: async (employeeNumber: string, date: string) => {
     return apiRequest<any>(`/leaves/conflicts?employeeNumber=${employeeNumber}&date=${date}`, {
