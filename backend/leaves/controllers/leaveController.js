@@ -218,10 +218,12 @@ exports.getMyLeaves = async (req, res) => {
     }
     // Fallback: User may have emp_no but no employeeRef - resolve Employee by emp_no
     if (!req.user.employeeRef && req.user.employeeId) {
-      const emp = await Employee.findOne({ $or: [
-        { emp_no: String(req.user.employeeId).trim() },
-        { emp_no: { $regex: new RegExp(`^${String(req.user.employeeId).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } }
-      ] }).select('_id');
+      const emp = await Employee.findOne({
+        $or: [
+          { emp_no: String(req.user.employeeId).trim() },
+          { emp_no: { $regex: new RegExp(`^${String(req.user.employeeId).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } }
+        ]
+      }).select('_id');
       if (emp) orConditions.push({ employeeId: emp._id });
     }
 
@@ -1067,6 +1069,31 @@ exports.processLeaveAction = async (req, res) => {
         canProcess = mapping
           ? (!mapping.departments || mapping.departments.length === 0) || mapping.departments.some(d => (d?._id || d).toString() === leaveDeptId)
           : false;
+      }
+    } else if (requiredRole === 'reporting_manager') {
+      // 1. Check if user is the assigned Reporting Manager
+      const Employee = require('../../employees/model/Employee');
+      const targetEmployee = await Employee.findById(leave.employeeId);
+      const managers = targetEmployee?.dynamicFields?.reporting_to;
+
+      if (managers && Array.isArray(managers) && managers.length > 0) {
+        const userIdStr = (req.user._id || req.user.userId).toString();
+        canProcess = managers.some(m => (m._id || m).toString() === userIdStr);
+      }
+
+      // 2. Fallback to HOD if no managers assigned OR if user is an HOD for the employee
+      if (!canProcess) {
+        const isActuallyHOD = userRole === 'hod';
+        if (isActuallyHOD) {
+          const leaveDeptId = (leave.department_id || leave.department)?.toString();
+          const leaveDivId = (leave.division_id || leave.division)?.toString();
+          const mapping = req.user.divisionMapping?.find(m =>
+            (m.division?._id || m.division)?.toString() === leaveDivId
+          );
+          canProcess = mapping
+            ? (!mapping.departments || mapping.departments.length === 0) || mapping.departments.some(d => (d?._id || d).toString() === leaveDeptId)
+            : false;
+        }
       }
     } else if (requiredRole === 'manager' || requiredRole === 'hr' || requiredRole === 'final_authority') {
       // Logic for Manager and HR (Scoped Roles)

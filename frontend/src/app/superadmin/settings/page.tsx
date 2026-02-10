@@ -106,33 +106,33 @@ const SettingsPage = () => {
   };
 
   return (
-    <div className="flex min-h-screen bg-[#F8FAFC] dark:bg-[#0F172A]">
-      {/* Sidebar Navigation */}
-      <aside className="fixed left-0 top-0 hidden h-full w-80 flex-col border-r border-gray-200 bg-white dark:border-gray-800 dark:bg-[#1E293B] lg:flex">
-        <div className="p-8">
+    <div className="flex min-h-screen bg-[#F8FAFC] dark:bg-[#0F172A] -m-4 sm:-m-5 lg:-m-6">
+      {/* Settings Navigation Sidebar */}
+      <aside className="sticky top-0 hidden h-screen w-72 flex-col border-r border-gray-200 bg-white dark:border-gray-800 dark:bg-[#1E293B] lg:flex flex-shrink-0">
+        <div className="p-6">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 shadow-lg shadow-indigo-500/20">
               <Settings className="h-6 w-6 text-white" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-gray-900 dark:text-white">Admin Settings</h1>
+              <h1 className="text-lg font-bold text-gray-900 dark:text-white">Admin Settings</h1>
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Global Configuration</p>
             </div>
           </div>
 
-          <div className="mt-8 relative">
+          <div className="mt-6 relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
             <input
               type="text"
               placeholder="Search settings..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full rounded-xl border-none bg-gray-50 px-10 py-2.5 text-xs font-medium placeholder:text-gray-400 focus:ring-2 focus:ring-indigo-500 dark:bg-[#0F172A] dark:text-white"
+              className="w-full rounded-xl border-none bg-gray-50 px-9 py-2 text-xs font-medium placeholder:text-gray-400 focus:ring-2 focus:ring-indigo-500 dark:bg-[#0F172A] dark:text-white shadow-sm"
             />
           </div>
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-4 pb-8 space-y-8 custom-scrollbar">
+        <nav className="flex-1 overflow-y-auto px-4 pb-8 space-y-7 custom-scrollbar">
           {Object.entries(groupedMenu).map(([group, items]: [string, any]) => (
             <div key={group} className="space-y-1">
               <h3 className="px-4 text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mb-2">{group}</h3>
@@ -140,9 +140,9 @@ const SettingsPage = () => {
                 <button
                   key={item.id}
                   onClick={() => setActiveTab(item.id)}
-                  className={`group flex w-full items-center justify-between rounded-xl px-4 py-3 text-sm font-semibold transition-all ${activeTab === item.id
-                      ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-400'
-                      : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-[#0F172A] dark:hover:text-white'
+                  className={`group flex w-full items-center justify-between rounded-xl px-4 py-2.5 text-sm font-semibold transition-all ${activeTab === item.id
+                    ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-400'
+                    : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-[#0F172A] dark:hover:text-white'
                     }`}
                 >
                   <div className="flex items-center gap-3">
@@ -165,23 +165,7 @@ const SettingsPage = () => {
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 lg:ml-80">
-        <header className="sticky top-0 z-40 bg-white/80 dark:bg-[#0F172A]/80 backdrop-blur-xl border-b border-gray-200 dark:border-gray-800 px-8 py-5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3 text-sm font-medium text-gray-500">
-              <span className="dark:text-gray-400">Settings</span>
-              <ChevronRight className="h-4 w-4 opacity-50" />
-              <span className="text-gray-900 dark:text-white capitalize">{activeTab.replace('_', ' ')}</span>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 dark:bg-emerald-900/20 dark:border-emerald-900/30 text-[10px] font-bold uppercase tracking-tighter">
-                <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Live System
-              </div>
-            </div>
-          </div>
-        </header>
-
+      <main className="flex-1 min-w-0">
         <div className="p-8 max-w-7xl mx-auto">
           {renderActiveSection()}
         </div>

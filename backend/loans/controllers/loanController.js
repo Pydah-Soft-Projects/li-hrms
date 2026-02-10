@@ -1052,20 +1052,27 @@ exports.processLoanAction = async (req, res) => {
     let canProcess = false;
     if (isSuperAdmin) {
       canProcess = true;
-    } else if (currentApprover === 'hod' && userRole === 'hod') {
-      const loanDeptId = (loan.department_id || loan.department)?.toString();
-      const loanDivId = (loan.division_id || loan.division)?.toString();
-      const mapping = req.user.divisionMapping?.find(m =>
-        (m.division?._id || m.division)?.toString() === loanDivId
-      );
-      canProcess = mapping
-        ? (!mapping.departments || mapping.departments.length === 0) || mapping.departments.some(d => (d?._id || d).toString() === loanDeptId)
-        : false;
-    } else if (currentApprover === 'manager' && userRole === 'manager') {
-      // Verify via divisionMapping (unified scope)
-      const scopedEmployeeIds = await getEmployeeIdsInScope(req.user);
-      const loanEmpId = (loan.employeeId?._id || loan.employeeId)?.toString();
-      canProcess = loanEmpId && scopedEmployeeIds.some(id => id.toString() === loanEmpId);
+    } else if (currentApprover === 'reporting_manager') {
+      // 1. Check if user is the assigned Reporting Manager
+      const targetEmployee = await Employee.findById(loan.employeeId);
+      const managers = targetEmployee?.dynamicFields?.reporting_to;
+
+      if (managers && Array.isArray(managers) && managers.length > 0) {
+        const userIdStr = req.user._id.toString();
+        canProcess = managers.some(m => (m._id || m).toString() === userIdStr);
+      }
+
+      // 2. Fallback to HOD if no managers assigned OR if user is an HOD for the employee
+      if (!canProcess && userRole === 'hod') {
+        const loanDeptId = (loan.department_id || loan.department)?.toString();
+        const loanDivId = (loan.division_id || loan.division)?.toString();
+        const mapping = req.user.divisionMapping?.find(m =>
+          (m.division?._id || m.division)?.toString() === loanDivId
+        );
+        canProcess = mapping
+          ? (!mapping.departments || mapping.departments.length === 0) || mapping.departments.some(d => (d?._id || d).toString() === loanDeptId)
+          : false;
+      }
     } else if (['hr', 'final_authority'].includes(currentApprover) && userRole === 'hr') {
       canProcess = true;
     }

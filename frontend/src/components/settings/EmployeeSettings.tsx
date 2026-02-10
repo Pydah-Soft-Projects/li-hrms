@@ -4,7 +4,8 @@ import React, { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
 import Spinner from '@/components/Spinner';
-import { Save, Database, Trash2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { SettingsSkeleton } from './SettingsSkeleton';
+import { Save, Database, Trash2, CheckCircle2, AlertCircle, ChevronRight } from 'lucide-react';
 
 const EmployeeSettings = () => {
     const [employeeDataSource, setEmployeeDataSource] = useState<string>('mongodb');
@@ -54,79 +55,100 @@ const EmployeeSettings = () => {
         }
     };
 
-    if (loading) return <div className="flex justify-center py-10"><Spinner /></div>;
+    if (loading) return <SettingsSkeleton />;
 
     return (
-        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="flex items-center justify-between">
-                <div>
-                    <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Employee Settings</h2>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Configure data sources and deletion policies for employee records.</p>
+        <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="border-b border-gray-200 dark:border-gray-800 pb-5">
+                <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mb-2">
+                    <span>Settings</span>
+                    <ChevronRight className="h-3 w-3" />
+                    <span className="text-indigo-600">Employee</span>
                 </div>
-                <button
-                    onClick={handleSave}
-                    disabled={saving}
-                    className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-50"
-                >
-                    {saving ? <Spinner /> : <Save className="h-4 w-4" />}
-                    Save Changes
-                </button>
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Employee Setup</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Configure data sources and deletion policies for employee records.</p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Data Source */}
-                <div className="group relative rounded-2xl border border-gray-200 bg-white/50 p-6 backdrop-blur-sm transition-all hover:border-indigo-500/50 hover:shadow-xl dark:border-gray-700 dark:bg-gray-800/50">
-                    <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-3">
-                            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400">
-                                <Database className="h-5 w-5" />
-                            </div>
-                            <div>
-                                <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Employee Data Source</h3>
-                                <p className="text-xs text-gray-500 dark:text-gray-400">Choose primary database for employee info.</p>
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-10">
+                <div className="xl:col-span-2 space-y-8">
+                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
+                        <div className="px-8 py-6 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
+                            <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Storage Configuration</h3>
+                            <div className="flex items-center gap-2">
+                                {mssqlConnected ? (
+                                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-600 border border-emerald-100 dark:bg-emerald-900/20 dark:border-emerald-900/30 uppercase tracking-tight">
+                                        <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                        MSSQL Link Active
+                                    </span>
+                                ) : (
+                                    <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-50 px-2.5 py-1 text-[10px] font-bold text-gray-400 border border-gray-100 uppercase tracking-tight">
+                                        <div className="h-1.5 w-1.5 rounded-full bg-gray-300" />
+                                        Local Storage Only
+                                    </span>
+                                )}
                             </div>
                         </div>
-                        {mssqlConnected ? (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-                                <CheckCircle2 className="h-3 w-3" /> MSSQL Connected
-                            </span>
-                        ) : (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-                                <AlertCircle className="h-3 w-3" /> Local Only
-                            </span>
-                        )}
+
+                        <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-8">
+                            <div className="space-y-2">
+                                <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest">
+                                    Primary Data Source <span className="text-red-500">*</span>
+                                </label>
+                                <select
+                                    value={employeeDataSource}
+                                    onChange={(e) => setEmployeeDataSource(e.target.value)}
+                                    className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-700 dark:bg-[#0F172A] dark:text-white transition-all appearance-none"
+                                >
+                                    <option value="mongodb">Internal (MongoDB)</option>
+                                    <option value="mssql">External (MSSQL Server)</option>
+                                    <option value="both">Both (Hybrid)</option>
+                                </select>
+                                <p className="text-[10px] text-gray-400">Determines where employee data is primarily fetched from.</p>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest">
+                                    Deletion Policy <span className="text-red-500">*</span>
+                                </label>
+                                <select
+                                    value={employeeDeleteTarget}
+                                    onChange={(e) => setEmployeeDeleteTarget(e.target.value)}
+                                    className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium focus:border-red-500 focus:ring-2 focus:ring-red-500/20 dark:border-gray-700 dark:bg-[#0F172A] dark:text-white transition-all appearance-none"
+                                >
+                                    <option value="mongodb">Internal Only</option>
+                                    <option value="mssql">External Only</option>
+                                    <option value="both">Both Database Targets</option>
+                                </select>
+                                <p className="text-[10px] text-gray-400">Determines which systems are affected when an employee is deleted.</p>
+                            </div>
+                        </div>
+                    </section>
+
+                    <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-900/20 rounded-2xl p-6 flex items-start gap-4">
+                        <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                        <div>
+                            <h4 className="text-sm font-bold text-amber-900 dark:text-amber-200">Critical: Deletion Policy</h4>
+                            <p className="text-xs text-amber-700 dark:text-amber-300 mt-1 leading-relaxed">
+                                Setting the deletion policy to &quot;Both&quot; will permanently remove records from both MongoDB and the connected MSSQL server. This action cannot be undone.
+                            </p>
+                        </div>
                     </div>
-                    <select
-                        value={employeeDataSource}
-                        onChange={(e) => setEmployeeDataSource(e.target.value)}
-                        className="w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
-                    >
-                        <option value="mongodb">Internal (MongoDB)</option>
-                        <option value="mssql">External (MSSQL Server)</option>
-                        <option value="both">Both (Hybrid)</option>
-                    </select>
                 </div>
 
-                {/* Delete Policy */}
-                <div className="group relative rounded-2xl border border-gray-200 bg-white/50 p-6 backdrop-blur-sm transition-all hover:border-red-500/50 hover:shadow-xl dark:border-gray-700 dark:bg-gray-800/50">
-                    <div className="flex items-center gap-3 mb-4">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400">
-                            <Trash2 className="h-5 w-5" />
-                        </div>
-                        <div>
-                            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Deletion Policy</h3>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">Determine where records are deleted from.</p>
-                        </div>
+                <div className="space-y-8">
+                    <div className="bg-indigo-600 rounded-2xl p-8 text-white shadow-xl shadow-indigo-500/20">
+                        <h3 className="text-lg font-bold mb-2">Sync Status</h3>
+                        <p className="text-xs opacity-80 leading-relaxed mb-6">
+                            Configure how the system handles employee records across multiple data sources.
+                        </p>
+                        <button
+                            onClick={handleSave}
+                            disabled={saving}
+                            className="w-full py-3 bg-white text-indigo-600 rounded-xl text-xs font-bold hover:bg-gray-50 transition-colors shadow-lg active:scale-95 disabled:opacity-50"
+                        >
+                            {saving ? 'Saving...' : 'Save Settings Now'}
+                        </button>
                     </div>
-                    <select
-                        value={employeeDeleteTarget}
-                        onChange={(e) => setEmployeeDeleteTarget(e.target.value)}
-                        className="w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3 text-sm focus:border-red-500 focus:ring-red-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
-                    >
-                        <option value="mongodb">Internal Only</option>
-                        <option value="mssql">External Only</option>
-                        <option value="both">Both Database Targets</option>
-                    </select>
                 </div>
             </div>
         </div>

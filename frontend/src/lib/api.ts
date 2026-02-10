@@ -638,6 +638,38 @@ export const api = {
     });
   },
 
+  getAbsentDeductionSettings: async () => {
+    const [enableRes, lopRes] = await Promise.all([
+      apiRequest<Setting>('/settings/enable_absent_deduction', { method: 'GET' }),
+      apiRequest<Setting>('/settings/lop_days_per_absent', { method: 'GET' })
+    ]);
+    return {
+      enable: enableRes.success ? !!enableRes.data?.value : false,
+      lopDays: lopRes.success ? Number(lopRes.data?.value) : 1
+    };
+  },
+
+  saveAbsentDeductionSettings: async (enable: boolean, lopDays: number) => {
+    return Promise.all([
+      apiRequest<Setting>('/settings', {
+        method: 'POST',
+        body: JSON.stringify({
+          key: 'enable_absent_deduction',
+          value: enable,
+          category: 'payroll'
+        }),
+      }),
+      apiRequest<Setting>('/settings', {
+        method: 'POST',
+        body: JSON.stringify({
+          key: 'lop_days_per_absent',
+          value: lopDays,
+          category: 'payroll'
+        }),
+      })
+    ]);
+  },
+
   // Employee allowance/deduction defaults (resolved with includeMissing)
   getEmployeeComponentDefaults: async (params: { departmentId: string; grossSalary: number; empNo?: string }) => {
     const searchParams = new URLSearchParams();
@@ -1968,6 +2000,17 @@ export const api = {
     });
   },
 
+  getLoanWorkflow: async (type: 'loan' | 'salary_advance') => {
+    return apiRequest<any>(`/loans/settings/${type}/workflow`, { method: 'GET' });
+  },
+
+  updateLoanWorkflow: async (type: 'loan' | 'salary_advance', workflow: any) => {
+    return apiRequest<any>(`/loans/settings/${type}/workflow`, {
+      method: 'PUT',
+      body: JSON.stringify(workflow),
+    });
+  },
+
 
 
   // Get all loans
@@ -2602,7 +2645,13 @@ export const api = {
     return apiRequest<any>('/ot/settings', { method: 'GET' });
   },
 
-  saveOvertimeSettings: async (data: { otPayPerHour?: number; minOTHours?: number; workflow?: any }) => {
+  saveOvertimeSettings: async (data: {
+    payPerHour?: number;
+    multiplier?: number;
+    minOTHours?: number;
+    roundingMinutes?: number;
+    workflow?: any
+  }) => {
     return apiRequest<any>('/ot/settings', {
       method: 'POST',
       body: JSON.stringify(data),
