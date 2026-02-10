@@ -138,7 +138,7 @@ const LeaveSettings = ({ type = 'leave' }: { type?: 'leave' | 'od' }) => {
 
                 {/* Right Column - Workflow */}
                 <div>
-                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-8 space-y-8">
+                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-4 sm:p-6 lg:p-8 space-y-6 sm:space-y-8">
                         <LeaveWorkflow
                             workflow={settings.workflow}
                             onChange={(wf) => setSettings({ ...settings, workflow: wf })}

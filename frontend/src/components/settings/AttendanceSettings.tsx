@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
 import Spinner from '@/components/Spinner';
+import { SettingsSkeleton } from './SettingsSkeleton';
 import { Save, RefreshCw, Upload, Smartphone, Server, MapPin, ChevronRight } from 'lucide-react';
 
 const AttendanceSettings = () => {
@@ -106,7 +107,7 @@ const AttendanceSettings = () => {
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-10">
                 <div className="xl:col-span-2 space-y-8">
                     {/* Biometric Sync Section */}
-                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
+                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-4 sm:p-6 lg:p-8">
                         <div className="px-8 py-6 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
                             <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Device Connectivity</h3>
                             <div className="flex items-center gap-2">
@@ -176,7 +177,7 @@ const AttendanceSettings = () => {
                     </section>
 
                     {/* Mobile Attendance Section */}
-                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
+                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-4 sm:p-6 lg:p-8">
                         <div className="px-8 py-6 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
                             <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Mobile Tracking</h3>
                             <div className="flex items-center gap-2">
@@ -232,7 +233,7 @@ const AttendanceSettings = () => {
 
                 <div className="space-y-8">
                     {/* Manual Import Card */}
-                    <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
+                    <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-4 sm:p-6 lg:p-8">
                         <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800 bg-amber-50/30 dark:bg-amber-900/5">
                             <h3 className="text-[10px] font-bold text-amber-600 uppercase tracking-widest">Manual Data Import</h3>
                         </div>

@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
 import Spinner from '@/components/Spinner';
+import { SettingsSkeleton } from './SettingsSkeleton';
 import { Save, LayoutGrid, User, Users, Briefcase, ChevronRight } from 'lucide-react';
 
 const availableModules = [
@@ -83,7 +84,7 @@ const FeatureControlSettings = () => {
         }
     };
 
-    if (loading) return <div className="flex justify-center py-10"><Spinner /></div>;
+    if (loading) return <SettingsSkeleton />;
 
     const RoleCard = ({ role, title, icon: Icon, colorClass, state }: any) => (
         <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden flex flex-col">

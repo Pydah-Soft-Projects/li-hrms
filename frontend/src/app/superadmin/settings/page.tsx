@@ -18,7 +18,9 @@ import {
   Zap,
   Percent,
   AlertTriangle,
-  Globe
+  Globe,
+  Menu,
+  X
 } from 'lucide-react';
 
 import ShiftSettings from '@/components/settings/ShiftSettings';
@@ -53,6 +55,7 @@ type TabType =
 const SettingsPage = () => {
   const [activeTab, setActiveTab] = useState<TabType>('general');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const menuItems = [
     { id: 'general', label: 'General Settings', icon: Globe, color: 'text-blue-500', group: 'Application' },
@@ -106,68 +109,94 @@ const SettingsPage = () => {
   };
 
   return (
-    <div className="flex min-h-screen bg-[#F8FAFC] dark:bg-[#0F172A] -m-4 sm:-m-5 lg:-m-6">
+    <div className="flex min-h-screen bg-[#F8FAFC] dark:bg-[#0F172A] -m-4 sm:-m-5 lg:-m-6 overflow-x-hidden">
+      {/* Mobile Menu Button */}
+      <button
+        onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+        className="fixed bottom-6 right-4 sm:right-6 z-50 lg:hidden flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center rounded-full bg-indigo-600 text-white shadow-2xl hover:bg-indigo-700 transition-all hover:scale-110"
+      >
+        {isMobileMenuOpen ? <X className="h-5 w-5 sm:h-6 sm:w-6" /> : <Menu className="h-5 w-5 sm:h-6 sm:w-6" />}
+      </button>
+
+      {/* Mobile Overlay */}
+      {isMobileMenuOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/50 lg:hidden"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
       {/* Settings Navigation Sidebar */}
-      <aside className="sticky top-0 hidden h-screen w-72 flex-col border-r border-gray-200 bg-white dark:border-gray-800 dark:bg-[#1E293B] lg:flex flex-shrink-0">
-        <div className="p-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 shadow-lg shadow-indigo-500/20">
-              <Settings className="h-6 w-6 text-white" />
+      <aside className={`
+        fixed lg:sticky top-0 z-40 h-screen w-64 sm:w-72 flex-col border-r border-gray-200 bg-white dark:border-gray-800 dark:bg-[#1E293B] flex-shrink-0
+        transition-transform duration-300 ease-in-out
+        ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        lg:flex overflow-hidden
+      `}>
+        <div className="p-4 sm:p-6">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-xl bg-indigo-600 shadow-lg shadow-indigo-500/20 flex-shrink-0">
+              <Settings className="h-4 w-4 sm:h-6 sm:w-6 text-white" />
             </div>
-            <div>
-              <h1 className="text-lg font-bold text-gray-900 dark:text-white">Admin Settings</h1>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Global Configuration</p>
+            <div className="min-w-0 flex-1">
+              <h1 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white truncate">Admin Settings</h1>
+              <p className="text-[9px] sm:text-[10px] font-bold text-gray-400 uppercase tracking-widest truncate">Global Configuration</p>
             </div>
           </div>
 
-          <div className="mt-6 relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <div className="mt-4 sm:mt-6 relative">
+            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 sm:h-4 sm:w-4 -translate-y-1/2 text-gray-400 flex-shrink-0" />
             <input
               type="text"
               placeholder="Search settings..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full rounded-xl border-none bg-gray-50 px-9 py-2 text-xs font-medium placeholder:text-gray-400 focus:ring-2 focus:ring-indigo-500 dark:bg-[#0F172A] dark:text-white shadow-sm"
+              className="w-full rounded-xl border-none bg-gray-50 px-8 sm:px-9 py-1.5 sm:py-2 text-xs font-medium placeholder:text-gray-400 focus:ring-2 focus:ring-indigo-500 dark:bg-[#0F172A] dark:text-white shadow-sm"
             />
           </div>
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-4 pb-8 space-y-7 custom-scrollbar">
+        <nav className="flex-1 overflow-y-auto px-3 sm:px-4 pb-8 space-y-5 sm:space-y-7 custom-scrollbar">
           {Object.entries(groupedMenu).map(([group, items]: [string, any]) => (
             <div key={group} className="space-y-1">
-              <h3 className="px-4 text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mb-2">{group}</h3>
+              <h3 className="px-3 sm:px-4 text-[9px] sm:text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mb-2 truncate">{group}</h3>
               {items.map((item: any) => (
                 <button
                   key={item.id}
-                  onClick={() => setActiveTab(item.id)}
-                  className={`group flex w-full items-center justify-between rounded-xl px-4 py-2.5 text-sm font-semibold transition-all ${activeTab === item.id
+                  onClick={() => {
+                    setActiveTab(item.id);
+                    setIsMobileMenuOpen(false); // Close menu on mobile after selection
+                  }}
+                  className={`group flex w-full items-center justify-between rounded-xl px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold transition-all ${activeTab === item.id
                     ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-400'
                     : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-[#0F172A] dark:hover:text-white'
                     }`}
                 >
-                  <div className="flex items-center gap-3">
-                    <item.icon className={`h-4 w-4 ${activeTab === item.id ? item.color : 'text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300'}`} />
-                    <span>{item.label}</span>
+                  <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                    <item.icon className={`h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0 ${activeTab === item.id ? item.color : 'text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300'}`} />
+                    <span className="truncate">{item.label}</span>
                   </div>
-                  <ChevronRight className={`h-3 w-3 transition-transform ${activeTab === item.id ? 'translate-x-1 outline-none' : 'opacity-0 group-hover:opacity-100'}`} />
+                  <ChevronRight className={`h-3 w-3 flex-shrink-0 transition-transform ${activeTab === item.id ? 'translate-x-1 outline-none' : 'opacity-0 group-hover:opacity-100'}`} />
                 </button>
               ))}
             </div>
           ))}
         </nav>
 
-        <div className="p-4 border-t border-gray-100 dark:border-gray-800">
-          <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-700 text-white shadow-xl">
-            <p className="text-xs font-bold opacity-80 mb-1">PRO FEATURES</p>
-            <p className="text-[10px] leading-tight opacity-60">Modular configuration system v2.0</p>
+        <div className="p-3 sm:p-4 border-t border-gray-100 dark:border-gray-800">
+          <div className="p-3 sm:p-4 rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-700 text-white shadow-xl">
+            <p className="text-[10px] sm:text-xs font-bold opacity-80 mb-1 truncate">PRO FEATURES</p>
+            <p className="text-[9px] sm:text-[10px] leading-tight opacity-60 truncate">Modular configuration system v2.0</p>
           </div>
         </div>
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 min-w-0">
-        <div className="p-8 max-w-7xl mx-auto">
-          {renderActiveSection()}
+      <main className="flex-1 min-w-0 w-full overflow-x-hidden">
+        <div className="p-3 xs:p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full">
+          <div className="w-full overflow-x-hidden">
+            {renderActiveSection()}
+          </div>
         </div>
       </main>
 

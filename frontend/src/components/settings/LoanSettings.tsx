@@ -77,7 +77,7 @@ const LoanSettings = ({ type = 'loan' }: { type?: 'loan' | 'salary_advance' }) =
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 items-start">
                 <div className="xl:col-span-1 space-y-8">
                     {/* Financial Caps */}
-                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-8 space-y-8">
+                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-4 sm:p-6 lg:p-8 space-y-6 sm:space-y-8">
                         <div className="flex items-center gap-3 border-b border-gray-100 dark:border-gray-800 pb-4">
                             <Wallet className="h-5 w-5 text-indigo-600" />
                             <h3 className="text-xs font-bold text-gray-900 dark:text-white uppercase tracking-widest">Financial Caps</h3>
@@ -109,7 +109,7 @@ const LoanSettings = ({ type = 'loan' }: { type?: 'loan' | 'salary_advance' }) =
                     </section>
 
                     {/* Recovery Logic */}
-                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-8 space-y-8">
+                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-4 sm:p-6 lg:p-8 space-y-6 sm:space-y-8">
                         <div className="flex items-center gap-3 border-b border-gray-100 dark:border-gray-800 pb-4">
                             <Receipt className="h-5 w-5 text-indigo-600" />
                             <h3 className="text-xs font-bold text-gray-900 dark:text-white uppercase tracking-widest">Recovery Logic</h3>
@@ -156,7 +156,7 @@ const LoanSettings = ({ type = 'loan' }: { type?: 'loan' | 'salary_advance' }) =
 
                 {/* Workflow Column */}
                 <div className="xl:col-span-2">
-                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-8 space-y-8">
+                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-4 sm:p-6 lg:p-8 space-y-6 sm:space-y-8">
                         <WorkflowManager
                             workflow={workflow}
                             onChange={(newWorkflow: WorkflowData) => setWorkflow(newWorkflow)}

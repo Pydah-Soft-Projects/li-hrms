@@ -102,7 +102,7 @@ const OTSettings = () => {
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
                 {/* OT Parameters */}
                 <div className="xl:col-span-1">
-                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden sticky top-24">
+                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden sticky top-24 p-4 sm:p-6 lg:p-8">
                         <div className="px-8 py-6 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
                             <div className="h-10 w-10 flex items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800/50">
                                 <Clock className="h-5 w-5" />
@@ -190,7 +190,7 @@ const OTSettings = () => {
 
                 {/* OT Workflow */}
                 <div className="xl:col-span-2 space-y-6">
-                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden min-h-[400px]">
+                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden min-h-[400px] p-4 sm:p-6 lg:p-8">
                         <div className="p-8">
                             <WorkflowManager
                                 workflow={otSettings.workflow}
