@@ -83,10 +83,10 @@ const permissionSchema = new mongoose.Schema(
       trim: true,
     },
 
-    // Status: pending, approved, rejected
+    // Status: pending, approved, rejected; checked_out/checked_in driven by gate scans only
     status: {
       type: String,
-      enum: ['pending', 'manager_approved', 'manager_rejected', 'approved', 'rejected'],
+      enum: ['pending', 'manager_approved', 'manager_rejected', 'approved', 'rejected', 'checked_out', 'checked_in'],
       default: 'pending',
       index: true,
     },
@@ -240,7 +240,7 @@ const permissionSchema = new mongoose.Schema(
           stepOrder: Number,
           role: String,
           label: String,
-          status: { type: String, enum: ['pending', 'approved', 'rejected', 'skipped', 'forwarded'], default: 'pending' },
+          status: { type: String, enum: ['pending', 'approved', 'rejected', 'skipped'], default: 'pending' },
           isCurrent: { type: Boolean, default: false },
           actionBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
           actionAt: Date,

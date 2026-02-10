@@ -5,6 +5,7 @@ const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 const Department = require('../../departments/model/Department');
 const EmployeeApplication = require('../../employee-applications/model/EmployeeApplication');
 const OD = require('../../leaves/model/OD');
+const { getEmployeeIdsInScope } = require('../../shared/middleware/dataScopeMiddleware');
 
 // @desc    Get dashboard statistics
 // @route   GET /api/dashboard/stats
@@ -12,7 +13,7 @@ const OD = require('../../leaves/model/OD');
 exports.getDashboardStats = async (req, res) => {
   try {
     const userId = req.user.userId;
-    const user = await User.findById(userId).populate('department');
+    const user = await User.findById(userId);
 
     if (!user) {
       return res.status(404).json({
@@ -55,52 +56,31 @@ exports.getDashboardStats = async (req, res) => {
       };
     }
 
-    // 2. HR - Scoped Stats (Departments)
     else if (role === 'hr') {
-      // Determine accessible departments
-      let departmentIds = [];
+      // Use divisionMapping via getEmployeeIdsInScope (handles empty departments = all in division)
+      const scopedEmployeeIds = await getEmployeeIdsInScope(user);
 
-      // Check for multi-department assignment
-      if (user.departments && user.departments.length > 0) {
-        // If populated, map to _id, otherwise use as is
-        departmentIds = user.departments.map(d => d._id || d);
-      }
-      // Fallback to single department if no list
-      else if (user.department) {
-        departmentIds = [user.department._id || user.department];
-      }
+      // Total Employees (Scoped via divisionMapping)
+      const totalEmployees = await Employee.countDocuments(
+        scopedEmployeeIds.length > 0 ? { _id: { $in: scopedEmployeeIds }, is_active: true } : { _id: null }
+      );
 
-      // If dataScope is explicitly 'all', revert to global (optional, based on future needs)
-      // For now, enforcing scoped access as per request
+      // Pending / Approved Leaves (Scoped via divisionMapping)
+      const leaveScopeFilter = scopedEmployeeIds.length > 0 ? { employeeId: { $in: scopedEmployeeIds } } : { _id: null };
+      const pendingLeaves = await Leave.countDocuments({ status: 'pending', ...leaveScopeFilter });
+      const approvedLeaves = await Leave.countDocuments({ status: 'approved', ...leaveScopeFilter });
 
-      const deptFilter = departmentIds.length > 0 ? { department_id: { $in: departmentIds } } : {};
-      const leaveFilter = departmentIds.length > 0 ? { department: { $in: departmentIds } } : {};
-      const attendanceFilter = departmentIds.length > 0 ? { departmentId: { $in: departmentIds } } : {};
-
-      // Total Employees (Scoped)
-      const totalEmployees = await Employee.countDocuments({
-        is_active: true,
-        ...deptFilter
-      });
-
-      // Pending Leaves (Scoped)
-      const pendingLeaves = await Leave.countDocuments({
-        status: 'pending',
-        ...leaveFilter
-      });
-
-      // Approved Leaves (Scoped)
-      const approvedLeaves = await Leave.countDocuments({
-        status: 'approved',
-        ...leaveFilter
-      });
-
-      // Active Today (Scoped)
-      const todayPresent = await AttendanceDaily.countDocuments({
-        date: today,
-        status: { $in: ['P', 'WO-P', 'PH-P'] },
-        ...attendanceFilter
-      });
+      // Active Today (Scoped - AttendanceDaily uses employeeNumber)
+      const scopedEmpNos = scopedEmployeeIds.length > 0
+        ? (await Employee.find({ _id: { $in: scopedEmployeeIds } }).select('emp_no').lean()).map(e => e.emp_no)
+        : [];
+      const todayPresent = scopedEmpNos.length > 0
+        ? await AttendanceDaily.countDocuments({
+            date: today,
+            status: { $in: ['P', 'WO-P', 'PH-P'] },
+            employeeNumber: { $in: scopedEmpNos }
+          })
+        : 0;
 
       stats = {
         totalEmployees,
@@ -111,36 +91,28 @@ exports.getDashboardStats = async (req, res) => {
       };
     }
 
-    // 2. HOD - Department Stats
     else if (role === 'hod') {
-      const departmentId = user.department?._id;
+      const scopedEmployeeIds = await getEmployeeIdsInScope(user);
+      const scopedEmpNos = scopedEmployeeIds.length > 0
+        ? (await Employee.find({ _id: { $in: scopedEmployeeIds } }).select('emp_no').lean()).map(e => e.emp_no)
+        : [];
 
-      if (!departmentId) {
-        return res.status(400).json({ success: false, message: 'HOD has no department assigned' });
+      if (scopedEmployeeIds.length === 0) {
+        return res.status(400).json({ success: false, message: 'HOD has no scope assigned in divisionMapping' });
       }
 
-      // Team Squad (Department Employees)
-      const teamSize = await Employee.countDocuments({
-        department_id: departmentId,
-        is_active: true
-      });
+      const teamSize = await Employee.countDocuments({ _id: { $in: scopedEmployeeIds }, is_active: true });
 
-      // Team Present
-      const teamPresent = await AttendanceDaily.countDocuments({
-        date: today,
-        departmentId: departmentId,
-        status: { $in: ['P', 'WO-P', 'PH-P'] },
-      });
-
-      // Action Items (Pending Leaves for Department)
-      // Pending leaves where employee belongs to this department
-      // We need to look up employees in this department first or join.
-      // Easiest is to find employees in dept, then find leaves for them.
-      const deptEmployees = await Employee.find({ department_id: departmentId }).select('_id emp_no');
-      const deptEmpNos = deptEmployees.map(e => e.emp_no);
+      const teamPresent = scopedEmpNos.length > 0
+        ? await AttendanceDaily.countDocuments({
+            date: today,
+            employeeNumber: { $in: scopedEmpNos },
+            status: { $in: ['P', 'WO-P', 'PH-P'] },
+          })
+        : 0;
 
       const teamPendingApprovals = await Leave.countDocuments({
-        emp_no: { $in: deptEmpNos },
+        employeeId: { $in: scopedEmployeeIds },
         status: 'pending'
       });
 
@@ -160,11 +132,13 @@ exports.getDashboardStats = async (req, res) => {
       // Get total present records for the whole department this month
       // We need to match by departmentId in AttendanceDaily if available, or by empNumbers
       // AttendanceDaily has departmentId field
-      const totalDeptPresentThisMonth = await AttendanceDaily.countDocuments({
-        departmentId: departmentId,
-        date: { $gte: startOfMonth, $lte: today },
-        status: { $in: ['P', 'WO-P', 'PH-P'] }
-      });
+      const totalDeptPresentThisMonth = scopedEmpNos.length > 0
+        ? await AttendanceDaily.countDocuments({
+            employeeNumber: { $in: scopedEmpNos },
+            date: { $gte: startOfMonth.toISOString().slice(0, 10), $lte: today.toISOString().slice(0, 10) },
+            status: { $in: ['P', 'WO-P', 'PH-P'] }
+          })
+        : 0;
 
       let efficiencyScore = 0;
       if (teamSize > 0 && daysPassed > 0) {
@@ -175,7 +149,7 @@ exports.getDashboardStats = async (req, res) => {
 
       // Department Feed (Recent Pending Requests)
       const recentPendingRequests = await Leave.find({
-        emp_no: { $in: deptEmpNos },
+        employeeId: { $in: scopedEmployeeIds },
         status: 'pending'
       })
         .sort({ createdAt: -1 })

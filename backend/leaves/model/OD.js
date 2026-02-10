@@ -214,7 +214,7 @@ const ODSchema = new mongoose.Schema(
           step: String,
           action: {
             type: String,
-            enum: ['submitted', 'approved', 'rejected', 'forwarded', 'returned', 'cancelled', 'assigned', 'revoked', 'status_changed'],
+            enum: ['submitted', 'approved', 'rejected', 'returned', 'cancelled', 'assigned', 'revoked', 'status_changed'],
           },
           actionBy: {
             type: mongoose.Schema.Types.ObjectId,
@@ -236,7 +236,7 @@ const ODSchema = new mongoose.Schema(
       hod: {
         status: {
           type: String,
-          enum: ['pending', 'approved', 'rejected', 'forwarded', null],
+          enum: ['pending', 'approved', 'rejected', null],
           default: null,
         },
         approvedBy: {

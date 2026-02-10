@@ -84,6 +84,15 @@ const LeaveSchema = new mongoose.Schema(
       trim: true,
     },
 
+    // Leave nature - derived from leave type configuration
+    // This is set automatically based on the leave type's isPaid field
+    // Can be overridden in splits for partial paid/LOP leaves
+    leaveNature: {
+      type: String,
+      enum: ['paid', 'lop', 'without_pay'],
+      default: 'paid',
+    },
+
     // Current status
     status: {
       type: String,
@@ -153,7 +162,7 @@ const LeaveSchema = new mongoose.Schema(
           step: String,
           action: {
             type: String,
-            enum: ['submitted', 'approved', 'rejected', 'forwarded', 'returned', 'cancelled', 'revoked', 'status_changed'],
+            enum: ['submitted', 'approved', 'rejected', 'returned', 'cancelled', 'revoked', 'status_changed'],
           },
           actionBy: {
             type: mongoose.Schema.Types.ObjectId,
@@ -175,7 +184,7 @@ const LeaveSchema = new mongoose.Schema(
       hod: {
         status: {
           type: String,
-          enum: ['pending', 'approved', 'rejected', 'forwarded', null],
+          enum: ['pending', 'approved', 'rejected', null],
           default: null,
         },
         approvedBy: {
@@ -188,7 +197,7 @@ const LeaveSchema = new mongoose.Schema(
       manager: {
         status: {
           type: String,
-          enum: ['pending', 'approved', 'rejected', 'forwarded', null],
+          enum: ['pending', 'approved', 'rejected', null],
           default: null,
         },
         approvedBy: {
@@ -425,8 +434,8 @@ LeaveSchema.index({ fromDate: 1, toDate: 1 });
 LeaveSchema.index({ status: 1, 'workflow.nextApprover': 1 });
 LeaveSchema.index({ appliedAt: -1 });
 
-// Calculate number of days before save
-LeaveSchema.pre('save', function () {
+// Calculate number of days before save and derive leaveNature
+LeaveSchema.pre('save', async function () {
   if (this.isModified('fromDate') || this.isModified('toDate')) {
     if (this.fromDate && this.toDate) {
       const diffTime = Math.abs(this.toDate - this.fromDate);
@@ -443,6 +452,32 @@ LeaveSchema.pre('save', function () {
   // Preserve original leave type on first save if not set
   if (this.isNew && !this.originalLeaveType && this.leaveType) {
     this.originalLeaveType = this.leaveType;
+  }
+
+  // Auto-derive leaveNature from leave type configuration if not already set
+  if ((this.isNew || this.isModified('leaveType')) && !this.isModified('leaveNature')) {
+    try {
+      const LeaveSettings = require('./LeaveSettings');
+      const settings = await LeaveSettings.findOne({ type: 'leave', isActive: true });
+
+      if (settings && settings.types) {
+        const leaveTypeConfig = settings.types.find(
+          t => t.code === this.leaveType || t.name === this.leaveType
+        );
+
+        if (leaveTypeConfig) {
+          // Use explicit leaveNature if available, otherwise derive from isPaid
+          if (leaveTypeConfig.leaveNature) {
+            this.leaveNature = leaveTypeConfig.leaveNature;
+          } else if (leaveTypeConfig.isPaid !== undefined) {
+            this.leaveNature = leaveTypeConfig.isPaid ? 'paid' : 'lop';
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error deriving leaveNature:', error);
+      // Don't fail the save, just use default
+    }
   }
 
   // No need to call next() - Mongoose handles this automatically for synchronous middleware

@@ -85,40 +85,10 @@ exports.createPermission = async (req, res) => {
         });
       }
 
-      // Verify Scope
-      const { allowedDivisions, divisionMapping } = req.user;
+      const scopedEmployeeIds = await getEmployeeIdsInScope(req.user);
+      const isInScope = scopedEmployeeIds.some(id => id.toString() === targetEmployee._id.toString());
 
-      const employeeDivisionId = targetEmployee.division_id?.toString();
-      const isDivisionScoped = allowedDivisions?.some(divId => divId.toString() === employeeDivisionId);
-
-      let isDepartmentScoped = false;
-      const targetDeptId = (targetEmployee.department_id || targetEmployee.department)?.toString();
-
-      if (isDivisionScoped) {
-        if (!divisionMapping || divisionMapping.length === 0) {
-          isDepartmentScoped = true; // All departments in this division
-        } else {
-          const mapping = divisionMapping.find(m => m.division?.toString() === employeeDivisionId);
-          if (mapping) {
-            if (!mapping.departments || mapping.departments.length === 0) {
-              isDepartmentScoped = true;
-            } else {
-              isDepartmentScoped = mapping.departments.some(d => d.toString() === targetDeptId);
-            }
-          }
-        }
-      }
-
-      // Direct Department Check (fallback for HOD/unmapped Managers)
-      if (!isDepartmentScoped) {
-        if (req.user.department && req.user.department.toString() === targetDeptId) {
-          isDepartmentScoped = true;
-        } else if (req.user.departments && req.user.departments.length > 0) {
-          isDepartmentScoped = req.user.departments.some(d => d.toString() === targetDeptId);
-        }
-      }
-
-      if (!isDivisionScoped && !isDepartmentScoped) {
+      if (!isInScope) {
         return res.status(403).json({
           success: false,
           message: `You are not authorized to apply for permissions for employees outside your assigned data scope.`
@@ -223,6 +193,58 @@ exports.getPermissions = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error fetching permission requests',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * @desc    Get pending permission approvals (for HOD/Manager/HR)
+ * @route   GET /api/permissions/pending-approvals
+ * @access  Private (manager, hod, hr, sub_admin, super_admin)
+ * Data scope: Show permissions to ALL workflow participants (roles in approvalChain) with division/department scope.
+ */
+exports.getPendingPermissionApprovals = async (req, res) => {
+  try {
+    const userRole = req.user.role;
+    const baseFilter = {
+      isActive: true,
+      requestedBy: { $ne: req.user._id }
+    };
+
+    const finalStatuses = ['approved', 'rejected', 'checked_out', 'checked_in']; // Permission: gate scan statuses are post-approval
+
+    if (['sub_admin', 'super_admin'].includes(userRole)) {
+      baseFilter.status = { $nin: finalStatuses };
+    } else if (['hod', 'hr', 'manager'].includes(userRole)) {
+      const roleVariants = [userRole];
+      if (userRole === 'hr') roleVariants.push('final_authority');
+      baseFilter['workflow.approvalChain'] = {
+        $elemMatch: { role: { $in: roleVariants } }
+      };
+      const employeeIds = await getEmployeeIdsInScope(req.user);
+      baseFilter.employeeId = employeeIds.length > 0 ? { $in: employeeIds } : { $in: [] };
+      baseFilter.status = { $nin: finalStatuses };
+    } else {
+      baseFilter['workflow.approvalChain'] = { $elemMatch: { role: userRole } };
+      baseFilter.status = { $nin: finalStatuses };
+    }
+
+    const permissions = await Permission.find(baseFilter)
+      .populate('employeeId', 'emp_no employee_name department designation')
+      .populate('requestedBy', 'name email')
+      .sort({ requestedAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      count: permissions.length,
+      data: permissions,
+    });
+  } catch (error) {
+    console.error('Error fetching pending permission approvals:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching pending permission approvals',
       error: error.message,
     });
   }

@@ -78,17 +78,12 @@ exports.protect = async (req, res, next) => {
         userId: authUser?._id || authEmployee?._id,
         email: authUser?.email || authEmployee?.email,
         name: authUser?.name || authEmployee?.employee_name,
-        // Role logic: use User role if available, otherwise 'employee'
         role: authUser?.role || 'employee',
         roles: authUser?.roles || (authUser?.role ? [authUser.role] : ['employee']),
-        department: authUser?.department || authEmployee?.department_id,
-        departments: authUser?.departments || [],
         employeeId: authUser?.employeeId || authEmployee?.emp_no,
         employeeRef: authUser?.employeeRef || authEmployee?._id,
         activeWorkspaceId: authUser?.activeWorkspaceId,
-        // Scoping fields
         dataScope: authUser?.dataScope || (authEmployee ? 'own' : 'all'),
-        allowedDivisions: authUser?.allowedDivisions || [],
         divisionMapping: authUser?.divisionMapping || [],
         type: authUser ? 'user' : 'employee'
       };
