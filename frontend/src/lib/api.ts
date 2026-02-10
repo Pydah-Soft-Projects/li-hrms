@@ -1949,29 +1949,29 @@ export const api = {
   // LEAVE/OD SETTINGS
   // ==========================================
 
-  // Get leave/OD settings
-  getLeaveSettings: async (type: 'leave' | 'od') => {
+  // Get leave/OD/CCL settings
+  getLeaveSettings: async (type: 'leave' | 'od' | 'ccl') => {
     return apiRequest<any>(`/leaves/settings/${type}`, { method: 'GET' });
   },
 
-  // Save leave/OD settings
-  saveLeaveSettings: async (type: 'leave' | 'od', data: any) => {
+  // Save leave/OD/CCL settings
+  saveLeaveSettings: async (type: 'leave' | 'od' | 'ccl', data: any) => {
     return apiRequest<any>(`/leaves/settings/${type}`, {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
 
-  // Update leave/OD settings (alias for saveLeaveSettings)
-  updateLeaveSettings: async (type: 'leave' | 'od', data: any) => {
+  // Update leave/OD/CCL settings (alias for saveLeaveSettings)
+  updateLeaveSettings: async (type: 'leave' | 'od' | 'ccl', data: any) => {
     return apiRequest<any>(`/leaves/settings/${type}`, {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
 
-  // Get leave/OD types
-  getLeaveTypes: async (type: 'leave' | 'od') => {
+  // Get leave/OD/CCL types
+  getLeaveTypes: async (type: 'leave' | 'od' | 'ccl') => {
     return apiRequest<any>(`/leaves/types/${type}`, { method: 'GET' });
   },
 
@@ -2112,8 +2112,8 @@ export const api = {
     return apiRequest<any>(`/loans/${id}/settlement-preview${query}`, { method: 'GET' });
   },
 
-  // Add leave/OD type
-  addLeaveType: async (type: 'leave' | 'od', data: any) => {
+  // Add leave/OD/CCL type
+  addLeaveType: async (type: 'leave' | 'od' | 'ccl', data: any) => {
     return apiRequest<any>(`/leaves/types/${type}`, {
       method: 'POST',
       body: JSON.stringify(data),
