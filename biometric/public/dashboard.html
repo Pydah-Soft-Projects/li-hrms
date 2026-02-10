@@ -453,6 +453,16 @@
                     <option value="">All divisions</option>
                 </select>
             </div>
+
+            <!-- Strict Mode Toggle -->
+            <div class="dialog-row" style="display: flex; align-items: center; gap: 8px;">
+                <input type="checkbox" id="dl-strict" style="width: 18px; height: 18px; cursor: pointer;">
+                <label for="dl-strict" style="cursor: pointer; margin: 0; color: var(--primary);">Strict Mode (Only HRMS
+                    Employees)</label>
+            </div>
+            <p style="font-size: 0.75rem; color: var(--text-dim); margin-top: -12px; margin-bottom: 20px;">If checked,
+                logs from devices not linked to a valid HRMS employee will be excluded.</p>
+
             <div class="dialog-actions">
                 <button class="btn-cancel" onclick="closeDownloadDialog()">Cancel</button>
                 <button class="btn-download" onclick="doDownload()">Download</button>
@@ -785,6 +795,7 @@
             const endDate = document.getElementById('dl-end-date').value;
             const departmentId = document.getElementById('dl-department').value;
             const divisionId = document.getElementById('dl-division').value;
+            const isStrict = document.getElementById('dl-strict').checked;
 
             if (!startDate || !endDate) {
                 alert('Please select Start Date and End Date.');
@@ -801,6 +812,7 @@
             if (employeeId) params.set('employeeId', employeeId);
             if (departmentId) params.set('departmentId', departmentId);
             if (divisionId) params.set('divisionId', divisionId);
+            if (isStrict) params.set('strict', 'true');
 
             try {
                 const res = await fetch('/api/export/attendance?' + params.toString());
