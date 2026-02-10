@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
 import Spinner from '@/components/Spinner';
+import { SettingsSkeleton } from './SettingsSkeleton';
 import { Clock, Trash2, CheckCircle2, ChevronRight } from 'lucide-react';
 
 interface ShiftDuration {
@@ -85,9 +86,7 @@ const ShiftSettings = () => {
         }
     };
 
-    if (loading) return <div className="flex justify-center py-10"><Spinner /></div>;
-
-    if (loading) return <div className="flex justify-center py-10"><Spinner /></div>;
+    if (loading) return <SettingsSkeleton />;
 
     return (
         <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">

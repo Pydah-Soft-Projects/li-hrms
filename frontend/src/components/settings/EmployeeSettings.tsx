@@ -71,7 +71,7 @@ const EmployeeSettings = () => {
 
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-10">
                 <div className="xl:col-span-2 space-y-8">
-                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
+                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-4 sm:p-6 lg:p-8">
                         <div className="px-8 py-6 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
                             <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Storage Configuration</h3>
                             <div className="flex items-center gap-2">

@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
 import Spinner from '@/components/Spinner';
+import { SettingsSkeleton } from './SettingsSkeleton';
 import { Save, Calculator, ChevronRight } from 'lucide-react';
 import WorkflowManager, { WorkflowData } from './shared/WorkflowManager';
 import { useCallback } from 'react';
@@ -73,7 +74,7 @@ const PermissionsSettings = () => {
         }
     };
 
-    if (loading) return <div className="flex justify-center py-10"><Spinner /></div>;
+    if (loading) return <SettingsSkeleton />;
 
     return (
         <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -92,7 +93,7 @@ const PermissionsSettings = () => {
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 items-start">
                 {/* Deduction Rules */}
                 <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden flex flex-col min-h-[500px]">
-                    <div className="px-8 py-6 border-b border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-black/10 flex items-center gap-4">
+                    <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-5 lg:py-6 border-b border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-black/10 flex items-center gap-3 sm:gap-4">
                         <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800/50">
                             <Calculator className="h-6 w-6" />
                         </div>
@@ -102,7 +103,7 @@ const PermissionsSettings = () => {
                         </div>
                     </div>
 
-                    <div className="p-8 space-y-6 flex-1">
+                    <div className="p-4 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 flex-1">
                         <div className="grid grid-cols-2 gap-6">
                             <div className="space-y-2">
                                 <label className="text-[10px] text-gray-400 font-black uppercase tracking-widest pl-1">Threshold (Count)</label>
@@ -157,7 +158,7 @@ const PermissionsSettings = () => {
 
                 {/* Workflow section */}
                 <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden flex flex-col">
-                    <div className="p-8 space-y-6 flex-1">
+                    <div className="p-4 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 flex-1">
                         <WorkflowManager
                             workflow={workflow}
                             onChange={(newWorkflow: WorkflowData) => setWorkflow(newWorkflow)}

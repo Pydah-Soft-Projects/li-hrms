@@ -109,7 +109,7 @@ const AttendanceDeductionsSettings = () => {
 
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-10">
                 {/* Combined Threshold Rules */}
-                <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
+                <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-4 sm:p-6 lg:p-8">
                     <div className="px-8 py-6 border-b border-gray-100 dark:border-gray-800 bg-red-50/10 dark:bg-red-900/5">
                         <div className="flex items-center gap-4">
                             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-100/50 text-red-600 dark:bg-red-950 dark:text-red-400 border border-red-100 dark:border-red-900/50">
@@ -173,7 +173,7 @@ const AttendanceDeductionsSettings = () => {
                 </section>
 
                 {/* Early-Out Graduated Deductions */}
-                <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
+                <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-4 sm:p-6 lg:p-8">
                     <div className="px-8 py-6 border-b border-gray-100 dark:border-gray-800 bg-amber-50/10 dark:bg-amber-900/5 flex items-center justify-between">
                         <div className="flex items-center gap-4">
                             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-100/50 text-amber-600 dark:bg-amber-950 dark:text-amber-400 border border-amber-100 dark:border-amber-900/50">

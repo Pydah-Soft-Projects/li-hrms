@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
 import Spinner from '@/components/Spinner';
+import { SettingsSkeleton } from './SettingsSkeleton';
 import { Save, Clock, ChevronRight } from 'lucide-react';
 
 const GeneralSettings = () => {
@@ -64,9 +65,7 @@ const GeneralSettings = () => {
     }
   };
 
-  if (loading) return <div className="flex justify-center py-10"><Spinner /></div>;
-
-  if (loading) return <div className="flex justify-center py-10"><Spinner /></div>;
+  if (loading) return <SettingsSkeleton />;
 
   return (
     <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -82,7 +81,7 @@ const GeneralSettings = () => {
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-10">
         <div className="xl:col-span-2 space-y-8">
-          <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
+          <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-4 sm:p-6 lg:p-8">
             <div className="px-8 py-6 border-b border-gray-100 dark:border-gray-800">
               <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Attendance Grace Periods</h3>
             </div>
@@ -125,7 +124,7 @@ const GeneralSettings = () => {
           </section>
 
           {/* Placeholder for future general settings to match reference grid */}
-          <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden opacity-50">
+          <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden opacity-50 p-4 sm:p-6 lg:p-8">
             <div className="px-8 py-6 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
               <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">System Localization</h3>
               <span className="text-[10px] font-bold bg-gray-100 px-2 py-0.5 rounded text-gray-500">COMING SOON</span>

@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
 import Spinner from '@/components/Spinner';
+import { SettingsSkeleton } from './SettingsSkeleton';
 import { Save, MessageSquare, Mail, ShieldCheck, Zap, ChevronRight } from 'lucide-react';
 
 const CommunicationSettings = () => {
@@ -49,7 +50,7 @@ const CommunicationSettings = () => {
         }
     };
 
-    if (loading) return <div className="flex justify-center py-20"><Spinner className="h-8 w-8 text-black" /></div>;
+    if (loading) return <SettingsSkeleton />;
 
     return (
         <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">

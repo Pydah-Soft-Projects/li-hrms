@@ -120,7 +120,7 @@ const PayrollSettings = () => {
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-10">
                 <div className="xl:col-span-2 space-y-8">
                     {/* Visibility & Control Section */}
-                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
+                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-4 sm:p-6 lg:p-8">
                         <div className="px-8 py-6 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
                             <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Privacy & Visibility</h3>
                             <div className="flex items-center gap-2">
@@ -176,7 +176,7 @@ const PayrollSettings = () => {
                     </section>
 
                     {/* Payroll Cycle Section */}
-                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
+                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-4 sm:p-6 lg:p-8">
                         <div className="px-8 py-6 border-b border-gray-100 dark:border-gray-800">
                             <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Payroll Cycle</h3>
                         </div>
@@ -227,7 +227,7 @@ const PayrollSettings = () => {
                     </section>
 
                     {/* Absent Deduction Section */}
-                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
+                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-4 sm:p-6 lg:p-8">
                         <div className="px-8 py-6 border-b border-gray-100 dark:border-gray-800">
                             <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Attendance Deductions</h3>
                         </div>
@@ -267,7 +267,7 @@ const PayrollSettings = () => {
 
                 <div className="space-y-8">
                     {/* Bulk Release Card */}
-                    <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
+                    <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-4 sm:p-6 lg:p-8">
                         <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800 bg-emerald-50/30 dark:bg-emerald-900/5">
                             <h3 className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">Batch Operations</h3>
                         </div>
