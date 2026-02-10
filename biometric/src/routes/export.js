@@ -197,30 +197,35 @@ router.get('/export/attendance', async (req, res) => {
             });
         }
 
-        // Try DeviceUsers for missing names
-        const missingEmpNos = empNos.filter(id => !empMap[id]);
-        if (missingEmpNos.length > 0) {
-            const deviceUsers = await DeviceUser.find({ userId: { $in: missingEmpNos } })
-                .select('userId name department division')
-                .lean();
+        // Check strict mode (only include HRMS employees)
+        const isStrict = req.query.strict === 'true';
 
-            deviceUsers.forEach(u => {
-                const uid = String(u.userId).toUpperCase();
-                empMap[uid] = {
-                    emp_no: u.userId,
-                    employee_name: u.name || u.userId,
-                    department: u.department || '',
-                    division: u.division || ''
-                };
+        if (!isStrict) {
+            // Try DeviceUsers for missing names
+            const missingEmpNos = empNos.filter(id => !empMap[id]);
+            if (missingEmpNos.length > 0) {
+                const deviceUsers = await DeviceUser.find({ userId: { $in: missingEmpNos } })
+                    .select('userId name department division')
+                    .lean(); // Fetch department/division from DeviceUser
+
+                deviceUsers.forEach(u => {
+                    const uid = String(u.userId).toUpperCase();
+                    empMap[uid] = {
+                        emp_no: u.userId,
+                        employee_name: u.name || u.userId,
+                        department: u.department || '', // Use stored department
+                        division: u.division || ''     // Use stored division
+                    };
+                });
+            }
+
+            // Fill remaining gaps
+            empNos.forEach(empNo => {
+                if (!empMap[empNo]) {
+                    empMap[empNo] = { emp_no: empNo, employee_name: empNo, department: '', division: '' };
+                }
             });
         }
-
-        // Fill remaining gaps
-        empNos.forEach(empNo => {
-            if (!empMap[empNo]) {
-                empMap[empNo] = { emp_no: empNo, employee_name: empNo, department: '', division: '' };
-            }
-        });
 
         // 2) Parse Logs & Group by Employee -> Date
         // We will do a robust "Strict Shift Pairing" here
@@ -266,6 +271,9 @@ router.get('/export/attendance', async (req, res) => {
 
         // Now Process Each Employee/Date Group
         for (const empId in rawLogsByEmpDate) {
+            // Check if strict mode is on and employee is not in map
+            if (isStrict && !empMap[empId]) continue;
+
             if (!byEmpDate[empId]) byEmpDate[empId] = {};
 
             for (const dateKey in rawLogsByEmpDate[empId]) {
