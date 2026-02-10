@@ -13,7 +13,6 @@ import {
   User as UserIcon,
   Trash2,
   RotateCw,
-  Copy,
   CheckCircle,
   Users,
   UserCheck,
@@ -291,30 +290,51 @@ export default function UsersPage() {
 
       // Handle scoping
       payload.dataScope = formData.dataScope as DataScope;
-      if (formData.dataScope === 'department') {
-        (payload as any).department = formData.department || null;
-      } else if (formData.dataScope === 'division') {
-        payload.allowedDivisions = (formData.allowedDivisions || []).map(d => typeof d === 'string' ? d : d._id);
+
+      // Always include divisionMapping if available
+      if (formData.divisionMapping && formData.divisionMapping.length > 0) {
         payload.divisionMapping = (formData.divisionMapping || []).map(m => ({
           division: typeof m.division === 'string' ? m.division : m.division._id,
           departments: (m.departments || []).map(d => typeof d === 'string' ? d : d._id)
         }));
+      }
 
-        // Manager specific: Map selected departments to divisionMapping
-        if (formData.role === 'manager' && payload.allowedDivisions && payload.allowedDivisions.length === 1) {
-          const divId = payload.allowedDivisions[0];
-          const depts = (formData.departments || []).map((d: any) => typeof d === 'string' ? d : d._id);
-          payload.divisionMapping = [{
-            division: divId,
-            departments: depts
-          }];
+      if (formData.dataScope === 'department') {
+        (payload as any).department = formData.department || null;
+      } else if (formData.dataScope === 'division') {
+        payload.allowedDivisions = (formData.allowedDivisions || []).map(d => typeof d === 'string' ? d : d._id);
+
+        // For Manager/HOD specific mapping if divisionMapping is not already set or needs overrides
+        if (!payload.divisionMapping || payload.divisionMapping.length === 0) {
+          if (formData.role === 'manager' && payload.allowedDivisions && payload.allowedDivisions.length === 1) {
+            const divId = payload.allowedDivisions[0];
+            const depts = (formData.departments || []).map((d: any) => typeof d === 'string' ? d : d._id);
+            payload.divisionMapping = [{
+              division: divId,
+              departments: depts
+            }];
+          } else if (formData.role === 'hod' && formData.division && formData.department) {
+            payload.divisionMapping = [{
+              division: formData.division,
+              departments: [formData.department]
+            }];
+          }
         }
       }
 
-      // Force HOD to use 'department' scope and include department field
+      // Force HOD to use 'department' scope and ensure divisionMapping is correct
       if (formData.role === 'hod') {
         payload.dataScope = 'department';
         (payload as any).department = formData.department || null;
+        (payload as any).division = formData.division || null;
+
+        // HOD MUST have a specific mapping
+        if (formData.division && formData.department) {
+          payload.divisionMapping = [{
+            division: formData.division,
+            departments: [formData.department]
+          }];
+        }
       }
 
       // Add feature control (always send to ensure overrides work)
@@ -358,23 +378,49 @@ export default function UsersPage() {
 
       // Handle scoping
       payload.dataScope = employeeFormData.dataScope || 'all';
+
+      // Always include divisionMapping if available
+      if (employeeFormData.divisionMapping && employeeFormData.divisionMapping.length > 0) {
+        payload.divisionMapping = (employeeFormData.divisionMapping || []).map(m => ({
+          division: typeof m.division === 'string' ? m.division : m.division?._id,
+          departments: (m.departments || []).map(d => typeof d === 'string' ? d : d?._id)
+        })) as any;
+      }
+
       if (payload.dataScope === 'department') {
         payload.department = (employeeFormData.departments || [])[0] || null;
       } else if (payload.dataScope === 'division') {
         payload.allowedDivisions = (employeeFormData.allowedDivisions || []).map(d => typeof d === 'string' ? d : d._id);
-        payload.divisionMapping = (employeeFormData.divisionMapping || []).map(m => ({
-          division: typeof m.division === 'string' ? m.division : m.division._id,
-          departments: (m.departments || []).map(d => typeof d === 'string' ? d : d._id)
-        }));
 
-        // Manager specific: Map selected departments to divisionMapping
-        if (employeeFormData.role === 'manager' && payload.allowedDivisions && payload.allowedDivisions.length === 1) {
-          const divId = payload.allowedDivisions[0];
-          const depts = (employeeFormData.departments || []).map((d: any) => typeof d === 'string' ? d : d._id);
+        // For HOD/Manager specific mapping overrides
+        if (!payload.divisionMapping || payload.divisionMapping.length === 0) {
+          if (employeeFormData.role === 'manager' && payload.allowedDivisions && payload.allowedDivisions.length === 1) {
+            const divId = payload.allowedDivisions[0];
+            const depts = (employeeFormData.departments || []).map((d: any) => typeof d === 'string' ? d : d._id);
+            payload.divisionMapping = [{
+              division: divId,
+              departments: depts
+            }] as any;
+          } else if (employeeFormData.role === 'hod' && employeeFormData.division && (employeeFormData.departments || []).length > 0) {
+            payload.divisionMapping = [{
+              division: employeeFormData.division,
+              departments: [employeeFormData.departments![0]]
+            }] as any;
+          }
+        }
+      }
+
+      // HOD specific override for employee upgrade
+      if (employeeFormData.role === 'hod') {
+        payload.dataScope = 'department';
+        payload.department = employeeFormData.department || (employeeFormData.departments || [])[0] || null;
+        (payload as any).division = employeeFormData.division || null;
+
+        if (employeeFormData.division && (employeeFormData.department || (employeeFormData.departments || []).length > 0)) {
           payload.divisionMapping = [{
-            division: divId,
-            departments: depts
-          }];
+            division: employeeFormData.division,
+            departments: [employeeFormData.department || employeeFormData.departments![0]]
+          }] as any;
         }
       }
 
@@ -415,19 +461,41 @@ export default function UsersPage() {
 
       // Handle scoping
       payload.dataScope = formData.dataScope;
+
+      // Always include divisionMapping if available
+      if (formData.divisionMapping && formData.divisionMapping.length > 0) {
+        payload.divisionMapping = (formData.divisionMapping || []).map(m => ({
+          division: typeof m.division === 'string' ? m.division : m.division?._id,
+          departments: (m.departments || []).map((d: any) => typeof d === 'string' ? d : d?._id)
+        }));
+      }
+
       if (formData.dataScope === 'department') {
         (payload as any).department = formData.department || null;
       } else if (formData.dataScope === 'division') {
         payload.allowedDivisions = formData.allowedDivisions;
-        payload.divisionMapping = formData.divisionMapping;
 
-        // Manager specific: Map selected departments to divisionMapping
+        // Manager specific override
         if (formData.role === 'manager' && payload.allowedDivisions && payload.allowedDivisions.length === 1) {
           const divId = typeof payload.allowedDivisions[0] === 'string' ? payload.allowedDivisions[0] : payload.allowedDivisions[0]._id;
           const depts = (formData.departments || []).map((d: any) => typeof d === 'string' ? d : d._id);
           payload.divisionMapping = [{
             division: divId,
             departments: depts
+          }];
+        }
+      }
+
+      // HOD specific override for update
+      if (formData.role === 'hod') {
+        payload.dataScope = 'department';
+        (payload as any).department = formData.department || null;
+        (payload as any).division = formData.division || null;
+
+        if (formData.division && formData.department) {
+          payload.divisionMapping = [{
+            division: formData.division,
+            departments: [formData.department]
           }];
         }
       }
@@ -683,7 +751,7 @@ export default function UsersPage() {
 
     setFunc((prev: any) => {
       let newMapping = [...(prev.divisionMapping || [])];
-      let existingDivisionIdx = newMapping.findIndex(m => {
+      const existingDivisionIdx = newMapping.findIndex(m => {
         const mDivId = typeof m.division === 'string' ? m.division : m.division?._id;
         return mDivId === divisionId;
       });
