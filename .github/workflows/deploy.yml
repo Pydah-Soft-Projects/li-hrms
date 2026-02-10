@@ -43,19 +43,19 @@ jobs:
       # =========================
       # DEPLOY TO EC2 - SERVER 2
       # =========================
-      - name: Deploy to EC2 - Server 2
-        run: |
-          ssh ${{ secrets.LIGHTSAIL_USER_2 }}@${{ secrets.LIGHTSAIL_HOST_2 }} << 'EOF'
-            set -e
-            cd /home/ec2-user/li-hrms
-            git reset --hard
-            git pull origin main
+      # - name: Deploy to EC2 - Server 2
+      #   run: |
+      #     ssh ${{ secrets.LIGHTSAIL_USER_2 }}@${{ secrets.LIGHTSAIL_HOST_2 }} << 'EOF'
+      #       set -e
+      #       cd /home/ec2-user/li-hrms
+      #       git reset --hard
+      #       git pull origin main
 
-            cd backend && npm install --production
-            cd ../biometric && npm install --production
-            cd ../frontend && npm install
+      #       cd backend && npm install --production
+      #       cd ../biometric && npm install --production
+      #       cd ../frontend && npm install
 
-            cd ..
-            pm2 reload ecosystem.config.js
-            pm2 save
-          EOF
+      #       cd ..
+      #       pm2 reload ecosystem.config.js
+      #       pm2 save
+      #     EOF
