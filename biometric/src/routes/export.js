@@ -137,9 +137,16 @@ router.get('/export/attendance', async (req, res) => {
 
             if (allowedEmpNos.size === 0) {
                 // Return empty CSV immediately
-                res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-                res.setHeader('Content-Disposition', 'attachment; filename="attendance_report.csv"');
-                return res.send('\uFEFFSNO,E.NO,EMPLOYEE NAME,DIVISION,DEPARTMENT,PDate,IN 1,OUT 1,TOT HRS\n');
+                // Return empty Excel immediately
+                const headers = ['SNO', 'E.NO', 'EMPLOYEE NAME', 'DIVISION', 'DEPARTMENT', 'PDate', 'IN 1', 'OUT 1', 'TOT HRS'];
+                const worksheet = XLSX.utils.aoa_to_sheet([headers]);
+                const workbook = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(workbook, worksheet, "Attendance");
+                const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
+                res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+                res.setHeader('Content-Disposition', 'attachment; filename="attendance_report.xlsx"');
+                return res.send(buffer);
             }
         }
 
@@ -152,9 +159,16 @@ router.get('/export/attendance', async (req, res) => {
                 const single = String(employeeId).toUpperCase().trim();
                 // If filter active and requested ID not in filter -> empty
                 if (!allowedEmpNos.has(single)) {
-                    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-                    res.setHeader('Content-Disposition', 'attachment; filename="attendance_report.csv"');
-                    return res.send('\uFEFFSNO,E.NO,EMPLOYEE NAME,DIVISION,DEPARTMENT,PDate,IN 1,OUT 1,TOT HRS\n');
+                    // Return empty Excel
+                    const headers = ['SNO', 'E.NO', 'EMPLOYEE NAME', 'DIVISION', 'DEPARTMENT', 'PDate', 'IN 1', 'OUT 1', 'TOT HRS'];
+                    const worksheet = XLSX.utils.aoa_to_sheet([headers]);
+                    const workbook = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(workbook, worksheet, "Attendance");
+                    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
+                    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+                    res.setHeader('Content-Disposition', 'attachment; filename="attendance_report.xlsx"');
+                    return res.send(buffer);
                 }
                 logQuery.employeeId = single;
             } else {
@@ -167,9 +181,16 @@ router.get('/export/attendance', async (req, res) => {
         const logs = await AttendanceLog.find(logQuery).lean();
         // If no logs found
         if (logs.length === 0) {
-            res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-            res.setHeader('Content-Disposition', 'attachment; filename="attendance_report.csv"');
-            return res.send('\uFEFFSNO,E.NO,EMPLOYEE NAME,DIVISION,DEPARTMENT,PDate,IN 1,OUT 1,TOT HRS\n');
+            // Return empty Excel
+            const headers = ['SNO', 'E.NO', 'EMPLOYEE NAME', 'DIVISION', 'DEPARTMENT', 'PDate', 'IN 1', 'OUT 1', 'TOT HRS'];
+            const worksheet = XLSX.utils.aoa_to_sheet([headers]);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Attendance");
+            const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
+            res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            res.setHeader('Content-Disposition', 'attachment; filename="attendance_report.xlsx"');
+            return res.send(buffer);
         }
 
         const empNos = [...new Set(logs.map(l => String(l.employeeId).toUpperCase()))];
@@ -421,41 +442,55 @@ router.get('/export/attendance', async (req, res) => {
         }
 
         // 6) Dynamic Header Construction
+        // 6) Excel Generation
         const fixedHeaders = ['SNO', 'E.NO', 'EMPLOYEE NAME', 'DIVISION', 'DEPARTMENT', 'PDate'];
         const dynamicHeaders = [];
         for (let i = 1; i <= maxPairs; i++) {
             dynamicHeaders.push(`IN ${i}`, `OUT ${i}`);
         }
         const finalHeaders = [...fixedHeaders, ...dynamicHeaders, 'TOT HRS'];
-        const headerRow = finalHeaders.join(',');
 
-        const escapeCsv = (v) => {
-            const s = String(v == null ? '' : v);
-            if (s.includes(',') || s.includes('"') || s.includes('\n')) return `"${s.replace(/"/g, '""')}"`;
-            return s;
-        };
+        // Prepare data for XLSX
+        const excelData = rows.map(r => {
+            if (r.blank) return []; // Blank row
 
-        const lines = [headerRow, ...rows.map(r => {
-            if (r.blank) return '';
+            const rowObj = {
+                'SNO': r.sno,
+                'E.NO': r.eno,
+                'EMPLOYEE NAME': r.name,
+                'DIVISION': r.division,
+                'DEPARTMENT': r.department,
+                'PDate': r.pdate
+            };
 
-            const baseData = [r.sno, r.eno, r.name, r.division, r.department, r.pdate];
-
-            // Map pairs to columns
-            const pairData = [];
+            // Add pairs
             for (let i = 0; i < maxPairs; i++) {
                 const p = r.pairs && r.pairs[i];
-                pairData.push(p?.in ? formatTime(p.in) : '', p?.out ? formatTime(p.out) : '');
+                rowObj[`IN ${i + 1}`] = p?.in ? formatTime(p.in) : '';
+                rowObj[`OUT ${i + 1}`] = p?.out ? formatTime(p.out) : '';
             }
 
-            return [...baseData, ...pairData, r.totHrs].map(escapeCsv).join(',');
-        })];
+            rowObj['TOT HRS'] = r.totHrs;
+            return rowObj;
+        });
 
-        const csv = lines.join('\n');
+        // Use json_to_sheet logic but we need to ensure headers are ordered correctly
+        // We can use aoa_to_sheet for strict control or just use json_to_sheet with header option
+        const worksheet = XLSX.utils.json_to_sheet(excelData, { header: finalHeaders });
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Attendance");
 
-        const filename = `attendance_report_${start.toISOString().slice(0, 10)}_${end.toISOString().slice(0, 10)}.csv`;
-        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        // Column widths (basic)
+        const wscols = finalHeaders.map(h => ({ wch: 15 }));
+        wscols[2] = { wch: 25 }; // Name
+        worksheet['!cols'] = wscols;
+
+        const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
+        const filename = `attendance_report_${start.toISOString().slice(0, 10)}_${end.toISOString().slice(0, 10)}.xlsx`;
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-        res.send('\uFEFF' + csv);
+        res.send(buffer);
 
     } catch (err) {
         logger.error('Export attendance error:', err);
@@ -560,6 +595,78 @@ router.get('/export/unique-users/excel', async (req, res) => {
 
     } catch (err) {
         logger.error('Export Excel unique users error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+/**
+ * GET /api/export/logs
+ * Returns raw attendance logs in Excel format
+ * Query: startDate, endDate, employeeId (optional)
+ */
+router.get('/export/logs', async (req, res) => {
+    try {
+        const { startDate, endDate, employeeId } = req.query;
+
+        if (!startDate || !endDate) {
+            return res.status(400).json({ success: false, error: 'startDate and endDate are required' });
+        }
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+
+        // Adjust end date to include the full day
+        end.setHours(23, 59, 59, 999);
+
+        const query = {
+            timestamp: { $gte: start, $lte: end }
+        };
+
+        if (employeeId) {
+            query.employeeId = employeeId;
+        }
+
+        // Fetch logs
+        const logs = await AttendanceLog.find(query).sort({ timestamp: 1 }).lean();
+
+        // Map to Excel format
+        const excelData = logs.map(log => ({
+            'Employee ID': log.employeeId,
+            'Date': new Date(log.timestamp).toLocaleDateString(),
+            'Time': new Date(log.timestamp).toLocaleTimeString(),
+            'Log Type': log.logType || (log.rawType == 1 ? 'CHECK-OUT' : 'CHECK-IN'),
+            'Device ID': log.serialNumber || 'Unknown'
+        }));
+
+        if (excelData.length === 0) {
+            // Add one empty row with headers if no data
+            excelData.push({
+                'Employee ID': '', 'Date': '', 'Time': '', 'Log Type': '', 'Device ID': ''
+            });
+        }
+
+        const worksheet = XLSX.utils.json_to_sheet(excelData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Raw Logs");
+
+        // Auto-width
+        const wscols = [
+            { wch: 15 }, // Emp ID
+            { wch: 15 }, // Date
+            { wch: 15 }, // Time
+            { wch: 15 }, // Type
+            { wch: 20 }  // Device
+        ];
+        worksheet['!cols'] = wscols;
+
+        const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
+        const filename = `attendance_logs_${startDate}_${endDate}.xlsx`;
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.send(buffer);
+
+    } catch (err) {
+        logger.error('Export raw logs error:', err);
         res.status(500).json({ success: false, error: err.message });
     }
 });

@@ -361,7 +361,9 @@
                 <p id="selected-device-sn" style="color: var(--text-dim); font-size: 0.9rem;">To view data pulls</p>
             </div>
             <div style="display: flex; gap: 12px; align-items: center;">
-                <button class="btn-refresh" onclick="openDownloadDialog()">Download Report</button>
+                <button class="btn-refresh" onclick="openDownloadDialog('logs')" style="border-data: #10b981;">Download
+                    Logs</button>
+                <button class="btn-refresh" onclick="openDownloadDialog('report')">Download Report</button>
                 <button class="btn-refresh" onclick="exportPdfSummary()"
                     style="border-color: #f43f5e; color: #f43f5e;">PDF Summary</button>
                 <button class="btn-refresh" onclick="exportUniqueUsersExcel()"
@@ -424,8 +426,9 @@
     <!-- Download Report Dialog -->
     <div class="dialog-overlay" id="download-dialog">
         <div class="dialog-box">
-            <h3>Download Attendance Report</h3>
-            <p style="color: var(--text-dim); font-size: 0.85rem; margin-bottom: 20px;">Date range required. Optional:
+            <h3 id="dl-dialog-title">Download Attendance Report</h3>
+            <p id="dl-dialog-desc" style="color: var(--text-dim); font-size: 0.85rem; margin-bottom: 20px;">Date range
+                required. Optional:
                 Employee Number, Department, Division. Report is grouped by Division then Department (with gaps between
                 groups). Columns: SNO, E.NO, EMPLOYEE NAME, DIVISION, DEPARTMENT, PDate, IN 1, OUT 1, IN 2, OUT 2, No.
                 of INs, No. of OUTs, TOT HRS (cumulative of all IN–OUT pairs).</p>
@@ -455,12 +458,13 @@
             </div>
 
             <!-- Strict Mode Toggle -->
-            <div class="dialog-row" style="display: flex; align-items: center; gap: 8px;">
+            <div class="dialog-row" id="dl-strict-container" style="display: flex; align-items: center; gap: 8px;">
                 <input type="checkbox" id="dl-strict" style="width: 18px; height: 18px; cursor: pointer;">
                 <label for="dl-strict" style="cursor: pointer; margin: 0; color: var(--primary);">Strict Mode (Only HRMS
                     Employees)</label>
             </div>
-            <p style="font-size: 0.75rem; color: var(--text-dim); margin-top: -12px; margin-bottom: 20px;">If checked,
+            <p id="dl-strict-desc"
+                style="font-size: 0.75rem; color: var(--text-dim); margin-top: -12px; margin-bottom: 20px;">If checked,
                 logs from devices not linked to a valid HRMS employee will be excluded.</p>
 
             <div class="dialog-actions">
@@ -475,6 +479,7 @@
         let activeTable = 'USERINFO';
         let lastFetchedData = [];
         let allDevices = [];
+        let downloadType = 'report'; // 'report' or 'logs'
 
         // Load devices on startup
         async function loadDevices() {
@@ -746,8 +751,26 @@
         }
 
         // --- Download Report Dialog ---
-        async function openDownloadDialog() {
+        async function openDownloadDialog(type = 'report') {
+            downloadType = type;
             const dialog = document.getElementById('download-dialog');
+            const title = document.getElementById('dl-dialog-title');
+            const desc = document.getElementById('dl-dialog-desc');
+            const strictContainer = document.getElementById('dl-strict-container');
+            const strictDesc = document.getElementById('dl-strict-desc');
+
+            if (type === 'logs') {
+                title.innerText = 'Download Attendance Logs (Raw)';
+                desc.innerText = 'Download raw attendance logs in Excel format. Columns: Employee ID, Date, Time, Log Type, Device ID.';
+                strictContainer.style.display = 'none';
+                strictDesc.style.display = 'none';
+            } else {
+                title.innerText = 'Download Attendance Report';
+                desc.innerText = 'Date range required. Optional: Employee Number, Department, Division. Report is grouped by Division then Department. Columns: SNO, E.NO, EMPLOYEE NAME, DIVISION, DEPARTMENT, PDate, IN/OUT PAIRS, TOT HRS.';
+                strictContainer.style.display = 'flex';
+                strictDesc.style.display = 'block';
+            }
+
             dialog.classList.add('open');
             const now = new Date();
             const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -814,8 +837,11 @@
             if (divisionId) params.set('divisionId', divisionId);
             if (isStrict) params.set('strict', 'true');
 
+            // Construct URL based on type
+            const endpoint = downloadType === 'logs' ? '/api/export/logs' : '/api/export/attendance';
+
             try {
-                const res = await fetch('/api/export/attendance?' + params.toString());
+                const res = await fetch(endpoint + '?' + params.toString());
                 if (!res.ok) {
                     const err = await res.json().catch(() => ({}));
                     alert(err.error || 'Download failed.');
