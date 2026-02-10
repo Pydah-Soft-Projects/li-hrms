@@ -30,42 +30,47 @@ function formatTime(d) {
     return `${h}.${String(m).padStart(2, '0')}`;
 }
 
-// Build daily IN1, OUT1, IN2, OUT2, No. of INs, No. of OUTs, TOT HRS (cumulative of all IN–OUT pairs)
+// Build daily pairs (IN, OUT) and TOT HRS
 function buildDayRow(logs) {
-    const inOut = [];
-    for (const l of logs) {
-        if (l.logType === 'CHECK-IN' || l.logType === 'OVERTIME-IN' || l.logType === 'BREAK-IN') {
-            inOut.push({ type: 'in', time: new Date(l.timestamp) });
-        } else if (l.logType === 'CHECK-OUT' || l.logType === 'OVERTIME-OUT' || l.logType === 'BREAK-OUT') {
-            inOut.push({ type: 'out', time: new Date(l.timestamp) });
-        }
-    }
-    const numIns = inOut.filter(x => x.type === 'in').length;
-    const numOuts = inOut.filter(x => x.type === 'out').length;
+    // Sort by timestamp just in case
+    logs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
-    let in1 = '', out1 = '', in2 = '', out2 = '';
+    const pairs = [];
+    let currentIn = null;
     let totHrs = 0;
-    let idx = 0;
-    while (idx < inOut.length) {
-        const pairIn = inOut[idx];
-        const pairOut = inOut[idx + 1];
-        if (pairIn?.type === 'in' && pairOut?.type === 'out') {
-            const hrs = (pairOut.time - pairIn.time) / (1000 * 60 * 60);
-            totHrs += hrs;
-            if (!in1) {
-                in1 = formatTime(pairIn.time);
-                out1 = formatTime(pairOut.time);
-            } else if (!in2) {
-                in2 = formatTime(pairIn.time);
-                out2 = formatTime(pairOut.time);
+
+    for (const l of logs) {
+        const time = new Date(l.timestamp);
+        const type = l.logType;
+        const isIn = ['CHECK-IN', 'BREAK-IN', 'OVERTIME-IN'].includes(type);
+        const isOut = ['CHECK-OUT', 'BREAK-OUT', 'OVERTIME-OUT'].includes(type);
+
+        if (isIn) {
+            // if already have an IN without OUT, treat previous as orphan IN
+            if (currentIn) {
+                pairs.push({ in: currentIn, out: null });
             }
-            idx += 2;
-        } else {
-            idx += 1;
+            currentIn = time;
+        } else if (isOut) {
+            if (currentIn) {
+                // matched pair
+                const hrs = (time - currentIn) / (1000 * 60 * 60);
+                if (hrs > 0) totHrs += hrs;
+                pairs.push({ in: currentIn, out: time });
+                currentIn = null;
+            } else {
+                // orphan OUT
+                pairs.push({ in: null, out: time });
+            }
         }
     }
-    const totHrsStr = totHrs > 0 ? totHrs.toFixed(2) : '';
-    return { in1, out1, in2, out2, numIns, numOuts, totHrsStr };
+
+    // specific case: handle trailing IN (orphan)
+    if (currentIn) {
+        pairs.push({ in: currentIn, out: null });
+    }
+
+    return { pairs, totHrsStr: totHrs > 0 ? totHrs.toFixed(2) : '' };
 }
 
 /**
@@ -76,9 +81,12 @@ router.get('/hrms/filters', async (req, res) => {
     try {
         const models = getHRMSModels();
         if (!models) {
-            return res.status(503).json({
-                success: false,
-                error: 'HRMS database not connected. Set HRMS_MONGODB_URI.'
+            // Return empty if not connected, allowing mocked filtering in frontend if needed
+            // But usually this means no filters available.
+            return res.json({
+                success: true,
+                data: { departments: [], divisions: [] },
+                message: 'HRMS not connected'
             });
         }
         const [departments, divisions] = await Promise.all([
@@ -101,10 +109,7 @@ router.get('/hrms/filters', async (req, res) => {
 /**
  * GET /api/export/attendance
  * Query: employeeId (optional), startDate, endDate, departmentId (optional), divisionId (optional)
- * When department/division are selected, only employees in HRMS matching those are included.
- * Returns CSV grouped by Division then Department (2–3 blank rows between groups):
- * SNO, E.NO, EMPLOYEE NAME, DIVISION, DEPARTMENT, PDate, IN 1, OUT 1, IN 2, OUT 2, No. of INs, No. of OUTs, TOT HRS
- * TOT HRS = cumulative of all IN–OUT pairs for that day.
+ * Returns CSV with dynamic columns (IN 1, OUT 1, IN 2, OUT 2... IN N, OUT N)
  */
 router.get('/export/attendance', async (req, res) => {
     try {
@@ -117,40 +122,39 @@ router.get('/export/attendance', async (req, res) => {
         if (isNaN(start.getTime()) || isNaN(end.getTime())) {
             return res.status(400).json({ success: false, error: 'Invalid startDate or endDate' });
         }
-        const models = getHRMSModels();
-        if (!models) {
-            return res.status(503).json({
-                success: false,
-                error: 'HRMS database not connected. Set HRMS_MONGODB_URI.'
-            });
-        }
 
-        // 1) Optionally limit to employees matching department/division
+        const models = getHRMSModels();
+        // Warn but proceed if no models (allows export of device-only users/logs)
+
+        // 1) Filter eligible employee IDs from HRMS (if filters applied)
         let allowedEmpNos = null;
-        if (departmentId || divisionId) {
+        if ((departmentId || divisionId) && models) {
             const empFilter = { is_active: { $ne: false } };
             if (departmentId) empFilter.department_id = departmentId;
             if (divisionId) empFilter.division_id = divisionId;
             const employees = await models.Employee.find(empFilter).select('emp_no').lean();
             allowedEmpNos = new Set(employees.map(e => String(e.emp_no).toUpperCase()));
+
             if (allowedEmpNos.size === 0) {
+                // Return empty CSV immediately
                 res.setHeader('Content-Type', 'text/csv; charset=utf-8');
                 res.setHeader('Content-Disposition', 'attachment; filename="attendance_report.csv"');
-                return res.send('\uFEFFSNO,E.NO,EMPLOYEE NAME,DIVISION,DEPARTMENT,PDate,IN 1,OUT 1,IN 2,OUT 2,No. of INs,No. of OUTs,TOT HRS\n');
+                return res.send('\uFEFFSNO,E.NO,EMPLOYEE NAME,DIVISION,DEPARTMENT,PDate,IN 1,OUT 1,TOT HRS\n');
             }
         }
 
-        // 2) Build attendance query
+        // 2) Build logs query
         const logQuery = {
             timestamp: { $gte: start, $lte: end }
         };
         if (allowedEmpNos) {
             if (employeeId && employeeId.trim()) {
                 const single = String(employeeId).toUpperCase().trim();
+                // If filter active and requested ID not in filter -> empty
                 if (!allowedEmpNos.has(single)) {
                     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
                     res.setHeader('Content-Disposition', 'attachment; filename="attendance_report.csv"');
-                    return res.send('\uFEFFSNO,E.NO,EMPLOYEE NAME,DIVISION,DEPARTMENT,PDate,IN 1,OUT 1,IN 2,OUT 2,No. of INs,No. of OUTs,TOT HRS\n');
+                    return res.send('\uFEFFSNO,E.NO,EMPLOYEE NAME,DIVISION,DEPARTMENT,PDate,IN 1,OUT 1,TOT HRS\n');
                 }
                 logQuery.employeeId = single;
             } else {
@@ -160,40 +164,65 @@ router.get('/export/attendance', async (req, res) => {
             logQuery.employeeId = String(employeeId).toUpperCase().trim();
         }
 
-        const logs = await AttendanceLog.find(logQuery).sort({ timestamp: 1 }).lean();
-        const empNos = [...new Set(logs.map(l => String(l.employeeId).toUpperCase()))];
-        if (empNos.length === 0) {
+        const logs = await AttendanceLog.find(logQuery).lean();
+        // If no logs found
+        if (logs.length === 0) {
             res.setHeader('Content-Type', 'text/csv; charset=utf-8');
             res.setHeader('Content-Disposition', 'attachment; filename="attendance_report.csv"');
-            return res.send('\uFEFFSNO,E.NO,EMPLOYEE NAME,DIVISION,DEPARTMENT,PDate,IN 1,OUT 1,IN 2,OUT 2,No. of INs,No. of OUTs,TOT HRS\n');
+            return res.send('\uFEFFSNO,E.NO,EMPLOYEE NAME,DIVISION,DEPARTMENT,PDate,IN 1,OUT 1,TOT HRS\n');
         }
 
-        // 3) Fetch employees from HRMS (name, department, division)
-        const employees = await models.Employee.find({
-            emp_no: { $in: empNos },
-            is_active: { $ne: false }
-        })
-            .populate('department_id', 'name code')
-            .populate('division_id', 'name code')
-            .lean();
+        const empNos = [...new Set(logs.map(l => String(l.employeeId).toUpperCase()))];
 
+        // 3) Fetch employee details (HRMS or Fallback)
         const empMap = {};
-        employees.forEach(e => {
-            empMap[String(e.emp_no).toUpperCase()] = {
-                emp_no: e.emp_no,
-                employee_name: (e.employee_name || '').trim() || e.emp_no,
-                department: (e.department_id?.name || '').trim(),
-                division: (e.division_id?.name || '').trim()
-            };
-        });
-        // Ensure every emp_no from logs has an entry (e.g. not in HRMS)
+
+        // Try HRMS first
+        if (models) {
+            const employees = await models.Employee.find({
+                emp_no: { $in: empNos },
+                is_active: { $ne: false }
+            })
+                .populate('department_id', 'name code')
+                .populate('division_id', 'name code')
+                .lean();
+
+            employees.forEach(e => {
+                empMap[String(e.emp_no).toUpperCase()] = {
+                    emp_no: e.emp_no,
+                    employee_name: (e.employee_name || '').trim() || e.emp_no,
+                    department: (e.department_id?.name || '').trim(),
+                    division: (e.division_id?.name || '').trim()
+                };
+            });
+        }
+
+        // Try DeviceUsers for missing names
+        const missingEmpNos = empNos.filter(id => !empMap[id]);
+        if (missingEmpNos.length > 0) {
+            const deviceUsers = await DeviceUser.find({ userId: { $in: missingEmpNos } })
+                .select('userId name department division')
+                .lean();
+
+            deviceUsers.forEach(u => {
+                const uid = String(u.userId).toUpperCase();
+                empMap[uid] = {
+                    emp_no: u.userId,
+                    employee_name: u.name || u.userId,
+                    department: u.department || '',
+                    division: u.division || ''
+                };
+            });
+        }
+
+        // Fill remaining gaps
         empNos.forEach(empNo => {
             if (!empMap[empNo]) {
                 empMap[empNo] = { emp_no: empNo, employee_name: empNo, department: '', division: '' };
             }
         });
 
-        // 4) Group logs by (employeeId, date)
+        // 4) Group logs
         const byEmpDate = {};
         for (const log of logs) {
             const empNo = String(log.employeeId).toUpperCase();
@@ -204,18 +233,19 @@ router.get('/export/attendance', async (req, res) => {
             byEmpDate[empNo][dateKey].push(log);
         }
 
-        // 5) Group employees by Division then Department; output rows with 2–3 blank rows between each group
+        // 5) Build groups (Division > Dept)
         const groupKey = (empNo) => {
-            const info = empMap[empNo] || { division: '', department: '' };
+            const info = empMap[empNo];
             return `${info.division}\t${info.department}`;
         };
-        const groups = new Map(); // key = "Division\tDepartment", value = [emp_nos]
+        const groups = new Map();
         for (const empNo of Object.keys(byEmpDate)) {
             const key = groupKey(empNo);
             if (!groups.has(key)) groups.set(key, []);
             groups.get(key).push(empNo);
         }
-        // Sort groups by division name then department name
+
+        // Sort groups
         const sortedGroupEntries = [...groups.entries()].sort((a, b) => {
             const [divA, deptA] = a[0].split('\t');
             const [divB, deptB] = b[0].split('\t');
@@ -225,21 +255,29 @@ router.get('/export/attendance', async (req, res) => {
 
         const rows = [];
         let sno = 0;
+        let maxPairs = 1; // At least 1 pair columns (IN 1 / OUT 1)
+
         const BLANK_ROWS_BETWEEN_GROUPS = 3;
 
         for (let g = 0; g < sortedGroupEntries.length; g++) {
             const [key, groupEmpNos] = sortedGroupEntries[g];
             const [divisionName, departmentName] = key.split('\t');
-            groupEmpNos.sort((a, b) => (empMap[a]?.emp_no || a).localeCompare(empMap[b]?.emp_no || b));
+            // Sort employees by Name (or ID) within group
+            groupEmpNos.sort((a, b) => (empMap[a]?.employee_name || a).localeCompare(empMap[b]?.employee_name || b));
 
             for (const empNo of groupEmpNos) {
-                const info = empMap[empNo] || { emp_no: empNo, employee_name: empNo, department: '', division: '' };
+                const info = empMap[empNo];
                 const dates = Object.keys(byEmpDate[empNo]).sort();
+
                 for (const dateKey of dates) {
                     const [y, m, day] = dateKey.split('-');
                     const pDate = formatPDate(new Date(parseInt(y), parseInt(m) - 1, parseInt(day)));
-                    const dayLogs = byEmpDate[empNo][dateKey].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-                    const { in1, out1, in2, out2, numIns, numOuts, totHrsStr } = buildDayRow(dayLogs);
+                    const dayLogs = byEmpDate[empNo][dateKey];
+
+                    const { pairs, totHrsStr } = buildDayRow(dayLogs);
+
+                    if (pairs.length > maxPairs) maxPairs = pairs.length;
+
                     sno += 1;
                     rows.push({
                         sno,
@@ -248,41 +286,53 @@ router.get('/export/attendance', async (req, res) => {
                         division: info.division,
                         department: info.department,
                         pdate: pDate,
-                        in1,
-                        out1,
-                        in2,
-                        out2,
-                        numIns,
-                        numOuts,
+                        pairs, // Array of {in, out}
                         totHrs: totHrsStr
                     });
                 }
             }
-            // 2–3 blank rows between groups (except after last group)
             if (g < sortedGroupEntries.length - 1) {
-                for (let i = 0; i < BLANK_ROWS_BETWEEN_GROUPS; i++) {
-                    rows.push({ blank: true });
-                }
+                for (let i = 0; i < BLANK_ROWS_BETWEEN_GROUPS; i++) rows.push({ blank: true });
             }
         }
 
-        // 6) CSV output
-        const header = 'SNO,E.NO,EMPLOYEE NAME,DIVISION,DEPARTMENT,PDate,IN 1,OUT 1,IN 2,OUT 2,No. of INs,No. of OUTs,TOT HRS';
+        // 6) Dynamic Header Construction
+        const fixedHeaders = ['SNO', 'E.NO', 'EMPLOYEE NAME', 'DIVISION', 'DEPARTMENT', 'PDate'];
+        const dynamicHeaders = [];
+        for (let i = 1; i <= maxPairs; i++) {
+            dynamicHeaders.push(`IN ${i}`, `OUT ${i}`);
+        }
+        const finalHeaders = [...fixedHeaders, ...dynamicHeaders, 'TOT HRS'];
+        const headerRow = finalHeaders.join(',');
+
         const escapeCsv = (v) => {
             const s = String(v == null ? '' : v);
             if (s.includes(',') || s.includes('"') || s.includes('\n')) return `"${s.replace(/"/g, '""')}"`;
             return s;
         };
-        const lines = [header, ...rows.map(r => {
+
+        const lines = [headerRow, ...rows.map(r => {
             if (r.blank) return '';
-            return [r.sno, r.eno, r.name, r.division, r.department, r.pdate, r.in1, r.out1, r.in2, r.out2, r.numIns, r.numOuts, r.totHrs].map(escapeCsv).join(',');
+
+            const baseData = [r.sno, r.eno, r.name, r.division, r.department, r.pdate];
+
+            // Map pairs to columns
+            const pairData = [];
+            for (let i = 0; i < maxPairs; i++) {
+                const p = r.pairs && r.pairs[i];
+                pairData.push(p?.in ? formatTime(p.in) : '', p?.out ? formatTime(p.out) : '');
+            }
+
+            return [...baseData, ...pairData, r.totHrs].map(escapeCsv).join(',');
         })];
+
         const csv = lines.join('\n');
 
         const filename = `attendance_report_${start.toISOString().slice(0, 10)}_${end.toISOString().slice(0, 10)}.csv`;
         res.setHeader('Content-Type', 'text/csv; charset=utf-8');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-        res.send('\uFEFF' + csv); // BOM for Excel UTF-8
+        res.send('\uFEFF' + csv);
+
     } catch (err) {
         logger.error('Export attendance error:', err);
         res.status(500).json({ success: false, error: err.message });

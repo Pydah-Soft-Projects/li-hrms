@@ -18,7 +18,7 @@ const { connectHRMS } = require('./config/hrmsConnection');
 
 // Initialize Express app
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 4000;
 
 // Middleware
 app.use(cors());
@@ -132,7 +132,7 @@ mongoose.connect(MONGODB_URI)
         logger.info('Connected to MongoDB');
 
         // Connect to HRMS MongoDB for export (employee name, department, division)
-        await connectHRMS().catch(() => {});
+        await connectHRMS().catch(() => { });
 
         // Start the server
         app.listen(PORT, () => {
