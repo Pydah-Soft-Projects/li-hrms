@@ -75,7 +75,9 @@ exports.registerUser = async (req, res) => {
     const userRoles = roles && roles.length > 0 ? roles : [role];
 
     let finalDivisionMapping = Array.isArray(divisionMapping) ? divisionMapping : [];
-    if (role === 'hod' && division && department && finalDivisionMapping.length === 0) {
+
+    // Fallback logic if divisionMapping is missing but division/department are provided
+    if (finalDivisionMapping.length === 0 && division && department) {
       finalDivisionMapping = [{ division, departments: [department] }];
     }
 
@@ -187,7 +189,7 @@ exports.createUserFromEmployee = async (req, res) => {
       dataScope,
       divisionMapping,
     } = req.body;
-    const { departments } = req.body;
+    const { departments, department, division } = req.body;
 
     // Find employee (including password for inheritance)
     const employee = await Employee.findOne({ emp_no: empNo })
@@ -257,23 +259,31 @@ exports.createUserFromEmployee = async (req, res) => {
     const empDeptId = employee.department_id?._id || employee.department_id;
     let finalDivisionMapping = Array.isArray(divisionMapping) ? divisionMapping : [];
 
-    if (finalDivisionMapping.length === 0 && (departments?.length > 0 || empDeptId)) {
-      const deptIds = (role === 'hr' && departments?.length > 0) ? departments : (empDeptId ? [empDeptId] : []);
-      if (deptIds.length > 0) {
-        const depts = await Department.find({ _id: { $in: deptIds } }).select('divisions').lean();
-        const mapByDiv = new Map();
-        for (const d of depts) {
-          const divs = d.divisions || [];
-          for (const div of divs) {
-            const divId = (div?._id || div).toString();
-            if (!mapByDiv.has(divId)) mapByDiv.set(divId, new Set());
-            mapByDiv.get(divId).add(d._id.toString());
+    // Priority 1: Use divisionMapping if provided from frontend
+    // Priority 2: Use division + department if provided from frontend
+    // Priority 3: Auto-generate from employee's department (fallback for simple registration)
+    if (finalDivisionMapping.length === 0) {
+      if (division && department) {
+        finalDivisionMapping = [{ division, departments: [department] }];
+      } else if (departments?.length > 0 || empDeptId) {
+        // Fallback: Auto-generate from departments (only if nothing specific was sent)
+        const deptIds = (role === 'hr' && departments?.length > 0) ? departments : (empDeptId ? [empDeptId] : []);
+        if (deptIds.length > 0) {
+          const depts = await Department.find({ _id: { $in: deptIds } }).select('divisions').lean();
+          const mapByDiv = new Map();
+          for (const d of depts) {
+            const divs = d.divisions || [];
+            for (const div of divs) {
+              const divId = (div?._id || div).toString();
+              if (!mapByDiv.has(divId)) mapByDiv.set(divId, new Set());
+              mapByDiv.get(divId).add(d._id.toString());
+            }
           }
+          finalDivisionMapping = Array.from(mapByDiv.entries()).map(([divId, deptSet]) => ({
+            division: divId,
+            departments: Array.from(deptSet),
+          }));
         }
-        finalDivisionMapping = Array.from(mapByDiv.entries()).map(([divId, deptSet]) => ({
-          division: divId,
-          departments: Array.from(deptSet),
-        }));
       }
     }
 
@@ -497,9 +507,9 @@ exports.updateUser = async (req, res) => {
     if (scope !== undefined) user.scope = scope;
     if (featureControl !== undefined) user.featureControl = featureControl;
     if (dataScope !== undefined) user.dataScope = dataScope;
-    if (divisionMapping !== undefined) user.divisionMapping = divisionMapping;
-
-    if (division && department) {
+    if (divisionMapping !== undefined) {
+      user.divisionMapping = divisionMapping;
+    } else if (division && department) {
       user.divisionMapping = [{ division, departments: [department] }];
     }
 
@@ -662,11 +672,6 @@ exports.toggleUserStatus = async (req, res) => {
     user.isActive = !user.isActive;
     await user.save();
 
-    // Also deactivate workspace assignments if user deactivated
-    if (!user.isActive) {
-      await RoleAssignment.updateMany({ userId: user._id }, { isActive: false });
-    }
-
     res.status(200).json({
       success: true,
       message: `User ${user.isActive ? 'activated' : 'deactivated'} successfully`,
@@ -702,9 +707,6 @@ exports.deleteUser = async (req, res) => {
         message: 'Cannot delete super admin user',
       });
     }
-
-    // Delete workspace assignments
-    await RoleAssignment.deleteMany({ userId: user._id });
 
     await user.deleteOne();
 
