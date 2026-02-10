@@ -5,6 +5,7 @@ const Employee = require('../../employees/model/Employee');
 const User = require('../../users/model/User');
 const { isHRMSConnected, getEmployeeByIdMSSQL } = require('../../employees/config/sqlHelper');
 const { getResolvedLoanSettings } = require('../../departments/controllers/departmentSettingsController');
+const { getEmployeeIdsInScope } = require('../../shared/middleware/dataScopeMiddleware');
 
 // ============================================
 // TESTING FLAG - Set to false to disable Super Admin bypass
@@ -978,27 +979,23 @@ exports.getPendingApprovals = async (req, res) => {
     const userRole = req.user.role;
     let filter = { isActive: true };
 
-    // Determine what the user can approve based on their role
+    // Determine what the user can approve based on their role (use divisionMapping for scope)
     if (userRole === 'hod') {
       filter['workflow.nextApprover'] = 'hod';
-      if (req.user.department) {
-        filter.department = req.user.department;
+      const scopedEmployeeIds = await getEmployeeIdsInScope(req.user);
+      if (scopedEmployeeIds.length > 0) {
+        filter.employeeId = { $in: scopedEmployeeIds };
+      } else {
+        return res.status(200).json({ success: true, count: 0, data: [] });
       }
     } else if (userRole === 'manager') {
-      // Find division where user is manager
-      const Division = require('../../departments/model/Division');
-      const division = await Division.findOne({ manager: req.user._id });
-
-      if (!division) {
-        return res.status(200).json({
-          success: true,
-          count: 0,
-          data: [],
-        });
-      }
-
       filter['workflow.nextApprover'] = 'manager';
-      filter.division_id = division._id;
+      const scopedEmployeeIds = await getEmployeeIdsInScope(req.user);
+      if (scopedEmployeeIds.length > 0) {
+        filter.employeeId = { $in: scopedEmployeeIds };
+      } else {
+        return res.status(200).json({ success: true, count: 0, data: [] });
+      }
     } else if (userRole === 'hr') {
       filter['workflow.nextApprover'] = { $in: ['hr', 'final_authority'] };
     } else if (['sub_admin', 'super_admin'].includes(userRole)) {
@@ -1055,14 +1052,27 @@ exports.processLoanAction = async (req, res) => {
     let canProcess = false;
     if (isSuperAdmin) {
       canProcess = true;
-    } else if (currentApprover === 'hod' && userRole === 'hod') {
-      canProcess = !req.user.department ||
-        loan.department?.toString() === req.user.department?.toString();
-    } else if (currentApprover === 'manager' && userRole === 'manager') {
-      // Verify user is the manager for this division
-      const Division = require('../../departments/model/Division');
-      const division = await Division.findById(loan.division_id);
-      canProcess = division && division.manager?.toString() === req.user._id.toString();
+    } else if (currentApprover === 'reporting_manager') {
+      // 1. Check if user is the assigned Reporting Manager
+      const targetEmployee = await Employee.findById(loan.employeeId);
+      const managers = targetEmployee?.dynamicFields?.reporting_to;
+
+      if (managers && Array.isArray(managers) && managers.length > 0) {
+        const userIdStr = req.user._id.toString();
+        canProcess = managers.some(m => (m._id || m).toString() === userIdStr);
+      }
+
+      // 2. Fallback to HOD if no managers assigned OR if user is an HOD for the employee
+      if (!canProcess && userRole === 'hod') {
+        const loanDeptId = (loan.department_id || loan.department)?.toString();
+        const loanDivId = (loan.division_id || loan.division)?.toString();
+        const mapping = req.user.divisionMapping?.find(m =>
+          (m.division?._id || m.division)?.toString() === loanDivId
+        );
+        canProcess = mapping
+          ? (!mapping.departments || mapping.departments.length === 0) || mapping.departments.some(d => (d?._id || d).toString() === loanDeptId)
+          : false;
+      }
     } else if (['hr', 'final_authority'].includes(currentApprover) && userRole === 'hr') {
       canProcess = true;
     }

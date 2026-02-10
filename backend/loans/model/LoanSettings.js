@@ -145,7 +145,7 @@ const LoanSettingsSchema = new mongoose.Schema(
           // Who approves at this step
           approverRole: {
             type: String,
-            enum: ['hod', 'hr', 'admin', 'final_authority', 'custom', 'specific_user'],
+            enum: ['hod', 'hr', 'manager', 'admin', 'super_admin', 'reporting_manager', 'final_authority', 'custom', 'specific_user'],
             required: true,
           },
           // Custom approver (if approverRole is 'custom' or 'specific_user')
@@ -210,7 +210,7 @@ const LoanSettingsSchema = new mongoose.Schema(
         // Who has final approval authority
         role: {
           type: String,
-          enum: ['hr', 'admin', 'specific_user'],
+          enum: ['hr', 'manager', 'admin', 'super_admin', 'reporting_manager', 'specific_user'],
           default: 'hr',
         },
         // If role is 'specific_user'

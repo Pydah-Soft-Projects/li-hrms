@@ -3596,7 +3596,7 @@ export default function SettingsPage() {
                       <div>
                         <h4 className="mb-3 text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">⏰ Time & Attendance</h4>
                         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                          {['LEAVE_OD', 'ATTENDANCE', 'OT_PERMISSIONS', 'SHIFTS'].map((module) => (
+                          {['LEAVE_OD', 'CCL', 'ATTENDANCE', 'OT_PERMISSIONS', 'SHIFTS'].map((module) => (
                             <label key={module} className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 transition-all hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800">
                               <input
                                 type="checkbox"
@@ -3611,7 +3611,7 @@ export default function SettingsPage() {
                                 className="h-4 w-4 rounded text-blue-600 focus:ring-blue-500"
                               />
                               <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                                {module === 'LEAVE_OD' ? 'Leave & OD' : module === 'OT_PERMISSIONS' ? 'OT & Permissions' : module === 'SHIFTS' ? 'Shifts' : 'Attendance'}
+                                {module === 'LEAVE_OD' ? 'Leave & OD' : module === 'CCL' ? 'CCL (Compensatory)' : module === 'OT_PERMISSIONS' ? 'OT & Permissions' : module === 'SHIFTS' ? 'Shifts' : 'Attendance'}
                               </span>
                             </label>
                           ))}

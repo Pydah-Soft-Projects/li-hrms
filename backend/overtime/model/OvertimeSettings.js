@@ -12,9 +12,19 @@ const OvertimeSettingsSchema = new mongoose.Schema(
             default: 0,
             min: 0,
         },
+        multiplier: {
+            type: Number,
+            default: 1.5,
+            min: 1,
+        },
         minOTHours: {
             type: Number,
             default: 0,
+            min: 0,
+        },
+        roundingMinutes: {
+            type: Number,
+            default: 15,
             min: 0,
         },
 
@@ -29,7 +39,7 @@ const OvertimeSettingsSchema = new mongoose.Schema(
                 stepName: String,
                 approverRole: {
                     type: String,
-                    enum: ['hod', 'hr', 'manager', 'super_admin']
+                    enum: ['hod', 'hr', 'manager', 'super_admin', 'reporting_manager']
                 },
                 availableActions: [String],
                 approvedStatus: String,
@@ -40,7 +50,7 @@ const OvertimeSettingsSchema = new mongoose.Schema(
             finalAuthority: {
                 role: {
                     type: String,
-                    enum: ['hod', 'hr', 'manager', 'super_admin']
+                    enum: ['hod', 'hr', 'manager', 'super_admin', 'reporting_manager']
                 },
                 anyHRCanApprove: {
                     type: Boolean,

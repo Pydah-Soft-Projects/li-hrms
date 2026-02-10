@@ -222,8 +222,9 @@ exports.getUsersForWorkflow = async (req, res) => {
 
     // Get users with their roles
     const users = await User.find(query)
-      .select('name email role department')
-      .populate('department', 'name')
+      .select('name email role divisionMapping')
+      .populate('divisionMapping.division', 'name')
+      .populate('divisionMapping.departments', 'name')
       .sort({ name: 1 });
 
     // Group users by role
@@ -233,12 +234,13 @@ exports.getUsersForWorkflow = async (req, res) => {
       if (!usersByRole[userRole]) {
         usersByRole[userRole] = [];
       }
+      const firstDept = user.divisionMapping?.[0]?.departments?.[0]?._id || user.divisionMapping?.[0]?.departments?.[0];
       usersByRole[userRole].push({
         _id: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
-        department: user.department,
+        department: firstDept,
       });
     });
 

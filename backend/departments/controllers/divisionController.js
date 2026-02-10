@@ -98,11 +98,10 @@ exports.createDivision = async (req, res, next) => {
             );
         }
 
-        // Auto-sync: Add division to Manager's allowedDivisions list
         if (req.body.manager) {
             const User = require('../../users/model/User');
             await User.findByIdAndUpdate(req.body.manager, {
-                $addToSet: { allowedDivisions: division._id }
+                $addToSet: { divisionMapping: { division: division._id, departments: [] } }
             });
         }
 
@@ -150,16 +149,14 @@ exports.updateDivision = async (req, res, next) => {
             const oldManagerId = division.manager ? division.manager.toString() : null;
 
             if (oldManagerId !== newManagerId) {
-                // Remove division from old Manager
                 if (oldManagerId) {
                     await User.findByIdAndUpdate(oldManagerId, {
-                        $pull: { allowedDivisions: division._id }
+                        $pull: { divisionMapping: { division: division._id } }
                     });
                 }
-                // Add division to new Manager
                 if (newManagerId) {
                     await User.findByIdAndUpdate(newManagerId, {
-                        $addToSet: { allowedDivisions: division._id }
+                        $addToSet: { divisionMapping: { division: division._id, departments: [] } }
                     });
                 }
             }
@@ -235,11 +232,10 @@ exports.deleteDivision = async (req, res, next) => {
             { $pull: { departmentShifts: { division: division._id } } }
         );
 
-        // Remove division from any users' allowedDivisions (cleanup)
         const User = require('../../users/model/User');
         await User.updateMany(
-            { allowedDivisions: division._id },
-            { $pull: { allowedDivisions: division._id } }
+            { 'divisionMapping.division': division._id },
+            { $pull: { divisionMapping: { division: division._id } } }
         );
 
         await division.deleteOne();

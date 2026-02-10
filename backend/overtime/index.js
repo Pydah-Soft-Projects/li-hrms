@@ -5,10 +5,12 @@
 const express = require('express');
 const router = express.Router();
 const { protect, authorize } = require('../authentication/middleware/authMiddleware');
+const { applyScopeFilter } = require('../shared/middleware/dataScopeMiddleware');
 const {
   createOT,
   getOTRequests,
   getOTRequest,
+  getPendingOTApprovals,
   approveOT,
   rejectOT,
   checkConfusedShift,
@@ -26,8 +28,11 @@ router.post('/settings', authorize('super_admin'), saveSettings);
 // Create OT request (HOD, HR, Super Admin)
 router.post('/', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), createOT);
 
-// Get OT requests
-router.get('/', getOTRequests);
+// Pending OT approvals (must come before /:id)
+router.get('/pending-approvals', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), getPendingOTApprovals);
+
+// Get OT requests - employee allowed; applyScopeFilter restricts to own/scope
+router.get('/', authorize('employee', 'manager', 'hod', 'hr', 'sub_admin', 'super_admin'), applyScopeFilter, getOTRequests);
 
 // Get single OT request
 router.get('/:id', getOTRequest);

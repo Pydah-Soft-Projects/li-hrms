@@ -47,7 +47,7 @@ const PayrollRecord = require('../payroll/model/PayrollRecord');
 const PayrollTransaction = require('../payroll/model/PayrollTransaction');
 
 const DIVISION_ID = '6957b10390c14ea32bbe4fb7';
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://teampydah:TeamPydah@teampydah.y4zj6wh.mongodb.net/';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://teampydah:aslkdjlksdkjf@teampydah.y4zj6wh.mongodb.net/';
 
 // --delete flag = live deletion
 const args = process.argv.slice(2);

@@ -63,12 +63,22 @@ async function getOrCreateMonthlyRecord(employeeId, emp_no, date) {
 }
 
 /**
- * Get leave nature from leave type settings
- * @param {String} leaveType - Leave type code
+ * Get leave nature from leave object or leave type settings
+ * @param {String|Object} leaveTypeOrLeave - Leave type code or Leave object
  * @returns {String} Leave nature ('paid', 'lop', or 'without_pay')
  */
-async function getLeaveNature(leaveType) {
+async function getLeaveNature(leaveTypeOrLeave) {
   try {
+    // If it's a Leave object with leaveNature field, use that first
+    if (typeof leaveTypeOrLeave === 'object' && leaveTypeOrLeave.leaveNature) {
+      return leaveTypeOrLeave.leaveNature;
+    }
+
+    // Otherwise, derive from leave type settings
+    const leaveType = typeof leaveTypeOrLeave === 'string'
+      ? leaveTypeOrLeave
+      : leaveTypeOrLeave.leaveType;
+
     const settings = await LeaveSettings.getActiveSettings('leave');
     if (!settings || !settings.types) {
       return 'paid'; // Default to paid if settings not found
@@ -167,8 +177,8 @@ async function recalculateMonthlyRecord(employeeId, month) {
 
     leaveIds.push(leave._id);
 
-    // Get leave nature
-    const nature = await getLeaveNature(leave.leaveType);
+    // Get leave nature - prioritize leave.leaveNature if set
+    const nature = await getLeaveNature(leave);
     const leaveTypeName = leave.leaveType; // You can enhance this to get actual name from settings
 
     // Update totals
@@ -217,14 +227,14 @@ async function recalculateMonthlyRecord(employeeId, month) {
     const splitDate = new Date(split.date);
     const splitYear = splitDate.getFullYear();
     const splitMonth = splitDate.getMonth() + 1;
-    
+
     // Only process splits for this month
     if (splitYear !== year || splitMonth !== monthNum) {
       continue;
     }
 
     const splitDays = split.numberOfDays || (split.isHalfDay ? 0.5 : 1);
-    
+
     // Add split leave ID if not already added
     if (split.leaveId && !leaveIds.includes(split.leaveId._id)) {
       leaveIds.push(split.leaveId._id);

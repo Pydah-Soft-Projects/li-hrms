@@ -48,20 +48,22 @@ exports.getSettings = async (req, res) => {
   try {
     const { type } = req.params;
 
-    if (!['leave', 'od'].includes(type)) {
+    if (!['leave', 'od', 'ccl'].includes(type)) {
       return res.status(400).json({
         success: false,
-        error: 'Invalid type. Must be "leave" or "od"',
+        error: 'Invalid type. Must be "leave", "od", or "ccl"',
       });
     }
 
     let settings = await LeaveSettings.findOne({ type, isActive: true });
 
+    // CCL doesn't use types array; workflow only
+    const defaultTypes = type === 'leave' ? DEFAULT_LEAVE_TYPES : (type === 'od' ? DEFAULT_OD_TYPES : []);
     // If no settings exist, return defaults
     if (!settings) {
       settings = {
         type,
-        types: type === 'leave' ? DEFAULT_LEAVE_TYPES : DEFAULT_OD_TYPES,
+        types: defaultTypes,
         statuses: DEFAULT_STATUSES,
         settings: {
           allowBackdated: false,
@@ -112,10 +114,10 @@ exports.saveSettings = async (req, res) => {
     console.log('Body:', JSON.stringify(req.body, null, 2));
     console.log('Settings received:', JSON.stringify(settings, null, 2));
 
-    if (!['leave', 'od'].includes(type)) {
+    if (!['leave', 'od', 'ccl'].includes(type)) {
       return res.status(400).json({
         success: false,
-        error: 'Invalid type. Must be "leave" or "od"',
+        error: 'Invalid type. Must be "leave", "od", or "ccl"',
       });
     }
 
@@ -233,10 +235,17 @@ exports.addType = async (req, res) => {
     const { type } = req.params;
     const typeData = req.body;
 
-    if (!['leave', 'od'].includes(type)) {
+    if (!['leave', 'od', 'ccl'].includes(type)) {
       return res.status(400).json({
         success: false,
         error: 'Invalid type',
+      });
+    }
+
+    if (type === 'ccl') {
+      return res.status(400).json({
+        success: false,
+        error: 'CCL does not have multiple types. Use settings workflow only.',
       });
     }
 
