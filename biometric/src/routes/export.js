@@ -299,59 +299,55 @@ router.get('/export/attendance', async (req, res) => {
                     }
                 }
 
-                // 3. Strict Pairing State Machine
-                // Logic: 
-                // - MAX 3 shifts.
-                // - Ignore consecutive INs (keep first).
-                // - Ignore consecutive OUTs (keep first? No, keep next valid). 
-                // Wait, if start IN, subsequent IN is ignored.
-                // If OUT, subsequent OUT is ignored until next IN.
+                // 3. Hybrid Smart Pairing Logic (Approved Plan)
+                // Logic:
+                // - Support valid pairs (IN -> OUT)
+                // - Support consecutive INs if gap > 1 hour (IN -> (gap) -> IN)
+                // - Ignore consecutive INs if gap <= 1 hour (debounce)
+                // - Ignore orphan OUTs
 
                 const pairs = [];
-                let currentPair = null; // { in: Date, out: Date }
+                let pendingIn = null; // Timestamp of open session
                 let totalHours = 0;
-                let expectingOut = false;
 
                 uniqueLogs.forEach(log => {
-                    if (pairs.length >= 3 && !currentPair) return; // Max 3 reported shifts
+                    const time = log.time; // Date object
 
                     if (log.type === 'IN') {
-                        if (expectingOut) {
-                            // Already IN. Ignore this new IN (duplicate/bounce).
-                            // UNLESS user wants to restart shift? 
-                            // User said "Real Shifts" - standard is first IN counts.
-                            return;
-                        }
-
-                        // Start new pair
-                        if (pairs.length < 3) {
-                            currentPair = { in: log.time, out: null };
-                            expectingOut = true;
+                        if (pendingIn) {
+                            // Already have an open IN. Check gap.
+                            const diff = time - pendingIn;
+                            if (diff > 3600000) { // > 1 hour
+                                // Treat previous IN as complete orphan
+                                pairs.push({ in: pendingIn, out: null });
+                                // Start new session with current IN
+                                pendingIn = time;
+                            } else {
+                                // diff <= 1 hour: Ignore current IN (Debounce/Duplicate)
+                                // Keep the *first* IN of the burst.
+                            }
+                        } else {
+                            // No open session, start one
+                            pendingIn = time;
                         }
                     } else {
                         // Type OUT
-                        if (!expectingOut) {
-                            // Not IN. Ignore this OUT (orphan).
-                            return;
-                        }
-
-                        // Close pair
-                        if (currentPair) {
-                            currentPair.out = log.time;
-                            const hrs = (currentPair.out - currentPair.in) / (1000 * 60 * 60);
+                        if (pendingIn) {
+                            // Match found! Close the pair.
+                            const hrs = (time - pendingIn) / (1000 * 60 * 60);
                             if (hrs > 0) totalHours += hrs;
 
-                            pairs.push(currentPair);
-                            currentPair = null;
-                            expectingOut = false;
+                            pairs.push({ in: pendingIn, out: time });
+                            pendingIn = null;
+                        } else {
+                            // Orphan OUT (no matching IN), ignore.
                         }
                     }
                 });
 
-                // Check for open shift at end of day
-                // If we have an open IN (expectingOut = true), push it as incomplete
-                if (currentPair && pairs.length < 3) {
-                    pairs.push(currentPair);
+                // Finalize: Check if day ended with an open IN
+                if (pendingIn) {
+                    pairs.push({ in: pendingIn, out: null });
                 }
 
                 byEmpDate[empId][dateKey] = {
