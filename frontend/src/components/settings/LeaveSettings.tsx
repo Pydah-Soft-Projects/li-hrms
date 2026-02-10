@@ -11,7 +11,7 @@ import LeaveTypesManager from './leave/LeaveTypesManager';
 import LeavePolicy from './leave/LeavePolicy';
 import LeaveWorkflow from './leave/LeaveWorkflow';
 
-const LeaveSettings = ({ type = 'leave' }: { type?: 'leave' | 'od' }) => {
+const LeaveSettings = ({ type = 'leave' }: { type?: 'leave' | 'od' | 'ccl' }) => {
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
 
@@ -47,7 +47,21 @@ const LeaveSettings = ({ type = 'leave' }: { type?: 'leave' | 'od' }) => {
         try {
             setLoading(true);
             const res = await api.getLeaveSettings(type);
-            if (res.success && res.data) setSettings(res.data);
+            if (res.success && res.data) {
+                setSettings(prev => ({
+                    ...prev,
+                    ...res.data,
+                    // Deeply merge nested objects to ensure properties like finalAuthority exist
+                    workflow: {
+                        ...prev.workflow,
+                        ...(res.data.workflow || {})
+                    },
+                    settings: {
+                        ...prev.settings,
+                        ...(res.data.settings || {})
+                    }
+                }));
+            }
         } catch (err) {
             console.error(`Error loading leave settings:`, err);
             toast.error('Failed to load leave settings');
@@ -97,7 +111,7 @@ const LeaveSettings = ({ type = 'leave' }: { type?: 'leave' | 'od' }) => {
                         <span className="text-indigo-600">{type.toUpperCase()}</span>
                     </div>
                     <h2 className="text-xl font-bold text-gray-900 dark:text-white capitalize">
-                        {type === 'leave' ? 'Leave Management' : 'On Duty (OD)'}
+                        {type === 'leave' ? 'Leave Management' : type === 'od' ? 'On Duty (OD)' : 'Compensatory Casual Leave (CCL)'}
                     </h2>
                     <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                         Configure {type} categories, eligibility policies, and approval workflows.
@@ -109,25 +123,27 @@ const LeaveSettings = ({ type = 'leave' }: { type?: 'leave' | 'od' }) => {
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 md:gap-8 items-start">
                 {/* Left Column - Types & Policy */}
                 <div className="space-y-6 md:space-y-8">
-                    {/* Leave Types */}
-                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-6 md:p-8">
-                        <LeaveTypesManager
-                            types={settings.types || []}
-                            onChange={(ts) => setSettings({ ...settings, types: ts })}
-                        />
+                    {/* Leave Types - Hidden for CCL as it is a single category */}
+                    {type !== 'ccl' && (
+                        <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-6 md:p-8">
+                            <LeaveTypesManager
+                                types={settings.types || []}
+                                onChange={(ts) => setSettings({ ...settings, types: ts })}
+                            />
 
-                        {/* Save Button for Types */}
-                        <div className="mt-6 pt-6 border-t border-gray-100 dark:border-gray-800">
-                            <button
-                                onClick={handleSave}
-                                disabled={saving}
-                                className="w-full flex items-center justify-center gap-2 rounded-xl bg-indigo-600 text-white py-4 text-xs font-bold hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-500/20 active:scale-95 disabled:opacity-50"
-                            >
-                                {saving ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />}
-                                Save Leave Types
-                            </button>
-                        </div>
-                    </section>
+                            {/* Save Button for Types */}
+                            <div className="mt-6 pt-6 border-t border-gray-100 dark:border-gray-800">
+                                <button
+                                    onClick={handleSave}
+                                    disabled={saving}
+                                    className="w-full flex items-center justify-center gap-2 rounded-xl bg-indigo-600 text-white py-4 text-xs font-bold hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-500/20 active:scale-95 disabled:opacity-50"
+                                >
+                                    {saving ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />}
+                                    Save {type.toUpperCase()} Types
+                                </button>
+                            </div>
+                        </section>
+                    )}
 
                     {/* Policy - No wrapper, auto-save */}
                     <LeavePolicy
