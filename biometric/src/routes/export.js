@@ -222,24 +222,143 @@ router.get('/export/attendance', async (req, res) => {
             }
         });
 
-        // 4) Group logs
-        const byEmpDate = {};
-        for (const log of logs) {
-            const empNo = String(log.employeeId).toUpperCase();
-            const d = new Date(log.timestamp);
-            const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-            if (!byEmpDate[empNo]) byEmpDate[empNo] = {};
-            if (!byEmpDate[empNo][dateKey]) byEmpDate[empNo][dateKey] = [];
-            byEmpDate[empNo][dateKey].push(log);
+        // 2) Parse Logs & Group by Employee -> Date
+        // We will do a robust "Strict Shift Pairing" here
+        // Logic:
+        // - Sort logs by time
+        // - Filter out duplicates: Ignore log if same type and within 2 minutes of previous
+        // - State Machine: Expect IN -> Expect OUT
+        // - Max 3 pairs
+        const byEmpDate = {}; // This will store { pairs: [], totHrs: number }
+
+        // Helper to format Date key YYYY-MM-DD
+        const getDateKey = (date) => {
+            const d = new Date(date);
+            return d.toISOString().slice(0, 10);
+        };
+
+        // Group raw logs first
+        const rawLogsByEmpDate = {};
+
+        logs.forEach(log => {
+            const empId = String(log.employeeId).toUpperCase();
+            const dateKey = getDateKey(log.timestamp);
+
+            if (!rawLogsByEmpDate[empId]) rawLogsByEmpDate[empId] = {};
+            if (!rawLogsByEmpDate[empId][dateKey]) rawLogsByEmpDate[empId][dateKey] = [];
+
+            // Normalize type: 'CHECK-IN' -> 'IN', 'CHECK-OUT' -> 'OUT'
+            // 'BREAK-OUT' -> 'OUT', 'BREAK-IN' -> 'IN'
+            // 'OVERTIME-IN' -> 'IN', 'OVERTIME-OUT' -> 'OUT'
+            // 0 -> IN, 1 -> OUT
+            let type = 'IN';
+            const lt = (log.logType || '').toUpperCase();
+            const rt = Number(log.rawType);
+
+            if (lt.includes('OUT') || rt === 1 || rt === 3 || rt === 5) type = 'OUT';
+            else type = 'IN';
+
+            rawLogsByEmpDate[empId][dateKey].push({
+                time: new Date(log.timestamp),
+                type: type
+            });
+        });
+
+        // Now Process Each Employee/Date Group
+        for (const empId in rawLogsByEmpDate) {
+            if (!byEmpDate[empId]) byEmpDate[empId] = {};
+
+            for (const dateKey in rawLogsByEmpDate[empId]) {
+                let dayLogs = rawLogsByEmpDate[empId][dateKey];
+
+                // 1. Sort by time
+                dayLogs.sort((a, b) => a.time - b.time);
+
+                // 2. Deduplicate (Threshold: 2 minutes = 120000 ms)
+                const uniqueLogs = [];
+                if (dayLogs.length > 0) {
+                    uniqueLogs.push(dayLogs[0]);
+                    for (let i = 1; i < dayLogs.length; i++) {
+                        const prev = uniqueLogs[uniqueLogs.length - 1];
+                        const curr = dayLogs[i];
+                        const diff = curr.time - prev.time;
+
+                        // If same type and close in time, skip (it's a bounce/duplicate)
+                        if (curr.type === prev.type && diff < 120000) {
+                            continue;
+                        }
+                        uniqueLogs.push(curr);
+                    }
+                }
+
+                // 3. Strict Pairing State Machine
+                // Max 3 shifts
+                const pairs = [];
+                let currentPair = null; // { in: Date, out: Date }
+                let totalHours = 0;
+
+                uniqueLogs.forEach(log => {
+                    if (pairs.length >= 3 && !currentPair) return; // Max 3 reported shifts, and no open shift
+
+                    if (log.type === 'IN') {
+                        if (currentPair) {
+                            // We were expecting OUT, but got IN.
+                            // Close previous pair as "Missing OUT" calculation-wise, or just push it?
+                            // User wants "Proper IN and OUT".
+                            // If we have an open IN, and get another IN (after dedup), implies missing punch or new shift?
+                            // Strategy: Close current pair as incomplete, start new.
+                            if (pairs.length < 3) {
+                                pairs.push(currentPair);
+                            }
+                        }
+                        // Start new pair
+                        if (pairs.length < 3) {
+                            currentPair = { in: log.time, out: null };
+                        } else {
+                            currentPair = null; // Discard if already have 3 pairs
+                        }
+                    } else {
+                        // Type OUT
+                        if (currentPair) {
+                            // Close pair
+                            currentPair.out = log.time;
+                            const hrs = (currentPair.out - currentPair.in) / (1000 * 60 * 60);
+                            if (hrs > 0) totalHours += hrs;
+                            if (pairs.length < 3) {
+                                pairs.push(currentPair);
+                            }
+                            currentPair = null;
+                        } else {
+                            // Got OUT without IN.
+                            // Treat as "Missing IN" pair
+                            // User said "Real Shifts" - implies valid IN->OUT. 
+                            // Orphan OUTs are messy. Let's SHOW it but it's an incomplete shift.
+                            if (pairs.length < 3) {
+                                pairs.push({ in: null, out: log.time });
+                            }
+                        }
+                    }
+                });
+
+                // Push any dangling open pair
+                if (currentPair && pairs.length < 3) {
+                    pairs.push(currentPair);
+                }
+
+                byEmpDate[empId][dateKey] = {
+                    pairs: pairs,
+                    totHrsStr: totalHours > 0 ? totalHours.toFixed(2) : ''
+                };
+            }
         }
 
-        // 5) Build groups (Division > Dept)
+        // 4) Build groups (Division > Dept)
         const groupKey = (empNo) => {
             const info = empMap[empNo];
             return `${info.division}\t${info.department}`;
         };
         const groups = new Map();
-        for (const empNo of Object.keys(byEmpDate)) {
+        for (const empNo of Object.keys(byEmpDate)) { // Use the processed byEmpDate
             const key = groupKey(empNo);
             if (!groups.has(key)) groups.set(key, []);
             groups.get(key).push(empNo);
@@ -272,9 +391,9 @@ router.get('/export/attendance', async (req, res) => {
                 for (const dateKey of dates) {
                     const [y, m, day] = dateKey.split('-');
                     const pDate = formatPDate(new Date(parseInt(y), parseInt(m) - 1, parseInt(day)));
-                    const dayLogs = byEmpDate[empNo][dateKey];
 
-                    const { pairs, totHrsStr } = buildDayRow(dayLogs);
+                    // dayLogs is now { pairs, totHrsStr }
+                    const { pairs, totHrsStr } = byEmpDate[empNo][dateKey];
 
                     if (pairs.length > maxPairs) maxPairs = pairs.length;
 
