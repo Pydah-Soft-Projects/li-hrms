@@ -638,6 +638,38 @@ export const api = {
     });
   },
 
+  getAbsentDeductionSettings: async () => {
+    const [enableRes, lopRes] = await Promise.all([
+      apiRequest<Setting>('/settings/enable_absent_deduction', { method: 'GET' }),
+      apiRequest<Setting>('/settings/lop_days_per_absent', { method: 'GET' })
+    ]);
+    return {
+      enable: enableRes.success ? !!enableRes.data?.value : false,
+      lopDays: lopRes.success ? Number(lopRes.data?.value) : 1
+    };
+  },
+
+  saveAbsentDeductionSettings: async (enable: boolean, lopDays: number) => {
+    return Promise.all([
+      apiRequest<Setting>('/settings', {
+        method: 'POST',
+        body: JSON.stringify({
+          key: 'enable_absent_deduction',
+          value: enable,
+          category: 'payroll'
+        }),
+      }),
+      apiRequest<Setting>('/settings', {
+        method: 'POST',
+        body: JSON.stringify({
+          key: 'lop_days_per_absent',
+          value: lopDays,
+          category: 'payroll'
+        }),
+      })
+    ]);
+  },
+
   // Employee allowance/deduction defaults (resolved with includeMissing)
   getEmployeeComponentDefaults: async (params: { departmentId: string; grossSalary: number; empNo?: string }) => {
     const searchParams = new URLSearchParams();
@@ -763,6 +795,10 @@ export const api = {
 
   getDashboardStats: async () => {
     return apiRequest<any>('/dashboard/stats', { method: 'GET' });
+  },
+
+  getDashboardAnalytics: async () => {
+    return apiRequest<any>('/dashboard/analytics', { method: 'GET' });
   },
 
   getEmployeesWithoutAccount: async () => {
@@ -1381,6 +1417,13 @@ export const api = {
     return apiRequest<any>('/employees/settings', { method: 'GET' });
   },
 
+  updateEmployeeSettings: async (data: any) => {
+    return apiRequest<any>('/employees/settings', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
   // Workspaces
   getMyWorkspaces: async () => {
     return apiRequest<any>('/workspaces/my-workspaces', { method: 'GET' });
@@ -1631,8 +1674,8 @@ export const api = {
     return apiRequest<any>('/leaves/pending-approvals', { method: 'GET' });
   },
 
-  // Process leave action (approve/reject/forward)
-  processLeaveAction: async (id: string, action: 'approve' | 'reject' | 'forward', comments?: string) => {
+  // Process leave action (approve/reject)
+  processLeaveAction: async (id: string, action: 'approve' | 'reject', comments?: string) => {
     return apiRequest<any>(`/leaves/${id}/action`, {
       method: 'PUT',
       body: JSON.stringify({ action, comments }),
@@ -1735,6 +1778,56 @@ export const api = {
     return apiRequest<any>(`/leaves/${id}`, { method: 'DELETE' });
   },
 
+  // ==========================================
+  // CCL (Compensatory Casual Leave) APIs
+  // ==========================================
+  getCCLAssignedByUsers: async (params: { employeeId?: string; empNo?: string }) => {
+    const q = new URLSearchParams();
+    if (params.employeeId) q.append('employeeId', params.employeeId);
+    if (params.empNo) q.append('empNo', params.empNo);
+    return apiRequest<any>(`/leaves/ccl/assigned-by-users?${q.toString()}`, { method: 'GET' });
+  },
+  validateCCLDate: async (date: string, params?: { employeeId?: string; empNo?: string; isHalfDay?: boolean; halfDayType?: 'first_half' | 'second_half' | null }) => {
+    const q = new URLSearchParams();
+    q.append('date', date);
+    if (params?.employeeId) q.append('employeeId', params.employeeId);
+    if (params?.empNo) q.append('empNo', params.empNo);
+    if (params?.isHalfDay !== undefined) q.append('isHalfDay', String(params.isHalfDay));
+    if (params?.halfDayType) q.append('halfDayType', params.halfDayType);
+    return apiRequest<any>(`/leaves/ccl/validate-date?${q.toString()}`, { method: 'GET' });
+  },
+  getMyCCLs: async () => apiRequest<any>('/leaves/ccl/my', { method: 'GET' }),
+  getPendingCCLApprovals: async () => apiRequest<any>('/leaves/ccl/pending-approvals', { method: 'GET' }),
+  getCCLs: async (params?: { status?: string; employeeId?: string; fromDate?: string; toDate?: string; page?: number; limit?: number }) => {
+    const q = new URLSearchParams();
+    if (params?.status) q.append('status', params.status);
+    if (params?.employeeId) q.append('employeeId', params.employeeId);
+    if (params?.fromDate) q.append('fromDate', params.fromDate);
+    if (params?.toDate) q.append('toDate', params.toDate);
+    if (params?.page) q.append('page', String(params.page));
+    if (params?.limit) q.append('limit', String(params.limit));
+    return apiRequest<any>(`/leaves/ccl${q.toString() ? `?${q.toString()}` : ''}`, { method: 'GET' });
+  },
+  getCCL: async (id: string) => apiRequest<any>(`/leaves/ccl/${id}`, { method: 'GET' }),
+  applyCCL: async (data: { date: string; isHalfDay: boolean; halfDayType?: 'first_half' | 'second_half'; assignedBy: string; purpose: string; empNo?: string; employeeId?: string }) => {
+    return apiRequest<any>('/leaves/ccl', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+  processCCLAction: async (id: string, action: 'approve' | 'reject', comments?: string) => {
+    return apiRequest<any>(`/leaves/ccl/${id}/action`, {
+      method: 'PUT',
+      body: JSON.stringify({ action, comments }),
+    });
+  },
+  cancelCCL: async (id: string, reason?: string) => {
+    return apiRequest<any>(`/leaves/ccl/${id}/cancel`, {
+      method: 'PUT',
+      body: JSON.stringify({ reason }),
+    });
+  },
+
   // Get leave conflicts for attendance date
   getLeaveConflicts: async (employeeNumber: string, date: string) => {
     return apiRequest<any>(`/leaves/conflicts?employeeNumber=${employeeNumber}&date=${date}`, {
@@ -1817,8 +1910,8 @@ export const api = {
     return apiRequest<any>('/leaves/od/pending-approvals', { method: 'GET' });
   },
 
-  // Process OD action (approve/reject/forward)
-  processODAction: async (id: string, action: 'approve' | 'reject' | 'forward', comments?: string) => {
+  // Process OD action (approve/reject)
+  processODAction: async (id: string, action: 'approve' | 'reject', comments?: string) => {
     return apiRequest<any>(`/leaves/od/${id}/action`, {
       method: 'PUT',
       body: JSON.stringify({ action, comments }),
@@ -1904,6 +1997,17 @@ export const api = {
     return apiRequest<any>(`/loans/settings/${type}`, {
       method: 'PUT',
       body: JSON.stringify(data),
+    });
+  },
+
+  getLoanWorkflow: async (type: 'loan' | 'salary_advance') => {
+    return apiRequest<any>(`/loans/settings/${type}/workflow`, { method: 'GET' });
+  },
+
+  updateLoanWorkflow: async (type: 'loan' | 'salary_advance', workflow: any) => {
+    return apiRequest<any>(`/loans/settings/${type}/workflow`, {
+      method: 'PUT',
+      body: JSON.stringify(workflow),
     });
   },
 
@@ -2541,7 +2645,13 @@ export const api = {
     return apiRequest<any>('/ot/settings', { method: 'GET' });
   },
 
-  saveOvertimeSettings: async (data: { otPayPerHour?: number; minOTHours?: number; workflow?: any }) => {
+  saveOvertimeSettings: async (data: {
+    payPerHour?: number;
+    multiplier?: number;
+    minOTHours?: number;
+    roundingMinutes?: number;
+    workflow?: any
+  }) => {
     return apiRequest<any>('/ot/settings', {
       method: 'POST',
       body: JSON.stringify(data),

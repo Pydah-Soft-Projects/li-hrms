@@ -1477,10 +1477,9 @@ exports.calculatePayrollBulk = async (req, res) => {
     const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
     const [year, monthNum] = month.split('-').map(Number);
     const { startDate, endDate } = await getPayrollDateRange(year, monthNum);
-    const leftStart = new Date(startDate);
-    leftStart.setHours(0, 0, 0, 0);
-    const leftEnd = new Date(endDate);
-    leftEnd.setHours(23, 59, 59, 999);
+    // Use UTC boundaries so "26 Dec–25 Jan" excludes 25 Dec left (avoids TZ shifting 26 Dec 00:00 local into 25 Dec UTC).
+    const leftStart = new Date(startDate + 'T00:00:00.000Z');
+    const leftEnd = new Date(endDate + 'T23:59:59.999Z');
 
     console.log('[Bulk Payroll] Req.scopeFilter:', JSON.stringify(req.scopeFilter));
 

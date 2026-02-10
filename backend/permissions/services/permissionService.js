@@ -268,8 +268,27 @@ const approvePermissionRequest = async (permissionId, userId, baseUrl = '', user
       const myRole = String(userRole || '').toLowerCase().trim();
       const requiredRole = String(currentStep.role || '').toLowerCase().trim();
 
-      // Basic Role Match
-      if (myRole !== requiredRole && myRole !== 'super_admin') {
+      // Basic Role Match & Reporting Manager Check
+      let isAuthorizedRole = myRole === requiredRole || myRole === 'super_admin';
+
+      if (!isAuthorizedRole && requiredRole === 'reporting_manager') {
+        // 1. Check if user is the assigned Reporting Manager
+        const targetEmployee = await Employee.findById(permissionRequest.employeeId);
+        const managers = targetEmployee?.dynamicFields?.reporting_to;
+
+        if (managers && Array.isArray(managers) && managers.length > 0) {
+          const userIdStr = (fullUser._id || fullUser.userId).toString();
+          isAuthorizedRole = managers.some(m => (m._id || m).toString() === userIdStr);
+        }
+
+        // 2. Fallback to HOD if no managers assigned OR if user is an HOD for the employee
+        if (!isAuthorizedRole && myRole === 'hod') {
+          // checkJurisdiction will handle the departmental scoping
+          isAuthorizedRole = true;
+        }
+      }
+
+      if (!isAuthorizedRole) {
         return { success: false, message: `Unauthorized. Required: ${requiredRole.toUpperCase()}` };
       }
 

@@ -151,6 +151,19 @@ interface LeaveApplication {
   appliedBy?: { _id: string; name: string; email: string };
   workflow?: {
     nextApprover?: string;
+    nextApproverRole?: string;
+    approvalChain?: Array<{
+      stepOrder?: number;
+      role?: string;
+      stepRole?: string;
+      label?: string;
+      status?: string;
+      actionBy?: string | { _id: string };
+      actionByName?: string;
+      actionByRole?: string;
+      comments?: string;
+      updatedAt?: string;
+    }>;
     history?: any[];
   };
   changeHistory?: Array<{
@@ -204,6 +217,19 @@ interface ODApplication {
   assignedBy?: { name: string };
   workflow?: {
     nextApprover?: string;
+    nextApproverRole?: string;
+    approvalChain?: Array<{
+      stepOrder?: number;
+      role?: string;
+      stepRole?: string;
+      label?: string;
+      status?: string;
+      actionBy?: string | { _id: string };
+      actionByName?: string;
+      actionByRole?: string;
+      comments?: string;
+      updatedAt?: string;
+    }>;
     history?: any[];
   };
   changeHistory?: Array<{
@@ -490,11 +516,12 @@ export default function LeavesPage() {
 
       } else {
         // Manager/HOD/Admin Plan:
-        // 1. "Leaves" tab -> MY Leaves (Self Requests)
-        // 2. "Pending Approvals" tab -> Team Requests (Approvals)
+        // 1. "Leaves" tab -> Scoped leaves (own + team, including approved)
+        // 2. "OD" tab -> Scoped ODs (own + team, including approved)
+        // 3. "Pending" tab -> Leaves/ODs in workflow needing approval
         const [leavesRes, odsRes, pendingLeavesRes, pendingODsRes] = await Promise.all([
-          api.getMyLeaves(), // Fetch self leaves for the main tab
-          api.getMyODs(),    // Fetch self ODs for the OD tab
+          api.getLeaves({ limit: 500 }), // Scoped: own + team (incl. approved), respects workflow visibility
+          api.getODs({ limit: 500 }),    // Scoped: own + team (incl. approved), respects workflow visibility
           api.getPendingLeaveApprovals(),
           api.getPendingODApprovals(),
         ]);
@@ -1083,7 +1110,7 @@ export default function LeavesPage() {
     }
   };
 
-  const handleAction = async (id: string, type: 'leave' | 'od', action: 'approve' | 'reject' | 'forward', comments: string = '') => {
+  const handleAction = async (id: string, type: 'leave' | 'od', action: 'approve' | 'reject', comments: string = '') => {
     try {
       let response;
       if (type === 'leave') {
@@ -1264,15 +1291,17 @@ export default function LeavesPage() {
       setDetailType(type);
       setShowDetailDialog(true);
 
-      // Check if revocation is possible (within 3 hours)
-      if (enrichedItem.status === 'approved' || enrichedItem.status === 'hod_approved' || enrichedItem.status === 'hr_approved') {
-        const approvalTime = (enrichedItem as LeaveApplication).approvals?.hr?.approvedAt || (enrichedItem as LeaveApplication).approvals?.hod?.approvedAt;
-        if (approvalTime) {
-          const hoursSinceApproval = (new Date().getTime() - new Date(approvalTime).getTime()) / (1000 * 60 * 60);
-          setCanRevoke(hoursSinceApproval <= 3);
-        } else {
-          setCanRevoke(false);
-        }
+      // Check if revocation is possible: only by the approver of the last step, within 3 hours
+      const wf = (enrichedItem as any).workflow;
+      const chain = wf?.approvalChain || [];
+      const approvedSteps = chain.filter((s: any) => s.status === 'approved');
+      const lastApproved = approvedSteps[approvedSteps.length - 1];
+      const userId = (auth.getUser() as any)?._id;
+      if (lastApproved && userId) {
+        const approverId = (lastApproved.actionBy?._id || lastApproved.actionBy)?.toString?.() || String(lastApproved.actionBy);
+        const approvedAt = lastApproved.updatedAt || (enrichedItem as any).approvals?.[lastApproved.role || lastApproved.stepRole]?.approvedAt;
+        const hoursSince = approvedAt ? (Date.now() - new Date(approvedAt).getTime()) / (1000 * 60 * 60) : 999;
+        setCanRevoke(approverId === userId && hoursSince <= 3);
       } else {
         setCanRevoke(false);
       }
@@ -1357,7 +1386,7 @@ export default function LeavesPage() {
     }
   };
 
-  const handleDetailAction = async (action: 'approve' | 'reject' | 'forward' | 'cancel') => {
+  const handleDetailAction = async (action: 'approve' | 'reject' | 'cancel') => {
     if (!selectedItem) return;
 
     try {
@@ -1437,23 +1466,13 @@ export default function LeavesPage() {
       return !['approved', 'rejected', 'cancelled'].includes(item.status);
     }
 
-    // 1. If workflow specifies a next approver, strictly follow it
-    if (item.workflow?.nextApprover) {
-      const nextApprover = String(item.workflow.nextApprover).toLowerCase().trim();
-      const userRole = String(currentUser.role).toLowerCase().trim();
-
-      // Check for direct role match
-      if (userRole === nextApprover) return true;
-
-      // Check for ID match (if nextApprover is a User ID)
-      if ((currentUser as any)._id === item.workflow.nextApprover) return true;
-
-      // Specific logic for reporting_manager alias
-      if (nextApprover === 'reporting_manager' && (userRole === 'manager' || userRole === 'hod')) {
-        return true;
-      }
-
-      // If none of the above matches, this user is NOT the current approver
+    // Strict check: nextApproverRole must match user.role (current step = user's turn)
+    const nextRole = String((item as any).workflow?.nextApproverRole || (item as any).workflow?.nextApprover || '').toLowerCase().trim();
+    const userRole = String(currentUser.role || '').toLowerCase().trim();
+    if (nextRole) {
+      if (userRole === nextRole) return true;
+      if (nextRole === 'final_authority' && userRole === 'hr') return true;
+      if (nextRole === 'reporting_manager' && ['manager', 'hod'].includes(userRole)) return true;
       return false;
     }
 
@@ -2576,6 +2595,61 @@ export default function LeavesPage() {
                     )}
                   </div>
 
+                  {/* Approval Steps - Timeline / Progress */}
+                  {((selectedItem as any).workflow?.approvalChain?.length > 0) && (
+                    <div className="bg-slate-50 dark:bg-slate-900/50 p-6 rounded-xl">
+                      <p className="text-xs uppercase font-bold text-slate-400 mb-4 tracking-wider">Approval Timeline</p>
+                      {/* Progress bar */}
+                      <div className="mb-6">
+                        <div className="flex justify-between text-[10px] font-bold text-slate-500 uppercase mb-1">
+                          <span>{((selectedItem as any).workflow.approvalChain as any[]).filter((s: any) => s.status === 'approved').length} of {((selectedItem as any).workflow.approvalChain as any[]).length} approved</span>
+                        </div>
+                        <div className="h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-green-500 to-green-600 transition-all duration-300"
+                            style={{ width: `${(((selectedItem as any).workflow.approvalChain as any[]).filter((s: any) => s.status === 'approved').length / ((selectedItem as any).workflow.approvalChain as any[]).length) * 100}%` }}
+                          />
+                        </div>
+                      </div>
+                      {/* Vertical timeline */}
+                      <div className="relative pl-6 border-l-2 border-slate-200 dark:border-slate-700 ml-1">
+                        {((selectedItem as any).workflow.approvalChain as any[]).map((step: any, idx: number) => {
+                          const stepRole = step.role || step.stepRole || 'step';
+                          const label = step.label || `${stepRole.replace('_', ' ')}`;
+                          const isApproved = step.status === 'approved';
+                          const isRejected = step.status === 'rejected';
+                          const isPending = step.status === 'pending';
+                          const nextRole = (selectedItem as any).workflow?.nextApproverRole || (selectedItem as any).workflow?.nextApprover;
+                          const isCurrent = isPending && (String(nextRole || '').toLowerCase() === String(stepRole).toLowerCase());
+                          const nodeColor = isApproved ? 'bg-green-500 ring-4 ring-green-200 dark:ring-green-900/50' : isRejected ? 'bg-red-500 ring-4 ring-red-200 dark:ring-red-900/50' : isCurrent ? 'bg-blue-500 ring-4 ring-blue-200 dark:ring-blue-900/50' : 'bg-slate-300 dark:bg-slate-600';
+                          return (
+                            <div key={idx} className="relative pb-6 last:pb-0">
+                              <div className={`absolute -left-[29px] top-0.5 w-4 h-4 rounded-full ${nodeColor} border-2 border-white dark:border-slate-900 shadow-sm`} />
+                              <div className="ml-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-bold text-slate-900 dark:text-white capitalize">{label}</span>
+                                  {isApproved && <span className="text-[10px] font-bold text-green-600 dark:text-green-400 uppercase">✓ Approved</span>}
+                                  {isRejected && <span className="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase">✗ Rejected</span>}
+                                  {isCurrent && <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase">⏳ Your turn</span>}
+                                  {isPending && !isCurrent && <span className="text-[10px] font-bold text-slate-400 uppercase">○ Pending</span>}
+                                </div>
+                                {isApproved && (
+                                  <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+                                    {step.actionByName || 'Unknown'} ({step.actionByRole || stepRole})
+                                    {step.updatedAt && <span className="ml-1">· {new Date(step.updatedAt).toLocaleString()}</span>}
+                                  </p>
+                                )}
+                                {isApproved && step.comments && (
+                                  <p className="text-xs text-slate-500 italic mt-0.5">"{step.comments}"</p>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Split Breakdown (Spacious) */}
                   {detailType === 'leave' && (selectedItem as LeaveApplication)?.splits && (selectedItem as LeaveApplication).splits!.length > 0 && (
                     <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
@@ -2601,8 +2675,8 @@ export default function LeavesPage() {
 
                   {/* Revoke / Edit Actions */}
                   <div className="flex flex-col gap-3">
-                    {/* Revoke */}
-                    {canRevoke && currentUser?.role !== 'employee' && (selectedItem.status === 'approved' || selectedItem.status === 'hod_approved' || selectedItem.status === 'hr_approved') && (
+                    {/* Revoke - only visible to approver of last step, within 3hr */}
+                    {canRevoke && currentUser?.role !== 'employee' && (selectedItem.status === 'approved' || selectedItem.status === 'hod_approved' || selectedItem.status === 'manager_approved' || selectedItem.status === 'hr_approved') && (
                       <div className="flex gap-3">
                         <input
                           value={revokeReason}
@@ -2644,9 +2718,6 @@ export default function LeavesPage() {
                           <button onClick={() => handleDetailAction('approve')} className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg shadow-sm transition-colors">Approve</button>
                           <button onClick={() => handleDetailAction('reject')} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg shadow-sm transition-colors">Reject</button>
                         </>
-                      )}
-                      {(currentUser?.role === 'hod' || currentUser?.role === 'super_admin') && (
-                        <button onClick={() => handleDetailAction('forward')} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-sm transition-colors">Forward</button>
                       )}
                     </>
                   )}

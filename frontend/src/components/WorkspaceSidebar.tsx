@@ -37,6 +37,7 @@ const moduleIcons: Record<string, any> = {
     LEAVE: Plane,
     OD: Plane,
     LEAVE_OD: Plane,
+    CCL: Plane,
     EMPLOYEE: Users,
     EMPLOYEES: Users,
     SHIFT: Watch,
@@ -200,7 +201,8 @@ export default function WorkspaceSidebar() {
                                     <ul className="space-y-1">
                                         {enabledModules.map(module => {
                                             const isActive = pathname === module.href ||
-                                                (module.code === 'LEAVE_OD' && (pathname === '/leaves' || pathname === '/od'));
+                                                (module.code === 'LEAVE_OD' && (pathname === '/leaves' || pathname === '/od')) ||
+                                                (module.code === 'CCL' && pathname === '/ccl');
 
                                             const Icon = moduleIcons[module.code] || LayoutDashboard;
 

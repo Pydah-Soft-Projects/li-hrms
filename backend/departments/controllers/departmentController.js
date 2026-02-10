@@ -4,6 +4,52 @@ const Employee = require('../../employees/model/Employee');
 const Shift = require('../../shifts/model/Shift');
 const Designation = require('../model/Designation');
 
+/**
+ * Map Employee-style scope filter to Department schema.
+ * Department uses: _id, divisions[] (not division_id, department_id).
+ */
+function mapScopeFilterForDepartment(scopeFilter) {
+  if (!scopeFilter || Object.keys(scopeFilter).length === 0) return {};
+
+  function mapCondition(cond) {
+    if (!cond || typeof cond !== 'object') return cond;
+    const mapped = {};
+
+    for (const [key, value] of Object.entries(cond)) {
+      if (key === '$or') {
+        const mappedBranches = value
+          .map(mapCondition)
+          .filter((b) => b && Object.keys(b).length > 0 && (b.divisions !== undefined || b._id !== undefined || (b.$or && b.$or.length > 0) || (b.$and && b.$and.length > 0)));
+        if (mappedBranches.length > 0) mapped.$or = mappedBranches;
+      } else if (key === '$and') {
+        mapped.$and = value.map(mapCondition).filter((b) => b && Object.keys(b).length > 0);
+        if (mapped.$and.length === 0) delete mapped.$and;
+      } else if (key === 'division_id' || key === 'division') {
+        if (value && value.$in && value.$in.length > 0) {
+          mapped.divisions = mapped.divisions || { $in: [] };
+          mapped.divisions.$in = [...new Set([...(mapped.divisions.$in || []), ...value.$in])];
+        }
+      } else if (key === 'department_id' || key === 'department') {
+        if (value && value.$in && value.$in.length > 0) {
+          mapped._id = mapped._id || { $in: [] };
+          mapped._id.$in = [...new Set([...(mapped._id.$in || []), ...value.$in])];
+        }
+      }
+    }
+
+    return Object.keys(mapped).length > 0 ? mapped : null;
+  }
+
+  if (scopeFilter.$or) {
+    const mappedBranches = scopeFilter.$or.map(mapCondition).filter((b) => b && Object.keys(b).length > 0);
+    if (mappedBranches.length === 0) return { _id: null };
+    return mappedBranches.length === 1 ? mappedBranches[0] : { $or: mappedBranches };
+  }
+
+  const mapped = mapCondition(scopeFilter);
+  return mapped || {};
+}
+
 // @desc    Get all departments
 // @route   GET /api/departments
 // @access  Private
@@ -25,7 +71,7 @@ exports.getAllDepartments = async (req, res) => {
       });
     }
 
-    const query = { ...req.scopeFilter };
+    const query = req.scopeFilter ? mapScopeFilterForDepartment(req.scopeFilter) : {};
 
     if (isActive !== undefined) {
       query.isActive = isActive === 'true';
@@ -198,13 +244,19 @@ exports.createDepartment = async (req, res) => {
       createdBy: req.user?.userId,
     });
 
-    // Auto-sync: Add department to Division-specific HODs
     if (validDivisionHODs.length > 0) {
-      const hodIds = [...new Set(validDivisionHODs.map(dh => dh.hod))];
-      await User.updateMany(
-        { _id: { $in: hodIds } },
-        { $addToSet: { departments: department._id } }
-      );
+      for (const dh of validDivisionHODs) {
+        const r = await User.updateOne(
+          { _id: dh.hod, 'divisionMapping.division': dh.division },
+          { $addToSet: { 'divisionMapping.$.departments': department._id } }
+        );
+        if (r.matchedCount === 0) {
+          await User.updateOne(
+            { _id: dh.hod },
+            { $push: { divisionMapping: { division: dh.division, departments: [department._id] } } }
+          );
+        }
+      }
     }
 
     // Clear cache
@@ -333,51 +385,58 @@ exports.updateDepartment = async (req, res) => {
         }
       }
 
-      // Sync User Departments:
-      // 1. Add department to new HODs
-      if (validDivisionHODs.length > 0) {
-        const newHodIds = [...new Set(validDivisionHODs.map(dh => dh.hod))];
-        await User.updateMany(
-          { _id: { $in: newHodIds } },
-          { $addToSet: { departments: department._id } }
+      for (const dh of validDivisionHODs) {
+        const r = await User.updateOne(
+          { _id: dh.hod, 'divisionMapping.division': dh.division },
+          { $addToSet: { 'divisionMapping.$.departments': department._id } }
         );
+        if (r.matchedCount === 0) {
+          await User.updateOne(
+            { _id: dh.hod },
+            { $push: { divisionMapping: { division: dh.division, departments: [department._id] } } }
+          );
+        }
       }
 
-      // 2. Remove department from HODs who are no longer associated (Global HOD or any Division HOD)
-      // Get all previous HODs (division only, global deprecated)
-      const oldDivisionHodIds = department.divisionHODs ? department.divisionHODs.map(dh => dh.hod.toString()) : [];
-      const allOldHods = new Set([...oldDivisionHodIds].filter(id => id));
-
-      // Get all new HODs (division only)
-      const newDivisionHodIds = validDivisionHODs.map(dh => dh.hod);
-      const allNewHods = new Set([...newDivisionHodIds].filter(id => id));
-
-      // Find removed HODs
-      const removedHods = [...allOldHods].filter(id => !allNewHods.has(id));
-
-      if (removedHods.length > 0) {
-        await User.updateMany(
-          { _id: { $in: removedHods } },
-          { $pull: { departments: department._id } }
+      for (const oldDh of department.divisionHODs || []) {
+        const stillInNew = validDivisionHODs.some(dh =>
+          dh.hod.toString() === oldDh.hod.toString() && dh.division.toString() === oldDh.division.toString()
         );
+        if (!stillInNew) {
+          await User.updateOne(
+            { _id: oldDh.hod, 'divisionMapping.division': oldDh.division },
+            { $pull: { 'divisionMapping.$.departments': department._id } }
+          );
+        }
       }
 
       department.divisionHODs = validDivisionHODs;
     }
 
-    // Handle HR Sync
     if (hr !== undefined) {
-      // If HR changed, remove department from old HR
       if (department.hr && department.hr.toString() !== (hr || '')) {
-        await User.findByIdAndUpdate(department.hr, {
-          $pull: { departments: department._id }
-        });
+        const divs = department.divisions || [];
+        for (const divId of divs) {
+          await User.updateOne(
+            { _id: department.hr, 'divisionMapping.division': divId },
+            { $pull: { 'divisionMapping.$.departments': department._id } }
+          );
+        }
       }
-      // Add department to new HR
       if (hr) {
-        await User.findByIdAndUpdate(hr, {
-          $addToSet: { departments: department._id }
-        });
+        const divs = department.divisions || [];
+        for (const divId of divs) {
+          const r = await User.updateOne(
+            { _id: hr, 'divisionMapping.division': divId },
+            { $addToSet: { 'divisionMapping.$.departments': department._id } }
+          );
+          if (r.matchedCount === 0) {
+            await User.updateOne(
+              { _id: hr },
+              { $push: { divisionMapping: { division: divId, departments: [department._id] } } }
+            );
+          }
+        }
       }
       department.hr = hr || null;
     }
@@ -452,16 +511,20 @@ exports.deleteDepartment = async (req, res) => {
       });
     }
 
-    // Sync: Remove department from HOD and HR users
-    if (department.hod) {
-      await User.findByIdAndUpdate(department.hod, {
-        $pull: { departments: department._id }
-      });
+    const divs = department.divisions || [];
+    for (const divId of divs) {
+      if (department.hr) {
+        await User.updateOne(
+          { _id: department.hr, 'divisionMapping.division': divId },
+          { $pull: { 'divisionMapping.$.departments': department._id } }
+        );
+      }
     }
-    if (department.hr) {
-      await User.findByIdAndUpdate(department.hr, {
-        $pull: { departments: department._id }
-      });
+    for (const dh of department.divisionHODs || []) {
+      await User.updateOne(
+        { _id: dh.hod, 'divisionMapping.division': dh.division },
+        { $pull: { 'divisionMapping.$.departments': department._id } }
+      );
     }
 
     await department.deleteOne();
@@ -536,15 +599,22 @@ exports.assignHOD = async (req, res) => {
     // A better approach: distinct lists. But User.departments is simple.
     // Let's stick to the existing pattern: Pull department from old HOD.
     if (oldHodId) {
-      await User.findByIdAndUpdate(oldHodId, {
-        $pull: { departments: department._id }
-      });
+      await User.updateOne(
+        { _id: oldHodId, 'divisionMapping.division': divisionId },
+        { $pull: { 'divisionMapping.$.departments': department._id } }
+      );
     }
 
-    // Sync: Add department to new HOD
-    await User.findByIdAndUpdate(hodId, {
-      $addToSet: { departments: department._id }
-    });
+    const r = await User.updateOne(
+      { _id: hodId, 'divisionMapping.division': divisionId },
+      { $addToSet: { 'divisionMapping.$.departments': department._id } }
+    );
+    if (r.matchedCount === 0) {
+      await User.updateOne(
+        { _id: hodId },
+        { $push: { divisionMapping: { division: divisionId, departments: [department._id] } } }
+      );
+    }
 
     // Update Department Model
     if (existingEntryIndex > -1) {
@@ -610,17 +680,29 @@ exports.assignHR = async (req, res) => {
       });
     }
 
-    // Sync: Remove from old HR
     if (department.hr) {
-      await User.findByIdAndUpdate(department.hr, {
-        $pull: { departments: department._id }
-      });
+      const divs = department.divisions || [];
+      for (const divId of divs) {
+        await User.updateOne(
+          { _id: department.hr, 'divisionMapping.division': divId },
+          { $pull: { 'divisionMapping.$.departments': department._id } }
+        );
+      }
     }
 
-    // Sync: Add to new HR
-    await User.findByIdAndUpdate(hrId, {
-      $addToSet: { departments: department._id }
-    });
+    const divs = department.divisions || [];
+    for (const divId of divs) {
+      const r = await User.updateOne(
+        { _id: hrId, 'divisionMapping.division': divId },
+        { $addToSet: { 'divisionMapping.$.departments': department._id } }
+      );
+      if (r.matchedCount === 0) {
+        await User.updateOne(
+          { _id: hrId },
+          { $push: { divisionMapping: { division: divId, departments: [department._id] } } }
+        );
+      }
+    }
 
     department.hr = hrId;
     await department.save();
