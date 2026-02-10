@@ -51,7 +51,7 @@ const PermissionDeductionSettingsSchema = new mongoose.Schema(
         stepName: String,
         approverRole: {
           type: String,
-          enum: ['hod', 'hr', 'manager', 'super_admin']
+          enum: ['hod', 'hr', 'manager', 'super_admin', 'reporting_manager']
         },
         availableActions: [String],
         approvedStatus: String,
@@ -62,7 +62,7 @@ const PermissionDeductionSettingsSchema = new mongoose.Schema(
       finalAuthority: {
         role: {
           type: String,
-          enum: ['hod', 'hr', 'manager', 'super_admin']
+          enum: ['hod', 'hr', 'manager', 'super_admin', 'reporting_manager']
         },
         anyHRCanApprove: {
           type: Boolean,

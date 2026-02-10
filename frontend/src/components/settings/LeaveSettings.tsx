@@ -4,20 +4,33 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
 import Spinner from '@/components/Spinner';
-import { Save, ClipboardList, Settings2, ShieldCheck, Globe, Info } from 'lucide-react';
+import { Save, ChevronRight } from 'lucide-react';
+import { SettingsSkeleton } from './SettingsSkeleton';
 
 import LeaveTypesManager from './leave/LeaveTypesManager';
 import LeavePolicy from './leave/LeavePolicy';
 import LeaveWorkflow from './leave/LeaveWorkflow';
-import LeaveWorkspaceAccess from './leave/LeaveWorkspaceAccess';
 
 const LeaveSettings = ({ type = 'leave' }: { type?: 'leave' | 'od' }) => {
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
-    const [subTab, setSubTab] = useState<'types' | 'policy' | 'workflow' | 'workspace'>('types');
-    const [workspaces, setWorkspaces] = useState<any[]>([]);
 
-    const [settings, setSettings] = useState<any>({
+    const [settings, setSettings] = useState<{
+        type: string;
+        types: { _id: string; name: string; code: string; isPaid: boolean; gender?: string[]; minServiceDays: number }[];
+        statuses: { id: string; label: string; color: string }[];
+        workflow: {
+            isEnabled: boolean;
+            steps: { stepOrder: number; stepName: string; approverRole: string; isActive: boolean }[];
+            finalAuthority: { role: string; anyHRCanApprove: boolean };
+        };
+        settings: {
+            allowBackdated: boolean;
+            maxBackdatedDays: number;
+            allowFutureDated: boolean;
+            maxAdvanceDays: number;
+        };
+    }>({
         type,
         types: [],
         statuses: [],
@@ -27,20 +40,14 @@ const LeaveSettings = ({ type = 'leave' }: { type?: 'leave' | 'od' }) => {
             maxBackdatedDays: 0,
             allowFutureDated: false,
             maxAdvanceDays: 0,
-        },
-        workspacePermissions: {}
+        }
     });
 
     const loadSettings = useCallback(async () => {
         try {
             setLoading(true);
-            const [res, wsRes] = await Promise.all([
-                api.getLeaveSettings(type),
-                api.getWorkspaces()
-            ]);
-
+            const res = await api.getLeaveSettings(type);
             if (res.success && res.data) setSettings(res.data);
-            if (wsRes.success) setWorkspaces(wsRes.data || []);
         } catch (err) {
             console.error(`Error loading leave settings:`, err);
             toast.error('Failed to load leave settings');
@@ -59,91 +66,94 @@ const LeaveSettings = ({ type = 'leave' }: { type?: 'leave' | 'od' }) => {
             const res = await api.saveLeaveSettings(type, settings);
             if (res.success) toast.success(`${type.toUpperCase()} settings updated successfully`);
             else toast.error(res.message || 'Failed to save settings');
-        } catch (err) {
+        } catch {
             toast.error('An error occurred during save');
         } finally {
             setSaving(false);
         }
     };
 
-    if (loading) return <div className="flex justify-center py-20"><Spinner /></div>;
+    // Auto-save when settings change
+    const handleSettingsChange = async (newSettings: typeof settings) => {
+        setSettings(newSettings);
+        try {
+            await api.saveLeaveSettings(type, newSettings);
+            toast.success('Settings updated');
+        } catch {
+            toast.error('Failed to update settings');
+        }
+    };
+
+    if (loading) return <SettingsSkeleton />;
 
     return (
-        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            {/* Header */}
+            <div className="flex items-end justify-between border-b border-gray-200 dark:border-gray-800 pb-5">
                 <div>
-                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-                        <span className="capitalize">{type}</span> Configuration
-                        {type === 'leave' && <span className="text-[10px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full dark:bg-blue-900/30 dark:text-blue-400 font-bold uppercase tracking-wider">Primary</span>}
+                    <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mb-2">
+                        <span>Settings</span>
+                        <ChevronRight className="h-3 w-3" />
+                        <span className="text-indigo-600">{type.toUpperCase()}</span>
+                    </div>
+                    <h2 className="text-xl font-bold text-gray-900 dark:text-white capitalize">
+                        {type === 'leave' ? 'Leave Management' : 'On Duty (OD)'}
                     </h2>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Configure {type} types, approval workflows, and branch-level access controls.</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                        Configure {type} categories, eligibility policies, and approval workflows.
+                    </p>
                 </div>
-                <button
-                    onClick={handleSave}
-                    disabled={saving}
-                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-6 py-3 text-sm font-bold text-white shadow-xl shadow-indigo-500/20 hover:bg-indigo-700 transition-all active:scale-95 disabled:opacity-50"
-                >
-                    {saving ? <Spinner /> : <Save className="h-4 w-4" />}
-                    Update Changes
-                </button>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 p-1.5 bg-gray-100/50 dark:bg-gray-800/50 backdrop-blur-md rounded-2xl w-fit">
-                {[
-                    { id: 'types' as const, label: 'Leave Types', icon: ClipboardList },
-                    { id: 'policy' as const, label: 'Application Policy', icon: Settings2 },
-                    { id: 'workflow' as const, label: 'Approval Workflow', icon: ShieldCheck },
-                    { id: 'workspace' as const, label: 'Workspace Access', icon: Globe }
-                ].map((tab) => (
-                    <button
-                        key={tab.id}
-                        onClick={() => setSubTab(tab.id)}
-                        className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all ${subTab === tab.id
-                            ? 'bg-white dark:bg-gray-700 shadow-xl shadow-indigo-500/5 text-indigo-600 scale-105'
-                            : 'text-gray-400 hover:text-gray-600 hover:bg-white/50 dark:hover:bg-gray-700/50'
-                            }`}
-                    >
-                        <tab.icon className={`h-4 w-4 ${subTab === tab.id ? 'text-indigo-600' : 'text-gray-400'}`} />
-                        {tab.label}
-                    </button>
-                ))}
-            </div>
+            {/* Two-Column Kanban Layout - Responsive */}
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 md:gap-8 items-start">
+                {/* Left Column - Types & Policy */}
+                <div className="space-y-6 md:space-y-8">
+                    {/* Leave Types */}
+                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-6 md:p-8">
+                        <LeaveTypesManager
+                            types={settings.types || []}
+                            onChange={(ts) => setSettings({ ...settings, types: ts })}
+                        />
 
-            <div className="relative min-h-[500px] p-2">
-                {subTab === 'types' && <LeaveTypesManager types={settings.types || []} onChange={(ts) => setSettings({ ...settings, types: ts })} />}
-                {subTab === 'policy' && <LeavePolicy settings={settings} onChange={setSettings} />}
-                {subTab === 'workflow' && <LeaveWorkflow workflow={settings.workflow} onChange={(wf) => setSettings({ ...settings, workflow: wf })} />}
-                {subTab === 'workspace' && (
-                    <LeaveWorkspaceAccess
-                        workspacePermissions={settings.settings?.workspacePermissions || {}}
-                        workspaces={workspaces}
-                        onChange={(wp) => setSettings({ ...settings, settings: { ...settings.settings, workspacePermissions: wp } })}
-                    />
-                )}
-            </div>
-
-            <div className="p-6 rounded-[30px] bg-gradient-to-br from-gray-900 to-indigo-950 text-white shadow-2xl relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-8 opacity-10">
-                    <Info className="h-32 w-32" />
-                </div>
-                <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-                    <div className="max-w-xl">
-                        <h4 className="text-lg font-bold flex items-center gap-2">
-                            <Info className="h-5 w-5 text-indigo-400" />
-                            Understanding {type} Settings
-                        </h4>
-                        <p className="text-xs text-indigo-100/60 mt-2 leading-relaxed">
-                            Settings applied here are global but can be restricted per workspace.
-                            The &quot;Workflow&quot; defines the approval chain, while &quot;Policy&quot; controls submission timing.
-                            Changes won&apos;t affect already submitted or approved requests.
-                        </p>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                        <div className="flex items-center gap-2 bg-white/10 px-4 py-2 rounded-xl backdrop-blur-md border border-white/10">
-                            <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-                            <span className="text-[10px] font-bold uppercase">System synchronized</span>
+                        {/* Save Button for Types */}
+                        <div className="mt-6 pt-6 border-t border-gray-100 dark:border-gray-800">
+                            <button
+                                onClick={handleSave}
+                                disabled={saving}
+                                className="w-full flex items-center justify-center gap-2 rounded-xl bg-indigo-600 text-white py-4 text-xs font-bold hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-500/20 active:scale-95 disabled:opacity-50"
+                            >
+                                {saving ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />}
+                                Save Leave Types
+                            </button>
                         </div>
-                    </div>
+                    </section>
+
+                    {/* Policy - No wrapper, auto-save */}
+                    <LeavePolicy
+                        settings={settings}
+                        onChange={handleSettingsChange}
+                    />
+                </div>
+
+                {/* Right Column - Workflow */}
+                <div>
+                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-8 space-y-8">
+                        <LeaveWorkflow
+                            workflow={settings.workflow}
+                            onChange={(wf) => setSettings({ ...settings, workflow: wf })}
+                        />
+
+                        {/* Save Button for Workflow */}
+                        <button
+                            onClick={handleSave}
+                            disabled={saving}
+                            className="w-full flex items-center justify-center gap-2 rounded-xl bg-purple-600 text-white py-4 text-xs font-bold hover:bg-purple-700 transition-all shadow-xl shadow-purple-500/20 active:scale-95 disabled:opacity-50"
+                        >
+                            {saving ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />}
+                            Save Workflow
+                        </button>
+                    </section>
                 </div>
             </div>
         </div>

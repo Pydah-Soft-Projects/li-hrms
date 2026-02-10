@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Calendar, Globe, AlertCircle, Clock } from 'lucide-react';
+import { Calendar, AlertCircle, Clock } from 'lucide-react';
 
 interface LeavePolicyProps {
     settings: any;
@@ -19,8 +19,8 @@ const LeavePolicy = ({ settings, onChange }: LeavePolicyProps) => {
     };
 
     return (
-        <div className="space-y-6 animate-in fade-in zoom-in-95 duration-300">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-8 space-y-6">
+            <div className="space-y-6 animate-in fade-in zoom-in-95 duration-300">
                 {/* Backdated Applications */}
                 <div className="p-6 rounded-2xl border border-gray-100 bg-white/50 backdrop-blur-sm dark:bg-gray-800 dark:border-gray-700 shadow-sm">
                     <div className="flex items-center justify-between mb-6">

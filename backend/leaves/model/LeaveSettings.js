@@ -203,14 +203,14 @@ const LeaveSettingsSchema = new mongoose.Schema(
           stepName: String,
           approverRole: {
             type: String,
-            enum: ['hod', 'hr', 'manager', 'super_admin']
+            enum: ['hod', 'hr', 'manager', 'super_admin', 'reporting_manager']
           }
         }
       ],
       finalAuthority: {
         role: {
           type: String,
-          enum: ['hr', 'super_admin', 'manager'],
+          enum: ['hr', 'super_admin', 'manager', 'reporting_manager'],
           default: 'hr'
         },
         anyHRCanApprove: {

@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
 import Spinner from '@/components/Spinner';
-import { Save, Clock } from 'lucide-react';
+import { Save, Clock, ChevronRight } from 'lucide-react';
 
 const GeneralSettings = () => {
   const [lateInGrace, setLateInGrace] = useState<number>(15);
@@ -66,63 +66,96 @@ const GeneralSettings = () => {
 
   if (loading) return <div className="flex justify-center py-10"><Spinner /></div>;
 
+  if (loading) return <div className="flex justify-center py-10"><Spinner /></div>;
+
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white">General Settings</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Manage global grace periods and other general configurations.</p>
+    <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="border-b border-gray-200 dark:border-gray-800 pb-5">
+        <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mb-2">
+          <span>Settings</span>
+          <ChevronRight className="h-3 w-3" />
+          <span className="text-indigo-600">General</span>
         </div>
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-50"
-        >
-          {saving ? <Spinner /> : <Save className="h-4 w-4" />}
-          Save Changes
-        </button>
+        <h2 className="text-xl font-bold text-gray-900 dark:text-white">General Details</h2>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Comprehensive Overview of Core Configuration and General Settings</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="group relative rounded-2xl border border-gray-200 bg-white/50 p-6 backdrop-blur-sm transition-all hover:border-indigo-500/50 hover:shadow-xl dark:border-gray-700 dark:bg-gray-800/50">
-          <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400">
-              <Clock className="h-6 w-6" />
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-10">
+        <div className="xl:col-span-2 space-y-8">
+          <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
+            <div className="px-8 py-6 border-b border-gray-100 dark:border-gray-800">
+              <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Attendance Grace Periods</h3>
             </div>
-            <div>
-              <label htmlFor="lateInGrace" className="block text-sm font-semibold text-gray-900 dark:text-white">Late In Grace Period</label>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Minutes allowed after shift start time.</p>
+
+            <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="space-y-2">
+                <label htmlFor="lateInGrace" className="block text-xs font-bold text-gray-500 uppercase tracking-widest">
+                  Late In Grace Period <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    id="lateInGrace"
+                    value={lateInGrace}
+                    onChange={(e) => setLateInGrace(Number(e.target.value))}
+                    className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-700 dark:bg-[#0F172A] dark:text-white transition-all"
+                  />
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-gray-400 uppercase">Mins</span>
+                </div>
+                <p className="text-[10px] text-gray-400">Minutes allowed after shift start time before marked late.</p>
+              </div>
+
+              <div className="space-y-2">
+                <label htmlFor="earlyOutGrace" className="block text-xs font-bold text-gray-500 uppercase tracking-widest">
+                  Early Out Grace Period <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    id="earlyOutGrace"
+                    value={earlyOutGrace}
+                    onChange={(e) => setEarlyOutGrace(Number(e.target.value))}
+                    className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-700 dark:bg-[#0F172A] dark:text-white transition-all"
+                  />
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-gray-400 uppercase">Mins</span>
+                </div>
+                <p className="text-[10px] text-gray-400">Minutes allowed before shift end time before marked early exit.</p>
+              </div>
             </div>
-          </div>
-          <div className="mt-4">
-            <input
-              type="number"
-              id="lateInGrace"
-              value={lateInGrace}
-              onChange={(e) => setLateInGrace(Number(e.target.value))}
-              className="w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
-            />
-          </div>
+          </section>
+
+          {/* Placeholder for future general settings to match reference grid */}
+          <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden opacity-50">
+            <div className="px-8 py-6 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">System Localization</h3>
+              <span className="text-[10px] font-bold bg-gray-100 px-2 py-0.5 rounded text-gray-500">COMING SOON</span>
+            </div>
+            <div className="p-8 grid grid-cols-2 gap-8 grayscale">
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest text-opacity-50">Language</label>
+                <div className="w-full h-11 bg-gray-50 rounded-xl border border-gray-100" />
+              </div>
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest text-opacity-50">Timezone</label>
+                <div className="w-full h-11 bg-gray-50 rounded-xl border border-gray-100" />
+              </div>
+            </div>
+          </section>
         </div>
 
-        <div className="group relative rounded-2xl border border-gray-200 bg-white/50 p-6 backdrop-blur-sm transition-all hover:border-indigo-500/50 hover:shadow-xl dark:border-gray-700 dark:bg-gray-800/50">
-          <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-400">
-              <Clock className="h-6 w-6" />
-            </div>
-            <div>
-              <label htmlFor="earlyOutGrace" className="block text-sm font-semibold text-gray-900 dark:text-white">Early Out Grace Period</label>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Minutes allowed before shift end time.</p>
-            </div>
-          </div>
-          <div className="mt-4">
-            <input
-              type="number"
-              id="earlyOutGrace"
-              value={earlyOutGrace}
-              onChange={(e) => setEarlyOutGrace(Number(e.target.value))}
-              className="w-full rounded-xl border-gray-200 bg-gray-50 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
-            />
+        <div className="space-y-8">
+          <div className="bg-indigo-600 rounded-2xl p-8 text-white shadow-xl shadow-indigo-500/20">
+            <h3 className="text-lg font-bold mb-2">Need Help?</h3>
+            <p className="text-xs opacity-80 leading-relaxed mb-6">
+              Grace periods affect how attendance is calculated globally across all shifts and departments.
+            </p>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="w-full py-3 bg-white text-indigo-600 rounded-xl text-xs font-bold hover:bg-gray-50 transition-colors shadow-lg active:scale-95 disabled:opacity-50"
+            >
+              {saving ? 'Saving...' : 'Save Settings Now'}
+            </button>
           </div>
         </div>
       </div>
