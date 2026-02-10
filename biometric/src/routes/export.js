@@ -292,55 +292,56 @@ router.get('/export/attendance', async (req, res) => {
                 }
 
                 // 3. Strict Pairing State Machine
-                // Max 3 shifts
+                // Logic: 
+                // - MAX 3 shifts.
+                // - Ignore consecutive INs (keep first).
+                // - Ignore consecutive OUTs (keep first? No, keep next valid). 
+                // Wait, if start IN, subsequent IN is ignored.
+                // If OUT, subsequent OUT is ignored until next IN.
+
                 const pairs = [];
                 let currentPair = null; // { in: Date, out: Date }
                 let totalHours = 0;
+                let expectingOut = false;
 
                 uniqueLogs.forEach(log => {
-                    if (pairs.length >= 3 && !currentPair) return; // Max 3 reported shifts, and no open shift
+                    if (pairs.length >= 3 && !currentPair) return; // Max 3 reported shifts
 
                     if (log.type === 'IN') {
-                        if (currentPair) {
-                            // We were expecting OUT, but got IN.
-                            // Close previous pair as "Missing OUT" calculation-wise, or just push it?
-                            // User wants "Proper IN and OUT".
-                            // If we have an open IN, and get another IN (after dedup), implies missing punch or new shift?
-                            // Strategy: Close current pair as incomplete, start new.
-                            if (pairs.length < 3) {
-                                pairs.push(currentPair);
-                            }
+                        if (expectingOut) {
+                            // Already IN. Ignore this new IN (duplicate/bounce).
+                            // UNLESS user wants to restart shift? 
+                            // User said "Real Shifts" - standard is first IN counts.
+                            return;
                         }
+
                         // Start new pair
                         if (pairs.length < 3) {
                             currentPair = { in: log.time, out: null };
-                        } else {
-                            currentPair = null; // Discard if already have 3 pairs
+                            expectingOut = true;
                         }
                     } else {
                         // Type OUT
+                        if (!expectingOut) {
+                            // Not IN. Ignore this OUT (orphan).
+                            return;
+                        }
+
+                        // Close pair
                         if (currentPair) {
-                            // Close pair
                             currentPair.out = log.time;
                             const hrs = (currentPair.out - currentPair.in) / (1000 * 60 * 60);
                             if (hrs > 0) totalHours += hrs;
-                            if (pairs.length < 3) {
-                                pairs.push(currentPair);
-                            }
+
+                            pairs.push(currentPair);
                             currentPair = null;
-                        } else {
-                            // Got OUT without IN.
-                            // Treat as "Missing IN" pair
-                            // User said "Real Shifts" - implies valid IN->OUT. 
-                            // Orphan OUTs are messy. Let's SHOW it but it's an incomplete shift.
-                            if (pairs.length < 3) {
-                                pairs.push({ in: null, out: log.time });
-                            }
+                            expectingOut = false;
                         }
                     }
                 });
 
-                // Push any dangling open pair
+                // Check for open shift at end of day
+                // If we have an open IN (expectingOut = true), push it as incomplete
                 if (currentPair && pairs.length < 3) {
                     pairs.push(currentPair);
                 }
