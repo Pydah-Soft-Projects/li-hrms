@@ -191,10 +191,13 @@ const WorkflowManager = ({
                         <div className="flex items-center gap-3 bg-white dark:bg-gray-800 p-2 sm:p-3 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
                             <span className="text-[10px] font-bold text-gray-400 uppercase whitespace-nowrap">Any HR can approve</span>
                             <button
-                                onClick={() => update('finalAuthority', { ...workflow.finalAuthority, anyHRCanApprove: !workflow.finalAuthority?.anyHRCanApprove })}
-                                className={`relative inline-flex h-5 w-10 items-center rounded-full transition-colors ${workflow.finalAuthority?.anyHRCanApprove ? 'bg-emerald-600' : 'bg-gray-300 dark:bg-gray-700'}`}
+                                onClick={() => update('finalAuthority', {
+                                    role: workflow?.finalAuthority?.role || 'admin',
+                                    anyHRCanApprove: !workflow?.finalAuthority?.anyHRCanApprove
+                                })}
+                                className={`relative inline-flex h-5 w-10 items-center rounded-full transition-colors ${workflow?.finalAuthority?.anyHRCanApprove ? 'bg-emerald-600' : 'bg-gray-300 dark:bg-gray-700'}`}
                             >
-                                <div className={`h-3 w-3 bg-white rounded-full transition-transform ${workflow.finalAuthority?.anyHRCanApprove ? 'translate-x-6' : 'translate-x-1'}`} />
+                                <div className={`h-3 w-3 bg-white rounded-full transition-transform ${workflow?.finalAuthority?.anyHRCanApprove ? 'translate-x-6' : 'translate-x-1'}`} />
                             </button>
                         </div>
                     </div>
