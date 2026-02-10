@@ -20,7 +20,7 @@ exports.getTodayPermissions = async (req, res) => {
 
         const permissions = await Permission.find({
             date: dateStr,
-            status: 'approved',
+            status: { $in: ['approved', 'checked_out', 'checked_in'] },
         })
             .populate('employeeId', 'employee_name emp_no department_id designation_id photo')
             .populate('employeeId.department_id', 'name') // Population syntax check needed, simplified below
@@ -221,12 +221,10 @@ exports.verifyGatePass = async (req, res) => {
                 return res.status(400).json({ success: false, message: 'Gate Out already verified', alreadyVerified: true });
             }
 
-            // Action: Log Gate Out
+            // Action: Log Gate Out + update status (driven by gate scan only)
             permission.gateOutTime = new Date();
             permission.gateOutVerifiedBy = req.user._id;
-            // We don't clear the secret immediately to allow re-scans for confirmation if needed briefly, 
-            // but the gateOutTime check prevents double action.
-            // Or we can clear it to be strict. Let's keep it for audit.
+            permission.status = 'checked_out';
 
         } else if (type === 'IN') {
             if (permission.gateInSecret !== qrSecret) {
@@ -243,9 +241,10 @@ exports.verifyGatePass = async (req, res) => {
                 return res.status(400).json({ success: false, message: 'Gate In already verified', alreadyVerified: true });
             }
 
-            // Action: Log Gate In
+            // Action: Log Gate In + update status (driven by gate scan only)
             permission.gateInTime = new Date();
             permission.gateInVerifiedBy = req.user._id;
+            permission.status = 'checked_in';
         }
 
         await permission.save();

@@ -60,6 +60,7 @@ export const PAGE_PERMISSIONS: Record<string, UserRole[]> = {
     '/employees': ['sub_admin', 'hr', 'hod', 'manager', 'employee'],
     '/attendance': ['sub_admin', 'hr', 'hod', 'manager', 'employee'],
     '/leaves': ['sub_admin', 'hr', 'hod', 'manager', 'employee'],
+    '/ccl': ['sub_admin', 'hr', 'hod', 'manager', 'employee'],
     '/departments': ['sub_admin', 'hr', 'hod', 'manager', 'employee'],
     '/shifts': ['sub_admin', 'hr', 'hod', 'manager', 'employee'],
     '/shift-roster': ['sub_admin', 'hr', 'hod', 'manager', 'employee'],

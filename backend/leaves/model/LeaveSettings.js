@@ -6,10 +6,10 @@ const mongoose = require('mongoose');
  */
 const LeaveSettingsSchema = new mongoose.Schema(
   {
-    // Settings type - leave or od
+    // Settings type - leave, od, or ccl
     type: {
       type: String,
-      enum: ['leave', 'od'],
+      enum: ['leave', 'od', 'ccl'],
       required: true,
     },
 
@@ -203,14 +203,14 @@ const LeaveSettingsSchema = new mongoose.Schema(
           stepName: String,
           approverRole: {
             type: String,
-            enum: ['hod', 'hr', 'manager', 'super_admin']
+            enum: ['hod', 'hr', 'manager', 'super_admin', 'reporting_manager']
           }
         }
       ],
       finalAuthority: {
         role: {
           type: String,
-          enum: ['hr', 'super_admin', 'manager'],
+          enum: ['hr', 'super_admin', 'manager', 'reporting_manager'],
           default: 'hr'
         },
         anyHRCanApprove: {
