@@ -41,6 +41,7 @@ type TabType =
   | 'employee'
   | 'leave'
   | 'od'
+  | 'ccl'
   | 'shift'
   | 'attendance'
   | 'attendance_deductions'
@@ -65,6 +66,7 @@ const SettingsPage = () => {
     { id: 'employee', label: 'Employee Setup', icon: Users, color: 'text-indigo-500', group: 'Human Resources' },
     { id: 'leave', label: 'Leave Policy', icon: Calendar, color: 'text-emerald-500', group: 'Human Resources' },
     { id: 'od', label: 'On-Duty (OD)', icon: Briefcase, color: 'text-teal-500', group: 'Human Resources' },
+    { id: 'ccl', label: 'Comp. Casual Leave (CCL)', icon: Zap, color: 'text-amber-500', group: 'Human Resources' },
 
     { id: 'shift', label: 'Shift Schedules', icon: Clock, color: 'text-amber-500', group: 'Operations' },
     { id: 'attendance', label: 'Attendance Sync', icon: Zap, color: 'text-yellow-500', group: 'Operations' },
@@ -94,6 +96,7 @@ const SettingsPage = () => {
       case 'employee': return <EmployeeSettings />;
       case 'leave': return <LeaveSettings type="leave" />;
       case 'od': return <LeaveSettings type="od" />;
+      case 'ccl': return <LeaveSettings type="ccl" />;
       case 'shift': return <ShiftSettings />;
       case 'attendance': return <AttendanceSettings />;
       case 'attendance_deductions': return <AttendanceDeductionsSettings />;

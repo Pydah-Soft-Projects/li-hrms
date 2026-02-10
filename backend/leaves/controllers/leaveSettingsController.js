@@ -77,13 +77,30 @@ exports.getSettings = async (req, res) => {
           notifyApproverOnNew: true,
           workspacePermissions: {},
         },
+        workflow: {
+          isEnabled: true,
+          steps: [],
+          finalAuthority: {
+            role: 'hr',
+            anyHRCanApprove: true
+          }
+        },
+        isActive: true,
         isDefault: true, // Flag to indicate these are default settings
       };
     }
 
-    // Ensure workspacePermissions is included in response
-    if (settings.settings && !settings.settings.workspacePermissions) {
+    // Ensure settings and workflow are included in response even if partially populated
+    if (!settings.settings) settings.settings = {};
+    if (!settings.settings.workspacePermissions) {
       settings.settings.workspacePermissions = {};
+    }
+    if (!settings.workflow) {
+      settings.workflow = {
+        isEnabled: true,
+        steps: [],
+        finalAuthority: { role: 'hr', anyHRCanApprove: true }
+      };
     }
 
     console.log('[GetSettings] Returning settings with workspacePermissions:', JSON.stringify(settings.settings?.workspacePermissions, null, 2));
