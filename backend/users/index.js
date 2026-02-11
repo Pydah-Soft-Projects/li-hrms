@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const userController = require('./controllers/userController');
 const { protect, authorize } = require('../authentication/middleware/authMiddleware');
+const { applyMetadataScopeFilter } = require('../shared/middleware/dataScopeMiddleware');
 
 // All routes are protected
 router.use(protect);
@@ -42,7 +43,8 @@ router.post(
 // ==========================================
 
 // Get all users
-router.get('/', authorize('manager', 'super_admin', 'sub_admin', 'hr'), userController.getAllUsers);
+router.get('/', authorize('manager', 'super_admin', 'sub_admin', 'hr'), applyMetadataScopeFilter('User'), userController.getAllUsers);
+
 
 // Get single user
 router.get('/:id', userController.getUser);

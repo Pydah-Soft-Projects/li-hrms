@@ -55,9 +55,10 @@ function mapScopeFilterForDepartment(scopeFilter) {
 // @access  Private
 exports.getAllDepartments = async (req, res) => {
   try {
-    const { isActive } = req.query;
+    const { isActive, division } = req.query;
     const cacheService = require('../../shared/services/cacheService');
-    const cacheKey = `departments:all:${isActive || 'any'}`;
+    const cacheKey = `departments:all:${isActive || 'any'}:${division || 'all'}`;
+
 
     // Try to get from cache
     const cachedDepts = await cacheService.get(cacheKey);
@@ -71,11 +72,19 @@ exports.getAllDepartments = async (req, res) => {
       });
     }
 
-    const query = req.scopeFilter ? mapScopeFilterForDepartment(req.scopeFilter) : {};
+    let query = {};
+    if (req.metadataScopeFilter) {
+      query = { ...req.metadataScopeFilter };
+    } else if (req.scopeFilter) {
+      query = mapScopeFilterForDepartment(req.scopeFilter);
+    }
+
 
     if (isActive !== undefined) {
       query.isActive = isActive === 'true';
     }
+
+
 
     const departments = await Department.find(query)
       .populate('hod', 'name email role') // Legacy

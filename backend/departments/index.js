@@ -4,13 +4,14 @@ const departmentController = require('./controllers/departmentController');
 const designationController = require('./controllers/designationController');
 const departmentSettingsController = require('./controllers/departmentSettingsController');
 const { protect, authorize } = require('../authentication/middleware/authMiddleware');
-const { applyScopeFilter } = require('../shared/middleware/dataScopeMiddleware');
+const { applyScopeFilter, applyMetadataScopeFilter } = require('../shared/middleware/dataScopeMiddleware');
 
 // All routes are protected
 router.use(protect);
 
 // Get all departments
-router.get('/', applyScopeFilter, departmentController.getAllDepartments);
+router.get('/', applyMetadataScopeFilter('Department'), departmentController.getAllDepartments);
+
 
 // ============== Global Designation Routes ==============
 // These routes handle designations as independent entities

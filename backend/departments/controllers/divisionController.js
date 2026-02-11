@@ -10,9 +10,13 @@ const Shift = require('../../shifts/model/Shift');
  */
 exports.getDivisions = async (req, res, next) => {
     try {
-        // Apply scope filter if it exists
+        const { isActive } = req.query;
+        // Apply metadata scope filter if it exists (New specialized scoping)
         let query = {};
-        if (req.scopeFilter) {
+        if (req.metadataScopeFilter) {
+            query = { ...req.metadataScopeFilter };
+        } else if (req.scopeFilter) {
+            // Fallback to legacy scope filter if new metadata filter isn't present
             query = { ...req.scopeFilter };
             // Map division_id to _id for Division model queries
             if (query.division_id) {
@@ -28,6 +32,10 @@ exports.getDivisions = async (req, res, next) => {
                     return cond;
                 });
             }
+        }
+
+        if (isActive !== undefined) {
+            query.isActive = isActive === 'true';
         }
 
         const divisions = await Division.find(query)

@@ -863,8 +863,11 @@ export const api = {
   },
 
   // Departments
-  getDepartments: async (isActive?: boolean) => {
-    const query = isActive !== undefined ? `?isActive=${isActive}` : '';
+  getDepartments: async (isActive?: boolean, divisionId?: string) => {
+    const params = new URLSearchParams();
+    if (isActive !== undefined) params.append('isActive', String(isActive));
+    if (divisionId) params.append('division', divisionId);
+    const query = params.toString() ? `?${params.toString()}` : '';
     return apiRequest<Department[]>(`/departments${query}`, { method: 'GET' });
   },
 
@@ -887,8 +890,11 @@ export const api = {
 
 
   // Divisions
-  getDivisions: async (isActive?: boolean) => {
-    const query = isActive !== undefined ? `?isActive=${isActive}` : '';
+  getDivisions: async (isActive?: boolean, divisionId?: string) => {
+    const params = new URLSearchParams();
+    if (isActive !== undefined) params.append('isActive', String(isActive));
+    if (divisionId) params.append('division', divisionId);
+    const query = params.toString() ? `?${params.toString()}` : '';
     return apiRequest<Division[]>(`/divisions${query}`, { method: 'GET' });
   },
 
