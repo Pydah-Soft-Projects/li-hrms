@@ -302,13 +302,22 @@ const transformEmployeeForResponse = async (employee, populateUsers = true) => {
     populatedDynamicFields = await populateUsersInDynamicFields(dynamicFields);
   }
 
-  // Merge dynamicFields into root level for easy access
-  // Also keep dynamicFields separate for reference
+  // Merge dynamicFields into root level (dynamicFields act as fallback)
+  // Permanent fields (Source of Truth) must overwrite dynamicFields
   const merged = {
-    ...permanentFields,
     ...populatedDynamicFields,
+    ...permanentFields,
     dynamicFields: populatedDynamicFields,
   };
+
+  // Schema-level employeeAllowances/employeeDeductions must not be overwritten by dynamicFields
+  // (dynamicFields can contain stale empty arrays; prefer the actual schema arrays)
+  if (Array.isArray(permanentFields.employeeAllowances)) {
+    merged.employeeAllowances = permanentFields.employeeAllowances;
+  }
+  if (Array.isArray(permanentFields.employeeDeductions)) {
+    merged.employeeDeductions = permanentFields.employeeDeductions;
+  }
 
   // Normalize reporting_to_ to reporting_to (handle field name inconsistency)
   // Ensure we move data if standard field is present but empty
@@ -395,10 +404,40 @@ exports.getAllEmployees = async (req, res) => {
 
     // Fetch based on data source setting
     if (settings.dataSource === 'mssql' && isHRMSConnected()) {
-      // Fetch from MSSQL (Assume MSSQL doesn't support pagination easily in this helper yet, or fetch all)
+      // Fetch from MSSQL
       const mssqlEmployees = await getAllEmployeesMSSQL(filters);
       total = mssqlEmployees.length;
-      employees = (await resolveEmployeeReferences(mssqlEmployees)).slice(skip, skip + parseInt(limit));
+      const sortedMssql = mssqlEmployees.slice(skip, skip + parseInt(limit));
+
+      // Resolve names/refs for MSSQL employees
+      const resolved = await resolveEmployeeReferences(sortedMssql);
+
+      // MERGE with MongoDB data for fields not in SQL (allowances, dynamicFields, etc.)
+      const empNos = resolved.map(e => e.emp_no);
+      const mongoMatches = await Employee.find({ emp_no: { $in: empNos } });
+      const mongoMap = new Map(mongoMatches.map(m => [m.emp_no, m]));
+
+      employees = await Promise.all(resolved.map(async (mssqlEmp) => {
+        const mongoEmp = mongoMap.get(mssqlEmp.emp_no);
+        if (!mongoEmp) return mssqlEmp;
+
+        // Transform MongoDB extra data
+        const transformed = await transformEmployeeForResponse(mongoEmp, true);
+
+        // Merge: MSSQL fields take priority for core fields, MongoDB for extra ones
+        return {
+          ...transformed,
+          ...mssqlEmp,
+          // Explicitly ensure MongoDB-only fields are preserved if transformed had them
+          employeeAllowances: transformed.employeeAllowances || [],
+          employeeDeductions: transformed.employeeDeductions || [],
+          dynamicFields: transformed.dynamicFields || {},
+          paidLeaves: mssqlEmp.paidLeaves ?? transformed.paidLeaves ?? 0,
+          allottedLeaves: mssqlEmp.allottedLeaves ?? transformed.allottedLeaves ?? 0,
+          ctcSalary: mssqlEmp.ctc_salary ?? transformed.ctcSalary ?? null,
+          calculatedSalary: mssqlEmp.calculated_salary ?? transformed.calculatedSalary ?? null,
+        };
+      }));
     } else {
       // Fetch from MongoDB (default)
       const query = { ...filters };
@@ -468,7 +507,27 @@ exports.getEmployee = async (req, res) => {
       const mssqlEmployee = await getEmployeeByIdMSSQL(empNo);
       if (mssqlEmployee) {
         const resolved = await resolveEmployeeReferences([mssqlEmployee]);
-        employee = resolved[0];
+        const baseEmployee = resolved[0];
+
+        // Fetch extra fields from MongoDB
+        const mongoEmployee = await Employee.findOne({ emp_no: empNo })
+          .populate('division_id', 'name code')
+          .populate('department_id', 'name code')
+          .populate('designation_id', 'name code');
+
+        if (mongoEmployee) {
+          const transformed = await transformEmployeeForResponse(mongoEmployee, true);
+          employee = {
+            ...transformed,
+            ...baseEmployee,
+            employeeAllowances: transformed.employeeAllowances || [],
+            employeeDeductions: transformed.employeeDeductions || [],
+            ctcSalary: baseEmployee.gross_salary !== undefined ? transformed.ctcSalary : (transformed.ctcSalary || null),
+            calculatedSalary: baseEmployee.gross_salary !== undefined ? transformed.calculatedSalary : (transformed.calculatedSalary || null),
+          };
+        } else {
+          employee = baseEmployee;
+        }
       }
     } else {
       const mongoEmployee = await Employee.findOne({ emp_no: empNo })
@@ -649,6 +708,38 @@ exports.createEmployee = async (req, res) => {
     }
     delete dynamicFields.reporting_to_;
 
+    // Normalize bank details from camelCase to snake_case if present
+    const bankFields = [
+      { snake: 'bank_account_no', camel: 'bankAccountNo' },
+      { snake: 'bank_name', camel: 'bankName' },
+      { snake: 'bank_place', camel: 'bankPlace' },
+      { snake: 'ifsc_code', camel: 'ifscCode' },
+      { snake: 'salary_mode', camel: 'salaryMode' },
+      { snake: 'second_salary', camel: 'secondSalary' }
+    ];
+
+    bankFields.forEach(({ snake, camel }) => {
+      // Check permanentFields first, then dynamicFields, then input root
+      let value = permanentFields[snake];
+
+      // If not in permanentFields (snake), checks input under camelCase
+      if (value === undefined && employeeData[camel] !== undefined) {
+        value = employeeData[camel];
+      }
+
+      // Also check dynamicFields for both versions
+      if (value === undefined) {
+        value = dynamicFields[snake] || dynamicFields[camel];
+      }
+
+      if (value !== undefined && value !== null && value !== '') {
+        permanentFields[snake] = value;
+        // Remove from dynamicFields to avoid duplication
+        delete dynamicFields[snake];
+        delete dynamicFields[camel];
+      }
+    });
+
     const normalizeOverrides = (list) => {
       try {
         const parsed = typeof list === 'string' ? JSON.parse(list) : (list || []);
@@ -772,6 +863,10 @@ exports.updateEmployee = async (req, res) => {
     const employeeData = req.body;
 
     // Check if employee exists
+
+
+
+    // Check if employee exists
     const existingEmployee = await Employee.findOne({ emp_no: empNo });
     if (!existingEmployee) {
       return res.status(404).json({
@@ -829,7 +924,7 @@ exports.updateEmployee = async (req, res) => {
       employeeData.ctcSalary !== undefined ||
       employeeData.calculatedSalary !== undefined ||
       employeeData.paidLeaves !== undefined ||
-      employeeData.allottedLeaves !== undefined
+      employeeData.second_salary !== undefined
     );
 
     // Only validate if dynamicFields are being updated (not for simple permanent field updates)
@@ -840,6 +935,8 @@ exports.updateEmployee = async (req, res) => {
         const mergedData = {
           ...existingEmployee.toObject(),
           ...employeeData,
+          // Ensure proposedSalary satisfies validation if required by settings (since it's a UI field)
+          proposedSalary: employeeData.proposedSalary || employeeData.gross_salary || existingEmployee.gross_salary
         };
 
         const validation = await validateFormData(mergedData, settings);
@@ -852,6 +949,12 @@ exports.updateEmployee = async (req, res) => {
           });
         }
       }
+    }
+
+    // CRITICAL: Exclude proposedSalary from updates AFTER validation to prevent it from being saved 
+    // as a dynamic field or overwriting salary data unintentionally.
+    if (employeeData.proposedSalary) {
+      delete employeeData.proposedSalary;
     }
 
     // Separate permanent fields and dynamicFields
@@ -895,6 +998,38 @@ exports.updateEmployee = async (req, res) => {
       }
     }
     delete dynamicFields.reporting_to_;
+
+    // Normalize bank details from camelCase to snake_case if present
+    const bankFields = [
+      { snake: 'bank_account_no', camel: 'bankAccountNo' },
+      { snake: 'bank_name', camel: 'bankName' },
+      { snake: 'bank_place', camel: 'bankPlace' },
+      { snake: 'ifsc_code', camel: 'ifscCode' },
+      { snake: 'salary_mode', camel: 'salaryMode' },
+      { snake: 'second_salary', camel: 'secondSalary' }
+    ];
+
+    bankFields.forEach(({ snake, camel }) => {
+      // Check permanentFields first, then dynamicFields, then input root
+      let value = permanentFields[snake];
+
+      // If not in permanentFields (snake), checks input under camelCase
+      if (value === undefined && employeeData[camel] !== undefined) {
+        value = employeeData[camel];
+      }
+
+      // Also check dynamicFields for both versions
+      if (value === undefined) {
+        value = dynamicFields[snake] || dynamicFields[camel];
+      }
+
+      if (value !== undefined && value !== null && value !== '') {
+        permanentFields[snake] = value;
+        // Remove from dynamicFields to avoid duplication
+        delete dynamicFields[snake];
+        delete dynamicFields[camel];
+      }
+    });
 
     // Normalize employee allowances and deductions
     const normalizeOverrides = (list) => {
@@ -957,13 +1092,45 @@ exports.updateEmployee = async (req, res) => {
       const updateData = {
         ...permanentFields,
         qualifications, // Explicitly save resolved qualifications
-        dynamicFields: Object.keys(dynamicFields).length > 0 ? dynamicFields : existingEmployee.dynamicFields || {},
-        employeeAllowances,
-        employeeDeductions,
-        ctcSalary,
-        calculatedSalary,
         updated_at: new Date(),
       };
+
+      // Handle allowances, deductions and salary fields ONLY if provided in request to avoid partial-update wipes
+      if (employeeData.employeeAllowances !== undefined) {
+        updateData.employeeAllowances = employeeAllowances;
+      }
+      if (employeeData.employeeDeductions !== undefined) {
+        updateData.employeeDeductions = employeeDeductions;
+      }
+      if (employeeData.ctcSalary !== undefined) {
+        updateData.ctcSalary = ctcSalary;
+      }
+      if (employeeData.calculatedSalary !== undefined) {
+        updateData.calculatedSalary = calculatedSalary;
+      }
+
+      // Handle dynamicFields carefully to prevent wiping
+      if (Object.keys(dynamicFields).length > 0 || (existingEmployee.dynamicFields && Object.keys(existingEmployee.dynamicFields).length > 0)) {
+        const cleanedExistingDynamic = { ...(existingEmployee.dynamicFields || {}) };
+
+        // Explicitly remove bank fields from existing dynamic fields to fix stale data
+        const bankFieldsToCleanup = [
+          'bank_account_no', 'bankAccountNo',
+          'bank_name', 'bankName',
+          'bank_place', 'bankPlace',
+          'ifsc_code', 'ifscCode',
+          'salary_mode', 'salaryMode',
+          'second_salary', 'secondSalary',
+          'proposedSalary' // Also cleanup proposedSalary if it was accidentally saved
+        ];
+        bankFieldsToCleanup.forEach(f => delete cleanedExistingDynamic[f]);
+
+        updateData.dynamicFields = {
+          ...cleanedExistingDynamic,
+          ...dynamicFields
+        };
+      }
+
       // Explicitly handle paidLeaves to ensure it's saved even if 0
       if (employeeData.paidLeaves !== undefined && employeeData.paidLeaves !== null) {
         updateData.paidLeaves = Number(employeeData.paidLeaves);
@@ -971,6 +1138,14 @@ exports.updateEmployee = async (req, res) => {
       // Explicitly handle allottedLeaves to ensure it's saved even if 0
       if (employeeData.allottedLeaves !== undefined && employeeData.allottedLeaves !== null) {
         updateData.allottedLeaves = Number(employeeData.allottedLeaves);
+      }
+
+      // Explicitly handle second_salary to ensure it's saved correctly as Number
+      // Check for both snake_case (standard) and camelCase (frontend payload)
+      if (employeeData.second_salary !== undefined && employeeData.second_salary !== null && employeeData.second_salary !== '') {
+        updateData.second_salary = Number(employeeData.second_salary);
+      } else if (employeeData.secondSalary !== undefined && employeeData.secondSalary !== null && employeeData.secondSalary !== '') {
+        updateData.second_salary = Number(employeeData.secondSalary);
       }
 
       await Employee.findOneAndUpdate(

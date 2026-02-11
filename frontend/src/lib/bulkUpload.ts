@@ -96,6 +96,64 @@ export const DEPARTMENT_TEMPLATE_SAMPLE = [
   },
 ];
 
+// ============== Allowance / Deduction Template ==============
+
+export const ALLOWANCE_DEDUCTION_TEMPLATE_HEADERS = [
+  'name',
+  'category',
+  'description',
+  'type',
+  'amount',
+  'percentage',
+  'percentageBase',
+  'minAmount',
+  'maxAmount',
+  'basedOnPresentDays',
+  'isActive',
+];
+
+export const ALLOWANCE_DEDUCTION_TEMPLATE_SAMPLE = [
+  {
+    name: 'HRA',
+    category: 'allowance',
+    description: 'House Rent Allowance',
+    type: 'percentage',
+    amount: '',
+    percentage: 40,
+    percentageBase: 'basic',
+    minAmount: '',
+    maxAmount: '',
+    basedOnPresentDays: false,
+    isActive: true,
+  },
+  {
+    name: 'PF',
+    category: 'deduction',
+    description: 'Provident Fund',
+    type: 'percentage',
+    amount: '',
+    percentage: 12,
+    percentageBase: 'basic',
+    minAmount: '',
+    maxAmount: '',
+    basedOnPresentDays: false,
+    isActive: true,
+  },
+  {
+    name: 'Transport Allowance',
+    category: 'allowance',
+    description: 'Fixed transport allowance',
+    type: 'fixed',
+    amount: 1000,
+    percentage: '',
+    percentageBase: '',
+    minAmount: '',
+    maxAmount: '',
+    basedOnPresentDays: false,
+    isActive: true,
+  },
+];
+
 // ============== Designation Template ==============
 // Designations are now independent entities (not tied to specific departments)
 // They will be automatically linked to departments when employees are assigned

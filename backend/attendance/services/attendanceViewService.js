@@ -191,6 +191,7 @@ exports.getCalendarViewData = async (employee, year, month) => {
       isConflict: isConflict,
       isEdited: record.isEdited || false,
       editHistory: record.editHistory || [],
+      source: record.source || []
     };
   });
 
@@ -263,7 +264,7 @@ exports.getMonthlyTableViewData = async (employees, year, month) => {
     ],
     isActive: true,
   })
-    .select('employeeId fromDate toDate leaveType isHalfDay halfDayType')
+    .select('employeeId fromDate toDate leaveType isHalfDay halfDayType numberOfDays')
     .populate('employeeId', 'emp_no')
     .lean();
 
@@ -301,6 +302,7 @@ exports.getMonthlyTableViewData = async (employees, year, month) => {
           leaveType: leave.leaveType,
           isHalfDay: leave.isHalfDay,
           halfDayType: leave.halfDayType,
+          numberOfDays: leave.numberOfDays,
         };
       }
       currentDate.setDate(currentDate.getDate() + 1);
@@ -419,7 +421,8 @@ exports.getMonthlyTableViewData = async (employees, year, month) => {
         odInfo,
         isConflict,
         isEdited: record?.isEdited || false,
-        editHistory: record?.editHistory || []
+        editHistory: record?.editHistory || [],
+        source: record?.source || []
       };
     }
 
