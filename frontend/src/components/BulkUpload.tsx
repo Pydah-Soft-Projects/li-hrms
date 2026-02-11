@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { parseFile, downloadTemplate, ParsedRow } from '@/lib/bulkUpload';
 
 interface BulkUploadProps {
@@ -39,6 +39,49 @@ export default function BulkUpload({
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [currentErrorIndex, setCurrentErrorIndex] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef({ x: 0, scrollLeft: 0 });
+
+  const onMouseDown = (e: React.MouseEvent) => {
+    if (!scrollRef.current) return;
+    // Don't start drag if clicking on interactive elements
+    if ((e.target as HTMLElement).closest('input, select, button')) return;
+
+    setIsDragging(true);
+    dragStartRef.current = {
+      x: e.pageX - scrollRef.current.offsetLeft,
+      scrollLeft: scrollRef.current.scrollLeft
+    };
+  };
+
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const onMouseMove = (e: MouseEvent) => {
+      if (!isDragging || !scrollRef.current) return;
+      e.preventDefault();
+      const x = e.pageX - scrollRef.current.offsetLeft;
+      const walk = (x - dragStartRef.current.x) * 1.5; // Speed multiplier
+      scrollRef.current.scrollLeft = dragStartRef.current.scrollLeft - walk;
+    };
+
+    const onMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    document.body.style.cursor = 'grabbing';
+    document.body.style.userSelect = 'none';
+
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isDragging]);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -359,7 +402,11 @@ export default function BulkUpload({
               </div>
 
               {/* Data Table */}
-              <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+              <div
+                ref={scrollRef}
+                onMouseDown={onMouseDown}
+                className={`overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 scrollbar-thin scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-700 hover:scrollbar-thumb-slate-400 dark:hover:scrollbar-thumb-slate-600 transition-all ${isDragging ? 'cursor-grabbing select-none' : 'cursor-grab'}`}
+              >
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900">

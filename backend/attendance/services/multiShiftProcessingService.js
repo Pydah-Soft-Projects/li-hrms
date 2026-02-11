@@ -57,12 +57,18 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
 
         // Prepare Raw Logs
         const allPunches = rawLogs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+        // Include ALL punches for the target date as potential INs
+        // Let the pairing logic determine if they are valid starts
         const targetDateIns = allPunches.filter(p => {
             const isTargetDate = isSameDay(new Date(p.timestamp), date);
-            const isIN = p.punch_state === 0 || p.punch_state === '0' || p.type === 'IN';
-            return isTargetDate && isIN;
+            // Accept IN or generic punches (type: null)
+            const isPotentialIN = p.type === 'IN' || p.type === null || p.punch_state === 0 || p.punch_state === '0';
+            return isTargetDate && isPotentialIN;
         });
-        const allOuts = allPunches.filter(p => p.punch_state === 1 || p.punch_state === '1' || p.type === 'OUT');
+
+        // Similarly, accept OUT or generic punches as potential OUTs
+        const allOuts = allPunches.filter(p => p.type === 'OUT' || p.type === null || p.punch_state === 1 || p.punch_state === '1');
 
         // Step 2: Get employee ID & ODs (Moved up for context)
         const employee = await Employee.findOne({ emp_no: employeeNumber.toUpperCase() }).select('_id department_id division_id');
@@ -346,10 +352,10 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                 // Determine Base Payable Value
                 const basePayable = assignedShiftDef && assignedShiftDef.payableShifts !== undefined ? assignedShiftDef.payableShifts : 1;
 
-                if (pShift.workingHours >= (expectedDuration * 0.9)) {
+                if (pShift.workingHours >= (expectedDuration * 0.8)) {
                     pShift.status = 'PRESENT';
                     pShift.payableShift = basePayable;
-                } else if (pShift.workingHours >= (expectedDuration * 0.45)) {
+                } else if (pShift.workingHours >= (expectedDuration * 0.35)) {
                     pShift.status = 'HALF_DAY';
                     pShift.payableShift = basePayable * 0.5;
                 } else {
@@ -427,6 +433,10 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
         );
 
         console.log(`[Multi-Shift Processing] ✓ Daily record updated successfully`);
+
+        // findOneAndUpdate does not trigger post-save hook — recalculate monthly summary so totalPayableShifts etc. stay correct
+        const { recalculateOnAttendanceUpdate } = require('./summaryCalculationService');
+        await recalculateOnAttendanceUpdate(employeeNumber, date);
 
         return {
             success: true,

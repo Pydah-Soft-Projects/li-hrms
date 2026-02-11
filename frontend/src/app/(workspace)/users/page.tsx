@@ -159,6 +159,7 @@ export default function UsersPage() {
     password: '',
     message: ''
   });
+  const [managerDeptSearch, setManagerDeptSearch] = useState('');
 
   // Load data
   const loadData = useCallback(async () => {
@@ -484,6 +485,7 @@ export default function UsersPage() {
       autoGeneratePassword: true,
       featureControl: [],
     });
+    setManagerDeptSearch('');
     previousRoleRef.current = '';
   };
 
@@ -934,6 +936,7 @@ export default function UsersPage() {
                             // Clear departments when division changes to prevent invalid selections
                             departments: []
                           });
+                          setManagerDeptSearch('');
                         }}
                         required
                         className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
@@ -950,20 +953,75 @@ export default function UsersPage() {
                     {/* Departments in Selected Division */}
                     {formData.allowedDivisions && formData.allowedDivisions.length > 0 && (
                       <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                            Allowed Departments
-                          </label>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                          Allowed Departments
+                        </label>
+                        <div className="relative mb-2">
+                          <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                          </svg>
+                          <input
+                            type="text"
+                            placeholder="Search departments by name or code..."
+                            value={managerDeptSearch}
+                            onChange={(e) => setManagerDeptSearch(e.target.value)}
+                            className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-4 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                          />
+                        </div>
+                        <div className="flex gap-2 mb-2 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const deptsInDiv = departments.filter(dept =>
+                                dept.divisions?.some((div: any) => {
+                                  const divId = typeof div === 'string' ? div : div._id;
+                                  return divId === formData.allowedDivisions![0];
+                                })
+                              );
+                              const filtered = managerDeptSearch
+                                ? deptsInDiv.filter((d) => {
+                                    const s = managerDeptSearch.toLowerCase();
+                                    return (d.name || '').toLowerCase().includes(s) || (d.code || '').toLowerCase().includes(s);
+                                  })
+                                : deptsInDiv;
+                              const ids = filtered.map((d) => d._id);
+                              setFormData({ ...formData, departments: [...new Set([...formData.departments, ...ids])] });
+                            }}
+                            className="rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-400 dark:hover:bg-blue-900/40"
+                          >
+                            Select All
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const deptsInDiv = departments.filter(dept =>
+                                dept.divisions?.some((div: any) => {
+                                  const divId = typeof div === 'string' ? div : div._id;
+                                  return divId === formData.allowedDivisions![0];
+                                })
+                              );
+                              const filtered = managerDeptSearch
+                                ? deptsInDiv.filter((d) => {
+                                    const s = managerDeptSearch.toLowerCase();
+                                    return (d.name || '').toLowerCase().includes(s) || (d.code || '').toLowerCase().includes(s);
+                                  })
+                                : deptsInDiv;
+                              const ids = new Set(filtered.map((d) => d._id));
+                              setFormData({ ...formData, departments: formData.departments.filter((id) => !ids.has(id)) });
+                            }}
+                            className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                          >
+                            Deselect All
+                          </button>
                           <button
                             type="button"
                             onClick={() => setFormData({ ...formData, departments: [] })}
-                            className="text-xs font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400"
-                            title="Clear selection to allow access to ALL departments in this division"
+                            className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700"
+                            title="Clear to allow access to ALL departments in this division"
                           >
-                            Select All (Clear Restrictions)
+                            Clear (Allow All)
                           </button>
                         </div>
-
                         <div className="max-h-40 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 p-2 space-y-2 bg-slate-50 dark:bg-slate-800/50">
                           {departments
                             .filter(dept =>
@@ -972,6 +1030,11 @@ export default function UsersPage() {
                                 return divId === formData.allowedDivisions![0];
                               })
                             )
+                            .filter((dept) => {
+                              const s = managerDeptSearch.toLowerCase();
+                              if (!s) return true;
+                              return (dept.name || '').toLowerCase().includes(s) || (dept.code || '').toLowerCase().includes(s);
+                            })
                             .map((dept) => (
                               <label key={dept._id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-white dark:hover:bg-slate-700 cursor-pointer">
                                 <input
@@ -980,7 +1043,7 @@ export default function UsersPage() {
                                   onChange={() => toggleDepartment(dept._id)}
                                   className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                                 />
-                                <span className="text-sm text-slate-700 dark:text-slate-300">{dept.name}</span>
+                                <span className="text-sm text-slate-700 dark:text-slate-300">{dept.name} {dept.code && <span className="text-xs text-slate-400">({dept.code})</span>}</span>
                               </label>
                             ))}
                           {departments.filter(dept =>
@@ -988,8 +1051,14 @@ export default function UsersPage() {
                               const divId = typeof div === 'string' ? div : div._id;
                               return divId === formData.allowedDivisions![0];
                             })
-                          ).length === 0 && (
-                              <p className="text-xs text-slate-500 dark:text-slate-400 p-2">No departments found in this division</p>
+                          ).filter((dept) => {
+                            const s = managerDeptSearch.toLowerCase();
+                            if (!s) return true;
+                            return (dept.name || '').toLowerCase().includes(s) || (dept.code || '').toLowerCase().includes(s);
+                          }).length === 0 && (
+                              <p className="text-xs text-slate-500 dark:text-slate-400 p-2">
+                                {managerDeptSearch ? 'No matching departments found' : 'No departments found in this division'}
+                              </p>
                             )}
                         </div>
                         {formData.departments.length === 0 && (
@@ -1388,6 +1457,7 @@ export default function UsersPage() {
                             // Clear departments when division changes to prevent invalid selections
                             departments: []
                           });
+                          setManagerDeptSearch('');
                         }}
                         required
                         className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
@@ -1404,20 +1474,75 @@ export default function UsersPage() {
                     {/* Departments in Selected Division */}
                     {formData.allowedDivisions && formData.allowedDivisions.length > 0 && (
                       <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                            Allowed Departments
-                          </label>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                          Allowed Departments
+                        </label>
+                        <div className="relative mb-2">
+                          <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                          </svg>
+                          <input
+                            type="text"
+                            placeholder="Search departments by name or code..."
+                            value={managerDeptSearch}
+                            onChange={(e) => setManagerDeptSearch(e.target.value)}
+                            className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-4 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                          />
+                        </div>
+                        <div className="flex gap-2 mb-2 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const deptsInDiv = departments.filter(dept =>
+                                dept.divisions?.some((div: any) => {
+                                  const divId = typeof div === 'string' ? div : div._id;
+                                  return divId === formData.allowedDivisions![0];
+                                })
+                              );
+                              const filtered = managerDeptSearch
+                                ? deptsInDiv.filter((d) => {
+                                    const s = managerDeptSearch.toLowerCase();
+                                    return (d.name || '').toLowerCase().includes(s) || (d.code || '').toLowerCase().includes(s);
+                                  })
+                                : deptsInDiv;
+                              const ids = filtered.map((d) => d._id);
+                              setFormData({ ...formData, departments: [...new Set([...formData.departments, ...ids])] });
+                            }}
+                            className="rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-400 dark:hover:bg-blue-900/40"
+                          >
+                            Select All
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const deptsInDiv = departments.filter(dept =>
+                                dept.divisions?.some((div: any) => {
+                                  const divId = typeof div === 'string' ? div : div._id;
+                                  return divId === formData.allowedDivisions![0];
+                                })
+                              );
+                              const filtered = managerDeptSearch
+                                ? deptsInDiv.filter((d) => {
+                                    const s = managerDeptSearch.toLowerCase();
+                                    return (d.name || '').toLowerCase().includes(s) || (d.code || '').toLowerCase().includes(s);
+                                  })
+                                : deptsInDiv;
+                              const ids = new Set(filtered.map((d) => d._id));
+                              setFormData({ ...formData, departments: formData.departments.filter((id) => !ids.has(id)) });
+                            }}
+                            className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                          >
+                            Deselect All
+                          </button>
                           <button
                             type="button"
                             onClick={() => setFormData({ ...formData, departments: [] })}
-                            className="text-xs font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400"
-                            title="Clear selection to allow access to ALL departments in this division"
+                            className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700"
+                            title="Clear to allow access to ALL departments in this division"
                           >
-                            Select All (Clear Restrictions)
+                            Clear (Allow All)
                           </button>
                         </div>
-
                         <div className="max-h-40 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 p-2 space-y-2 bg-slate-50 dark:bg-slate-800/50">
                           {departments
                             .filter(dept =>
@@ -1426,6 +1551,11 @@ export default function UsersPage() {
                                 return divId === formData.allowedDivisions![0];
                               })
                             )
+                            .filter((dept) => {
+                              const s = managerDeptSearch.toLowerCase();
+                              if (!s) return true;
+                              return (dept.name || '').toLowerCase().includes(s) || (dept.code || '').toLowerCase().includes(s);
+                            })
                             .map((dept) => (
                               <label key={dept._id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-white dark:hover:bg-slate-700 cursor-pointer">
                                 <input
@@ -1434,7 +1564,7 @@ export default function UsersPage() {
                                   onChange={() => toggleDepartment(dept._id)}
                                   className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                                 />
-                                <span className="text-sm text-slate-700 dark:text-slate-300">{dept.name}</span>
+                                <span className="text-sm text-slate-700 dark:text-slate-300">{dept.name} {dept.code && <span className="text-xs text-slate-400">({dept.code})</span>}</span>
                               </label>
                             ))}
                           {departments.filter(dept =>
@@ -1442,8 +1572,14 @@ export default function UsersPage() {
                               const divId = typeof div === 'string' ? div : div._id;
                               return divId === formData.allowedDivisions![0];
                             })
-                          ).length === 0 && (
-                              <p className="text-xs text-slate-500 dark:text-slate-400 p-2">No departments found in this division</p>
+                          ).filter((dept) => {
+                            const s = managerDeptSearch.toLowerCase();
+                            if (!s) return true;
+                            return (dept.name || '').toLowerCase().includes(s) || (dept.code || '').toLowerCase().includes(s);
+                          }).length === 0 && (
+                              <p className="text-xs text-slate-500 dark:text-slate-400 p-2">
+                                {managerDeptSearch ? 'No matching departments found' : 'No departments found in this division'}
+                              </p>
                             )}
                         </div>
                         {formData.departments.length === 0 && (

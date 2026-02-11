@@ -398,14 +398,14 @@ export default function ConfusedShiftsPage() {
                       <div>
                         <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">In-Time</p>
                         <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                          {new Date(record.inTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                          {new Date(record.inTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' })}
                         </p>
                       </div>
                       {record.outTime && (
                         <div>
                           <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Out-Time</p>
                           <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                            {new Date(record.outTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                            {new Date(record.outTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' })}
                           </p>
                         </div>
                       )}
@@ -540,14 +540,14 @@ export default function ConfusedShiftsPage() {
                     <div>
                       <span className="text-slate-500 dark:text-slate-400">In-Time:</span>{' '}
                       <span className="font-medium text-slate-900 dark:text-slate-100">
-                        {new Date(selectedRecord.inTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                        {new Date(selectedRecord.inTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' })}
                       </span>
                     </div>
                     {selectedRecord.outTime && (
                       <div>
                         <span className="text-slate-500 dark:text-slate-400">Out-Time:</span>{' '}
                         <span className="font-medium text-slate-900 dark:text-slate-100">
-                          {new Date(selectedRecord.outTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                          {new Date(selectedRecord.outTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' })}
                         </span>
                       </div>
                     )}

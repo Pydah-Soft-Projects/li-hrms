@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
+import * as XLSX from 'xlsx';
 import { api, Employee, Department, Division, Designation, EmployeeApplication, Allowance, Deduction } from '@/lib/api';
 import { auth } from '@/lib/auth';
 import BulkUpload from '@/components/BulkUpload';
@@ -14,6 +15,46 @@ import {
   validateEmployeeRow,
   ParsedRow,
 } from '@/lib/bulkUpload';
+
+// Export field definitions: key = employee property, label = Excel column header
+const EXPORT_FIELDS: { key: string; label: string }[] = [
+  { key: 'emp_no', label: 'Employee ID' },
+  { key: 'employee_name', label: 'Name' },
+  { key: 'division', label: 'Division' },
+  { key: 'department', label: 'Department' },
+  { key: 'designation', label: 'Designation' },
+  { key: 'doj', label: 'Date of Joining' },
+  { key: 'dob', label: 'Date of Birth' },
+  { key: 'gross_salary', label: 'Gross Salary' },
+  { key: 'second_salary', label: 'Second Salary' },
+  { key: 'ctcSalary', label: 'CTC Salary' },
+  { key: 'calculatedSalary', label: 'Calculated Salary' },
+  { key: 'gender', label: 'Gender' },
+  { key: 'marital_status', label: 'Marital Status' },
+  { key: 'blood_group', label: 'Blood Group' },
+  { key: 'qualifications', label: 'Qualifications' },
+  { key: 'experience', label: 'Experience' },
+  { key: 'address', label: 'Address' },
+  { key: 'location', label: 'Location' },
+  { key: 'aadhar_number', label: 'Aadhar Number' },
+  { key: 'phone_number', label: 'Phone Number' },
+  { key: 'alt_phone_number', label: 'Alt Phone Number' },
+  { key: 'email', label: 'Email' },
+  { key: 'pf_number', label: 'PF Number' },
+  { key: 'esi_number', label: 'ESI Number' },
+  { key: 'bank_account_no', label: 'Bank Account No' },
+  { key: 'bank_name', label: 'Bank Name' },
+  { key: 'bank_place', label: 'Bank Place' },
+  { key: 'ifsc_code', label: 'IFSC Code' },
+  { key: 'salary_mode', label: 'Salary Mode' },
+  { key: 'paidLeaves', label: 'Paid Leaves' },
+  { key: 'allottedLeaves', label: 'Allotted Leaves' },
+  { key: 'status', label: 'Status' },
+  { key: 'leftDate', label: 'Left Date' },
+  { key: 'leftReason', label: 'Left Reason' },
+  { key: 'created_at', label: 'Created At' },
+  { key: 'updated_at', label: 'Updated At' },
+];
 
 
 
@@ -236,6 +277,12 @@ export default function EmployeesPage() {
 
   const [applicationSearchTerm, setApplicationSearchTerm] = useState('');
   const [showBulkUpload, setShowBulkUpload] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportFieldSelection, setExportFieldSelection] = useState<Record<string, boolean>>(
+    Object.fromEntries(EXPORT_FIELDS.map((f) => [f.key, true]))
+  );
+  const [exportingExcel, setExportingExcel] = useState(false);
+  const [exportFieldSearch, setExportFieldSearch] = useState('');
   const [userRole, setUserRole] = useState<string>('');
   const [showLeftDateModal, setShowLeftDateModal] = useState(false);
   const [selectedEmployeeForLeftDate, setSelectedEmployeeForLeftDate] = useState<Employee | null>(null);
@@ -1040,6 +1087,66 @@ export default function EmployeesPage() {
   const handleSearch = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setSearchQuery(searchTerm);
+  };
+
+  const handleExportExcel = async () => {
+    const selectedKeys = EXPORT_FIELDS.filter((f) => exportFieldSelection[f.key]).map((f) => f.key);
+    if (selectedKeys.length === 0) {
+      return;
+    }
+    setExportingExcel(true);
+    try {
+      const response = await api.getEmployees({
+        includeLeft: includeLeftEmployees,
+        search: searchQuery,
+        division_id: selectedDivisionFilter || undefined,
+        department_id: selectedDepartmentFilter || undefined,
+        designation_id: selectedDesignationFilter || undefined,
+        page: 1,
+        limit: 100000,
+      });
+      const rawEmployees = response.data || [];
+      const employeesData = rawEmployees.map((emp: any) => ({
+        ...emp,
+        division: emp.division || (typeof emp.division_id === 'object' ? emp.division_id : null),
+        department: emp.department || (typeof emp.department_id === 'object' ? emp.department_id : null),
+        designation: emp.designation || (typeof emp.designation_id === 'object' ? emp.designation_id : null),
+      }));
+
+      const getValue = (emp: any, key: string): string | number => {
+        if (key === 'division') return emp.division?.name || emp.division?.code || '';
+        if (key === 'department') return emp.department?.name || emp.department?.code || '';
+        if (key === 'designation') return emp.designation?.name || emp.designation?.code || '';
+        if (key === 'status') return emp.leftDate ? 'Left' : (emp.is_active !== false ? 'Active' : 'Inactive');
+        if (key === 'qualifications' && Array.isArray(emp.qualifications)) {
+          return emp.qualifications.map((q: any) => q.name || q.degree || JSON.stringify(q)).join('; ') || '';
+        }
+        const val = emp[key];
+        if (val === null || val === undefined) return '';
+        if (typeof val === 'object') return JSON.stringify(val);
+        return val;
+      };
+
+      const headers = EXPORT_FIELDS.filter((f) => selectedKeys.includes(f.key)).map((f) => f.label);
+      const rows = employeesData.map((emp: any) => {
+        const row: Record<string, string | number> = {};
+        EXPORT_FIELDS.filter((f) => selectedKeys.includes(f.key)).forEach((f) => {
+          row[f.label] = getValue(emp, f.key);
+        });
+        return row;
+      });
+
+      const ws = XLSX.utils.json_to_sheet(rows, { header: headers });
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Employees');
+      const fileName = `employees_export_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+      setShowExportModal(false);
+    } catch (err) {
+      console.error('Export error:', err);
+    } finally {
+      setExportingExcel(false);
+    }
   };
 
   const loadDepartments = async () => {
@@ -2130,38 +2237,30 @@ export default function EmployeesPage() {
 
               {/* Employee Update Button */}
               {activeTab === 'employees' && (
-                <button
-                  onClick={() => setShowEmployeeUpdateModal(true)}
-                  className="flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-medium text-blue-700 transition-all hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
-                >
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                  </svg>
-                  <span>Bulk Update</span>
-                </button>
-              )}
-
-              {(activeTab === 'employees' || activeTab === 'applications') && (
-                <button
-                  onClick={() => setShowBulkAllowancesDeductions(true)}
-                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2"
-                >
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                  </svg>
-                  Bulk A&D Update
-                </button>
-              )}
-              {(activeTab === 'employees' || activeTab === 'applications') && (
-                <button
-                  onClick={() => setShowBulkUpload(true)}
-                  className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-2.5 text-sm font-medium text-green-700 transition-all hover:bg-green-100 dark:border-green-800 dark:bg-green-900/30 dark:text-green-400"
-                >
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                  </svg>
-                  <span>Import</span>
-                </button>
+                <>
+                  <button
+                    onClick={() => setShowBulkUpload(true)}
+                    className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-2.5 text-sm font-medium text-green-700 transition-all hover:bg-green-100 dark:border-green-800 dark:bg-green-900/30 dark:text-green-400"
+                  >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                    </svg>
+                    <span>Import</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setExportFieldSelection(Object.fromEntries(EXPORT_FIELDS.map((f) => [f.key, true])));
+                      setExportFieldSearch('');
+                      setShowExportModal(true);
+                    }}
+                    className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                  >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <span>Export Excel</span>
+                  </button>
+                </>
               )}
 
               <button
@@ -3947,6 +4046,129 @@ export default function EmployeesPage() {
             />
           )
         }
+
+        {/* Export Excel Field Selection Modal */}
+        {showExportModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => !exportingExcel && setShowExportModal(false)} />
+            <div className="relative z-[110] w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Export to Excel</h2>
+                <button
+                  onClick={() => !exportingExcel && setShowExportModal(false)}
+                  className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">Select the fields to include in the export. All fields are selected by default.</p>
+
+              {/* Search bar */}
+              <div className="relative mb-3">
+                <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  type="text"
+                  placeholder="Search fields..."
+                  value={exportFieldSearch}
+                  onChange={(e) => setExportFieldSearch(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm transition focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                />
+              </div>
+
+              {/* Select All / Deselect All buttons */}
+              <div className="mb-3 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const filteredKeys = EXPORT_FIELDS.filter((f) =>
+                      f.label.toLowerCase().includes(exportFieldSearch.toLowerCase())
+                    ).map((f) => f.key);
+                    setExportFieldSelection((prev) => {
+                      const updated = { ...prev };
+                      filteredKeys.forEach((k) => (updated[k] = true));
+                      return updated;
+                    });
+                  }}
+                  className="rounded-lg border border-green-200 bg-green-50 px-3 py-1.5 text-xs font-medium text-green-700 transition hover:bg-green-100 dark:border-green-800 dark:bg-green-900/30 dark:text-green-400"
+                >
+                  Select All
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const filteredKeys = EXPORT_FIELDS.filter((f) =>
+                      f.label.toLowerCase().includes(exportFieldSearch.toLowerCase())
+                    ).map((f) => f.key);
+                    setExportFieldSelection((prev) => {
+                      const updated = { ...prev };
+                      filteredKeys.forEach((k) => (updated[k] = false));
+                      return updated;
+                    });
+                  }}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
+                >
+                  Deselect All
+                </button>
+                <span className="ml-auto self-center text-xs text-slate-500 dark:text-slate-400">
+                  {Object.values(exportFieldSelection).filter(Boolean).length} / {EXPORT_FIELDS.length} selected
+                </span>
+              </div>
+
+              <div className="mb-6 max-h-72 overflow-y-auto rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {EXPORT_FIELDS.filter((field) =>
+                    field.label.toLowerCase().includes(exportFieldSearch.toLowerCase())
+                  ).map((field) => (
+                    <label key={field.key} className="flex cursor-pointer items-center gap-2 rounded-lg p-2 hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                      <input
+                        type="checkbox"
+                        checked={exportFieldSelection[field.key] ?? true}
+                        onChange={(e) => setExportFieldSelection((prev) => ({ ...prev, [field.key]: e.target.checked }))}
+                        className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500"
+                      />
+                      <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{field.label}</span>
+                    </label>
+                  ))}
+                  {EXPORT_FIELDS.filter((field) =>
+                    field.label.toLowerCase().includes(exportFieldSearch.toLowerCase())
+                  ).length === 0 && (
+                      <p className="col-span-2 py-4 text-center text-sm text-slate-500 dark:text-slate-400">No fields match your search</p>
+                    )}
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={handleExportExcel}
+                  disabled={exportingExcel || Object.values(exportFieldSelection).filter(Boolean).length === 0}
+                  className="flex-1 rounded-xl bg-green-600 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {exportingExcel ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      Exporting...
+                    </span>
+                  ) : (
+                    'Download'
+                  )}
+                </button>
+                <button
+                  onClick={() => !exportingExcel && setShowExportModal(false)}
+                  disabled={exportingExcel}
+                  className="flex-1 rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Employee View Dialog */}
         {
