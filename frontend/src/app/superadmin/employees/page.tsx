@@ -7,6 +7,7 @@ import { api, Employee, Department, Division, Designation, EmployeeApplication, 
 import { auth } from '@/lib/auth';
 import BulkUpload from '@/components/BulkUpload';
 import DynamicEmployeeForm from '@/components/DynamicEmployeeForm';
+import EmployeeUpdateModal from '@/components/EmployeeUpdateModal';
 import Spinner from '@/components/Spinner';
 import {
   EMPLOYEE_TEMPLATE_HEADERS,
@@ -106,7 +107,7 @@ const initialFormState: Partial<Employee> = {
   bank_name: '',
   bank_place: '',
   ifsc_code: '',
-  salary_mode: 'Bank',
+  salary_mode: 'Cash',
   is_active: true,
   employeeAllowances: [],
   employeeDeductions: [],
@@ -291,6 +292,8 @@ export default function EmployeesPage() {
   const [isResending, setIsResending] = useState<string | null>(null);
   const [selectedApplicationIds, setSelectedApplicationIds] = useState<string[]>([]);
   const [updatingStatusIds, setUpdatingStatusIds] = useState<Set<string>>(new Set());
+  const [showEmployeeUpdateModal, setShowEmployeeUpdateModal] = useState(false);
+  const [showBulkAllowancesDeductions, setShowBulkAllowancesDeductions] = useState(false);
 
   const [dynamicTemplate, setDynamicTemplate] = useState<{ headers: string[]; sample: any[]; columns: TemplateColumn[] }>({
     headers: EMPLOYEE_TEMPLATE_HEADERS,
@@ -431,38 +434,74 @@ export default function EmployeesPage() {
   const [approvalLoadingComponents, setApprovalLoadingComponents] = useState(false);
 
 
-  // Build override payload: only include rows user changed (matched by masterId or name)
+  // Build override payload: only actual overrides (pre-existing employee overrides + newly edited/added).
+  // When editing employee: include ALL allowances/deductions the employee has, with form values applied; plus any new overrides from global/dept.
   const buildOverridePayload = (
     defaults: any[],
     overrides: Record<string, number | null>,
     basedOnPresentDaysMap: Record<string, boolean>,
-    categoryFallback: 'allowance' | 'deduction'
+    categoryFallback: 'allowance' | 'deduction',
+    existingEmployeeItems?: any[]
   ) => {
-    return defaults
-      .map((item) => {
-        const key = item.masterId ? item.masterId.toString() : (item.name || '').toLowerCase();
-        if (Object.prototype.hasOwnProperty.call(overrides, key)) {
-          const amt = overrides[key];
-          const itemType = item.type || (item.base ? 'percentage' : 'fixed');
-          const basedOnPresentDays = itemType === 'fixed' ? (basedOnPresentDaysMap[key] ?? item.basedOnPresentDays ?? false) : false;
-          return {
-            masterId: item.masterId || null,
-            code: item.code || null,
-            name: item.name || '',
-            category: item.category || categoryFallback,
-            type: itemType,
-            amount: amt === null || amt === undefined ? null : Number(amt),
-            overrideAmount: amt === null || amt === undefined ? null : Number(amt),
-            percentage: item.type === 'percentage' ? (item.percentage ?? null) : null,
-            percentageBase: item.base || item.percentageBase || null,
-            minAmount: item.minAmount ?? null,
-            maxAmount: item.maxAmount ?? null,
-            basedOnPresentDays: basedOnPresentDays,
-          };
-        }
-        return null;
-      })
-      .filter(Boolean);
+    const existingList = Array.isArray(existingEmployeeItems) ? existingEmployeeItems : [];
+    const existingKeys = new Set(
+      existingList.map((ov: any) => ov.masterId?.toString() || (ov.name || '').toLowerCase()).filter(Boolean)
+    );
+
+    const buildEntry = (item: any, amt: number | null, key: string) => {
+      if (amt === null || amt === undefined) return null;
+      const itemType = item.type || (item.base ? 'percentage' : 'fixed');
+      const basedOnPresentDays = itemType === 'fixed' ? (basedOnPresentDaysMap[key] ?? item.basedOnPresentDays ?? false) : false;
+      return {
+        masterId: item.masterId || null,
+        code: item.code || null,
+        name: item.name || '',
+        category: item.category || categoryFallback,
+        type: itemType,
+        amount: Number(amt),
+        overrideAmount: Number(amt),
+        percentage: item.type === 'percentage' ? (item.percentage ?? null) : null,
+        percentageBase: item.base || item.percentageBase || null,
+        minAmount: item.minAmount ?? null,
+        maxAmount: item.maxAmount ?? null,
+        basedOnPresentDays,
+        isOverride: true,
+      };
+    };
+
+    const result: any[] = [];
+
+    // Part A: every existing employee override — include all, use form value if user edited
+    for (const ov of existingList) {
+      const key = ov.masterId?.toString() || (ov.name || '').toLowerCase();
+      if (!key) continue;
+      const amt = Object.prototype.hasOwnProperty.call(overrides, key) ? overrides[key] : (ov.amount ?? ov.overrideAmount ?? null);
+      const entry = buildEntry(ov, amt, key);
+      if (entry) result.push(entry);
+    }
+
+    // Part B: new overrides (in form overrides but not in employee's list — user added from global/dept)
+    for (const key of Object.keys(overrides)) {
+      if (existingKeys.has(key)) continue;
+      const amt = overrides[key];
+      if (amt === null || amt === undefined) continue;
+
+      let item = defaults.find((d: any) => (d.masterId?.toString() === key) || ((d.name || '').toLowerCase() === key));
+      if (!item && editingEmployee) {
+        const list = categoryFallback === 'allowance' ? editingEmployee.employeeAllowances : editingEmployee.employeeDeductions;
+        item = (list || []).find((ov: any) => (ov.masterId?.toString() === key) || ((ov.name || '').toLowerCase() === key));
+      }
+      if (!item && selectedApplication) {
+        const appList = categoryFallback === 'allowance' ? selectedApplication.employeeAllowances : selectedApplication.employeeDeductions;
+        item = (appList || []).find((ov: any) => (ov.masterId?.toString() === key) || ((ov.name || '').toLowerCase() === key));
+      }
+      if (!item) continue;
+
+      const entry = buildEntry(item, amt, key);
+      if (entry) result.push(entry);
+    }
+
+    return result;
   };
 
   // Fetch component defaults (allowances/deductions) for a dept + gross salary (+optional empNo to include existing overrides)
@@ -723,8 +762,8 @@ export default function EmployeesPage() {
   useEffect(() => {
     const deptId = formData.department_id;
     // Check both gross_salary and proposedSalary (form might use either)
-    const gross = formData.gross_salary || (formData as any).proposedSalary;
-    if (deptId && gross !== undefined && gross !== null && gross > 0) {
+    const gross = (formData as any).proposedSalary || formData.gross_salary;
+    if (deptId && gross !== undefined && gross !== null && Number(gross) > 0) {
       // If editing and salary changed, preserve current overrides so user edits aren't lost
       const preserveOverrides = !!editingEmployee && (Object.keys(overrideAllowances).length > 0 || Object.keys(overrideDeductions).length > 0);
       fetchComponentDefaults(deptId as string, Number(gross), editingEmployee?.emp_no, preserveOverrides);
@@ -1204,16 +1243,38 @@ export default function EmployeesPage() {
     }
 
     try {
+      // Build allowances and deductions: all existing employee overrides (with form edits) + any new overrides from global/dept
+      let employeeAllowances = buildOverridePayload(
+        componentDefaults.allowances,
+        overrideAllowances,
+        overrideAllowancesBasedOnPresentDays,
+        'allowance',
+        editingEmployee?.employeeAllowances
+      );
+      let employeeDeductions = buildOverridePayload(
+        componentDefaults.deductions,
+        overrideDeductions,
+        overrideDeductionsBasedOnPresentDays,
+        'deduction',
+        editingEmployee?.employeeDeductions
+      );
+
+      // DEBUG: Check formData before creating submitData
+      console.log('DEBUG: formData.gross_salary:', formData.gross_salary);
+
       // Clean up enum fields - convert empty strings to null/undefined
       const submitData = {
         ...formData,
-        employeeAllowances: buildOverridePayload(componentDefaults.allowances, overrideAllowances, overrideAllowancesBasedOnPresentDays, 'allowance'),
-        employeeDeductions: buildOverridePayload(componentDefaults.deductions, overrideDeductions, overrideDeductionsBasedOnPresentDays, 'deduction'),
+        employeeAllowances,
+        employeeDeductions,
         paidLeaves: formData.paidLeaves !== null && formData.paidLeaves !== undefined ? formData.paidLeaves : 0,
         allottedLeaves: formData.allottedLeaves !== null && formData.allottedLeaves !== undefined ? formData.allottedLeaves : 0,
         ctcSalary: salarySummary.ctcSalary,
         calculatedSalary: salarySummary.netSalary,
       };
+
+      // DEBUG: Check submitData after creation
+      console.log('DEBUG: submitData.gross_salary:', (submitData as any).gross_salary);
 
       // Consolidate 'reporting_to' and 'reporting_to_' - ensure we use 'reporting_to' only
       // If reporting_to_ has data and reporting_to is empty, use the data from reporting_to_
@@ -1534,8 +1595,11 @@ export default function EmployeesPage() {
       // Merge dynamicFields at root level for form
       ...dynamicFieldsData,
       // Override with processed values (after dynamicFields so they take precedence)
+      second_salary: employee.second_salary, // Ensure root value takes precedence over dynamicFields
       reporting_to: reportingToValue,
       reporting_to_: reportingToValue,
+      // Salary mode dropdown defaults to Cash when editing if not set
+      salary_mode: (employee as any).salary_mode ?? dynamicFieldsData.salary_mode ?? 'Cash',
     };
 
     setFormData(newFormData);
@@ -1699,15 +1763,23 @@ export default function EmployeesPage() {
     }
   };
 
-  const handleViewEmployee = (employee: Employee) => {
-    // Debug: Log the employee data to see what we're receiving
-    console.log('Viewing employee data:', employee);
-    console.log('reporting_to at root:', (employee as any).reporting_to);
-    console.log('reporting_to_ at root:', (employee as any).reporting_to_);
-    console.log('reporting_to in dynamicFields:', employee.dynamicFields?.reporting_to);
-    console.log('reporting_to_ in dynamicFields:', employee.dynamicFields?.reporting_to_);
+  const handleViewEmployee = async (employee: Employee) => {
+    // Initial set to show dialog immediately with available data
+    console.log('DEBUG: handleViewEmployee triggered for:', employee.emp_no);
     setViewingEmployee(employee);
     setShowViewDialog(true);
+
+    // Fetch latest data to ensure A&D overrides and other fields are fresh
+    try {
+      const response = await api.getEmployee(employee.emp_no);
+      console.log('DEBUG: api.getEmployee response:', response);
+      if (response.success && response.data) {
+        console.log('DEBUG: Setting viewingEmployee with fresh data:', response.data);
+        setViewingEmployee(response.data);
+      }
+    } catch (error) {
+      console.error('Error refreshing employee data:', error);
+    }
   };
 
   const openCreateDialog = () => {
@@ -2036,22 +2108,37 @@ export default function EmployeesPage() {
             {activeTab === 'employees' ? (
               /* Advanced Filters for Employees */
               <div className="flex flex-wrap items-center gap-3">
-                <form onSubmit={handleSearch} className="relative min-w-[300px]">
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleSearch();
+                  }}
+                  className="relative min-w-[300px]"
+                >
                   <input
                     type="text"
                     placeholder="Search name, emp no, phone..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white pl-11 pr-20 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleSearch();
+                      }
+                    }}
+                    className="w-full rounded-xl border border-slate-200 bg-white pl-11 pr-12 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                   />
                   <svg className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                   </svg>
                   <button
                     type="submit"
-                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg bg-green-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-600 transition-all"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg bg-green-500 p-2 text-white hover:bg-green-600 transition-all flex items-center justify-center"
+                    title="Search"
                   >
-                    Search
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
                   </button>
                 </form>
 
@@ -2148,6 +2235,7 @@ export default function EmployeesPage() {
 
               <div className="h-8 w-px bg-slate-200 dark:bg-slate-700"></div>
 
+              {/* Employee Update Button */}
               {activeTab === 'employees' && (
                 <>
                   <button
@@ -3485,13 +3573,15 @@ export default function EmployeesPage() {
                 <form onSubmit={handleSubmit} className="space-y-6">
                   <DynamicEmployeeForm
                     formData={formData}
-                    onChange={setFormData}
+                    onChange={(newData) => {
+                      setFormData(newData);
+                    }}
                     errors={{}}
                     divisions={divisions}
                     departments={departments}
                     designations={designations as any}
                     onSettingsLoaded={setFormSettings}
-                    excludeFields={editingEmployee ? ['proposedSalary', 'gross_salary'] : []}
+                    excludeFields={[]}
                   />
 
                   {/* Leave Settings (Optional) */}
@@ -4367,12 +4457,12 @@ export default function EmployeesPage() {
                     </div>
                   </div>
 
-                  {/* Allowances & Deductions - Always show this section */}
+                  {/* Allowances & Deductions - Always show both sections */}
                   <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
                     <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Allowances & Deductions</h3>
 
                     {/* Allowances */}
-                    {viewingEmployee.employeeAllowances && viewingEmployee.employeeAllowances.length > 0 ? (
+                    {(Array.isArray(viewingEmployee.employeeAllowances) && viewingEmployee.employeeAllowances.length > 0) ? (
                       <div className="mb-6">
                         <h4 className="mb-3 text-sm font-semibold text-green-700 dark:text-green-400">Allowances</h4>
                         <div className="space-y-2">
@@ -4409,7 +4499,7 @@ export default function EmployeesPage() {
                     )}
 
                     {/* Deductions */}
-                    {viewingEmployee.employeeDeductions && viewingEmployee.employeeDeductions.length > 0 ? (
+                    {(Array.isArray(viewingEmployee.employeeDeductions) && viewingEmployee.employeeDeductions.length > 0) ? (
                       <div>
                         <h4 className="mb-3 text-sm font-semibold text-red-700 dark:text-red-400">Deductions</h4>
                         <div className="space-y-2">
@@ -4683,6 +4773,100 @@ export default function EmployeesPage() {
           )
         }
       </div>
+
+      {showEmployeeUpdateModal && (
+        <EmployeeUpdateModal
+          onClose={() => setShowEmployeeUpdateModal(false)}
+          onSuccess={() => {
+            setShowEmployeeUpdateModal(false);
+            loadEmployees(currentPage);
+          }}
+        />
+      )}
+
+      {showBulkAllowancesDeductions && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl dark:bg-slate-800">
+            <h3 className="mb-4 text-xl font-bold text-slate-800 dark:text-white">Bulk Allowances & Deductions Update</h3>
+            <p className="mb-6 text-slate-600 dark:text-slate-400">
+              Download the template with current values, modify them, and upload to update.
+            </p>
+
+            <div className="space-y-4">
+              <button
+                onClick={async () => {
+                  try {
+                    const blob = await api.downloadAllowanceDeductionTemplate();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'AD_Template.xlsx';
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                  } catch (e) {
+                    setError('Failed to download template');
+                  }
+                }}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-purple-200 bg-purple-50 p-4 text-purple-700 hover:bg-purple-100 dark:border-purple-800 dark:bg-purple-900/20 dark:text-purple-300"
+              >
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Download Current Template
+              </button>
+
+              <div className="relative">
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+
+                    try {
+                      setLoading(true);
+                      const res = await api.bulkUpdateAllowancesDeductions(file);
+                      if (res.success) {
+                        setSuccess(res.message || 'Updated successfully');
+                        setShowBulkAllowancesDeductions(false);
+                        loadEmployees(currentPage);
+                      } else {
+                        setError(res.message || 'Upload failed');
+                      }
+                    } catch (err: any) {
+                      setError(err.message || 'Upload failed');
+                    } finally {
+                      setLoading(false);
+                    }
+                  }}
+                  className="hidden"
+                  id="ad-bulk-upload"
+                />
+                <label
+                  htmlFor="ad-bulk-upload"
+                  className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-purple-600 p-4 font-medium text-white hover:bg-purple-700"
+                >
+                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                  </svg>
+                  Upload Updated Template
+                </label>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={() => setShowBulkAllowancesDeductions(false)}
+                className="rounded-lg px-4 py-2 text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div >
   );
 }

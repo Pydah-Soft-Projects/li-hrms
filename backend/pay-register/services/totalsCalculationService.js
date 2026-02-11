@@ -139,9 +139,14 @@ function calculateTotals(dailyRecords) {
     // Add OT hours (total for the day)
     totals.totalOTHours += record.otHours || 0;
 
-    // Add Lates and Early Outs
-    if (record.isLate) totals.lateCount++;
-    if (record.isEarlyOut) totals.earlyOutCount++;
+    // Add Lates and Early Outs (only if NOT absent/leave/holiday/week_off)
+    // A late/early out only makes sense if there's some actual presence
+    const isPresentOrPartial = record.status === 'present' || record.status === 'partial' || record.status === 'od' ||
+      record.firstHalf?.status === 'present' || record.secondHalf?.status === 'present' ||
+      record.firstHalf?.status === 'od' || record.secondHalf?.status === 'od';
+
+    if (record.isLate && isPresentOrPartial) totals.lateCount++;
+    if (record.isEarlyOut && isPresentOrPartial) totals.earlyOutCount++;
   }
 
   // Calculate totals (full days + half days * 0.5)

@@ -60,8 +60,20 @@ const payrollRecordSchema = new mongoose.Schema(
     totalDaysInMonth: {
       type: Number,
       required: [true, 'Total days in month is required'],
-      min: 28,
-      max: 31,
+      min: 1,
+      max: 40,
+    },
+
+    // Payroll Cycle Start Date (YYYY-MM-DD)
+    startDate: {
+      type: String,
+      index: true,
+    },
+
+    // Payroll Cycle End Date (YYYY-MM-DD)
+    endDate: {
+      type: String,
+      index: true,
     },
 
     // Total payable shifts
@@ -87,8 +99,8 @@ const payrollRecordSchema = new mongoose.Schema(
       totalDaysInMonth: {
         type: Number,
         default: 0,
-        min: 28,
-        max: 31,
+        min: 1,
+        max: 40,
       },
       // Present days (actual working days)
       presentDays: {
@@ -508,15 +520,15 @@ payrollRecordSchema.index({ month: 1, status: 1 });
 
 // Static method to get or create payroll record
 payrollRecordSchema.statics.getOrCreate = async function (employeeId, emp_no, year, monthNumber) {
+  const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+  const { startDate, endDate, totalDays } = await getPayrollDateRange(year, monthNumber);
+
   const monthStr = `${year}-${String(monthNumber).padStart(2, '0')}`;
   const monthNames = [
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
   const monthName = `${monthNames[monthNumber - 1]} ${year}`;
-
-  // Get total days in month
-  const totalDaysInMonth = new Date(year, monthNumber, 0).getDate();
 
   let record = await this.findOne({ employeeId, month: monthStr });
 
@@ -528,14 +540,21 @@ payrollRecordSchema.statics.getOrCreate = async function (employeeId, emp_no, ye
       monthName,
       year,
       monthNumber,
-      totalDaysInMonth,
-      attendance: { totalDaysInMonth },
+      totalDaysInMonth: totalDays,
+      startDate,
+      endDate,
+      attendance: { totalDaysInMonth: totalDays },
       status: 'draft',
     });
   } else {
-    // Update month name and total days in case month/year changed
+    // Update month name and range
     record.monthName = monthName;
-    record.totalDaysInMonth = totalDaysInMonth;
+    record.totalDaysInMonth = totalDays;
+    record.startDate = startDate;
+    record.endDate = endDate;
+    if (record.attendance) {
+      record.attendance.totalDaysInMonth = totalDays;
+    }
     await record.save();
   }
 

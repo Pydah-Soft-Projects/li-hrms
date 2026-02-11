@@ -80,7 +80,7 @@ export default function SuperAdminDashboard() {
     try {
       setLoading(true);
 
-      const res = await api.getDashboardAnalytics();
+      const res = await api.getDashboardStats();
       if (res.success && res.data) {
         setStats(res.data);
       }

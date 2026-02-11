@@ -1044,7 +1044,7 @@ export default function UsersPage() {
   return (
     <div className="relative min-h-screen bg-slate-50 p-6 dark:bg-slate-950/50">
       {/* Background Decorations */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-64 bg-gradient-to-b from-blue-500/5 to-transparent dark:from-blue-500/10" />
+      <div className="pointer-events-none absolute " />
 
       <div className="relative mx-auto max-w-7xl">
         {/* Header */}

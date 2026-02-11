@@ -1,6 +1,8 @@
 const PayRegisterSummary = require('../model/PayRegisterSummary');
 const { populatePayRegisterFromSources } = require('./autoPopulationService');
 const { calculateTotals } = require('./totalsCalculationService');
+const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+const { syncAttendanceFromMSSQL } = require('../../attendance/services/attendanceSyncService');
 
 /**
  * Auto Sync Service
@@ -41,20 +43,27 @@ async function syncPayRegisterFromLeave(leave) {
     const toDate = new Date(leave.toDate);
     const monthSet = new Set();
 
-    // Get all months this leave spans
+    // Get all calendar months this leave spans, plus overlap potential (current and next)
+    // A more robust approach for dynamic cycles:
+    // Any date D belongs to payroll month M if D falls in [M.startDate, M.endDate]
+    // Since startDay is usually between 1 and 31, a date D can only belong to 
+    // payroll month of (current calendar month) or (next calendar month).
     let currentDate = new Date(fromDate);
     while (currentDate <= toDate) {
-      const month = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
-      monthSet.add(month);
-      currentDate.setMonth(currentDate.getMonth() + 1);
-      currentDate.setDate(1);
-    }
+      const calYear = currentDate.getFullYear();
+      const calMonthZero = currentDate.getMonth(); // 0-indexed
 
-    // Also check the actual dates
-    currentDate = new Date(fromDate);
-    while (currentDate <= toDate) {
-      const month = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
-      monthSet.add(month);
+      // Add previous calendar month
+      const prevMonth = new Date(calYear, calMonthZero - 1, 1);
+      monthSet.add(`${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, '0')}`);
+
+      // Add current calendar month
+      monthSet.add(`${calYear}-${String(calMonthZero + 1).padStart(2, '0')}`);
+
+      // Add next calendar month
+      const nextMonth = new Date(calYear, calMonthZero + 1, 1);
+      monthSet.add(`${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}`);
+
       currentDate.setDate(currentDate.getDate() + 1);
     }
 
@@ -70,16 +79,21 @@ async function syncPayRegisterFromLeave(leave) {
         continue;
       }
 
-      // Check if any dates in this leave were manually edited
+      // Fetch the actual range for this payroll month
+      const [year, monthNum] = month.split('-').map(Number);
+      const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+      const { startDate, endDate } = await getPayrollDateRange(year, monthNum);
+
+      // Check if any dates in this leave fall within this payroll month and were manually edited
       let hasManualEdits = false;
-      currentDate = new Date(fromDate);
-      while (currentDate <= toDate) {
-        const dateStr = currentDate.toISOString().split('T')[0];
-        if (dateStr.startsWith(month) && checkIfManuallyEdited(payRegister, dateStr)) {
+      let currentDateCheck = new Date(fromDate);
+      while (currentDateCheck <= toDate) {
+        const dateStr = currentDateCheck.toISOString().split('T')[0];
+        if (dateStr >= startDate && dateStr <= endDate && checkIfManuallyEdited(payRegister, dateStr)) {
           hasManualEdits = true;
           break;
         }
-        currentDate.setDate(currentDate.getDate() + 1);
+        currentDateCheck.setDate(currentDateCheck.getDate() + 1);
       }
 
       // If manually edited, skip auto-sync
@@ -88,7 +102,6 @@ async function syncPayRegisterFromLeave(leave) {
       }
 
       // Re-populate from sources
-      const [year, monthNum] = month.split('-').map(Number);
       const dailyRecords = await populatePayRegisterFromSources(
         leave.employeeId,
         leave.emp_no,
@@ -129,20 +142,23 @@ async function syncPayRegisterFromOD(od) {
     const toDate = new Date(od.toDate);
     const monthSet = new Set();
 
-    // Get all months this OD spans
+    // Get all calendar months this OD spans, plus overlap potential (current and next)
     let currentDate = new Date(fromDate);
     while (currentDate <= toDate) {
-      const month = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
-      monthSet.add(month);
-      currentDate.setMonth(currentDate.getMonth() + 1);
-      currentDate.setDate(1);
-    }
+      const calYear = currentDate.getFullYear();
+      const calMonthZero = currentDate.getMonth();
 
-    // Also check the actual dates
-    currentDate = new Date(fromDate);
-    while (currentDate <= toDate) {
-      const month = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
-      monthSet.add(month);
+      // Add previous calendar month
+      const prevMonth = new Date(calYear, calMonthZero - 1, 1);
+      monthSet.add(`${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, '0')}`);
+
+      // Add current calendar month
+      monthSet.add(`${calYear}-${String(calMonthZero + 1).padStart(2, '0')}`);
+
+      // Add next calendar month
+      const nextMonth = new Date(calYear, calMonthZero + 1, 1);
+      monthSet.add(`${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}`);
+
       currentDate.setDate(currentDate.getDate() + 1);
     }
 
@@ -157,16 +173,21 @@ async function syncPayRegisterFromOD(od) {
         continue;
       }
 
-      // Check if any dates were manually edited
+      // Fetch the actual range for this payroll month
+      const [year, monthNum] = month.split('-').map(Number);
+      const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+      const { startDate, endDate } = await getPayrollDateRange(year, monthNum);
+
+      // Check if any dates were manually edited within this payroll month
       let hasManualEdits = false;
-      currentDate = new Date(fromDate);
-      while (currentDate <= toDate) {
-        const dateStr = currentDate.toISOString().split('T')[0];
-        if (dateStr.startsWith(month) && checkIfManuallyEdited(payRegister, dateStr)) {
+      let currentDateCheck = new Date(fromDate);
+      while (currentDateCheck <= toDate) {
+        const dateStr = currentDateCheck.toISOString().split('T')[0];
+        if (dateStr >= startDate && dateStr <= endDate && checkIfManuallyEdited(payRegister, dateStr)) {
           hasManualEdits = true;
           break;
         }
-        currentDate.setDate(currentDate.getDate() + 1);
+        currentDateCheck.setDate(currentDateCheck.getDate() + 1);
       }
 
       if (hasManualEdits) {
@@ -174,7 +195,6 @@ async function syncPayRegisterFromOD(od) {
       }
 
       // Re-populate from sources
-      const [year, monthNum] = month.split('-').map(Number);
       const dailyRecords = await populatePayRegisterFromSources(
         od.employeeId,
         od.emp_no,
@@ -206,45 +226,65 @@ async function syncPayRegisterFromOT(ot) {
     }
 
     const dateStr = ot.date;
-    const month = dateStr.substring(0, 7); // YYYY-MM
+    const dateObj = new Date(dateStr);
+    const calYear = dateObj.getFullYear();
+    const calMonthZero = dateObj.getMonth();
 
-    const payRegister = await PayRegisterSummary.findOne({
-      employeeId: ot.employeeId,
-      month,
-    });
+    const monthSet = new Set();
+    // Add current month and prev/next to cover dynamic cycle spanning
+    monthSet.add(`${calYear}-${String(calMonthZero + 1).padStart(2, '0')}`);
+    const prevMonth = new Date(calYear, calMonthZero - 1, 1);
+    monthSet.add(`${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, '0')}`);
+    const nextMonth = new Date(calYear, calMonthZero + 1, 1);
+    monthSet.add(`${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}`);
 
-    if (!payRegister) {
-      return;
-    }
-
-    // Check if date was manually edited
-    if (checkIfManuallyEdited(payRegister, dateStr)) {
-      return;
-    }
-
-    // Find the daily record
-    const dailyRecord = payRegister.dailyRecords.find((r) => r.date === dateStr);
-
-    if (dailyRecord) {
-      // Update OT hours
-      // Sum all approved OT hours for this date
-      const OT = require('../../overtime/model/OT');
-      const ots = await OT.find({
+    for (const month of monthSet) {
+      const payRegister = await PayRegisterSummary.findOne({
         employeeId: ot.employeeId,
-        date: dateStr,
-        status: 'approved',
+        month,
       });
 
-      const totalOTHours = ots.reduce((sum, o) => sum + (o.otHours || 0), 0);
-      dailyRecord.otHours = totalOTHours;
-      dailyRecord.otIds = ots.map((o) => o._id);
+      if (!payRegister) {
+        continue;
+      }
 
-      // Recalculate totals
-      payRegister.totals = calculateTotals(payRegister.dailyRecords);
-      payRegister.lastAutoSyncedAt = new Date();
-      payRegister.lastAutoSyncedFrom.ot = new Date();
+      // Fetch actual range to verify if date belongs to this payroll month
+      const [year, monthNum] = month.split('-').map(Number);
+      const { startDate, endDate } = await getPayrollDateRange(year, monthNum);
 
-      await payRegister.save();
+      if (dateStr < startDate || dateStr > endDate) {
+        continue;
+      }
+
+      // Check if date was manually edited
+      if (checkIfManuallyEdited(payRegister, dateStr)) {
+        return;
+      }
+
+      // Find the daily record
+      const dailyRecord = payRegister.dailyRecords.find((r) => r.date === dateStr);
+
+      if (dailyRecord) {
+        // Update OT hours
+        // Sum all approved OT hours for this date
+        const OT = require('../../overtime/model/OT');
+        const ots = await OT.find({
+          employeeId: ot.employeeId,
+          date: dateStr,
+          status: 'approved',
+        });
+
+        const totalOTHours = ots.reduce((sum, o) => sum + (o.otHours || 0), 0);
+        dailyRecord.otHours = totalOTHours;
+        dailyRecord.otIds = ots.map((o) => o._id);
+
+        // Recalculate totals
+        payRegister.totals = calculateTotals(payRegister.dailyRecords);
+        payRegister.lastAutoSyncedAt = new Date();
+        payRegister.lastAutoSyncedFrom.ot = new Date();
+
+        await payRegister.save();
+      }
     }
   } catch (error) {
     console.error('Error syncing pay register from OT:', error);
@@ -265,11 +305,24 @@ async function manualSyncPayRegister(employeeId, month) {
     });
 
     const [year, monthNum] = month.split('-').map(Number);
+    const { startDate, endDate, totalDays } = await getPayrollDateRange(year, monthNum);
+
     const Employee = require('../../employees/model/Employee');
     const employee = await Employee.findById(employeeId);
 
     if (!employee) {
       throw new Error('Employee not found');
+    }
+
+    // CRITICAL: First trigger attendance sync from biometric source for THIS specific payroll range
+    // This ensures any spanned dates (e.g. 26th-31st) are updated in MongoDB before we read them
+    try {
+      const from = new Date(startDate);
+      const to = new Date(endDate);
+      await syncAttendanceFromMSSQL(from, to);
+    } catch (syncErr) {
+      console.warn(`[SyncAll] MSSQL sync failed for range ${startDate} to ${endDate}:`, syncErr.message);
+      // Continue anyway, maybe data is already in MongoDB or sync is not available
     }
 
     const dailyRecords = await populatePayRegisterFromSources(
@@ -280,6 +333,9 @@ async function manualSyncPayRegister(employeeId, month) {
     );
 
     if (!payRegister) {
+      const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+      const { startDate, endDate, totalDays } = await getPayrollDateRange(year, monthNum);
+
       // Create if it doesn't exist
       payRegister = new PayRegisterSummary({
         employeeId,
@@ -288,9 +344,17 @@ async function manualSyncPayRegister(employeeId, month) {
         monthName: new Date(year, monthNum - 1).toLocaleString('default', { month: 'long', year: 'numeric' }),
         year,
         monthNumber: monthNum,
-        totalDaysInMonth: new Date(year, monthNum, 0).getDate(),
+        totalDaysInMonth: totalDays,
+        startDate,
+        endDate,
         status: 'draft',
       });
+    } else {
+      const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+      const { startDate, endDate, totalDays } = await getPayrollDateRange(year, monthNum);
+      payRegister.totalDaysInMonth = totalDays;
+      payRegister.startDate = startDate;
+      payRegister.endDate = endDate;
     }
 
     payRegister.dailyRecords = dailyRecords;

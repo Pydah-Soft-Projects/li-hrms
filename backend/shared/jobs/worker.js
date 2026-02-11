@@ -9,7 +9,7 @@ const startWorkers = () => {
     const payrollWorker = new Worker('payrollQueue', async (job) => {
         console.log(`[Worker] Processing payroll job: ${job.id} (Name: ${job.name})`);
 
-        const { employeeId, month, userId, batchId, action } = job.data;
+        const { employeeId, month, userId, batchId, action, departmentId, divisionId } = job.data;
 
         try {
             const PayrollCalculationService = require('../../payroll/services/payrollCalculationService');
@@ -35,6 +35,106 @@ const startWorkers = () => {
                 }
 
                 console.log(`[Worker] Batch ${batchId} recalculation complete`);
+            } else if (action === 'second_salary_batch') {
+                const { calculateSecondSalary } = require('../../payroll/services/secondSalaryCalculationService');
+                const SecondSalaryBatchService = require('../../payroll/services/secondSalaryBatchService');
+                const Employee = require('../../employees/model/Employee');
+                const Department = require('../../departments/model/Department');
+                const allowanceDeductionResolverService = require('../../payroll/services/allowanceDeductionResolverService');
+
+                const query = {
+                    is_active: true,
+                    second_salary: { $gt: 0 }
+                };
+                if (departmentId && departmentId !== 'all') query.department_id = departmentId;
+                if (divisionId && divisionId !== 'all') query.division_id = divisionId;
+
+                const employees = await Employee.find(query);
+                console.log(`[Worker] Calculating 2nd salary for ${employees.length} employees`);
+
+                // Optimization: Pre-fetch department and settings for context
+                const sharedContext = {
+                    department: (departmentId && departmentId !== 'all') ? await Department.findById(departmentId) : null,
+                    includeMissing: (departmentId && departmentId !== 'all') ? await allowanceDeductionResolverService.getIncludeMissingFlag(departmentId, divisionId) : undefined
+                };
+
+                const batchIds = new Set();
+
+                for (let i = 0; i < employees.length; i++) {
+                    const employee = employees[i];
+                    try {
+                        const result = await calculateSecondSalary(employee._id, month, userId, sharedContext);
+                        if (result.batchId) batchIds.add(result.batchId.toString());
+                    } catch (err) {
+                        console.error(`[Worker] Failed 2nd salary for ${employee.emp_no}:`, err.message);
+                    }
+
+                    // Update progress
+                    await job.updateProgress({
+                        processed: i + 1,
+                        total: employees.length,
+                        percentage: Math.round(((i + 1) / employees.length) * 100),
+                        currentEmployee: employee.employee_name
+                    });
+                }
+
+                // Recalculate totals for all affected batches
+                for (const bId of batchIds) {
+                    await SecondSalaryBatchService.recalculateBatchTotals(bId);
+                }
+                console.log(`[Worker] 2nd Salary batch calculation complete`);
+            } else if (action === 'payroll_bulk_calculate') {
+                const Employee = require('../../employees/model/Employee');
+                const Department = require('../../departments/model/Department');
+                const allowanceDeductionResolverService = require('../../payroll/services/allowanceDeductionResolverService');
+                const SecondSalaryBatchService = require('../../payroll/services/secondSalaryBatchService');
+                const PayrollBatchService = require('../../payroll/services/payrollBatchService');
+
+                const query = { is_active: true };
+                if (departmentId && departmentId !== 'all') query.department_id = departmentId;
+                if (divisionId && divisionId !== 'all') query.division_id = divisionId;
+
+                const employees = await Employee.find(query);
+                console.log(`[Worker] Bulk calculating payroll for ${employees.length} employees`);
+
+                // Optimization: Pre-fetch department and settings for context
+                const sharedContext = {
+                    department: (departmentId && departmentId !== 'all') ? await Department.findById(departmentId) : null,
+                    includeMissing: (departmentId && departmentId !== 'all') ? await allowanceDeductionResolverService.getIncludeMissingFlag(departmentId, divisionId) : undefined
+                };
+
+                const batchIds = new Set();
+                const useLegacy = job.data.strategy === 'legacy';
+
+                for (let i = 0; i < employees.length; i++) {
+                    const employee = employees[i];
+                    try {
+                        const result = await PayrollCalculationService.calculatePayrollNew(
+                            employee._id.toString(),
+                            month,
+                            userId,
+                            { source: useLegacy ? 'all' : 'payregister' },
+                            sharedContext
+                        );
+                        if (result.batchId) batchIds.add(result.batchId.toString());
+                    } catch (err) {
+                        console.error(`[Worker] Failed bulk payroll for ${employee.emp_no || employee._id}:`, err.message);
+                    }
+
+                    // Update progress
+                    await job.updateProgress({
+                        processed: i + 1,
+                        total: employees.length,
+                        percentage: Math.round(((i + 1) / employees.length) * 100),
+                        currentEmployee: employee.employee_name
+                    });
+                }
+
+                // Recalculate totals for all affected batches
+                for (const bId of batchIds) {
+                    await PayrollBatchService.recalculateBatchTotals(bId);
+                }
+                console.log(`[Worker] Bulk payroll calculation complete`);
             } else {
                 // Single employee calculation
                 await PayrollCalculationService.calculatePayrollNew(employeeId, month, userId);
@@ -62,7 +162,7 @@ const startWorkers = () => {
 
     // Application Action Worker
     const applicationWorker = new Worker('applicationQueue', async (job) => {
-        const { type, applicationIds, approvalData, approverId, comments } = job.data;
+        const { type, applicationIds, bulkSettings, approverId, comments } = job.data;
         console.log(`[Worker] Processing ${type} for ${applicationIds.length} applications`);
 
         const EmployeeApplication = require('../../employee-applications/model/EmployeeApplication');
@@ -82,8 +182,8 @@ const startWorkers = () => {
             const id = applicationIds[i];
             try {
                 if (type === 'approve-bulk') {
-                    // Approval logic
-                    const { approvedSalary, doj, employeeAllowances, employeeDeductions, ctcSalary, calculatedSalary } = approvalData || {};
+                    // Approval logic - use bulkSettings instead of approvalData
+                    const { approvedSalary, doj, comments: bulkComments, employeeAllowances, employeeDeductions, ctcSalary, calculatedSalary } = bulkSettings || {};
                     const application = await EmployeeApplication.findById(id);
 
                     if (!application) throw new Error(`Application ${id} not found`);
@@ -97,7 +197,7 @@ const startWorkers = () => {
                     application.doj = finalDOJ;
                     application.approvedBy = approverId;
                     application.approvedAt = new Date();
-                    application.approvalComments = comments || 'Bulk approved';
+                    application.approvalComments = bulkComments || comments || 'Bulk approved';
 
                     // Normalization logic
                     const normalize = (list) => Array.isArray(list) ? list.filter(item => item && (item.masterId || item.name)).map(item => ({ ...item, isOverride: true })) : [];

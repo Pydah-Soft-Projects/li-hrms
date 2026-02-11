@@ -55,6 +55,9 @@ exports.getPayRegister = async (req, res) => {
       }
 
       const [year, monthNum] = month.split('-').map(Number);
+      const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+      const { startDate, endDate, totalDays } = await getPayrollDateRange(year, monthNum);
+
       const dailyRecords = await populatePayRegisterFromSources(
         employeeId,
         employee.emp_no,
@@ -69,7 +72,9 @@ exports.getPayRegister = async (req, res) => {
         monthName: new Date(year, monthNum - 1).toLocaleString('default', { month: 'long', year: 'numeric' }),
         year,
         monthNumber: monthNum,
-        totalDaysInMonth: new Date(year, monthNum, 0).getDate(),
+        totalDaysInMonth: totalDays,
+        startDate,
+        endDate,
         dailyRecords,
         totals: calculateTotals(dailyRecords),
         status: 'draft',
@@ -128,6 +133,9 @@ exports.createPayRegister = async (req, res) => {
     }
 
     const [year, monthNum] = month.split('-').map(Number);
+    const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+    const { startDate, endDate, totalDays } = await getPayrollDateRange(year, monthNum);
+
     const dailyRecords = await populatePayRegisterFromSources(
       employeeId,
       employee.emp_no,
@@ -142,7 +150,9 @@ exports.createPayRegister = async (req, res) => {
       monthName: new Date(year, monthNum - 1).toLocaleString('default', { month: 'long', year: 'numeric' }),
       year,
       monthNumber: monthNum,
-      totalDaysInMonth: new Date(year, monthNum, 0).getDate(),
+      totalDaysInMonth: totalDays,
+      startDate,
+      endDate,
       dailyRecords,
       totals: calculateTotals(dailyRecords),
       status: 'draft',
@@ -243,11 +253,15 @@ exports.updateDailyRecord = async (req, res) => {
       });
     }
 
-    // Validate date is within the month
-    if (!date.startsWith(month)) {
+    const [year, monthNum] = month.split('-').map(Number);
+    const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+    const { startDate, endDate } = await getPayrollDateRange(year, monthNum);
+
+    // Validate date is within the payroll cycle
+    if (date < startDate || date > endDate) {
       return res.status(400).json({
         success: false,
-        error: 'Date must be within the specified month',
+        error: `Date must be within the payroll cycle range (${startDate} to ${endDate})`,
       });
     }
 
@@ -375,17 +389,23 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
 
     // Parse month
     const [year, monthNum] = month.split('-').map(Number);
+    const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+    const { startDate, endDate, totalDays } = await getPayrollDateRange(year, monthNum);
+
     const pageNum = parseInt(page) || 1;
     const limitNum = parseInt(limit) || 50; // Default limit 50
     const skip = (pageNum - 1) * limitNum;
-    const monthStart = new Date(year, monthNum - 1, 1);
-    const monthEnd = new Date(year, monthNum, 0, 23, 59, 59, 999);
 
-    // Build Employee Query
+    const rangeStart = new Date(startDate);
+    rangeStart.setHours(0, 0, 0, 0);
+    const rangeEnd = new Date(endDate);
+    rangeEnd.setHours(23, 59, 59, 999);
+
+    // Build Employee Query - include active employees OR those who left within this specific payroll cycle
     let employeeQuery = {
       $or: [
         { is_active: true, leftDate: null },
-        { leftDate: { $gte: monthStart, $lte: monthEnd } }
+        { leftDate: { $gte: rangeStart, $lte: rangeEnd } }
       ]
     };
 
@@ -409,16 +429,21 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
       employeeQuery.division_id = divObjectId;
     }
 
-    // 1. Bulk Fetch Employees with Pagination
+    // 1. Bulk Fetch Employees
     const totalEmployees = await Employee.countDocuments(employeeQuery);
 
-    const employees = await Employee.find(employeeQuery)
+    let employeeFetch = Employee.find(employeeQuery)
       .select('_id employee_name emp_no department_id designation_id leftDate leftReason')
       .populate('department_id', 'name')
       .populate('designation_id', 'name')
-      .sort({ employee_name: 1 })
-      .skip(skip)
-      .limit(limitNum);
+      .sort({ employee_name: 1 });
+
+    // Bypass pagination if limit is -1
+    if (limitNum !== -1) {
+      employeeFetch = employeeFetch.skip(skip).limit(limitNum);
+    }
+
+    const employees = await employeeFetch;
 
     if (employees.length === 0) {
       return res.status(200).json({
@@ -442,7 +467,7 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
       month
     })
       .populate('employeeId', 'employee_name emp_no department_id designation_id')
-      .select('employeeId emp_no month status totals lastEditedAt dailyRecords');
+      .select('employeeId emp_no month status totals lastEditedAt dailyRecords startDate endDate totalDaysInMonth');
 
     // Map for O(1) Access
     const prMap = new Map();
@@ -476,7 +501,10 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
           totals: existingPR.totals,
           dailyRecords: existingPR.dailyRecords || [],
           lastEditedAt: existingPR.lastEditedAt,
-          payrollId: payrollId || null
+          payrollId: payrollId || null,
+          startDate: existingPR.startDate || startDate,
+          endDate: existingPR.endDate || endDate,
+          totalDaysInMonth: existingPR.totalDaysInMonth || totalDays
         };
       } else {
         // Return In-Memory Stub (Fast!)
@@ -512,7 +540,10 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
           dailyRecords: [], // Empty for stubs
           lastEditedAt: null,
           payrollId: payrollId || null,
-          isStub: true
+          isStub: true,
+          startDate,
+          endDate,
+          totalDaysInMonth: totalDays
         };
       }
     });
@@ -524,11 +555,13 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
       success: true,
       count: finalResults.length,
       data: finalResults,
+      startDate,
+      endDate,
       pagination: {
         page: pageNum,
-        limit: limitNum,
+        limit: limitNum === -1 ? totalEmployees : limitNum,
         total: totalEmployees,
-        totalPages: Math.ceil(totalEmployees / limitNum)
+        totalPages: limitNum === -1 ? 1 : Math.ceil(totalEmployees / limitNum)
       }
     });
 
