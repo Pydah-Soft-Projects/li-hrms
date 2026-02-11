@@ -161,7 +161,21 @@ function buildWorkflowVisibilityFilter(user) {
             { 'workflow.nextApprover': userRole },
             { 'workflow.nextApproverRole': userRole },
 
-            // 3. Past Desks (Audit Trail) - Visible if they already took action
+            // 3. Reporting Manager Specific Visibility
+            // If the next approver role is 'reporting_manager', show if user is the assigned manager
+            {
+                $and: [
+                    {
+                        $or: [
+                            { 'workflow.nextApproverRole': 'reporting_manager' },
+                            { 'workflow.nextApprover': 'reporting_manager' }
+                        ]
+                    },
+                    { 'workflow.reportingManagerIds': user._id.toString() }
+                ]
+            },
+
+            // 4. Past Desks (Audit Trail) - Visible if they already took action
             {
                 'workflow.approvalChain': {
                     $elemMatch: {
@@ -279,6 +293,13 @@ function checkJurisdiction(user, record) {
                 });
                 if (hasMappingMatch) return true;
             }
+
+            // 4. Reporting Manager Check (Priority Access)
+            const reportingManagers = record.workflow?.reportingManagerIds || [];
+            if (reportingManagers.includes(user._id.toString())) {
+                return true;
+            }
+
             return false;
 
         default:
