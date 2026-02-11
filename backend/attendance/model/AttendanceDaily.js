@@ -375,6 +375,10 @@ attendanceDailySchema.pre('save', async function () {
     this.totalOTHours = Math.round(totalOT * 100) / 100;
     this.extraHours = Math.round(totalExtra * 100) / 100;
 
+    // Payable shifts = cumulative of each assigned shift's payableShift (multi-shift day = sum)
+    const totalPayable = this.shifts.reduce((sum, s) => sum + (s.payableShift || 0), 0);
+    this.payableShifts = Math.round(totalPayable * 100) / 100;
+
     // 2. Metrics (Backward Compatibility)
     this.inTime = firstIn;
     this.outTime = lastOut;
@@ -420,10 +424,10 @@ attendanceDailySchema.pre('save', async function () {
         // Let's assume expectedHours is in HOURS.
         const durationHours = this.expectedHours;
 
-        if (effectiveHours >= (durationHours * 0.9)) {
+        if (effectiveHours >= (durationHours * 0.8)) {
           this.status = 'PRESENT';
           this.payableShifts = 1;
-        } else if (effectiveHours >= (durationHours * 0.45)) {
+        } else if (effectiveHours >= (durationHours * 0.35)) {
           this.status = 'HALF_DAY';
           this.payableShifts = 0.5;
         } else {

@@ -602,10 +602,10 @@ exports.updateOutTime = async (req, res) => {
               if (fullShift && fullShift.payableShifts !== undefined) basePayable = fullShift.payableShifts;
             }
 
-            if (shiftSegment.workingHours >= (durationHours * 0.9)) {
+            if (shiftSegment.workingHours >= (durationHours * 0.8)) {
               shiftSegment.status = 'PRESENT';
               shiftSegment.payableShift = basePayable;
-            } else if (shiftSegment.workingHours >= (durationHours * 0.45)) {
+            } else if (shiftSegment.workingHours >= (durationHours * 0.35)) {
               shiftSegment.status = 'HALF_DAY';
               shiftSegment.payableShift = basePayable * 0.5;
             } else {
@@ -706,10 +706,10 @@ exports.updateOutTime = async (req, res) => {
           const assignedShiftDoc = await Shift.findById(detectionResult.assignedShift).select('payableShifts duration');
           let basePayable = assignedShiftDoc ? (assignedShiftDoc.payableShifts ?? 1) : 1;
 
-          if (workingHours >= (detectionResult.expectedHours * 0.9)) {
+          if (workingHours >= (detectionResult.expectedHours * 0.8)) {
             status = 'PRESENT';
             payableShift = basePayable;
-          } else if (workingHours >= (detectionResult.expectedHours * 0.45)) {
+          } else if (workingHours >= (detectionResult.expectedHours * 0.35)) {
             status = 'HALF_DAY';
             payableShift = basePayable * 0.5;
           }
@@ -734,6 +734,7 @@ exports.updateOutTime = async (req, res) => {
           }];
 
           attendanceRecord.totalShifts = 1;
+          attendanceRecord.payableShifts = payableShift;
         }
 
         // Update roster tracking if rosterRecordId exists
@@ -894,8 +895,8 @@ exports.assignShift = async (req, res) => {
       });
     }
 
-    // Verify shift exists
-    const shift = await Shift.findById(shiftId);
+    // Verify shift exists (need payableShifts for daily payable recalc)
+    const shift = await Shift.findById(shiftId).select('name startTime endTime duration gracePeriod payableShifts');
     if (!shift) {
       return res.status(404).json({
         success: false,
@@ -982,16 +983,26 @@ exports.assignShift = async (req, res) => {
       // but let's check legacy fields. The sub-schema usually mirrors needed fields.
       // Assuming we rely on the shiftId ref for expected duration.
 
-      // Update Status?
-      // If working hours are sufficient against NEW shift duration.
-      // Need to recalc working hours? No, working hours (duration) don't change just by changing shift DEFINITION (unless we recalc based on strict shift windows, but usually it's punch based).
-      // But we DO need to check if they met the NEW requirement.
+      // Update Status and Payable Shift from NEW shift (so daily + monthly summary stay correct)
+      let durationHours = shift.duration;
+      if (durationHours > 20) durationHours = durationHours / 60; // if stored as minutes
+      const basePayable = shift.payableShifts !== undefined ? shift.payableShifts : 1;
+      const workingH = shiftSegment.workingHours || 0;
 
-      if (shiftSegment.workingHours >= (shift.duration * 0.5)) {
+      if (workingH >= (durationHours * 0.9)) {
         shiftSegment.status = 'PRESENT';
+        shiftSegment.payableShift = basePayable;
+      } else if (workingH >= (durationHours * 0.45)) {
+        shiftSegment.status = 'HALF_DAY';
+        shiftSegment.payableShift = basePayable * 0.5;
       } else {
-        // shiftSegment.status = 'ABSENT'; // Or keep as is?
+        shiftSegment.status = 'ABSENT';
+        shiftSegment.payableShift = 0;
       }
+
+      // Recalc day total payable shifts (cumulative of all segments)
+      const totalPayable = attendanceRecord.shifts.reduce((sum, s) => sum + (s.payableShift || 0), 0);
+      attendanceRecord.payableShifts = Math.round(totalPayable * 100) / 100;
 
       // Track Edit History
       attendanceRecord.isEdited = true;
@@ -1027,6 +1038,19 @@ exports.assignShift = async (req, res) => {
       attendanceRecord.isLateIn = lateInMinutes > 0;
       attendanceRecord.isEarlyOut = earlyOutMinutes && earlyOutMinutes > 0;
       attendanceRecord.expectedHours = shift.duration;
+
+      // Recalc payable shifts from new shift (so daily + monthly summary stay correct)
+      let durationHours = shift.duration;
+      if (durationHours > 20) durationHours = durationHours / 60;
+      const basePayable = shift.payableShifts !== undefined ? shift.payableShifts : 1;
+      const effectiveHours = (attendanceRecord.totalHours || 0) + (attendanceRecord.odHours || 0);
+      if (effectiveHours >= (durationHours * 0.9)) {
+        attendanceRecord.payableShifts = basePayable;
+      } else if (effectiveHours >= (durationHours * 0.45)) {
+        attendanceRecord.payableShifts = basePayable * 0.5;
+      } else {
+        attendanceRecord.payableShifts = 0;
+      }
 
       attendanceRecord.isEdited = true;
       attendanceRecord.editHistory.push({

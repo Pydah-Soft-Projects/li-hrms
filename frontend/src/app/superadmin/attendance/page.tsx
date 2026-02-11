@@ -3,6 +3,10 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
+import ExportAttendanceDialog from '@/components/attendance/DownloadDialog';
 
 interface AttendanceRecord {
   date: string;
@@ -221,6 +225,13 @@ export default function AttendancePage() {
   const [loadingConflicts, setLoadingConflicts] = useState(false);
   const [revokingLeave, setRevokingLeave] = useState(false);
   const [updatingLeave, setUpdatingLeave] = useState(false);
+
+  // Attendance detail PDF download
+  const [downloadingAttendancePdf, setDownloadingAttendancePdf] = useState(false);
+
+  // Export dialog state
+  const [showExportDialog, setShowExportDialog] = useState(false);
+  const [exportingAttendance, setExportingAttendance] = useState(false);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth() + 1;
@@ -918,6 +929,101 @@ export default function AttendancePage() {
     }
   };
 
+  const handleExportAttendance = async (params: {
+    startDate: string;
+    endDate: string;
+    divisionId?: string;
+    departmentId?: string;
+    designationId?: string;
+  }) => {
+    try {
+      setExportingAttendance(true);
+      const { startDate: start, endDate: end, divisionId: divId, departmentId: deptId, designationId: desigId } = params;
+
+      const startD = new Date(start);
+      const endD = new Date(end);
+      const monthsToFetch: { year: number; month: number }[] = [];
+      let curr = new Date(startD.getFullYear(), startD.getMonth(), 1);
+      const endMonth = new Date(endD.getFullYear(), endD.getMonth(), 1);
+
+      while (curr <= endMonth) {
+        monthsToFetch.push({ year: curr.getFullYear(), month: curr.getMonth() + 1 });
+        curr.setMonth(curr.getMonth() + 1);
+      }
+
+      const allRows: Record<string, string | number>[] = [];
+
+      for (const { year: y, month: m } of monthsToFetch) {
+        const resp = await api.getMonthlyAttendance(y, m, {
+          limit: 5000,
+          divisionId: divId,
+          departmentId: deptId,
+          designationId: desigId,
+        });
+
+        if (!resp.success || !resp.data) continue;
+
+        const monthStart = new Date(y, m - 1, 1);
+        const monthEnd = new Date(y, m, 0);
+        const rangeStart = startD > monthStart ? startD : monthStart;
+        const rangeEnd = endD < monthEnd ? endD : monthEnd;
+
+        (resp.data as MonthlyAttendanceData[]).forEach((item) => {
+          const emp = item.employee;
+          const empNo = emp.emp_no || '';
+          const empName = emp.employee_name || '';
+          const divName = (emp.division || emp.division_id)?.name || '';
+          const deptName = (emp.department || emp.department_id)?.name || '';
+          const desigName = (emp.designation || emp.designation_id)?.name || '';
+
+          for (let d = new Date(rangeStart.getTime()); d <= rangeEnd; d.setDate(d.getDate() + 1)) {
+            const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            const rec = item.dailyAttendance?.[dateStr] || null;
+
+            const status = rec?.status ?? '-';
+            const inTime = rec?.inTime != null ? (typeof rec.inTime === 'string' ? rec.inTime : String(rec.inTime)) : '';
+            const outTime = rec?.outTime != null ? (typeof rec.outTime === 'string' ? rec.outTime : String(rec.outTime)) : '';
+            const totalHours = rec?.totalHours ?? '';
+            const otHours = rec?.otHours ?? '';
+
+            allRows.push({
+              'Emp No': empNo,
+              'Employee Name': empName,
+              'Division': divName,
+              'Department': deptName,
+              'Designation': desigName,
+              'Date': dateStr,
+              'Status': status,
+              'In Time': inTime,
+              'Out Time': outTime,
+              'Total Hours': totalHours,
+              'OT Hours': otHours,
+            });
+          }
+        });
+      }
+
+      if (allRows.length === 0) {
+        toast.info('No attendance data found for the selected criteria.');
+        setShowExportDialog(false);
+        return;
+      }
+
+      const ws = XLSX.utils.json_to_sheet(allRows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Attendance');
+      const fileName = `attendance_export_${start}_to_${end}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+      toast.success('Attendance exported successfully');
+      setShowExportDialog(false);
+    } catch (err: any) {
+      console.error('Export attendance error:', err);
+      toast.error(err?.message || 'Failed to export attendance');
+    } finally {
+      setExportingAttendance(false);
+    }
+  };
+
   const handleViewPayslip = async (employee: Employee) => {
     setSelectedEmployeeForPayslip(employee);
     setShowPayslipModal(true);
@@ -1169,23 +1275,18 @@ export default function AttendancePage() {
     if (!time) return '-';
     try {
       const date = new Date(time);
-      // Use Local Time to match user's perspective (e.g., IST)
-      const h = String(date.getHours()).padStart(2, '0');
-      const m = String(date.getMinutes()).padStart(2, '0');
-      const timeStr = `${h}:${m}`;
+      const istOptions: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' };
+      const timeStr = date.toLocaleTimeString('en-US', istOptions);
 
-      // If showDateIfDifferent is true and recordDate is provided, check if dates differ
+      // If showDateIfDifferent is true and recordDate is provided, check if dates differ (in IST)
       if (showDateIfDifferent && recordDate) {
-        // Compare Local Date vs recordDate
-        const y = date.getFullYear();
-        const mo = String(date.getMonth() + 1).padStart(2, '0');
-        const d = String(date.getDate()).padStart(2, '0');
+        const y = date.toLocaleString('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric' });
+        const mo = date.toLocaleString('en-CA', { timeZone: 'Asia/Kolkata', month: '2-digit' });
+        const d = date.toLocaleString('en-CA', { timeZone: 'Asia/Kolkata', day: '2-digit' });
         const timeDateStr = `${y}-${mo}-${d}`;
 
         if (timeDateStr !== recordDate) {
-          // Dates are different - show date with time
-          const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-          const dateStr = `${monthNames[date.getMonth()]} ${date.getDate()}`;
+          const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'Asia/Kolkata' });
           return `${dateStr}, ${timeStr}`;
         }
       }
@@ -1199,6 +1300,207 @@ export default function AttendancePage() {
   const formatHours = (hours: number | null) => {
     if (hours === null || hours === undefined) return '-';
     return `${hours.toFixed(2)}h`;
+  };
+
+  const handleDownloadAttendancePdf = () => {
+    if (!attendanceDetail || !selectedDate) return;
+    setDownloadingAttendancePdf(true);
+    toast.info('Generating attendance PDF...', { autoClose: 1000 });
+    try {
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      let y = 14;
+      const lineHeight = 6;
+      const sectionGap = 4;
+
+      const addSection = (title: string, rows: [string, string][]) => {
+        if (y > 260) {
+          doc.addPage();
+          y = 14;
+        }
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'bold');
+        doc.text(title, 14, y);
+        y += lineHeight;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        for (const [label, value] of rows) {
+          if (value == null || value === '') continue;
+          doc.text(label + ': ', 14, y);
+          const text = String(value);
+          const maxW = pageWidth - 14 - 20;
+          const lines = doc.splitTextToSize(text, maxW);
+          doc.text(lines, 14 + doc.getTextWidth(label + ': '), y);
+          y += lineHeight * lines.length;
+        }
+        y += sectionGap;
+      };
+
+      // Title
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Attendance Details', 14, y);
+      y += lineHeight + 2;
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Date: ${selectedDate}`, 14, y);
+      y += lineHeight;
+      if (selectedEmployee) {
+        doc.text(`Employee: ${selectedEmployee.employee_name} (${selectedEmployee.emp_no})`, 14, y);
+        y += lineHeight;
+        const dept = selectedEmployee.department?.name || selectedEmployee.department_id?.name || '';
+        const div = selectedEmployee.division?.name || selectedEmployee.division_id?.name || '';
+        if (dept || div) {
+          doc.text([dept, div].filter(Boolean).join(' / '), 14, y);
+          y += lineHeight;
+        }
+      }
+      y += sectionGap;
+
+      const status = attendanceDetail.status || 'N/A';
+      const shiftName = attendanceDetail.shiftId && typeof attendanceDetail.shiftId === 'object'
+        ? attendanceDetail.shiftId.name
+        : attendanceDetail.shifts?.[0]?.shiftId && typeof attendanceDetail.shifts[0].shiftId === 'object'
+          ? (attendanceDetail.shifts[0].shiftId as { name: string }).name
+          : '-';
+
+      // Summary / Single shift
+      const summaryRows: [string, string][] = [
+        ['Status', status],
+        ['Shift', shiftName],
+        ['In Time', formatTime(attendanceDetail.inTime)],
+        ['Out Time', attendanceDetail.outTime ? formatTime(attendanceDetail.outTime, true, selectedDate) : '-'],
+        ['Total Hours', formatHours(attendanceDetail.totalHours)],
+        ...(attendanceDetail.totalWorkingHours != null ? [['Total Working Hours', `${attendanceDetail.totalWorkingHours.toFixed(2)} hrs`] as [string, string]] : []),
+        ...(attendanceDetail.totalOTHours != null ? [['OT Hours', `${attendanceDetail.totalOTHours.toFixed(2)} hrs`] as [string, string]] : []),
+        ...(attendanceDetail.isLateIn && attendanceDetail.lateInMinutes != null ? [['Late In', `+${attendanceDetail.lateInMinutes} minutes`] as [string, string]] : []),
+        ...(attendanceDetail.isEarlyOut && attendanceDetail.earlyOutMinutes != null ? [['Early Out', `-${attendanceDetail.earlyOutMinutes} minutes`] as [string, string]] : []),
+        ...(attendanceDetail.earlyOutDeduction?.deductionApplied ? [['Early-Out Deduction', `${attendanceDetail.earlyOutDeduction.deductionType?.replace('_', ' ')}${attendanceDetail.earlyOutDeduction.deductionDays ? ` (${attendanceDetail.earlyOutDeduction.deductionDays} day(s))` : ''}${attendanceDetail.earlyOutDeduction.deductionAmount ? ` (₹${attendanceDetail.earlyOutDeduction.deductionAmount})` : ''}`] as [string, string]] : []),
+        ...(attendanceDetail.otHours && attendanceDetail.otHours > 0 ? [['OT Hours', `${attendanceDetail.otHours.toFixed(2)} hrs`] as [string, string]] : []),
+        ...(attendanceDetail.extraHours && attendanceDetail.extraHours > 0 ? [['Extra Hours', `${attendanceDetail.extraHours.toFixed(2)} hrs`] as [string, string]] : []),
+        ...(attendanceDetail.permissionHours && attendanceDetail.permissionHours > 0 ? [['Permission Hours', `${attendanceDetail.permissionHours.toFixed(2)} hrs (${attendanceDetail.permissionCount || 0} permissions)`] as [string, string]] : []),
+      ];
+      addSection('Summary', summaryRows);
+
+      // Multi-shift table
+      if (attendanceDetail.shifts && attendanceDetail.shifts.length > 0) {
+        if (y > 240) {
+          doc.addPage();
+          y = 14;
+        }
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Shift-wise Details', 14, y);
+        y += lineHeight;
+        const shiftRows = attendanceDetail.shifts.map((s: any) => {
+          const name = s.shiftName || (s.shiftId && typeof s.shiftId === 'object' ? s.shiftId.name : 'Shift');
+          return [name, formatTime(s.inTime), formatTime(s.outTime), s.workingHours != null ? `${s.workingHours.toFixed(2)}h` : '-', s.otHours != null ? `${s.otHours.toFixed(2)}h` : '-'];
+        });
+        autoTable(doc, {
+          startY: y,
+          head: [['Shift', 'In', 'Out', 'Working Hrs', 'OT Hrs']],
+          body: shiftRows,
+          theme: 'grid',
+          headStyles: { fillColor: [59, 130, 246], fontSize: 8 },
+          bodyStyles: { fontSize: 8 },
+        });
+        y = (doc as any).lastAutoTable.finalY + sectionGap;
+      }
+
+      // Leave info
+      if (attendanceDetail.hasLeave && attendanceDetail.leaveInfo) {
+        const li = attendanceDetail.leaveInfo;
+        const leaveRows: [string, string][] = [
+          ['Purpose', li.purpose || ''],
+          ['Leave Type', li.leaveType || 'N/A'],
+          ['Half Day', li.isHalfDay ? (li.halfDayType === 'first_half' ? 'First Half' : 'Second Half') : 'No'],
+          ['Date Range', li.fromDate && li.toDate ? `${new Date(li.fromDate).toLocaleDateString('en-US')} - ${new Date(li.toDate).toLocaleDateString('en-US')}` : ''],
+          ['Total Days', li.numberOfDays != null ? `${li.numberOfDays} day(s)` : ''],
+          ['Day in Leave', li.dayInLeave != null ? `${li.dayInLeave}` : ''],
+          ['Applied On', li.appliedAt ? new Date(li.appliedAt).toLocaleString('en-US') : ''],
+          ['Approved By', li.approvedBy?.name || li.approvedBy?.email || ''],
+          ['Approved On', li.approvedAt ? new Date(li.approvedAt).toLocaleString('en-US') : ''],
+        ].filter(([, v]) => v !== '') as [string, string][];
+        addSection('Leave Information', leaveRows);
+        if (attendanceDetail.isConflict) {
+          doc.setFontSize(9);
+          doc.setTextColor(200, 0, 0);
+          doc.text('Conflict: Leave approved but attendance logged for this date.', 14, y);
+          y += lineHeight + sectionGap;
+          doc.setTextColor(0, 0, 0);
+        }
+      }
+
+      // OD info
+      if (attendanceDetail.hasOD && attendanceDetail.odInfo) {
+        const od = attendanceDetail.odInfo;
+        const odRows: [string, string][] = [
+          ['Purpose', od.purpose || ''],
+          ['Place Visited', od.placeVisited || ''],
+          ['OD Type', od.odType || 'N/A'],
+          ['Date Range', od.fromDate && od.toDate ? `${new Date(od.fromDate).toLocaleDateString('en-US')} - ${new Date(od.toDate).toLocaleDateString('en-US')}` : ''],
+          ...(od.odType_extended === 'hours' && od.durationHours != null ? [['OD Hours', `${Math.floor(od.durationHours)}h ${Math.round((od.durationHours % 1) * 60)}m`] as [string, string], ['Time', od.odStartTime && od.odEndTime ? `${od.odStartTime} - ${od.odEndTime}` : '']] : []),
+          ...(od.odType_extended !== 'hours' ? [['Total Days', od.numberOfDays != null ? `${od.numberOfDays} day(s)` : ''] as [string, string], ['Day in OD', od.dayInOD != null ? `${od.dayInOD}` : ''] as [string, string]] : []),
+          ['Applied On', od.appliedAt ? new Date(od.appliedAt).toLocaleString('en-US') : ''],
+          ['Approved By', od.approvedBy?.name || od.approvedBy?.email || ''],
+          ['Approved On', od.approvedAt ? new Date(od.approvedAt).toLocaleString('en-US') : ''],
+        ].filter(([, v]) => v !== '') as [string, string][];
+        addSection('On Duty (OD) Information', odRows);
+        if (attendanceDetail.earlyOutMinutes != null) {
+          doc.text(`Early-Out: ${attendanceDetail.earlyOutMinutes} min`, 14, y);
+          y += lineHeight;
+          if (attendanceDetail.earlyOutDeduction?.deductionApplied) {
+            doc.text(`Deduction: ${attendanceDetail.earlyOutDeduction.deductionType?.replace('_', ' ')}`, 14, y);
+            y += lineHeight;
+          }
+        }
+        y += sectionGap;
+      }
+
+      // Leave conflicts
+      if (attendanceDetail.status === 'PRESENT' && leaveConflicts.length > 0) {
+        addSection('Leave Conflict', leaveConflicts.map((c: any) => [
+          `${c.leaveType} (${c.numberOfDays} day(s))`,
+          `${new Date(c.fromDate).toLocaleDateString('en-US')} - ${new Date(c.toDate).toLocaleDateString('en-US')}${c.isHalfDay ? ` (${c.halfDayType === 'first_half' ? 'First Half' : 'Second Half'})` : ''}`,
+        ]));
+      }
+
+      // Edit history
+      if (attendanceDetail.isEdited && attendanceDetail.editHistory && attendanceDetail.editHistory.length > 0) {
+        if (y > 220) {
+          doc.addPage();
+          y = 14;
+        }
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Edit History', 14, y);
+        y += lineHeight;
+        const historyRows = attendanceDetail.editHistory.map((edit: any) => [
+          edit.action === 'OUT_TIME_UPDATE' ? 'Out-Time Update' : edit.action === 'SHIFT_CHANGE' ? 'Shift Change' : edit.action === 'OT_CONVERSION' ? 'Overtime Conversion' : edit.action,
+          new Date(edit.modifiedAt).toLocaleString('en-US'),
+          edit.details || '',
+          typeof edit.modifiedBy === 'object' && edit.modifiedBy?.name ? edit.modifiedBy.name : 'User',
+        ]);
+        autoTable(doc, {
+          startY: y,
+          head: [['Action', 'Date', 'Details', 'By']],
+          body: historyRows,
+          theme: 'grid',
+          headStyles: { fillColor: [100, 116, 139], fontSize: 8 },
+          bodyStyles: { fontSize: 7 },
+        });
+        y = (doc as any).lastAutoTable.finalY + sectionGap;
+      }
+
+      const fileName = `Attendance_${selectedEmployee?.emp_no || 'Employee'}_${selectedDate}.pdf`;
+      doc.save(fileName);
+      toast.success('Attendance PDF downloaded.');
+    } catch (err) {
+      console.error('Error generating attendance PDF:', err);
+      toast.error('Failed to generate attendance PDF');
+    } finally {
+      setDownloadingAttendancePdf(false);
+    }
   };
 
   const daysInMonth = getDaysInMonth();
@@ -1393,6 +1695,17 @@ export default function AttendancePage() {
                   </svg>
                 )}
                 <span className="hidden md:inline text-xs font-semibold">Sync</span>
+              </button>
+
+              <button
+                onClick={() => setShowExportDialog(true)}
+                title="Export Attendance"
+                className="h-9 flex items-center px-4 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-green-600 hover:border-green-200 transition-all shadow-sm active:scale-95 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300"
+              >
+                <svg className="mr-2 h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Export
               </button>
 
               <button
@@ -1830,14 +2143,34 @@ export default function AttendancePage() {
                   />
                 </div>
 
-                <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
-                  <button
-                    onClick={handleDownloadTemplate}
-                    className="text-blue-600 hover:underline dark:text-blue-400"
-                  >
-                    Download Template
-                  </button>
-                </div>
+          {/* Export Attendance Dialog */}
+          <ExportAttendanceDialog
+            open={showExportDialog}
+            onClose={() => setShowExportDialog(false)}
+            divisions={divisions}
+            departments={departments}
+            onExport={handleExportAttendance}
+            exporting={exportingAttendance}
+          />
+
+          {
+            showUploadDialog && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+                  <div className="mb-4 flex items-center justify-between">
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">Upload Attendance Excel</h3>
+                    <button
+                      onClick={() => {
+                        setShowUploadDialog(false);
+                        setUploadFile(null);
+                      }}
+                      className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
+                    >
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
 
                 <div className="flex gap-3">
                   <button
@@ -2002,25 +2335,104 @@ export default function AttendancePage() {
                       )}
                     </div>
 
-                    {/* OT Conversion Actions */}
-                    {attendanceDetail.extraHours && attendanceDetail.extraHours > 0 && !hasExistingOT && (
-                      <div className="mt-3 flex justify-end">
-                        <button
-                          onClick={handleConvertExtraHoursToOT}
-                          disabled={convertingToOT}
-                          className="rounded-lg bg-gradient-to-r from-purple-500 to-indigo-500 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:from-purple-600 hover:to-indigo-600 disabled:opacity-50"
-                        >
-                          {convertingToOT ? 'Converting...' : 'Convert Extra to OT'}
-                        </button>
-                      </div>
-                    )}
-                    {hasExistingOT && (
-                      <div className="mt-3 text-right">
-                        <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-700">
-                          OT Converted
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                        Out Time *
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={outTimeValue}
+                        onChange={(e) => setOutTimeValue(e.target.value)}
+                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                        required
+                      />
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        Enter the logout time. Shift will be automatically assigned based on in-time and out-time.
+                      </p>
+                    </div>
+
+                    <div className="flex gap-3">
+                      <button
+                        onClick={handleUpdateOutTime}
+                        disabled={!outTimeValue || updatingOutTime}
+                        className="flex-1 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {updatingOutTime ? 'Updating...' : 'Update Out Time'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowOutTimeDialog(false);
+                          setSelectedRecordForOutTime(null);
+                          setOutTimeValue('');
+                        }}
+                        className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )
+          }
+
+          {/* Detail Dialog */}
+          {
+            showDetailDialog && attendanceDetail && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white shrink-0">
+                      Attendance Details - {selectedDate}
+                      {selectedEmployee && (
+                        <span className="ml-2 text-sm font-normal text-slate-500 dark:text-slate-400">
+                          ({selectedEmployee?.employee_name})
                         </span>
-                      </div>
-                    )}
+                      )}
+                      {attendanceDetail.isEdited && (
+                        <span className="ml-2 inline-flex items-center rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 ring-1 ring-inset ring-amber-600/20" title="This record has been manually modified">
+                          Edited
+                        </span>
+                      )}
+                    </h3>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={handleDownloadAttendancePdf}
+                        disabled={downloadingAttendancePdf}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50 dark:bg-slate-700 dark:hover:bg-slate-600"
+                      >
+                        {downloadingAttendancePdf ? (
+                          <>
+                            <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                            </svg>
+                            Generating…
+                          </>
+                        ) : (
+                          <>
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            Download PDF
+                          </>
+                        )}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowDetailDialog(false);
+                          setError('');
+                          setSuccess('');
+                        }}
+                        className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
+                        aria-label="Close"
+                      >
+                        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
 
                   {/* Individual Shifts List */}
@@ -2201,20 +2613,113 @@ export default function AttendancePage() {
                           </div>
                         )}
                       </div>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-600 dark:text-slate-400">In Time</label>
-                      <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
-                        {formatTime(attendanceDetail.inTime)}
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Out Time</label>
-                      <div className="mt-1 flex items-center gap-2">
-                        {!editingOutTime ? (
-                          <>
-                            <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                              {attendanceDetail.outTime ? formatTime(attendanceDetail.outTime, true, selectedDate || '') : '-'}
+
+                      {/* Individual Shifts List */}
+                      {attendanceDetail.shifts.map((shift: any, index: number) => {
+                        // FIX for shiftId being object or string (consistent with legacy view)
+                        const shiftName = shift.shiftName || (shift.shiftId && typeof shift.shiftId === 'object' ? shift.shiftId.name : 'Unknown Shift');
+                        const shiftIdVal = shift.shiftId && typeof shift.shiftId === 'object' ? shift.shiftId._id : shift.shiftId;
+                        const isEditingThisShift = editingShift && selectedShiftRecordId === shift._id;
+                        const isEditingThisOutTime = editingOutTime && selectedShiftRecordId === shift._id;
+
+                        return (
+                          <div key={shift._id || index} className="rounded-lg border border-slate-200 p-4 dark:border-slate-700">
+                            <div className="mb-2 flex items-center justify-between">
+                              <div className="font-semibold text-sm">{shiftName}</div>
+                              <div className="text-xs text-slate-500">
+                                {shift.workingHours ? `${shift.workingHours.toFixed(2)} hrs` : '-'}
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                              {/* Shift Selection */}
+                              <div>
+                                <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Shift</label>
+                                <div className="mt-1 flex items-center gap-2">
+                                  {!isEditingThisShift ? (
+                                    <>
+                                      <div className="text-sm text-slate-900 dark:text-white truncate max-w-[100px]" title={shiftName}>{shiftName}</div>
+                                      <button
+                                        onClick={() => {
+                                          setEditingShift(true);
+                                          setSelectedShiftRecordId(shift._id);
+                                          setSelectedShiftId(shiftIdVal);
+                                        }}
+                                        className="rounded bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-200"
+                                      >
+                                        Change
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <div className="flex flex-col gap-2 w-full">
+                                      <select
+                                        value={selectedShiftId || ''}
+                                        onChange={(e) => setSelectedShiftId(e.target.value)}
+                                        className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                                      >
+                                        <option value="">Select Shift</option>
+                                        {availableShifts.map((s) => (
+                                          <option key={s._id} value={s._id}>{s.name} ({s.startTime}-{s.endTime})</option>
+                                        ))}
+                                      </select>
+                                      <div className="flex gap-2">
+                                        <button onClick={handleAssignShift} className="rounded bg-green-500 px-2 py-1 text-xs text-white">Save</button>
+                                        <button onClick={() => { setEditingShift(false); setSelectedShiftRecordId(null); }} className="rounded bg-slate-400 px-2 py-1 text-xs text-white">Cancel</button>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Times */}
+                              <div>
+                                <div className="flex justify-between mb-1">
+                                  <span className="text-xs text-slate-500">In:</span>
+                                  <span className="text-sm font-medium">{formatTime(shift.inTime)}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                  <span className="text-xs text-slate-500">Out:</span>
+                                  {!isEditingThisOutTime ? (
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-sm font-medium">{formatTime(shift.outTime) || '-'}</span>
+                                      <button
+                                        onClick={() => {
+                                          setEditingOutTime(true);
+                                          setSelectedShiftRecordId(shift._id);
+                                          if (shift.outTime) {
+                                            const d = new Date(shift.outTime);
+                                            setOutTimeInput(d.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false }));
+                                          } else {
+                                            setOutTimeInput('');
+                                          }
+                                        }}
+                                        className="rounded bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-200"
+                                      >
+                                        {shift.outTime ? 'Edit' : 'Add'}
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <div className="flex flex-col gap-1 w-full ml-2">
+                                      <input
+                                        type="time"
+                                        value={outTimeInput}
+                                        onChange={(e) => setOutTimeInput(e.target.value)}
+                                        className="w-full rounded border border-slate-300 px-1 py-0.5 text-xs"
+                                      />
+                                      <div className="flex gap-1">
+                                        <button onClick={handleSaveOutTime} className="rounded bg-green-500 px-1 py-0.5 text-[10px] text-white">Save</button>
+                                        <button onClick={() => { setEditingOutTime(false); setSelectedShiftRecordId(null); }} className="rounded bg-slate-400 px-1 py-0.5 text-[10px] text-white">Cancel</button>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            {/* Extra Info */}
+                            <div className="mt-2 text-xs text-slate-500 flex gap-4">
+                              <span>Late: {shift.lateInMinutes || 0}m</span>
+                              <span>Early: {shift.earlyOutMinutes || 0}m</span>
+                              <span>Status: {shift.status}</span>
                             </div>
                             {!attendanceDetail.outTime && (
                               <button
@@ -2306,14 +2811,67 @@ export default function AttendancePage() {
                         <div className="mt-1 text-sm font-semibold text-orange-600 dark:text-orange-400">
                           {attendanceDetail.otHours.toFixed(2)} hrs
                         </div>
-                      </div>
-                    )}
-                    {attendanceDetail.extraHours && attendanceDetail.extraHours > 0 && (
-                      <div className="col-span-2">
-                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Extra Hours</label>
-                        <div className="mt-1 flex items-center justify-between">
-                          <div className="text-sm font-semibold text-purple-600 dark:text-purple-400">
-                            {attendanceDetail.extraHours.toFixed(2)} hrs
+                        <div>
+                          <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Out Time</label>
+                          <div className="mt-1 flex items-center gap-2">
+                            {!editingOutTime ? (
+                              <>
+                                <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                                  {attendanceDetail.outTime ? formatTime(attendanceDetail.outTime, true, selectedDate || '') : '-'}
+                                </div>
+                                {!attendanceDetail.outTime && (
+                                  <button
+                                    onClick={() => {
+                                      setEditingOutTime(true);
+                                      if (attendanceDetail.outTime) {
+                                        const date = new Date(attendanceDetail.outTime);
+                                        setOutTimeInput(date.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false }));
+                                      }
+                                    }}
+                                    className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"
+                                  >
+                                    Add
+                                  </button>
+                                )}
+                                {attendanceDetail.outTime && (
+                                  <button
+                                    onClick={() => {
+                                      setEditingOutTime(true);
+                                      const date = new Date(attendanceDetail.outTime);
+                                      setOutTimeInput(date.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false }));
+                                    }}
+                                    className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"
+                                  >
+                                    Edit
+                                  </button>
+                                )}
+                              </>
+                            ) : (
+                              <div className="flex-1 flex items-center gap-2">
+                                <input
+                                  type="time"
+                                  value={outTimeInput}
+                                  onChange={(e) => setOutTimeInput(e.target.value)}
+                                  className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                                />
+                                <button
+                                  onClick={handleSaveOutTime}
+                                  disabled={savingOutTime || !outTimeInput}
+                                  className="rounded-lg bg-green-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {savingOutTime ? 'Saving...' : 'Save'}
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setEditingOutTime(false);
+                                    setOutTimeInput('');
+                                  }}
+                                  className="rounded-lg bg-slate-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-slate-600"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            )}
                           </div>
                           {!hasExistingOT && attendanceDetail.shiftId && (
                             <button

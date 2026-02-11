@@ -194,11 +194,11 @@ export default function DashboardPage() {
                             </div>
                             <div className="flex flex-col items-center">
                               <span className="text-[10px] md:text-xs font-semibold text-emerald-100 uppercase tracking-wider">In Time</span>
-                              <span className="text-sm md:text-base font-bold text-white font-mono">{shift.inTime ? new Date(shift.inTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}</span>
+                              <span className="text-sm md:text-base font-bold text-white font-mono">{shift.inTime ? new Date(shift.inTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }) : '--:--'}</span>
                             </div>
                             <div className="flex flex-col items-end">
                               <span className="text-[10px] md:text-xs font-semibold text-emerald-100 uppercase tracking-wider">Out Time</span>
-                              <span className="text-sm md:text-base font-bold text-white font-mono">{shift.outTime ? new Date(shift.outTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}</span>
+                              <span className="text-sm md:text-base font-bold text-white font-mono">{shift.outTime ? new Date(shift.outTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }) : '--:--'}</span>
                             </div>
                           </div>
                         ))
@@ -210,11 +210,11 @@ export default function DashboardPage() {
                           </div>
                           <div className="flex flex-col items-center">
                             <span className="text-[10px] md:text-xs font-semibold text-emerald-100 uppercase tracking-wider">In Time</span>
-                            <span className="text-sm md:text-base font-bold text-white font-mono">{record.inTime ? new Date(record.inTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}</span>
+                            <span className="text-sm md:text-base font-bold text-white font-mono">{record.inTime ? new Date(record.inTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }) : '--:--'}</span>
                           </div>
                           <div className="flex flex-col items-end">
                             <span className="text-[10px] md:text-xs font-semibold text-emerald-100 uppercase tracking-wider">Out Time</span>
-                            <span className="text-sm md:text-base font-bold text-white font-mono">{record.outTime ? new Date(record.outTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}</span>
+                            <span className="text-sm md:text-base font-bold text-white font-mono">{record.outTime ? new Date(record.outTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }) : '--:--'}</span>
                           </div>
                         </div>
                       )}
