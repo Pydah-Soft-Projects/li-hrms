@@ -485,7 +485,19 @@ exports.applyCCL = async (req, res) => {
     // Build workflow
     const workflowSettings = await getWorkflowSettings();
     const approvalSteps = [];
-    if (workflowSettings?.workflow?.steps?.length) {
+    const reportingManagers = employee.dynamicFields?.reporting_to || employee.dynamicFields?.reporting_to_ || [];
+    const hasReportingManager = Array.isArray(reportingManagers) && reportingManagers.length > 0;
+
+    // 1. Prioritize Reporting Manager if configured or available
+    if (hasReportingManager) {
+      approvalSteps.push({
+        stepOrder: 1,
+        role: 'reporting_manager',
+        label: 'Reporting Manager Approval',
+        status: 'pending',
+        isCurrent: true
+      });
+    } else if (workflowSettings?.workflow?.steps?.length) {
       workflowSettings.workflow.steps.forEach((s, i) => {
         approvalSteps.push({
           stepOrder: i + 1,
@@ -509,6 +521,7 @@ exports.applyCCL = async (req, res) => {
       nextApprover: approvalSteps[0]?.role || 'hod',
       approvalChain: approvalSteps,
       finalAuthority: workflowSettings?.workflow?.finalAuthority?.role || 'hr',
+      reportingManagerIds: hasReportingManager ? reportingManagers.map(m => (m._id || m).toString()) : [],
       history: [
         {
           step: 'employee',
@@ -584,11 +597,17 @@ exports.getPendingApprovals = async (req, res) => {
     } else if (['hod', 'hr', 'manager'].includes(userRole)) {
       const roleVariants = [userRole];
       if (userRole === 'hr') roleVariants.push('final_authority');
-      filter['workflow.approvalChain'] = { $elemMatch: { role: { $in: roleVariants } } };
+
+      filter['$or'] = [
+        { 'workflow.approvalChain': { $elemMatch: { role: { $in: roleVariants } } } },
+        { 'workflow.reportingManagerIds': req.user._id.toString() }
+      ];
+
       const employeeIds = await getEmployeeIdsInScope(req.user);
       filter.employeeId = employeeIds.length > 0 ? { $in: employeeIds } : { $in: [] };
     } else {
-      return res.status(403).json({ success: false, error: 'Not authorized' });
+      // Check if user is a reporting manager even if they don't have an admin role
+      filter['workflow.reportingManagerIds'] = req.user._id.toString();
     }
 
     const ccls = await CCLRequest.find(filter)
@@ -647,7 +666,23 @@ exports.processCCLAction = async (req, res) => {
 
     const isRoleMatch = userRole === requiredRole || (requiredRole === 'final_authority' && userRole === 'hr');
     const isGlobalAdmin = ['super_admin', 'sub_admin'].includes(userRole);
-    let canProcess = isGlobalAdmin || (isRoleMatch && checkJurisdiction(fullUser, ccl));
+
+    let canProcess = false;
+    if (isGlobalAdmin) {
+      canProcess = true;
+    } else if (requiredRole === 'reporting_manager') {
+      // Logic for Reporting Manager (Virtual Role)
+      const managers = ccl.workflow?.reportingManagerIds || [];
+      if (managers.includes(fullUser._id.toString())) {
+        canProcess = true;
+      }
+      // Fallback to HOD if user is an HOD for the employee
+      if (!canProcess && userRole === 'hod') {
+        canProcess = checkJurisdiction(fullUser, ccl);
+      }
+    } else if (isRoleMatch) {
+      canProcess = checkJurisdiction(fullUser, ccl);
+    }
 
     if (!canProcess) {
       return res.status(403).json({ success: false, error: 'Not authorized to process this CCL' });

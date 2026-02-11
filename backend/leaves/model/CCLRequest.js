@@ -83,7 +83,7 @@ const cclRequestSchema = new mongoose.Schema(
     // Status
     status: {
       type: String,
-      enum: ['draft', 'pending', 'hod_approved', 'hod_rejected', 'manager_approved', 'manager_rejected', 'hr_approved', 'hr_rejected', 'approved', 'rejected', 'cancelled'],
+      enum: ['draft', 'pending', 'reporting_manager_approved', 'reporting_manager_rejected', 'hod_approved', 'hod_rejected', 'manager_approved', 'manager_rejected', 'hr_approved', 'hr_rejected', 'approved', 'rejected', 'cancelled'],
       default: 'draft',
       index: true,
     },
@@ -94,6 +94,7 @@ const cclRequestSchema = new mongoose.Schema(
       nextApproverRole: { type: String, default: null },
       currentStep: { type: String, default: 'employee' },
       nextApprover: { type: String, default: null },
+      reportingManagerIds: [String],
       isCompleted: { type: Boolean, default: false },
       approvalChain: [
         {

@@ -602,15 +602,28 @@ exports.applyLeave = async (req, res) => {
 
     // Initialize Workflow (Dynamic)
     const approvalSteps = [];
+    const reportingManagers = employee.dynamicFields?.reporting_to || employee.dynamicFields?.reporting_to_ || [];
+    const hasReportingManager = Array.isArray(reportingManagers) && reportingManagers.length > 0;
 
-    // 1. Always start with HOD as per requirements
-    approvalSteps.push({
-      stepOrder: 1,
-      role: 'hod',
-      label: 'HOD Approval',
-      status: 'pending',
-      isCurrent: true
-    });
+    // 1. Prioritize Reporting Manager if configured or available
+    if (hasReportingManager) {
+      approvalSteps.push({
+        stepOrder: 1,
+        role: 'reporting_manager',
+        label: 'Reporting Manager Approval',
+        status: 'pending',
+        isCurrent: true
+      });
+    } else {
+      // Fallback to HOD as per requirements
+      approvalSteps.push({
+        stepOrder: 1,
+        role: 'hod',
+        label: 'HOD Approval',
+        status: 'pending',
+        isCurrent: true
+      });
+    }
 
     // 2. Add other steps from settings, avoiding duplicate HOD if it's already first
     if (workflowSettings?.workflow?.steps && workflowSettings.workflow.steps.length > 0) {
@@ -629,12 +642,13 @@ exports.applyLeave = async (req, res) => {
     }
 
     let workflowData = {
-      currentStepRole: 'hod',
-      nextApproverRole: 'hod',
-      currentStep: 'hod', // Legacy
-      nextApprover: 'hod', // Legacy
+      currentStepRole: approvalSteps[0]?.role || 'hod',
+      nextApproverRole: approvalSteps[0]?.role || 'hod',
+      currentStep: approvalSteps[0]?.role || 'hod', // Legacy
+      nextApprover: approvalSteps[0]?.role || 'hod', // Legacy
       approvalChain: approvalSteps,
       finalAuthority: workflowSettings?.workflow?.finalAuthority?.role || 'hr',
+      reportingManagerIds: hasReportingManager ? reportingManagers.map(m => (m._id || m).toString()) : [],
       history: [
         {
           step: 'employee',
@@ -952,11 +966,11 @@ exports.getPendingApprovals = async (req, res) => {
       // User's role must appear in the approval chain (they're a workflow participant)
       const roleVariants = [userRole];
       if (userRole === 'hr') roleVariants.push('final_authority');
-      filter['workflow.approvalChain'] = {
-        $elemMatch: {
-          role: { $in: roleVariants }
-        }
-      };
+
+      filter['$or'] = [
+        { 'workflow.approvalChain': { $elemMatch: { role: { $in: roleVariants } } } },
+        { 'workflow.reportingManagerIds': req.user._id.toString() }
+      ];
 
       // Division/Department scope: only leaves for employees in user's scope
       const employeeIds = await getEmployeeIdsInScope(req.user);
@@ -970,11 +984,12 @@ exports.getPendingApprovals = async (req, res) => {
 
       filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
     }
-    // 5. Generic / Custom Role: Show if role appears in approval chain
+    // 5. Generic / Custom Role or Reporting Manager without admin role
     else {
-      filter['workflow.approvalChain'] = {
-        $elemMatch: { role: userRole }
-      };
+      filter['$or'] = [
+        { 'workflow.approvalChain': { $elemMatch: { role: userRole } } },
+        { 'workflow.reportingManagerIds': req.user._id.toString() }
+      ];
       filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
     }
 
