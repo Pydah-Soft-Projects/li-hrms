@@ -202,10 +202,12 @@ exports.getMyODs = async (req, res) => {
     if (req.user.employeeId) orConditions.push({ emp_no: String(req.user.employeeId).trim() });
     // Fallback: User may have emp_no but no employeeRef - resolve Employee by emp_no
     if (!req.user.employeeRef && req.user.employeeId) {
-      const emp = await Employee.findOne({ $or: [
-        { emp_no: String(req.user.employeeId).trim() },
-        { emp_no: { $regex: new RegExp(`^${String(req.user.employeeId).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } }
-      ] }).select('_id');
+      const emp = await Employee.findOne({
+        $or: [
+          { emp_no: String(req.user.employeeId).trim() },
+          { emp_no: { $regex: new RegExp(`^${String(req.user.employeeId).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } }
+        ]
+      }).select('_id');
       if (emp) orConditions.push({ employeeId: emp._id });
     }
 
@@ -578,15 +580,28 @@ exports.applyOD = async (req, res) => {
 
     // Initialize Workflow (Dynamic)
     const approvalSteps = [];
+    const reportingManagers = employee.dynamicFields?.reporting_to || employee.dynamicFields?.reporting_to_ || [];
+    const hasReportingManager = Array.isArray(reportingManagers) && reportingManagers.length > 0;
 
-    // 1. Always start with HOD as per requirements
-    approvalSteps.push({
-      stepOrder: 1,
-      role: 'hod',
-      label: 'HOD Approval',
-      status: 'pending',
-      isCurrent: true
-    });
+    // 1. Prioritize Reporting Manager if configured or available
+    if (hasReportingManager) {
+      approvalSteps.push({
+        stepOrder: 1,
+        role: 'reporting_manager',
+        label: 'Reporting Manager Approval',
+        status: 'pending',
+        isCurrent: true
+      });
+    } else {
+      // Fallback to HOD as per requirements
+      approvalSteps.push({
+        stepOrder: 1,
+        role: 'hod',
+        label: 'HOD Approval',
+        status: 'pending',
+        isCurrent: true
+      });
+    }
 
     // 2. Add other steps from settings, avoiding duplicate HOD if it's already first
     if (workflowSettings?.workflow?.steps && workflowSettings.workflow.steps.length > 0) {
@@ -605,12 +620,13 @@ exports.applyOD = async (req, res) => {
     }
 
     let workflowData = {
-      currentStepRole: 'hod',
-      nextApproverRole: 'hod',
-      currentStep: 'hod', // Legacy
-      nextApprover: 'hod', // Legacy
+      currentStepRole: approvalSteps[0]?.role || 'hod',
+      nextApproverRole: approvalSteps[0]?.role || 'hod',
+      currentStep: approvalSteps[0]?.role || 'hod', // Legacy
+      nextApprover: approvalSteps[0]?.role || 'hod', // Legacy
       approvalChain: approvalSteps,
       finalAuthority: workflowSettings?.workflow?.finalAuthority?.role || 'hr',
+      reportingManagerIds: hasReportingManager ? reportingManagers.map(m => (m._id || m).toString()) : [],
       history: [
         {
           step: 'employee',
@@ -1027,9 +1043,11 @@ exports.getPendingApprovals = async (req, res) => {
     else if (['hod', 'hr', 'manager'].includes(userRole)) {
       const roleVariants = [userRole];
       if (userRole === 'hr') roleVariants.push('final_authority');
-      filter['workflow.approvalChain'] = {
-        $elemMatch: { role: { $in: roleVariants } }
-      };
+
+      filter['$or'] = [
+        { 'workflow.approvalChain': { $elemMatch: { role: { $in: roleVariants } } } },
+        { 'workflow.reportingManagerIds': req.user._id.toString() }
+      ];
 
       const employeeIds = await getEmployeeIdsInScope(req.user);
       if (employeeIds.length > 0) {
@@ -1041,10 +1059,9 @@ exports.getPendingApprovals = async (req, res) => {
       filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
     }
     else {
-      return res.status(403).json({
-        success: false,
-        error: 'Not authorized to view pending approvals',
-      });
+      // Check if user is a reporting manager even if they don't have an admin role
+      filter['workflow.reportingManagerIds'] = req.user._id.toString();
+      filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
     }
 
     const ods = await OD.find(filter)
@@ -1127,6 +1144,16 @@ exports.processODAction = async (req, res) => {
 
     if (isGlobalAdmin) {
       canProcess = true;
+    } else if (requiredRole === 'reporting_manager') {
+      // Logic for Reporting Manager (Virtual Role)
+      const managers = od.workflow?.reportingManagerIds || [];
+      if (managers.includes(fullUser._id.toString())) {
+        canProcess = true;
+      }
+      // Fallback to HOD if user is an HOD for the employee
+      if (!canProcess && userRole === 'hod') {
+        canProcess = checkJurisdiction(fullUser, od);
+      }
     } else if (isRoleMatch) {
       // 2. If roles match, enforce Jurisdictional Check
       canProcess = checkJurisdiction(fullUser, od);
