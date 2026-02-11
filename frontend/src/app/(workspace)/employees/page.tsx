@@ -26,6 +26,7 @@ import {
   Trash2,
   Mail,
   ChevronRight,
+  ChevronLeft,
   UserCheck,
   UserX,
   Clock as LucideClock
@@ -212,6 +213,8 @@ export default function EmployeesPage() {
 
   // Infinite scrolling state
   const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
   const [hasMoreEmployees, setHasMoreEmployees] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const observerTarget = useRef<HTMLDivElement>(null);
@@ -922,6 +925,8 @@ export default function EmployeesPage() {
         if (pagination) {
           setHasMoreEmployees(pagination.page < pagination.totalPages);
           setCurrentPage(pagination.page);
+          setTotalPages(pagination.totalPages || 0);
+          setTotalCount(pagination.total || 0);
         } else {
           setHasMoreEmployees(false);
         }
@@ -2138,13 +2143,13 @@ export default function EmployeesPage() {
 
 
   return (
-    <div className="relative min-h-screen -m-4 sm:-m-5 lg:-m-6">
+    <div className="relative min-h-screen bg-bg-base overflow-x-hidden">
       {/* Background Grid Pattern */}
       <div className="pointer-events-none fixed inset-0 z-0 bg-bg-base/50 bg-[linear-gradient(to_right,rgba(0,0,0,0.02)_1px,transparent_1px),linear-gradient(to_bottom,rgba(0,0,0,0.02)_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:42px_42px]"></div>
 
-      <div className="relative z-10 p-4 sm:p-5 lg:p-6 space-y-6">
+      <div className="relative z-10 max-w-[1920px] mx-auto px-4 sm:px-8 py-6 sm:py-8 space-y-8">
         {/* Header - Unified Layout */}
-        <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
+        <div className="flex flex-wrap items-center justify-between gap-6 mb-2">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
               <Users className="w-6 h-6" />
@@ -2251,12 +2256,71 @@ export default function EmployeesPage() {
             )}
 
           </div>
+
+          {/* Pagination Controls & Search */}
+          <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-6 p-5 sm:p-6 rounded-[2.5rem] border border-border-base bg-bg-surface/40 backdrop-blur-2xl shadow-xl shadow-indigo-500/5">
+            <div className="flex flex-col md:flex-row items-stretch md:items-center gap-4 flex-1">
+              <div className="relative flex-1 group">
+                <div className="absolute inset-0 bg-indigo-500/5 rounded-2xl blur-xl transition-opacity opacity-0 group-focus-within:opacity-100" />
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-text-secondary transition-colors group-focus-within:text-indigo-500" />
+                <input
+                  type="text"
+                  placeholder="Search by name, emp no, or department..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && loadEmployees(1, false)}
+                  className="relative w-full h-12 pl-12 pr-4 rounded-2xl border border-border-base bg-bg-base/60 text-sm font-semibold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-text-primary placeholder:text-text-secondary/40 shadow-sm"
+                />
+              </div>
+              <button
+                onClick={() => loadEmployees(1, false)}
+                className="h-12 px-8 rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-600 text-white text-[10px] font-black uppercase tracking-[0.2em] shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/40 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 whitespace-nowrap"
+              >
+                <Search className="w-3.5 h-3.5" />
+                <span>Search</span>
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between sm:justify-end gap-6 sm:gap-8">
+              <div className="flex items-center gap-3">
+                <span className="text-[10px] font-black uppercase tracking-widest text-text-secondary">Page</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => loadEmployees(currentPage - 1, false)}
+                    disabled={currentPage <= 1 || loading}
+                    className="w-10 h-10 flex items-center justify-center rounded-xl border border-border-base bg-bg-base/50 text-text-secondary hover:text-indigo-500 hover:border-indigo-500/50 disabled:opacity-30 disabled:hover:border-border-base disabled:hover:text-text-secondary transition-all"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <div className="min-w-[80px] text-center px-1">
+                    <span className="text-sm font-black text-text-primary">{currentPage}</span>
+                    <span className="mx-1.5 text-[10px] font-bold text-text-secondary">of</span>
+                    <span className="text-sm font-black text-text-primary">{totalPages || 1}</span>
+                  </div>
+                  <button
+                    onClick={() => loadEmployees(currentPage + 1, false)}
+                    disabled={currentPage >= totalPages || loading}
+                    className="w-10 h-10 flex items-center justify-center rounded-xl border border-border-base bg-bg-base/50 text-text-secondary hover:text-indigo-500 hover:border-indigo-500/50 disabled:opacity-30 disabled:hover:border-border-base disabled:hover:text-text-secondary transition-all"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="hidden sm:block h-8 w-px bg-border-base"></div>
+
+              <div className="flex flex-col items-end">
+                <span className="text-[10px] font-black uppercase tracking-widest text-text-secondary mb-0.5">Total Records</span>
+                <span className="text-sm font-black text-indigo-500">{totalCount}</span>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Employee List with Skeleton Loading */}
         {loading || (activeTab === 'applications' && loadingApplications) ? (
           <div className="overflow-hidden rounded-3xl border border-border-base bg-bg-surface/50 backdrop-blur-md shadow-sm">
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto scrollbar-hide">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border-base bg-bg-base/50">
@@ -2312,7 +2376,7 @@ export default function EmployeesPage() {
             </div>
           ) : (
             <div className="overflow-hidden rounded-3xl border border-border-base bg-bg-surface/50 backdrop-blur-md shadow-sm">
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto scrollbar-hide">
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-border-base bg-bg-base/50">
@@ -2495,7 +2559,7 @@ export default function EmployeesPage() {
               </div>
               <div className="border-t border-border-base bg-bg-base/30 px-6 py-4 flex items-center justify-between">
                 <p className="text-xs font-bold text-text-secondary uppercase tracking-widest">
-                  Showing <span className="text-indigo-500">{filteredEmployees.length}</span> of <span className="text-indigo-500">{employees.length}</span> Employees
+                  Showing <span className="text-indigo-500">{filteredEmployees.length}</span> of <span className="text-indigo-500">{totalCount}</span> Employees
                 </p>
                 {/* Add pagination controls here if needed */}
               </div>

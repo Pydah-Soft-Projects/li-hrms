@@ -2,26 +2,32 @@
 'use client';
 
 import {
-  Building,
-  Check,
-  CheckCircle,
-  CheckCircle2,
-  ChevronRight,
-  DataScope } from '@/lib/api';
+  api,
+  DataScope,
+  Department,
+  Division,
+  Employee,
+  User,
+} from '@/lib/api';
+import { useAuth } from '@/contexts/AuthContext';
+import {
+  canViewUsers,
+  canCreateUser,
+  canEditUser,
+  canDeleteUser,
+  canResetPassword,
+  isManagementRole
+} from '@/lib/permissions';
 import { MODULE_CATEGORIES } from '@/config/moduleCategories';
 import Spinner from '@/components/Spinner';
 import {
   Plus,
-  Department,
-  Division,
   Edit,
-  Employee,
   Eye,
   EyeOff,
   Filter,
   Globe,
   Info,
-  Key,
   Layers,
   LayoutGrid,
   Lock,
@@ -34,7 +40,6 @@ import {
   ShieldCheck,
   ShieldHalf,
   Trash2,
-  User,
   User as UserIcon,
   UserCheck,
   UserCircle,
@@ -42,12 +47,21 @@ import {
   UserX,
   Users,
   X,
+  Building,
+  Check,
+  CheckCircle,
+  CheckCircle2,
+  ChevronRight,
+  Key,
+  Clock
+} from 'lucide-react';
+import {
   useCallback,
   useEffect,
-  useRef } from 'react';
-import { api,
+  useMemo,
+  useRef,
   useState
-} from 'lucide-react';
+} from 'react';
 
 // Custom Stat Card for User Management
 const StatCard = ({ title, value, icon: Icon, bgClass, iconClass, dekorClass, trend }: { title: string, value: number | string, icon: any, bgClass: string, iconClass: string, dekorClass?: string, trend?: { value: string, positive: boolean } }) => (
@@ -116,6 +130,7 @@ const getRoleLabel = (role: string) => {
 };
 
 export default function UsersPage() {
+  const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [divisions, setDivisions] = useState<Division[]>([]);
@@ -129,6 +144,32 @@ export default function UsersPage() {
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+
+  const scopedUsers = useMemo(() => {
+    if (!currentUser || currentUser.role === 'super_admin') return users;
+
+    const myMappings = (currentUser as any).divisionMapping || [];
+    if (myMappings.length === 0 && !['hr', 'sub_admin'].includes(currentUser.role)) return [];
+
+    // HR and Sub Admin without mappings might see all in workspace context, 
+    // but HOD/Manager MUST have mappings to see anything specific.
+    if (currentUser.role !== 'hr' && currentUser.role !== 'sub_admin' && myMappings.length === 0) return [];
+    if (['hr', 'sub_admin'].includes(currentUser.role) && myMappings.length === 0) return users;
+
+    const myDivIds = myMappings.map((m: any) => typeof m.division === 'string' ? m.division : m.division?._id);
+
+    return users.filter(u => {
+      if (u.role === 'super_admin') return false; // Usually don't show super_admins to others
+
+      const uMappings = u.divisionMapping || [];
+      if (uMappings.length === 0) return ['hr', 'sub_admin'].includes(currentUser.role);
+
+      return uMappings.some((um: any) => {
+        const umDivId = typeof um.division === 'string' ? um.division : um.division?._id;
+        return myDivIds.includes(umDivId);
+      });
+    });
+  }, [users, currentUser]);
 
   // Dialogs
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -146,6 +187,7 @@ export default function UsersPage() {
   const [showViewDialog, setShowViewDialog] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [selectedViewUser, setSelectedViewUser] = useState<User | null>(null);
+  const [activeTab, setActiveTab] = useState<'overview' | 'permissions'>('overview');
 
   const [formData, setFormData] = useState<UserFormData>({
     email: '',
@@ -1147,6 +1189,28 @@ export default function UsersPage() {
     );
   }
 
+  // Permission Check
+  if (currentUser && !canViewUsers(currentUser as any)) {
+    return (
+      <div className="flex h-[70vh] flex-col items-center justify-center p-6 text-center">
+        <div className="mb-6 flex h-24 w-24 items-center justify-center rounded-3xl bg-rose-50 text-rose-500 dark:bg-rose-900/20">
+          <Lock className="h-12 w-12" />
+        </div>
+        <h2 className="mb-2 text-2xl font-black text-slate-900 dark:text-white">Not Authorized</h2>
+        <p className="max-w-md text-slate-500 dark:text-slate-400 font-medium leading-relaxed">
+          You do not have the required permissions to view this page.
+          Access is restricted to authorized personnel only.
+        </p>
+        <button
+          onClick={() => window.history.back()}
+          className="mt-8 rounded-2xl bg-slate-900 px-8 py-3.5 text-sm font-black uppercase tracking-widest text-white transition-all hover:bg-black active:scale-95 dark:bg-white dark:text-slate-900"
+        >
+          Go Back
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="relative min-h-screen bg-slate-50 p-6 dark:bg-slate-950/50">
       {/* Background Decorations */}
@@ -1175,20 +1239,24 @@ export default function UsersPage() {
               <RotateCw className={`h-4 w-4 transition-transform group-hover:rotate-180 ${loading ? 'animate-spin' : ''}`} />
               Sync Data
             </button>
-            <button
-              onClick={openFromEmployeeDialog}
-              className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700 transition-all hover:bg-emerald-100 dark:border-emerald-800/50 dark:bg-emerald-900/20 dark:text-emerald-400"
-            >
-              <UserPlus className="h-4 w-4" />
-              Upgrade Employee
-            </button>
-            <button
-              onClick={() => setShowCreateDialog(true)}
-              className="flex items-center gap-2 rounded-xl bg-slate-900 px-6 py-2.5 text-sm font-bold text-white shadow-xl shadow-slate-900/20 transition-all hover:scale-[1.02] hover:bg-slate-800 active:scale-95 dark:bg-white dark:text-slate-900 dark:shadow-none"
-            >
-              <Plus className="h-4 w-4" />
-              New User
-            </button>
+            {currentUser && canCreateUser(currentUser as any) && (
+              <>
+                <button
+                  onClick={openFromEmployeeDialog}
+                  className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700 transition-all hover:bg-emerald-100 dark:border-emerald-800/50 dark:bg-emerald-900/20 dark:text-emerald-400"
+                >
+                  <UserPlus className="h-4 w-4" />
+                  Upgrade Employee
+                </button>
+                <button
+                  onClick={() => setShowCreateDialog(true)}
+                  className="flex items-center gap-2 rounded-xl bg-slate-900 px-6 py-2.5 text-sm font-bold text-white shadow-xl shadow-slate-900/20 transition-all hover:scale-[1.02] hover:bg-slate-800 active:scale-95 dark:bg-white dark:text-slate-900 dark:shadow-none"
+                >
+                  <Plus className="h-4 w-4" />
+                  New User
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -1327,7 +1395,7 @@ export default function UsersPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {users.map((user) => (
+                {scopedUsers.map((user) => (
                   <tr key={user._id} className="group transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/50">
                     <td className="px-6 py-5">
                       <div className="flex items-center gap-4">
@@ -1420,31 +1488,38 @@ export default function UsersPage() {
                       </button>
                     </td>
                     <td className="px-6 py-5">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          onClick={() => openEditDialog(user)}
-                          className="rounded-xl border border-slate-100 bg-white p-2.5 text-slate-500 shadow-sm transition-all hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-blue-500/30 dark:hover:bg-blue-500/10"
-                          title="Edit Account"
-                        >
-                          <Edit className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => {
-                            setSelectedUser(user);
-                            setShowPasswordDialog(true);
-                          }}
-                          className="rounded-xl border border-slate-100 bg-white p-2.5 text-slate-500 shadow-sm transition-all hover:border-amber-200 hover:bg-amber-50 hover:text-amber-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-amber-500/30 dark:hover:bg-amber-500/10"
-                          title="Reset Password"
-                        >
-                          <Key className="h-4 w-4" />
-                        </button>
-                        {user.role !== 'super_admin' && (
+                      <div className="flex justify-end gap-2">
+                        {currentUser && canEditUser(currentUser as any) && (
+                          <button
+                            onClick={() => {
+                              setSelectedUser(user);
+                              openEditDialog(user);
+                            }}
+                            className="rounded-xl border border-slate-200 p-2 text-slate-400 transition-all hover:bg-blue-50 hover:text-blue-600 dark:border-slate-800 dark:hover:bg-blue-900/30"
+                            title="Edit User"
+                          >
+                            <Edit className="h-4.5 w-4.5" />
+                          </button>
+                        )}
+                        {currentUser && canResetPassword(currentUser as any) && (
+                          <button
+                            onClick={() => {
+                              setSelectedUser(user);
+                              setShowPasswordDialog(true);
+                            }}
+                            className="rounded-xl border border-slate-200 p-2 text-slate-400 transition-all hover:bg-amber-50 hover:text-amber-600 dark:border-slate-800 dark:hover:bg-amber-900/30"
+                            title="Reset Password"
+                          >
+                            <Key className="h-4.5 w-4.5" />
+                          </button>
+                        )}
+                        {currentUser && canDeleteUser(currentUser as any) && (
                           <button
                             onClick={() => handleDelete(user)}
-                            className="rounded-xl border border-slate-100 bg-white p-2.5 text-slate-500 shadow-sm transition-all hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-rose-500/30 dark:hover:bg-rose-500/10"
+                            className="rounded-xl border border-slate-200 p-2 text-slate-400 transition-all hover:bg-rose-50 hover:text-rose-600 dark:border-slate-800 dark:hover:bg-rose-900/30"
                             title="Delete User"
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <Trash2 className="h-4.5 w-4.5" />
                           </button>
                         )}
                         <button
@@ -1452,10 +1527,10 @@ export default function UsersPage() {
                             setSelectedViewUser(user);
                             setShowViewDialog(true);
                           }}
-                          className="rounded-xl border border-slate-100 bg-white p-2.5 text-slate-500 shadow-sm transition-all hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-indigo-500/30 dark:hover:bg-indigo-500/10"
+                          className="rounded-xl border border-slate-200 p-2 text-slate-400 transition-all hover:bg-indigo-50 hover:text-indigo-600 dark:border-slate-800 dark:hover:bg-indigo-900/30"
                           title="View Details"
                         >
-                          <ChevronRight className="h-4 w-4" />
+                          <Eye className="h-4.5 w-4.5" />
                         </button>
                       </div>
                     </td>
@@ -1464,8 +1539,8 @@ export default function UsersPage() {
               </tbody>
             </table>
           </div>
-          {users.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-20">
+          {scopedUsers.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
               <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-3xl bg-slate-100 dark:bg-slate-800">
                 <Users className="h-8 w-8 text-slate-400" />
               </div>
@@ -2595,170 +2670,208 @@ export default function UsersPage() {
             </div>
           )
         }
-        {/* View User Dialog */}
+        {/* Redesigned User Detail Dialog */}
         {
           showViewDialog && selectedViewUser && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 lg:p-8">
+            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6">
               <div
-                className="fixed inset-0 bg-slate-900/40 backdrop-blur-md transition-opacity"
+                className="fixed inset-0 bg-slate-900/60 backdrop-blur-xl transition-all duration-500 animate-in fade-in"
                 onClick={() => setShowViewDialog(false)}
               />
-              <div className="relative z-50 flex w-full max-w-6xl max-h-[92vh] flex-col overflow-hidden rounded-[3rem] bg-white shadow-[0_32px_128px_-16px_rgba(0,0,0,0.3)] dark:bg-slate-900 border border-white/20 dark:border-slate-800 animate-in fade-in zoom-in duration-300">
-                {/* Premium Header */}
-                <div className="relative overflow-hidden border-b border-slate-100 px-8 py-10 lg:px-12 dark:border-slate-800 bg-gradient-to-r from-slate-50/50 to-white dark:from-slate-900/50 dark:to-slate-900">
-                  <div className="absolute right-0 top-0 h-64 w-64 translate-x-12 -translate-y-12 rounded-full bg-blue-500/10 blur-3xl" />
-                  <div className="absolute left-0 bottom-0 h-64 w-64 -translate-x-12 translate-y-12 rounded-full bg-indigo-500/5 blur-3xl" />
+              <div className="relative z-[70] flex h-full max-h-[850px] w-full max-w-6xl flex-col overflow-hidden rounded-[2.5rem] bg-white shadow-2xl transition-all dark:bg-slate-900 border border-white/20 dark:border-slate-800 animate-in fade-in zoom-in duration-300">
 
-                  <div className="relative flex flex-col md:flex-row items-center gap-10">
-                    <div className="relative group">
-                      <div className="flex h-32 w-32 items-center justify-center rounded-[2.5rem] bg-gradient-to-br from-slate-900 to-slate-800 text-5xl font-black text-white shadow-2xl transition-transform group-hover:scale-105 dark:from-blue-600 dark:to-indigo-600">
-                        {selectedViewUser.name?.[0]?.toUpperCase() || '?'}
+                {/* Premium Header - Reimagined */}
+                <div className="relative border-b border-slate-100 bg-gradient-to-r from-slate-50/50 to-white px-8 py-8 dark:border-slate-800 dark:from-slate-900/50 dark:to-slate-900">
+                  <div className="absolute right-0 top-0 h-64 w-64 translate-x-12 -translate-y-12 rounded-full bg-blue-500/10 blur-3xl" />
+
+                  <div className="relative flex flex-col items-center justify-between gap-6 md:flex-row">
+                    <div className="flex items-center gap-6">
+                      <div className="relative group">
+                        <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 text-3xl font-black text-white shadow-xl dark:from-blue-600 dark:to-indigo-600 transition-transform group-hover:scale-105">
+                          {selectedViewUser.name?.[0]?.toUpperCase() || '?'}
+                        </div>
+                        {selectedViewUser.isActive && (
+                          <div className="absolute -bottom-1 -right-1 h-6 w-6 rounded-full border-4 border-white bg-emerald-500 shadow-lg dark:border-slate-900">
+                            <div className="absolute inset-0 animate-ping rounded-full bg-emerald-500 opacity-40" />
+                          </div>
+                        )}
                       </div>
-                      <div className={`absolute -bottom-2 -right-2 h-10 w-10 rounded-full border-8 border-white bg-emerald-500 shadow-lg dark:border-slate-900 ${!selectedViewUser.isActive && 'bg-slate-400'}`} />
+                      <div>
+                        <div className="flex items-center gap-3">
+                          <h2 className="text-3xl font-black tracking-tight text-slate-900 dark:text-white">
+                            {selectedViewUser.name}
+                          </h2>
+                          <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-wider ${getRoleColor(selectedViewUser.role)} border border-current/10 shadow-sm`}>
+                            {getRoleLabel(selectedViewUser.role)}
+                          </span>
+                        </div>
+                        <div className="mt-2 flex items-center gap-4 text-sm font-bold text-slate-500">
+                          <span className="flex items-center gap-1.5"><Mail className="h-3.5 w-3.5 text-blue-500" /> {selectedViewUser.email}</span>
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="text-center md:text-left flex-1">
-                      <div className="flex items-center justify-center md:justify-start gap-4 flex-wrap">
-                        <h2 className="text-5xl font-black tracking-tighter text-slate-900 dark:text-white">
-                          {selectedViewUser.name}
-                        </h2>
-                        <span className={`inline-flex items-center gap-2 rounded-full px-6 py-2 text-[11px] font-black uppercase tracking-[0.2em] ${getRoleColor(selectedViewUser.role)} shadow-sm border border-current/10`}>
-                          <Shield className="h-4 w-4" />
-                          {getRoleLabel(selectedViewUser.role)}
-                        </span>
-                      </div>
-
-                      <div className="mt-6 flex flex-wrap items-center justify-center md:justify-start gap-8">
-                        <div className="flex items-center gap-3 text-sm font-bold text-slate-500 dark:text-slate-400">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 dark:bg-slate-800">
-                            <Mail className="h-5 w-5 text-blue-500" />
-                          </div>
-                          {selectedViewUser.email}
-                        </div>
-                        <div className="flex items-center gap-3 text-sm font-bold text-slate-500 dark:text-slate-400">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 dark:bg-slate-800">
-                            <Globe className="h-5 w-5 text-indigo-500" />
-                          </div>
-                          {selectedViewUser.dataScope === 'all' ? 'Absolute Global Access' :
-                            selectedViewUser.dataScope === 'own' ? 'Self Data Scoping' : 'Regional Assignment'}
-                        </div>
-                      </div>
+                    <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-slate-100/50 p-1.5 dark:bg-slate-800/50 border border-slate-200/50 dark:border-slate-700/50">
+                      <button
+                        onClick={() => setActiveTab('overview')}
+                        className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'overview' ? 'bg-white text-blue-600 shadow-lg dark:bg-slate-700 dark:text-blue-400' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'}`}
+                      >
+                        <Layers className="h-4 w-4" />
+                        Overview
+                      </button>
+                      <button
+                        onClick={() => setActiveTab('permissions')}
+                        className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'permissions' ? 'bg-white text-blue-600 shadow-lg dark:bg-slate-700 dark:text-blue-400' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'}`}
+                      >
+                        <Lock className="h-4 w-4" />
+                        Feature Access
+                      </button>
                     </div>
 
                     <button
                       onClick={() => setShowViewDialog(false)}
-                      className="absolute -right-4 -top-4 rounded-2xl bg-slate-100 p-4 text-slate-400 transition-all hover:bg-rose-50 hover:text-rose-500 dark:bg-slate-800 dark:hover:bg-rose-900/30 shadow-sm"
+                      className="absolute -right-4 -top-4 rounded-xl bg-slate-100 p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:bg-slate-800 dark:hover:bg-rose-900/40 transition-colors"
                     >
-                      <X className="h-6 w-6" />
+                      <X className="h-5 w-5" />
                     </button>
                   </div>
                 </div>
 
-                {/* Content Area - Balanced 2-Column Layout */}
                 <div className="flex-1 overflow-hidden">
-                  <div className="grid grid-cols-1 lg:grid-cols-12 h-full">
+                  <div className="grid h-full grid-cols-1 lg:grid-cols-12">
 
-                    {/* LEFT COLUMN - Assignments */}
-                    <div className="lg:col-span-5 p-8 lg:p-12 border-r border-slate-100 dark:border-slate-800 overflow-y-auto space-y-10 bg-white dark:bg-slate-900/30">
-                      <section>
-                        <div className="mb-8 flex items-center gap-4">
-                          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400 shadow-sm shadow-blue-500/5">
-                            <Users className="h-6 w-6" />
-                          </div>
-                          <div>
-                            <h3 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">Assignments</h3>
-                            <p className="text-sm font-medium text-slate-500">Corporate structure mapping</p>
-                          </div>
-                        </div>
-
-                        <div className="space-y-6">
-                          <div className="group rounded-[2.5rem] border border-slate-100 bg-slate-50/50 p-8 transition-all hover:border-blue-500/20 hover:bg-white dark:border-slate-800 dark:bg-slate-900/50 shadow-sm hover:shadow-xl">
-                            <div className="mb-4 flex items-center justify-between">
-                              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Data Visibility Scope</span>
-                              <Globe className="h-4 w-4 text-blue-500" />
-                            </div>
-                            <div className="flex items-center gap-4">
-                              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white shadow-sm dark:bg-slate-800 text-xl">
-                                {selectedViewUser.dataScope === 'all' ? '🌏' : selectedViewUser.dataScope === 'own' ? '👤' : '🏢'}
+                    {/* Sidebar - Profile Summary */}
+                    <div className="lg:col-span-4 border-r border-slate-100 bg-slate-50/30 p-8 dark:border-slate-800 dark:bg-slate-950/20">
+                      <div className="space-y-8">
+                        <div>
+                          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-4">Metadata Bar</p>
+                          <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                            <div className="space-y-4">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-bold text-slate-500">Security Grade</span>
+                                <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-black text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400">
+                                  <ShieldCheck className="h-3 w-3" /> A+
+                                </span>
                               </div>
-                              <div>
-                                <p className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">
-                                  {selectedViewUser.dataScope === 'all' ? 'Global' :
-                                    selectedViewUser.dataScope === 'own' ? 'Personal' : 'Specific BUs'}
-                                </p>
-                                <p className="text-xs font-medium text-slate-500">Hierarchy access level</p>
+                              <div className="h-px bg-slate-100 dark:bg-slate-800" />
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-bold text-slate-500">Visibility Scope</span>
+                                <span className="text-xs font-black uppercase text-slate-700 dark:text-slate-300">
+                                  {selectedViewUser.dataScope === 'all' ? 'Universal' : selectedViewUser.dataScope === 'own' ? 'Strict' : 'Regional'}
+                                </span>
+                              </div>
+                              <div className="h-px bg-slate-100 dark:bg-slate-800" />
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="font-bold text-slate-500 flex items-center gap-2"><Clock className="h-3.5 w-3.5" /> Last Active</span>
+                                <span className="font-black text-slate-700 dark:text-slate-300">Just Now</span>
                               </div>
                             </div>
                           </div>
-
-                          <div className="group rounded-[2.5rem] border border-slate-100 bg-slate-50/50 p-8 transition-all hover:border-indigo-500/20 hover:bg-white dark:border-slate-800 dark:bg-slate-900/50 shadow-sm hover:shadow-xl">
-                            <div className="mb-4 flex items-center justify-between">
-                              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Business Unit Mapping</span>
-                              <LayoutGrid className="h-4 w-4 text-indigo-500" />
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                              {selectedViewUser.buScope && selectedViewUser.buScope.length > 0 ? (
-                                selectedViewUser.buScope.map((bu, idx) => (
-                                  <span key={idx} className="rounded-xl bg-white px-4 py-2 text-[10px] font-black uppercase tracking-wider text-slate-700 shadow-sm border border-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700 group-hover:border-indigo-500/30 transition-colors">
-                                    {bu}
-                                  </span>
-                                ))
-                              ) : (
-                                <span className="text-xs font-bold text-slate-400 italic">No specific units assigned</span>
-                              )}
-                            </div>
-                          </div>
                         </div>
-                      </section>
 
-                      <div className="pt-6">
-                        <div className="flex flex-col gap-4">
-                          <button
-                            onClick={() => {
-                              setShowViewDialog(false);
-                              openEditDialog(selectedViewUser);
-                            }}
-                            className="w-full flex items-center justify-center gap-4 rounded-3xl bg-slate-900 px-8 py-6 text-sm font-black uppercase tracking-[0.3em] text-white shadow-2xl transition-all hover:bg-black hover:scale-[1.02] active:scale-[0.98] dark:bg-blue-600 dark:hover:bg-blue-700 shadow-slate-900/20 dark:shadow-blue-500/20"
-                          >
-                            <Edit className="h-6 w-6" />
-                            Management Edit
-                          </button>
-                          <button
-                            onClick={() => setShowViewDialog(false)}
-                            className="w-full rounded-3xl border border-slate-200 bg-white px-8 py-6 text-sm font-black uppercase tracking-[0.3em] text-slate-500 shadow-sm transition-all hover:bg-slate-50 hover:text-slate-900 active:scale-[0.98] dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400"
-                          >
-                            Close Profile
-                          </button>
+                        <div>
+                          <div className="flex flex-col gap-3">
+                            <button
+                              onClick={() => {
+                                setShowViewDialog(false);
+                                openEditDialog(selectedViewUser);
+                              }}
+                              className="flex items-center justify-center gap-3 rounded-2xl bg-slate-900 px-6 py-4 text-xs font-black uppercase tracking-widest text-white shadow-xl shadow-slate-900/20 transition-all hover:bg-black hover:scale-[1.02] active:scale-[0.98] dark:bg-blue-600 dark:shadow-blue-500/20"
+                            >
+                              <Edit className="h-4 w-4" /> Edit Profile
+                            </button>
+                            <button
+                              onClick={() => setShowViewDialog(false)}
+                              className="rounded-2xl border border-slate-200 bg-white px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500 transition-all hover:bg-slate-50 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400"
+                            >
+                              Dismiss
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>
 
-                    {/* RIGHT COLUMN - Feature Access */}
-                    <div className="lg:col-span-7 p-8 lg:p-12 overflow-y-auto bg-slate-50/30 dark:bg-slate-950/20">
-                      <section>
-                        <div className="mb-8 flex items-center gap-4">
-                          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400 shadow-sm shadow-emerald-500/5">
-                            <Lock className="h-6 w-6" />
-                          </div>
-                          <div>
-                            <h3 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">Feature Access</h3>
-                            <p className="text-sm font-medium text-slate-500">Modules and functional permissions</p>
-                          </div>
-                        </div>
+                    {/* Main Content Area */}
+                    <div className="lg:col-span-8 overflow-y-auto p-10 bg-white dark:bg-slate-900">
+                      {activeTab === 'overview' ? (
+                        <div className="animate-in slide-in-from-bottom-4 fade-in duration-500 space-y-10">
+                          <section>
+                            <div className="mb-6 flex items-center gap-3">
+                              <Building className="h-5 w-5 text-blue-500" />
+                              <h3 className="text-xl font-black tracking-tight text-slate-900 dark:text-white uppercase">Hierarchy Analysis</h3>
+                            </div>
 
-                        <div className="rounded-[3rem] border border-slate-100 bg-white p-10 shadow-sm dark:border-slate-800 dark:bg-slate-950/80">
-                          {!selectedViewUser.featureControl || selectedViewUser.featureControl.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center py-20 text-center bg-slate-50/30 dark:bg-slate-900/30 rounded-[2.5rem] border-2 border-dashed border-slate-100 dark:border-slate-800">
-                              <ShieldAlert className="h-20 w-20 text-slate-200 mb-8" />
-                              <p className="text-lg font-black text-slate-500 uppercase tracking-widest">Inherited Permissions</p>
-                              <p className="mt-2 text-base text-slate-400 font-medium">Using standard hierarchical role defaults</p>
-                              <div className="mt-10 flex gap-4">
-                                <span className="rounded-full bg-white shadow-sm border border-slate-100 px-6 py-2 text-[11px] font-black uppercase tracking-widest text-slate-500">Platform Global</span>
-                                <span className="rounded-full bg-white shadow-sm border border-slate-100 px-6 py-2 text-[11px] font-black uppercase tracking-widest text-slate-500">Policy Sync</span>
+                            <div className="grid gap-6 sm:grid-cols-2">
+                              {/* Group by Division Mapping */}
+                              {selectedViewUser.divisionMapping && selectedViewUser.divisionMapping.length > 0 ? (
+                                selectedViewUser.divisionMapping.map((map: any, idx: number) => {
+                                  const divId = typeof map.division === 'string' ? map.division : map.division?._id;
+                                  const div = divisions.find(d => d._id === divId) || map.division;
+                                  const depts = (map.departments || []).map((d: any) => {
+                                    const dId = typeof d === 'string' ? d : d?._id;
+                                    return departments.find(dep => dep._id === dId) || d;
+                                  });
+
+                                  return (
+                                    <div key={idx} className="group rounded-3xl border border-slate-100 bg-slate-50/50 p-6 transition-all hover:border-blue-500/20 hover:bg-white dark:border-slate-800 dark:bg-slate-900/50 shadow-sm hover:shadow-lg">
+                                      <div className="mb-4 flex items-center justify-between">
+                                        <div className="h-10 w-10 rounded-xl bg-white shadow-sm dark:bg-slate-800 flex items-center justify-center">
+                                          <Globe className="h-5 w-5 text-blue-500" />
+                                        </div>
+                                        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Division</span>
+                                      </div>
+                                      <h4 className="text-lg font-black text-slate-900 dark:text-white mb-4">
+                                        {typeof div === 'string' ? div : div?.name || 'Assigned Division'}
+                                      </h4>
+                                      <div className="flex flex-wrap gap-2">
+                                        {depts.length > 0 ? depts.map((dept: any, dIdx: number) => (
+                                          <span key={dIdx} className="rounded-lg bg-white px-3 py-1.5 text-[10px] font-bold text-slate-600 border border-slate-100 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700">
+                                            {typeof dept === 'string' ? dept : dept?.name || 'Department'}
+                                          </span>
+                                        )) : (
+                                          <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest">Global Division Access</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })
+                              ) : (
+                                <div className="col-span-full py-12 rounded-3xl border-2 border-dashed border-slate-100 dark:border-slate-800 flex flex-col items-center justify-center text-center">
+                                  <Info className="h-10 w-10 text-slate-200 mb-4" />
+                                  <p className="text-sm font-bold text-slate-400 italic">No specific business unit mapping assigned.</p>
+                                  <p className="text-xs text-slate-400 mt-1 uppercase tracking-widest font-black">Inheriting from Global Scope</p>
+                                </div>
+                              )}
+                            </div>
+                          </section>
+
+                          <div className="rounded-3xl bg-blue-50/50 p-6 border border-blue-100/50 dark:bg-blue-900/10 dark:border-blue-800/50">
+                            <div className="flex gap-4">
+                              <ShieldCheck className="h-6 w-6 text-blue-500 shrink-0" />
+                              <div>
+                                <h4 className="text-sm font-black text-blue-900 dark:text-blue-400 uppercase tracking-widest">Access Policy Note</h4>
+                                <p className="mt-1 text-xs leading-relaxed text-blue-700/70 dark:text-blue-500/70">
+                                  This user follows the standard organizational data visibility policy. All access to business units and sensitive data points is logged according to the ISO 27001 security compliance standards.
+                                </p>
                               </div>
                             </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="animate-in slide-in-from-bottom-4 fade-in duration-500">
+                          <div className="mb-6 flex items-center gap-3">
+                            <Lock className="h-5 w-5 text-emerald-500" />
+                            <h3 className="text-xl font-black tracking-tight text-slate-900 dark:text-white uppercase font-sans">Permission Matrix</h3>
+                          </div>
+
+                          {!selectedViewUser.featureControl || selectedViewUser.featureControl.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-20 text-center bg-slate-50/50 dark:bg-slate-900/50 rounded-3xl border-2 border-dashed border-slate-100 dark:border-slate-800">
+                              <ShieldAlert className="h-16 w-16 text-slate-200 mb-6" />
+                              <p className="text-sm font-black text-slate-500 uppercase tracking-widest">Standard Privileges</p>
+                              <p className="mt-2 text-xs text-slate-400 font-medium max-w-xs">Using default hierarchical module access based on the {getRoleLabel(selectedViewUser.role)} role profile.</p>
+                            </div>
                           ) : (
-                            <div className="grid gap-10">
+                            <div className="space-y-6">
                               {MODULE_CATEGORIES.map(category => {
                                 const modulesWithPerms = category.modules.map(m => ({
                                   ...m,
@@ -2769,29 +2882,26 @@ export default function UsersPage() {
                                 if (modulesWithPerms.length === 0) return null;
 
                                 return (
-                                  <div key={category.code} className="group p-8 rounded-[2.5rem] bg-slate-50/50 dark:bg-slate-900/50 border border-transparent transition-all hover:border-emerald-500/20 hover:bg-white dark:hover:bg-slate-900 shadow-sm hover:shadow-2xl">
-                                    <div className="mb-6 flex items-center gap-4">
-                                      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white shadow-sm dark:bg-slate-800 text-2xl group-hover:scale-110 transition-transform">
+                                  <div key={category.code} className="rounded-[2rem] border border-slate-100 bg-slate-50/50 p-6 dark:border-slate-800 dark:bg-slate-900/50">
+                                    <div className="mb-4 flex items-center gap-3">
+                                      <div className="h-8 w-8 rounded-lg bg-white shadow-sm dark:bg-slate-800 flex items-center justify-center text-lg">
                                         {category.icon}
                                       </div>
-                                      <h4 className="text-base font-black uppercase tracking-[0.2em] text-slate-900 dark:text-white">{category.name}</h4>
-                                      <div className="h-px flex-1 bg-slate-200/50 dark:bg-emerald-500/10" />
+                                      <h4 className="text-sm font-black uppercase tracking-widest text-slate-900 dark:text-white">{category.name}</h4>
                                     </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="grid gap-3 sm:grid-cols-2">
                                       {modulesWithPerms.map(m => (
-                                        <div key={m.code} className="flex flex-col gap-4 rounded-[1.5rem] border border-slate-100 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 group/module transition-all hover:border-emerald-500/40 shadow-sm">
-                                          <span className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider">{m.label}</span>
+                                        <div key={m.code} className="flex flex-col gap-3 rounded-2xl border border-slate-100 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 shadow-sm transition-all hover:border-emerald-500/20">
+                                          <span className="text-[11px] font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider">{m.label}</span>
                                           <div className="flex gap-2">
                                             {m.hasRead && (
-                                              <span className="flex-1 flex items-center justify-center gap-2 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-[10px] font-black text-blue-600 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-400">
-                                                <div className="h-1.5 w-1.5 rounded-full bg-blue-500" />
-                                                READ
+                                              <span className="flex items-center gap-1.5 rounded-lg bg-blue-50 px-2 py-1 text-[9px] font-black text-blue-600 dark:bg-blue-500/10 dark:text-blue-400">
+                                                <div className="h-1 w-1 rounded-full bg-blue-500" /> READ
                                               </span>
                                             )}
                                             {m.hasWrite && (
-                                              <span className="flex-1 flex items-center justify-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-[10px] font-black text-emerald-600 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-400">
-                                                <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                                                WRITE
+                                              <span className="flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2 py-1 text-[9px] font-black text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400">
+                                                <div className="h-1 w-1 rounded-full bg-emerald-500" /> WRITE
                                               </span>
                                             )}
                                           </div>
@@ -2804,7 +2914,7 @@ export default function UsersPage() {
                             </div>
                           )}
                         </div>
-                      </section>
+                      )}
                     </div>
                   </div>
                 </div>

@@ -2817,7 +2817,7 @@ export default function AttendancePage() {
 
         {/* Attendance Table */}
         <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto scrollbar-hide">
             <table className="w-full border-collapse text-xs">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-800">
