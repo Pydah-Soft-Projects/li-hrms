@@ -13,56 +13,52 @@ import Swal from 'sweetalert2';
 import 'react-toastify/dist/ReactToastify.css';
 import Spinner from '@/components/Spinner';
 import LocationPhotoCapture from '@/components/LocationPhotoCapture';
+import {
+  Calendar,
+  Briefcase,
+  Clock3,
+  CheckCircle2,
+  XCircle,
+  Plus,
+  Search,
+  Filter,
+  ChevronRight,
+  Eye,
+  X,
+  MapPin,
+  ShieldCheck,
+  RotateCw,
+  AlertCircle,
+  Clock,
+  Check,
+  Circle
+} from 'lucide-react';
 
-
-// Icons
-const PlusIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-  </svg>
+// Custom Stat Card
+const StatCard = ({ title, value, icon: Icon, bgClass, iconClass, dekorClass, trend }: { title: string, value: number | string, icon: any, bgClass: string, iconClass: string, dekorClass?: string, trend?: { value: string, positive: boolean } }) => (
+  <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 transition-all hover:shadow-xl dark:border-slate-800 dark:bg-slate-900">
+    <div className="flex items-center justify-between gap-4">
+      <div className="flex-1">
+        <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500">{title}</p>
+        <div className="mt-2 flex items-baseline gap-2">
+          <h3 className="text-2xl font-black text-slate-900 dark:text-white">{value}</h3>
+          {trend && (
+            <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-md ${trend.positive ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'}`}>
+              {trend.value}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className={`flex h-12 w-12 items-center justify-center rounded-2xl ${bgClass} ${iconClass}`}>
+        <Icon className="h-6 w-6" />
+      </div>
+    </div>
+    {dekorClass && <div className={`absolute -right-4 -bottom-4 h-24 w-24 rounded-full ${dekorClass}`} />}
+  </div>
 );
 
-const CalendarIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-  </svg>
-);
 
-const BriefcaseIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-  </svg>
-);
 
-const CheckIcon = ({ className = "w-4 h-4" }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-  </svg>
-);
-
-const XIcon = ({ className = "w-4 h-4" }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-  </svg>
-);
-
-const ClockIcon = ({ className = "w-4 h-4" }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-  </svg>
-);
-
-const SearchIcon = ({ className = "w-4 h-4" }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-  </svg>
-);
-
-const UserIcon = ({ className = "w-4 h-4" }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-  </svg>
-);
 
 interface LeaveSplit {
   _id?: string;
@@ -1455,7 +1451,22 @@ export default function LeavesPage() {
   };
 
 
-  const totalPending = pendingLeaves.length + pendingODs.length;
+  const stats = useMemo(() => {
+    const calc = (items: any[]) => ({
+      total: items.length,
+      approved: items.filter(i => i.status === 'approved').length,
+      pending: items.filter(i => ['pending', 'hod_approved', 'manager_approved'].includes(i.status)).length,
+      rejected: items.filter(i => ['rejected', 'hod_rejected', 'hr_rejected', 'cancelled'].includes(i.status)).length,
+    });
+
+    return {
+      leaves: calc(leaves),
+      ods: calc(ods),
+      totalPending: pendingLeaves.length + pendingODs.length
+    };
+  }, [leaves, ods, pendingLeaves, pendingODs]);
+
+  const totalPending = stats.totalPending;
 
   const canPerformAction = (item: LeaveApplication | ODApplication) => {
     if (!currentUser) return false;
@@ -1519,32 +1530,30 @@ export default function LeavesPage() {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 pb-10">
       {/* Sticky Header */}
-      <div className="sticky top-0 z-30 bg-slate-50/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200/60 dark:border-slate-700/60 shadow-sm mb-6">
-        <div className="max-w-[1920px] mx-auto h-16 flex items-center justify-between px-6">
+      <div className="sticky top-4 z-40 px-4 mb-8">
+        <div className="max-w-[1920px] mx-auto bg-white/70 dark:bg-slate-900/70 backdrop-blur-2xl rounded-[2.5rem] border border-white/20 dark:border-slate-800 shadow-2xl shadow-slate-200/50 dark:shadow-none min-h-[4.5rem] flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-6 sm:px-8 py-4 sm:py-0">
           <div className="flex items-center gap-4">
             <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center text-white shadow-lg shadow-green-500/20">
-              <CalendarIcon className="w-5 h-5" />
+              <Calendar className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300">
-                Leave & OD Management
+              <h1 className="text-xl font-black bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 uppercase tracking-tight">
+                Leave & OD
               </h1>
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
                 Workspace <span className="h-1 w-1 rounded-full bg-slate-300"></span> Management
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             {hasManagePermission && (canApplyForSelf || canApplyForOthers || currentUser?.role === 'employee' || ['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser?.role)) && (
               <button
                 onClick={() => openApplyDialog('leave')}
-                className="group h-10 px-4 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-bold flex items-center gap-2 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-slate-900/10 dark:shadow-white/10"
+                className="group h-11 sm:h-10 px-6 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-slate-900/10 dark:shadow-white/10"
               >
-                <div className="h-5 w-5 rounded-lg bg-white/20 dark:bg-slate-900/10 flex items-center justify-center group-hover:rotate-90 transition-transform">
-                  <PlusIcon className="w-3.5 h-3.5" />
-                </div>
-                Apply Request
+                <Plus className="w-3.5 h-3.5" />
+                <span>Apply Request</span>
               </button>
             )}
           </div>
@@ -1568,43 +1577,69 @@ export default function LeavesPage() {
         />
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-          {[
-            { label: 'Total Leaves', value: leaves.length, icon: CalendarIcon, color: 'blue' },
-            { label: 'Total ODs', value: ods.length, icon: BriefcaseIcon, color: 'purple' },
-            { label: 'Pending Approvals', value: totalPending, icon: ClockIcon, color: 'orange', highlight: true },
-            { label: 'Approved Records', value: leaves.filter(l => l.status === 'approved').length + ods.filter(o => o.status === 'approved').length, icon: CheckIcon, color: 'green' }
-          ].map((stat, i) => (
-            <div key={i} className="group relative overflow-hidden rounded-2xl border border-slate-200/60 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 shadow-sm hover:shadow-md transition-all">
-              <div className="flex items-center gap-4 relative z-10">
-                <div className={`w-12 h-12 rounded-2xl bg-${stat.color}-50 dark:bg-${stat.color}-900/20 flex items-center justify-center text-${stat.color}-600 dark:text-${stat.color}-400 group-hover:scale-110 transition-transform duration-500`}>
-                  <stat.icon className="w-6 h-6" />
-                </div>
-                <div>
-                  <div className={`text-2xl font-black ${stat.highlight ? `text-${stat.color}-600 dark:text-${stat.color}-400` : 'text-slate-900 dark:text-white'}`}>
-                    {stat.value}
-                  </div>
-                  <div className="text-[11px] font-bold text-slate-500 uppercase tracking-tight">{stat.label}</div>
-                </div>
-              </div>
-              {/* Background Decoration */}
-              <div className={`absolute -right-2 -bottom-2 w-16 h-16 bg-${stat.color}-50/50 dark:bg-${stat.color}-900/10 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-700`} />
-            </div>
-          ))}
+        <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          <StatCard
+            title="Approved Leaves"
+            value={stats.leaves.approved}
+            icon={CheckCircle2}
+            bgClass="bg-emerald-500/10"
+            iconClass="text-emerald-600 dark:text-emerald-400"
+            dekorClass="bg-emerald-500/5"
+          />
+          <StatCard
+            title="Pending Leaves"
+            value={stats.leaves.pending}
+            icon={Clock3}
+            bgClass="bg-amber-500/10"
+            iconClass="text-amber-600 dark:text-amber-400"
+            dekorClass="bg-amber-500/5"
+          />
+          <StatCard
+            title="Rejected Leaves"
+            value={stats.leaves.rejected}
+            icon={XCircle}
+            bgClass="bg-rose-500/10"
+            iconClass="text-rose-600 dark:text-rose-400"
+            dekorClass="bg-rose-500/5"
+          />
+          <StatCard
+            title="Approved ODs"
+            value={stats.ods.approved}
+            icon={ShieldCheck}
+            bgClass="bg-blue-500/10"
+            iconClass="text-blue-600 dark:text-blue-400"
+            dekorClass="bg-blue-500/5"
+          />
+          <StatCard
+            title="Pending ODs"
+            value={stats.ods.pending}
+            icon={Clock}
+            bgClass="bg-violet-500/10"
+            iconClass="text-violet-600 dark:text-violet-400"
+            dekorClass="bg-violet-500/5"
+          />
+          <StatCard
+            title="Rejected ODs"
+            value={stats.ods.rejected}
+            icon={X}
+            bgClass="bg-slate-500/10"
+            iconClass="text-slate-600 dark:text-slate-400"
+            dekorClass="bg-slate-500/5"
+          />
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="inline-flex items-center p-1 rounded-xl bg-slate-100/50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 backdrop-blur-sm shadow-inner">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+          <div className="inline-flex items-center p-1 rounded-xl bg-slate-100/50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 backdrop-blur-sm shadow-inner overflow-x-auto scrollbar-hide">
             {[
-              { id: 'leaves', label: 'Leaves', icon: CalendarIcon, count: leaves.length, activeColor: 'blue' },
-              { id: 'od', label: 'On Duty', icon: BriefcaseIcon, count: ods.length, activeColor: 'purple' },
-              { id: 'pending', label: 'Pending', icon: ClockIcon, count: totalPending, activeColor: 'orange' }
+              { id: 'leaves', label: 'Leaves', icon: Calendar, count: leaves.length, activeColor: 'blue' },
+              { id: 'od', label: 'On Duty', icon: Briefcase, count: ods.length, activeColor: 'purple' },
+              { id: 'pending', label: 'Pending', icon: Clock3, count: totalPending, activeColor: 'orange' }
             ].map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`group relative flex items-center gap-2 px-6 py-2 rounded-lg text-xs font-bold transition-all duration-300 ${activeTab === tab.id
+                className={`group relative flex items-center gap-2 px-4 sm:px-6 py-2 rounded-lg text-xs font-bold transition-all duration-300 whitespace-nowrap ${activeTab === tab.id
                   ? `bg-white dark:bg-slate-700 text-${tab.activeColor}-600 dark:text-${tab.activeColor}-400 shadow-sm ring-1 ring-slate-200/50 dark:ring-0`
                   : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
                   }`}
@@ -1626,7 +1661,7 @@ export default function LeavesPage() {
 
         <div className="mt-4">
           {activeTab === 'leaves' && (
-            <div className="overflow-x-auto bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/60 dark:border-slate-800 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-500">
+            <div className="overflow-x-auto scrollbar-hide bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/60 dark:border-slate-800 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-500">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200/60 dark:border-slate-800">
@@ -1726,7 +1761,7 @@ export default function LeavesPage() {
 
 
           {activeTab === 'od' && (
-            <div className="overflow-x-auto bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/60 dark:border-slate-800 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-500">
+            <div className="overflow-x-auto scrollbar-hide bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/60 dark:border-slate-800 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-500">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200/60 dark:border-slate-800">
@@ -1836,7 +1871,7 @@ export default function LeavesPage() {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between px-2">
                     <h3 className="text-xs font-black text-slate-500 uppercase tracking-wider flex items-center gap-2">
-                      <CalendarIcon className="w-3.5 h-3.5" />
+                      <Calendar className="w-3.5 h-3.5" />
                       Pending Leaves ({pendingLeaves.length})
                     </h3>
                   </div>
@@ -1910,7 +1945,7 @@ export default function LeavesPage() {
                                 className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-green-500/10 py-2 text-sm font-semibold text-green-600 transition-colors hover:bg-green-500 hover:text-white dark:bg-green-500/20 dark:text-green-400 dark:hover:bg-green-500 dark:hover:text-white"
                                 title="Approve Leave"
                               >
-                                <CheckIcon /> Approve
+                                <Check /> Approve
                               </button>
                             )}
                             {hasManagePermission && (
@@ -1919,7 +1954,7 @@ export default function LeavesPage() {
                                 className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-500/10 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500 hover:text-white dark:bg-red-500/20 dark:text-red-400 dark:hover:bg-red-500 dark:hover:text-white"
                                 title="Reject Leave"
                               >
-                                <XIcon /> Reject
+                                <X /> Reject
                               </button>
                             )}
                           </div>
@@ -1934,7 +1969,7 @@ export default function LeavesPage() {
               {pendingODs.length > 0 && (
                 <div>
                   <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2">
-                    <BriefcaseIcon />
+                    <Briefcase />
                     Pending ODs ({pendingODs.length})
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -2004,7 +2039,7 @@ export default function LeavesPage() {
                                 className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-green-500/10 py-2 text-sm font-semibold text-green-600 transition-colors hover:bg-green-500 hover:text-white dark:bg-green-500/20 dark:text-green-400 dark:hover:bg-green-500 dark:hover:text-white"
                                 title="Approve OD"
                               >
-                                <CheckIcon /> Approve
+                                <Check /> Approve
                               </button>
                             )}
                             {hasManagePermission && (
@@ -2013,7 +2048,7 @@ export default function LeavesPage() {
                                 className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-500/10 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500 hover:text-white dark:bg-red-500/20 dark:text-red-400 dark:hover:bg-red-500 dark:hover:text-white"
                                 title="Reject OD"
                               >
-                                <XIcon /> Reject
+                                <X /> Reject
                               </button>
                             )}
                           </div>
@@ -2039,7 +2074,7 @@ export default function LeavesPage() {
         {showApplyDialog && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setShowApplyDialog(false)} />
-            <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-white/20 dark:border-slate-800 shadow-2xl p-8 animate-in zoom-in-95 duration-300">
+            <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-white/20 dark:border-slate-800 shadow-2xl p-6 sm:p-8 animate-in zoom-in-95 duration-300">
               {/* Type Toggle */}
               <div className="inline-flex w-full p-1 rounded-2xl bg-slate-100/50 dark:bg-slate-800/50 border border-slate-200/50 dark:border-slate-700/50 mb-8">
                 <button
@@ -2051,7 +2086,7 @@ export default function LeavesPage() {
                     }`}
                 >
                   <div className="flex items-center justify-center gap-2">
-                    <CalendarIcon className="w-4 h-4" />
+                    <Calendar className="w-4 h-4" />
                     Leave Request
                   </div>
                 </button>
@@ -2064,7 +2099,7 @@ export default function LeavesPage() {
                     }`}
                 >
                   <div className="flex items-center justify-center gap-2">
-                    <BriefcaseIcon className="w-4 h-4" />
+                    <Briefcase className="w-4 h-4" />
                     On Duty
                   </div>
                 </button>
@@ -2120,13 +2155,13 @@ export default function LeavesPage() {
                             }}
                             className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                           >
-                            <XIcon />
+                            <X />
                           </button>
                         </div>
                       ) : (
                         <div className="relative">
                           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <SearchIcon />
+                            <Search />
                           </div>
                           <input
                             type="text"
@@ -2479,17 +2514,17 @@ export default function LeavesPage() {
               <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setShowDetailDialog(false)} />
               <div className="relative z-50 w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-3xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-white/20 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
                 {/* Header */}
-                <div className={`shrink-0 px-8 py-6 border-b border-white/10 ${detailType === 'leave'
+                <div className={`shrink-0 px-6 py-4 sm:px-8 sm:py-6 border-b border-white/10 ${detailType === 'leave'
                   ? 'bg-gradient-to-r from-blue-600 to-blue-500'
                   : 'bg-gradient-to-r from-purple-600 to-purple-500'
                   }`}>
                   <div className="flex items-center justify-between text-white">
                     <div className="flex items-center gap-3">
                       <div className="h-10 w-10 rounded-xl bg-white/20 flex items-center justify-center backdrop-blur-md">
-                        {detailType === 'leave' ? <CalendarIcon className="w-5 h-5" /> : <BriefcaseIcon className="w-5 h-5" />}
+                        {detailType === 'leave' ? <Calendar className="w-5 h-5" /> : <Briefcase className="w-5 h-5" />}
                       </div>
                       <div>
-                        <h2 className="text-lg font-black uppercase tracking-wider">
+                        <h2 className="text-base sm:text-lg font-black uppercase tracking-wider">
                           {detailType === 'leave' ? 'Leave Details' : 'OD Details'}
                         </h2>
                         <p className="text-white/70 text-[10px] font-bold uppercase tracking-widest">Workspace Management</p>
@@ -2499,7 +2534,7 @@ export default function LeavesPage() {
                       onClick={() => setShowDetailDialog(false)}
                       className="h-8 w-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
                     >
-                      <XIcon className="w-4 h-4" />
+                      <X className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
@@ -2542,7 +2577,7 @@ export default function LeavesPage() {
                         {selectedItem!.status?.replace('_', ' ')}
                       </span>
                       <div className="flex items-center gap-1.5 text-slate-400 font-bold text-[10px] uppercase tracking-wider">
-                        <ClockIcon className="w-3.5 h-3.5" />
+                        <Clock3 className="w-3.5 h-3.5" />
                         Applied {formatDate((selectedItem! as any).createdAt || selectedItem!.appliedAt)}
                       </div>
                     </div>
@@ -2703,7 +2738,7 @@ export default function LeavesPage() {
 
                 {/* Footer Actions - Sticky Bottom */}
                 {/* Footer Actions - Sticky Bottom */}
-                <div className="p-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 flex gap-3 justify-end items-center">
+                <div className="p-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row gap-3 justify-end items-stretch sm:items-center">
                   {!['approved', 'rejected', 'cancelled'].includes(selectedItem.status) && canPerformAction(selectedItem) && (
                     <>
                       <textarea
@@ -2711,13 +2746,13 @@ export default function LeavesPage() {
                         onChange={(e) => setActionComment(e.target.value)}
                         placeholder="Add a comment..."
                         rows={1}
-                        className="flex-1 min-w-[200px] rounded-lg border border-slate-300 px-3 py-2 text-xs focus:border-blue-500 focus:outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-white resize-none"
+                        className="w-full sm:min-w-[200px] rounded-lg border border-slate-300 px-3 py-2 text-xs focus:border-blue-500 focus:outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-white resize-none"
                       />
                       {['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser?.role || '') && (
-                        <>
-                          <button onClick={() => handleDetailAction('approve')} className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg shadow-sm transition-colors">Approve</button>
-                          <button onClick={() => handleDetailAction('reject')} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg shadow-sm transition-colors">Reject</button>
-                        </>
+                        <div className="flex gap-2">
+                          <button onClick={() => handleDetailAction('approve')} className="flex-1 sm:flex-none px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg shadow-sm transition-colors">Approve</button>
+                          <button onClick={() => handleDetailAction('reject')} className="flex-1 sm:flex-none px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg shadow-sm transition-colors">Reject</button>
+                        </div>
                       )}
                     </>
                   )}
@@ -2743,7 +2778,7 @@ export default function LeavesPage() {
       {showEditDialog && selectedItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setShowEditDialog(false)} />
-          <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-white/20 dark:border-slate-800 shadow-2xl p-8 animate-in zoom-in-95 duration-300">
+          <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-white/20 dark:border-slate-800 shadow-2xl p-6 sm:p-8 animate-in zoom-in-95 duration-300">
             <div className="mb-8">
               <h2 className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300">
                 Edit {detailType === 'leave' ? 'Leave' : 'OD'} Application

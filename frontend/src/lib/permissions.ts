@@ -286,23 +286,23 @@ export function canResolveConfusedShifts(user: User): boolean {
 // ==========================================
 
 export function canViewUsers(user: User): boolean {
-    return hasAnyRole(user, ['sub_admin', 'hr', 'manager']) && canViewFeature(user, 'USERS');
+    return hasAnyRole(user, ['super_admin', 'sub_admin', 'hr', 'manager']) && canViewFeature(user, 'USERS');
 }
 
 export function canCreateUser(user: User): boolean {
-    return hasAnyRole(user, ['sub_admin', 'hr', 'manager']) && canManageFeature(user, 'USERS');
+    return hasAnyRole(user, ['super_admin', 'sub_admin', 'hr', 'manager']) && canManageFeature(user, 'USERS');
 }
 
 export function canEditUser(user: User): boolean {
-    return hasAnyRole(user, ['sub_admin', 'hr', 'manager']) && canManageFeature(user, 'USERS');
+    return hasAnyRole(user, ['super_admin', 'sub_admin', 'hr', 'manager']) && canManageFeature(user, 'USERS');
 }
 
 export function canDeleteUser(user: User): boolean {
-    return hasAnyRole(user, ['sub_admin', 'hr', 'manager']) && canManageFeature(user, 'USERS');
+    return hasAnyRole(user, ['super_admin', 'sub_admin', 'hr', 'manager']) && canManageFeature(user, 'USERS');
 }
 
 export function canResetPassword(user: User): boolean {
-    return hasAnyRole(user, ['sub_admin', 'hr', 'manager']) && canManageFeature(user, 'USERS');
+    return hasAnyRole(user, ['super_admin', 'sub_admin', 'hr', 'manager']) && canManageFeature(user, 'USERS');
 }
 
 // ==========================================

@@ -34,7 +34,8 @@ import {
   ShieldCheck,
   Info,
   RefreshCw,
-  Lock
+  Lock,
+  Clock
 } from 'lucide-react';
 
 // Custom Stat Card for User Management
@@ -134,6 +135,7 @@ export default function UsersPage() {
   const [showViewDialog, setShowViewDialog] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [selectedViewUser, setSelectedViewUser] = useState<User | null>(null);
+  const [activeTab, setActiveTab] = useState<'overview' | 'permissions'>('overview');
 
   const [formData, setFormData] = useState<UserFormData>({
     email: '',
@@ -2583,151 +2585,163 @@ export default function UsersPage() {
             </div>
           )
         }
-        {/* View User Dialog */}
+        {/* View User Dialog - Redesigned */}
         {
           showViewDialog && selectedViewUser && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 lg:p-8">
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
               <div
-                className="fixed inset-0 bg-slate-900/40 backdrop-blur-md transition-opacity"
+                className="fixed inset-0 bg-slate-900/40 backdrop-blur-xl transition-opacity animate-in fade-in duration-500"
                 onClick={() => setShowViewDialog(false)}
               />
-              <div className="relative z-50 flex w-full max-w-6xl max-h-[92vh] flex-col overflow-hidden rounded-[3rem] bg-white shadow-[0_32px_128px_-16px_rgba(0,0,0,0.3)] dark:bg-slate-900 border border-white/20 dark:border-slate-800 animate-in fade-in zoom-in duration-300">
-                {/* Premium Header */}
-                <div className="relative overflow-hidden border-b border-slate-100 px-8 py-10 lg:px-12 dark:border-slate-800 bg-gradient-to-r from-slate-50/50 to-white dark:from-slate-900/50 dark:to-slate-900">
-                  <div className="absolute right-0 top-0 h-64 w-64 translate-x-12 -translate-y-12 rounded-full bg-blue-500/10 blur-3xl" />
-                  <div className="absolute left-0 bottom-0 h-64 w-64 -translate-x-12 translate-y-12 rounded-full bg-indigo-500/5 blur-3xl" />
+              <div className="relative z-50 flex w-full max-w-5xl max-h-[90vh] flex-col overflow-hidden rounded-[2.5rem] bg-white shadow-[0_32px_128px_-16px_rgba(0,0,0,0.3)] dark:bg-slate-900 border border-white/20 dark:border-slate-800 animate-in fade-in zoom-in duration-500">
+                {/* Close Button */}
+                <button
+                  onClick={() => setShowViewDialog(false)}
+                  className="absolute right-6 top-6 z-[60] flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 text-slate-400 backdrop-blur-md transition-all hover:bg-white/20 hover:text-white dark:bg-slate-800/50"
+                >
+                  <X className="h-6 w-6" />
+                </button>
 
-                  <div className="relative flex flex-col md:flex-row items-center gap-10">
-                    <div className="relative group">
-                      <div className="relative">
-                        <div className="flex h-32 w-32 items-center justify-center rounded-[2.5rem] bg-gradient-to-br from-blue-600 to-indigo-700 text-5xl font-black text-white shadow-2xl shadow-blue-500/30 transition-all duration-500 group-hover:scale-105 group-hover:rotate-3">
+                <div className="flex flex-1 overflow-hidden">
+                  {/* Premium Sidebar */}
+                  <div className="hidden w-80 flex-col border-r border-slate-100 bg-slate-50/50 p-8 dark:border-slate-800 dark:bg-slate-900/50 lg:flex">
+                    <div className="relative mb-8 self-center">
+                      <div className="relative group">
+                        <div className="flex h-32 w-32 items-center justify-center rounded-[2.5rem] bg-gradient-to-br from-blue-600 to-indigo-700 text-5xl font-black text-white shadow-2xl shadow-blue-500/20 transition-all duration-500 group-hover:scale-105 group-hover:rotate-3">
                           {selectedViewUser.name?.[0]?.toUpperCase() || '?'}
                         </div>
-                        <div className={`absolute -bottom-2 -right-2 h-10 w-10 rounded-full border-4 border-white bg-emerald-500 shadow-xl dark:border-slate-900 ${!selectedViewUser.isActive && 'bg-slate-400'}`} />
+                        <div className={`absolute -bottom-1 -right-1 h-10 w-10 rounded-full border-4 border-white bg-emerald-500 shadow-xl dark:border-slate-900 ${!selectedViewUser.isActive && 'bg-slate-400'}`}>
+                          <div className={`h-full w-full rounded-full ${selectedViewUser.isActive ? 'animate-pulse bg-emerald-400/50' : ''}`} />
+                        </div>
                       </div>
                     </div>
 
-                    <div className="text-center md:text-left flex-1">
-                      <div className="flex items-center justify-center md:justify-start gap-4 flex-wrap">
-                        <h2 className="text-5xl font-black tracking-tight text-slate-900 dark:text-white">
-                          {selectedViewUser.name}
-                        </h2>
-                        <span className={`inline-flex items-center gap-2 rounded-full px-5 py-2 text-xs font-black uppercase tracking-widest ${getRoleColor(selectedViewUser.role)} shadow-sm`}>
-                          <Shield className="h-4 w-4" />
+                    <div className="text-center">
+                      <h2 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">
+                        {selectedViewUser.name}
+                      </h2>
+                      <p className="mt-1 text-xs font-bold uppercase tracking-widest text-slate-400">{selectedViewUser.email}</p>
+                    </div>
+
+                    <div className="mt-8 space-y-4">
+                      <div className="rounded-2xl bg-white p-4 shadow-sm dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
+                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Role & Authority</div>
+                        <div className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-[10px] font-black uppercase tracking-widest ${getRoleColor(selectedViewUser.role)} shadow-sm`}>
+                          <Shield className="h-3.5 w-3.5" />
                           {getRoleLabel(selectedViewUser.role)}
-                        </span>
+                        </div>
                       </div>
 
-                      <div className="mt-6 flex flex-wrap items-center justify-center md:justify-start gap-8">
-                        <div className="flex items-center gap-3 text-sm font-bold text-slate-600 dark:text-slate-400 transition-colors hover:text-blue-500">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white shadow-sm dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
-                            <Mail className="h-5 w-5 text-blue-500" />
-                          </div>
-                          {selectedViewUser.email}
-                        </div>
-                        <div className="flex items-center gap-3 text-sm font-bold text-slate-600 dark:text-slate-400">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white shadow-sm dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
-                            <Globe className="h-5 w-5 text-indigo-500" />
-                          </div>
-                          {selectedViewUser.dataScope === 'all' ? (
-                            <span className="text-indigo-600 dark:text-indigo-400 font-extrabold">Absolute Global Access</span>
-                          ) : (
-                            <span className="text-amber-600 dark:text-amber-400 font-extrabold">Restricted Visibility Scope</span>
-                          )}
+                      <div className="rounded-2xl bg-white p-4 shadow-sm dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
+                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Visibility Scope</div>
+                        <div className="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300">
+                          <Globe className="h-4 w-4 text-indigo-500" />
+                          {selectedViewUser.dataScope === 'all' ? 'Global Access' : 'Restricted Scope'}
                         </div>
                       </div>
+
+                      {selectedViewUser.lastLogin && (
+                        <div className="rounded-2xl bg-white p-4 shadow-sm dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
+                          <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Last Activity</div>
+                          <div className="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300">
+                            <Clock className="h-4 w-4 text-amber-500" />
+                            {new Date(selectedViewUser.lastLogin).toLocaleDateString()}
+                          </div>
+                        </div>
+                      )}
                     </div>
 
-                    <button
-                      onClick={() => setShowViewDialog(false)}
-                      className="absolute right-0 top-0 -translate-y-2 -translate-x-2 lg:-translate-y-4 lg:-translate-x-4 rounded-2xl p-4 text-slate-400 transition-all hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:text-slate-500"
-                    >
-                      <X className="h-8 w-8" />
-                    </button>
+                    <div className="mt-auto pt-8">
+                      <button
+                        onClick={() => {
+                          setShowViewDialog(false);
+                          openEditDialog(selectedViewUser);
+                        }}
+                        className="w-full flex items-center justify-center gap-3 rounded-2xl bg-slate-900 px-6 py-4 text-xs font-black uppercase tracking-[0.2em] text-white shadow-xl transition-all hover:bg-black hover:scale-[1.02] active:scale-[0.98] dark:bg-blue-600 dark:hover:bg-blue-700"
+                      >
+                        <Edit className="h-4 w-4" />
+                        Modify Profile
+                      </button>
+                    </div>
                   </div>
-                </div>
 
-                {/* Content Area - Balanced 2-Column Layout */}
-                <div className="flex-1 overflow-hidden">
-                  <div className="grid grid-cols-1 lg:grid-cols-12 h-full">
+                  {/* Main Content Area */}
+                  <div className="flex flex-1 flex-col bg-white dark:bg-slate-900">
+                    {/* Navigation Tabs */}
+                    <div className="flex border-b border-slate-100 px-8 pt-8 dark:border-slate-800">
+                      {[
+                        { id: 'overview', label: 'Overview', icon: Layers },
+                        { id: 'permissions', label: 'Feature Access', icon: Lock },
+                      ].map((tab) => (
+                        <button
+                          key={tab.id}
+                          onClick={() => setActiveTab(tab.id as any)}
+                          className={`group relative flex items-center gap-2.5 px-6 pb-4 text-xs font-black uppercase tracking-widest transition-all ${activeTab === tab.id
+                            ? 'text-blue-600 dark:text-blue-400'
+                            : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                            }`}
+                        >
+                          <tab.icon className={`h-4 w-4 transition-transform group-hover:scale-110 ${activeTab === tab.id ? 'text-blue-600 dark:text-blue-400' : ''}`} />
+                          {tab.label}
+                          {activeTab === tab.id && (
+                            <div className="absolute bottom-0 left-0 h-1 w-full rounded-t-full bg-blue-600 dark:bg-blue-400" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
 
-                    {/* LEFT COLUMN - Assignments */}
-                    <div className="lg:col-span-5 p-8 lg:p-12 border-r border-slate-100 dark:border-slate-800 overflow-y-auto space-y-10 bg-white dark:bg-slate-900/30">
-                      <section>
-                        <div className="mb-8 flex items-center gap-4">
-                          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400 shadow-sm shadow-blue-500/5">
-                            <Layers className="h-6 w-6" />
-                          </div>
-                          <div>
-                            <h3 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">Assignments</h3>
-                            <p className="text-sm font-medium text-slate-500">Resource and scoping parameters</p>
-                          </div>
-                        </div>
-
-                        <div className="space-y-6">
-                          {/* Visibility Scope Card */}
-                          <div className="group relative overflow-hidden rounded-3xl border border-slate-100 bg-slate-50/50 p-6 transition-all hover:border-blue-200 hover:bg-white dark:border-slate-800 dark:bg-slate-900/50 dark:hover:border-blue-500/30">
-                            <div className="mb-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Data Visibility Scope</div>
-                            <div className="flex items-center gap-5">
-                              <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-[1.25rem] bg-white shadow-sm dark:bg-slate-800 border border-slate-100 dark:border-slate-700 transition-transform group-hover:scale-110">
-                                {selectedViewUser.role === 'super_admin' ? (
-                                  <Globe className="h-7 w-7 text-blue-500" />
-                                ) : selectedViewUser.dataScope === 'all' ? (
-                                  <Eye className="h-7 w-7 text-indigo-500" />
-                                ) : selectedViewUser.dataScope === 'own' ? (
-                                  <UserCircle className="h-7 w-7 text-amber-500" />
-                                ) : (
-                                  <Building className="h-7 w-7 text-emerald-500" />
-                                )}
+                    {/* Tab Content */}
+                    <div className="flex-1 overflow-y-auto p-8 lg:p-12">
+                      <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                        {activeTab === 'overview' ? (
+                          <div className="space-y-10">
+                            <section>
+                              <div className="mb-6">
+                                <h3 className="text-xl font-black tracking-tight text-slate-900 dark:text-white uppercase">Business Unit Mapping</h3>
+                                <p className="text-xs font-medium text-slate-500">Authorized partitions and organizational hierarchy</p>
                               </div>
-                              <div>
-                                <p className="text-xl font-black text-slate-800 dark:text-slate-200 leading-tight">
-                                  {selectedViewUser.role === 'super_admin' ? 'Absolute Global Access'
-                                    : selectedViewUser.dataScope === 'all' ? 'Full Organization Visibility'
-                                      : selectedViewUser.dataScope === 'own' ? 'Self-Only Protection'
-                                        : 'Specific Business Unit Mapping'}
-                                </p>
-                                <p className="mt-1 text-xs font-bold text-slate-500 uppercase tracking-widest opacity-60">Security Access Tier 01</p>
-                              </div>
-                            </div>
-                          </div>
 
-                          {/* Business Unit Mapping */}
-                          {selectedViewUser.dataScope !== 'all' && selectedViewUser.dataScope !== 'own' && selectedViewUser.role !== 'super_admin' && (
-                            <div className="space-y-4">
                               {(!selectedViewUser.divisionMapping || selectedViewUser.divisionMapping.length === 0) ? (
-                                <div className="flex flex-col items-center justify-center p-12 rounded-[2.5rem] border-2 border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/30">
-                                  <ShieldAlert className="h-12 w-12 text-slate-300 mb-4" />
-                                  <p className="text-base font-bold text-slate-400 italic text-center">No specific unit mappings identified</p>
-                                  <p className="mt-2 text-xs text-slate-400 text-center">User may have inherited restrictions</p>
+                                <div className="flex flex-col items-center justify-center rounded-[2rem] border-2 border-dashed border-slate-100 bg-slate-50/50 p-12 dark:border-slate-800 dark:bg-slate-950/30">
+                                  <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-white shadow-sm dark:bg-slate-800">
+                                    <ShieldAlert className="h-8 w-8 text-slate-300" />
+                                  </div>
+                                  <p className="text-sm font-bold text-slate-400 italic">No explicit unit mappings identified</p>
+                                  <p className="mt-1 text-[10px] text-slate-400 uppercase tracking-widest">Inherited global restrictions may apply</p>
                                 </div>
                               ) : (
-                                <div className="grid gap-5">
+                                <div className="grid gap-6">
                                   {selectedViewUser.divisionMapping.map((mapping: any, idx: number) => {
                                     const divId = typeof mapping.division === 'string' ? mapping.division : mapping.division?._id;
-                                    const divisionName = divisions.find(d => d._id === divId)?.name || 'General Operations';
+                                    const division = divisions.find(d => d._id === divId);
+                                    const divisionName = division?.name || 'General Operations';
                                     const deptIds = mapping.departments?.map((d: any) => typeof d === 'string' ? d : d._id) || [];
 
                                     return (
-                                      <div key={idx} className="group relative overflow-hidden rounded-[2rem] border border-slate-100 bg-white p-7 shadow-sm transition-all hover:shadow-xl hover:-translate-y-1 dark:border-slate-800 dark:bg-slate-900">
-                                        <div className="absolute left-0 top-0 h-full w-2 bg-blue-600" />
+                                      <div key={idx} className="group relative overflow-hidden rounded-[2rem] border border-slate-100 bg-white p-7 shadow-sm transition-all hover:shadow-xl hover:-translate-y-1 dark:border-slate-800 dark:bg-slate-950">
+                                        <div className="absolute left-0 top-0 h-full w-2 bg-gradient-to-b from-blue-500 to-indigo-600" />
                                         <div className="mb-5 flex items-center justify-between">
                                           <div>
-                                            <h4 className="text-xl font-black tracking-tight text-slate-900 dark:text-white uppercase">{divisionName}</h4>
-                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-1">Authorized Business Partition</p>
+                                            <div className="flex items-center gap-2">
+                                              <Building className="h-4 w-4 text-blue-500" />
+                                              <h4 className="text-lg font-black tracking-tight text-slate-900 dark:text-white uppercase">{divisionName}</h4>
+                                            </div>
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1 ml-6 font-mono">DIV_ID: {divId?.slice(-6) || 'N/A'}</p>
                                           </div>
-                                          <span className="rounded-full bg-blue-50 px-4 py-1.5 text-[10px] font-black uppercase tracking-widest text-blue-600 dark:bg-blue-500/10 dark:text-blue-400">Primary</span>
+                                          <span className="rounded-full bg-blue-50 px-4 py-1.5 text-[10px] font-black uppercase tracking-widest text-blue-600 dark:bg-blue-500/10 dark:text-blue-400">Restricted Access</span>
                                         </div>
-                                        <div className="flex flex-wrap gap-2.5">
+                                        <div className="flex flex-wrap gap-2.5 ml-6">
                                           {deptIds.length === 0 ? (
-                                            <span className="rounded-2xl bg-blue-50/50 border border-blue-100/50 px-4 py-2 text-[11px] font-black uppercase tracking-wider text-blue-600 dark:bg-blue-900/20 dark:border-blue-500/20 dark:text-blue-400">
-                                              All Functional Departments
+                                            <span className="rounded-xl bg-blue-50/50 border border-blue-100/50 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-blue-600 dark:bg-blue-900/20 dark:border-blue-500/20 dark:text-blue-400">
+                                              All Functional Departments Included
                                             </span>
                                           ) : (
                                             deptIds.map((deptId: string) => {
-                                              const deptName = departments.find(d => d._id === deptId)?.name || 'Unknown Unit';
+                                              const dept = departments.find(d => d._id === deptId);
+                                              const deptName = dept?.name || 'Unknown Unit';
                                               return (
-                                                <span key={deptId} className="rounded-2xl bg-slate-50 border border-slate-100 px-4 py-2 text-[11px] font-bold text-slate-600 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400">
+                                                <span key={deptId} className="flex items-center gap-2 rounded-xl bg-slate-50 border border-slate-100 px-3 py-1.5 text-[10px] font-bold text-slate-600 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400">
+                                                  <div className="h-1 w-1 rounded-full bg-blue-400" />
                                                   {deptName}
                                                 </span>
                                               );
@@ -2739,104 +2753,83 @@ export default function UsersPage() {
                                   })}
                                 </div>
                               )}
-                            </div>
-                          )}
-                        </div>
-                      </section>
+                            </section>
 
-                      {/* Action Bar */}
-                      <div className="pt-6 grid grid-cols-1 gap-4">
-                        <button
-                          onClick={() => {
-                            setShowViewDialog(false);
-                            openEditDialog(selectedViewUser);
-                          }}
-                          className="w-full flex items-center justify-center gap-4 rounded-3xl bg-slate-900 px-8 py-6 text-sm font-black uppercase tracking-[0.3em] text-white shadow-2xl transition-all hover:bg-black hover:scale-[1.02] active:scale-[0.98] dark:bg-blue-600 dark:hover:bg-blue-700 shadow-slate-900/20 dark:shadow-blue-500/20"
-                        >
-                          <Edit className="h-6 w-6" />
-                          Management Edit
-                        </button>
-                        <button
-                          onClick={() => setShowViewDialog(false)}
-                          className="w-full rounded-3xl border border-slate-200 bg-white px-8 py-6 text-sm font-black uppercase tracking-[0.3em] text-slate-500 shadow-sm transition-all hover:bg-slate-50 hover:text-slate-900 active:scale-[0.98] dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400"
-                        >
-                          Close Profile
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* RIGHT COLUMN - Feature Access */}
-                    <div className="lg:col-span-7 p-8 lg:p-12 overflow-y-auto bg-slate-50/30 dark:bg-slate-950/20">
-                      <section>
-                        <div className="mb-8 flex items-center gap-4">
-                          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400 shadow-sm shadow-emerald-500/5">
-                            <Lock className="h-6 w-6" />
-                          </div>
-                          <div>
-                            <h3 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">Feature Access</h3>
-                            <p className="text-sm font-medium text-slate-500">Modules and functional permissions</p>
-                          </div>
-                        </div>
-
-                        <div className="rounded-[3rem] border border-slate-100 bg-white p-10 shadow-sm dark:border-slate-800 dark:bg-slate-950/80">
-                          {!selectedViewUser.featureControl || selectedViewUser.featureControl.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center py-20 text-center bg-slate-50/30 dark:bg-slate-900/30 rounded-[2.5rem] border-2 border-dashed border-slate-100 dark:border-slate-800">
-                              <ShieldAlert className="h-20 w-20 text-slate-200 mb-8" />
-                              <p className="text-lg font-black text-slate-500 uppercase tracking-widest">Inherited Permissions</p>
-                              <p className="mt-2 text-base text-slate-400 font-medium">Using standard hierarchical role defaults</p>
-                              <div className="mt-10 flex gap-4">
-                                <span className="rounded-full bg-white shadow-sm border border-slate-100 px-6 py-2 text-[11px] font-black uppercase tracking-widest text-slate-500">Platform Global</span>
-                                <span className="rounded-full bg-white shadow-sm border border-slate-100 px-6 py-2 text-[11px] font-black uppercase tracking-widest text-slate-500">Policy Sync</span>
+                            <section className="rounded-[2rem] bg-amber-50/30 p-8 border border-amber-100/50 dark:bg-amber-900/5 dark:border-amber-900/10">
+                              <div className="flex items-start gap-4">
+                                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400">
+                                  <ShieldAlert className="h-5 w-5" />
+                                </div>
+                                <div>
+                                  <h4 className="text-sm font-black text-amber-900 dark:text-amber-400 uppercase tracking-widest">Access Policy Note</h4>
+                                  <p className="mt-1 text-xs font-medium leading-relaxed text-amber-700/80 dark:text-amber-500/60">
+                                    This user's data visibility is strictly governed by the assigned business units. Any changes to division or department hierarchy will automatically propagate to this user's visibility scope.
+                                  </p>
+                                </div>
                               </div>
+                            </section>
+                          </div>
+                        ) : (
+                          <div className="space-y-10">
+                            <div className="mb-6">
+                              <h3 className="text-xl font-black tracking-tight text-slate-900 dark:text-white uppercase">Module Permissions</h3>
+                              <p className="text-xs font-medium text-slate-500">Fine-grained functional access controls per category</p>
                             </div>
-                          ) : (
-                            <div className="grid gap-10">
-                              {MODULE_CATEGORIES.map(category => {
-                                const modulesWithPerms = category.modules.map(m => ({
-                                  ...m,
-                                  hasRead: selectedViewUser.featureControl?.includes(`${m.code}:read`) || false,
-                                  hasWrite: selectedViewUser.featureControl?.includes(`${m.code}:write`) || false
-                                })).filter(m => m.hasRead || m.hasWrite);
 
-                                if (modulesWithPerms.length === 0) return null;
+                            {(!selectedViewUser.featureControl || selectedViewUser.featureControl.length === 0) ? (
+                              <div className="flex flex-col items-center justify-center py-16 text-center bg-slate-50/50 dark:bg-slate-950/30 rounded-[2.5rem] border-2 border-dashed border-slate-100 dark:border-slate-800">
+                                <ShieldCheck className="h-16 w-16 text-emerald-500/20 mb-6" />
+                                <p className="text-sm font-black text-slate-500 uppercase tracking-widest">Global Defaults Active</p>
+                                <p className="mt-1 text-xs text-slate-400 font-medium">Using system standard permissions for {getRoleLabel(selectedViewUser.role)}</p>
+                              </div>
+                            ) : (
+                              <div className="grid gap-8">
+                                {MODULE_CATEGORIES.map(category => {
+                                  const modulesWithPerms = category.modules.map(m => ({
+                                    ...m,
+                                    hasRead: selectedViewUser.featureControl?.includes(`${m.code}:read`) || false,
+                                    hasWrite: selectedViewUser.featureControl?.includes(`${m.code}:write`) || false
+                                  })).filter(m => m.hasRead || m.hasWrite);
 
-                                return (
-                                  <div key={category.code} className="group p-8 rounded-[2.5rem] bg-slate-50/50 dark:bg-slate-900/50 border border-transparent transition-all hover:border-emerald-500/20 hover:bg-white dark:hover:bg-slate-900 shadow-sm hover:shadow-2xl">
-                                    <div className="mb-6 flex items-center gap-4">
-                                      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white shadow-sm dark:bg-slate-800 text-2xl group-hover:scale-110 transition-transform">
-                                        {category.icon}
+                                  if (modulesWithPerms.length === 0) return null;
+
+                                  return (
+                                    <div key={category.code} className="overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/50 transition-all hover:border-emerald-500/20">
+                                      <div className="flex items-center gap-3 bg-slate-50/50 px-6 py-4 dark:bg-slate-900/50">
+                                        <span className="text-xl">{category.icon}</span>
+                                        <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-900 dark:text-white">{category.name}</h4>
                                       </div>
-                                      <h4 className="text-base font-black uppercase tracking-[0.2em] text-slate-900 dark:text-white">{category.name}</h4>
-                                      <div className="h-px flex-1 bg-slate-200/50 dark:bg-emerald-500/10" />
-                                    </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                      {modulesWithPerms.map(m => (
-                                        <div key={m.code} className="flex flex-col gap-4 rounded-[1.5rem] border border-slate-100 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 group/module transition-all hover:border-emerald-500/40 shadow-sm">
-                                          <span className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider">{m.label}</span>
-                                          <div className="flex gap-2">
-                                            {m.hasRead && (
-                                              <span className="flex-1 flex items-center justify-center gap-2 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-[10px] font-black text-blue-600 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-400">
-                                                <div className="h-1.5 w-1.5 rounded-full bg-blue-500" />
-                                                READ
-                                              </span>
-                                            )}
-                                            {m.hasWrite && (
-                                              <span className="flex-1 flex items-center justify-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-[10px] font-black text-emerald-600 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-400">
-                                                <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                                                WRITE
-                                              </span>
-                                            )}
-                                          </div>
+                                      <div className="p-6">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                          {modulesWithPerms.map(m => (
+                                            <div key={m.code} className="flex items-center justify-between rounded-2xl border border-slate-50 bg-slate-50/30 p-4 dark:border-slate-800/50 dark:bg-slate-900/30">
+                                              <span className="text-[10px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider">{m.label}</span>
+                                              <div className="flex gap-1.5">
+                                                {m.hasRead && (
+                                                  <span className="flex items-center gap-1.5 rounded-lg bg-blue-50 px-2 py-1 text-[9px] font-black text-blue-600 dark:bg-blue-500/10 dark:text-blue-400 border border-blue-100 dark:border-blue-500/20">
+                                                    <Eye className="h-3 w-3" />
+                                                    READ
+                                                  </span>
+                                                )}
+                                                {m.hasWrite && (
+                                                  <span className="flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2 py-1 text-[9px] font-black text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-500/20">
+                                                    <Edit className="h-3 w-3" />
+                                                    WRITE
+                                                  </span>
+                                                )}
+                                              </div>
+                                            </div>
+                                          ))}
                                         </div>
-                                      ))}
+                                      </div>
                                     </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      </section>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
